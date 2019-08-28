@@ -1,55 +1,14 @@
-#pragma once
+#include "StudentTTest.h"
 
-#include <vector>
 #include <cmath>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
-/**
- * About:
- * This is implementation of Independent two-sample t-test
- * Read about it on https://en.wikipedia.org/wiki/Student%27s_t-test (Equal or unequal sample sizes, equal variance)
- *
- * Usage:
- * It's it used to assume with some level of confidence that two distributions don't differ.
- * Values can be added with T_test.add(0/1, value) and after compared and reported with compareAndReport().
- */
-struct T_test
+
+namespace
 {
-    struct DistributionData
-    {
-        size_t size = 0;
-        double sum = 0;
-        double squares_sum = 0;
-
-        void add(double value)
-        {
-            ++size;
-            sum += value;
-            squares_sum += value * value;
-        }
-
-        double avg() const
-        {
-            return sum / size;
-        }
-
-        double var() const
-        {
-            return (squares_sum - (sum * sum / size)) / static_cast<double>(size - 1);
-        }
-
-        void clear()
-        {
-            size = 0;
-            sum = 0;
-            squares_sum = 0;
-        }
-    };
-
-    std::vector<DistributionData> data;
-
     /// First row corresponds to infinity size of distributions case
     const double students_table[101][6] =
     {
@@ -156,59 +115,55 @@ struct T_test
         { 1.290, 1.660, 1.984, 2.364, 2.626, 3.174 },
     };
 
-    const std::vector<double> confidence_level = { 80, 90, 95, 98, 99, 99.5 };
+    const double confidence_level[6] = { 80, 90, 95, 98, 99, 99.5 };
+}
 
-    T_test()
+
+void StudentTTest::clear()
+{
+    data[0].clear();
+    data[1].clear();
+}
+
+void StudentTTest::add(size_t distribution, double value)
+{
+    if (distribution > 1)
+        throw std::logic_error("Distribution number for Student's T-Test must be eigther 0 or 1");
+    data[distribution].add(value);
+}
+
+/// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
+std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_level_index) const
+{
+    if (confidence_level_index > 5)
+        confidence_level_index = 5;
+
+    if (data[0].size == 0 || data[1].size == 0)
+        return {true, ""};
+
+    size_t degrees_of_freedom = (data[0].size - 1) + (data[1].size - 1);
+
+    double table_value = students_table[degrees_of_freedom > 100 ? 0 : degrees_of_freedom][confidence_level_index];
+
+    double pooled_standard_deviation = sqrt(((data[0].size - 1) * data[0].var() + (data[1].size - 1) * data[1].var()) / degrees_of_freedom);
+
+    double t_statistic = pooled_standard_deviation * sqrt(1.0 / data[0].size + 1.0 / data[1].size);
+
+    double mean_difference = fabs(data[0].avg() - data[1].avg());
+
+    double mean_confidence_interval = table_value * t_statistic;
+
+    std::stringstream ss;
+    if (mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0001)) /// difference must be more than 0.0001, to take into account connection latency.
     {
-        data.resize(2);
+        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";
+        ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
+        return {false, ss.str()};
     }
-
-    void clear()
+    else
     {
-        data[0].clear();
-        data[1].clear();
+        ss << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
+        return {true, ss.str()};
     }
+}
 
-    void add(size_t distribution, double value)
-    {
-        if (distribution > 1)
-            return;
-        data[distribution].add(value);
-    }
-
-    /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
-    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const
-    {
-        if (confidence_level_index > 5)
-            confidence_level_index = 5;
-
-        if (data[0].size == 0 || data[1].size == 0)
-            return {true, ""};
-
-        size_t degrees_of_freedom = (data[0].size - 1) + (data[1].size - 1);
-
-        double table_value = students_table[degrees_of_freedom > 100 ? 0 : degrees_of_freedom][confidence_level_index];
-
-        double pooled_standard_deviation = sqrt(((data[0].size - 1) * data[0].var() + (data[1].size - 1) * data[1].var()) / degrees_of_freedom);
-
-        double t_statistic = pooled_standard_deviation * sqrt(1.0 / data[0].size + 1.0 / data[1].size);
-
-        double mean_difference = fabs(data[0].avg() - data[1].avg());
-
-        double mean_confidence_interval = table_value * t_statistic;
-
-        std::stringstream ss;
-        if (mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0001)) /// difference must be more than 0.0001, to take into account connection latency.
-        {
-            ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";
-            ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
-            return {false, ss.str()};
-        }
-        else
-        {
-            ss << "No difference proven at " << confidence_level[confidence_level_index] <<  "% confidence";
-            return {true, ss.str()};
-        }
-    }
-
-};
