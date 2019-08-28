@@ -32,7 +32,7 @@
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Common/Config/configReadClient.h>
-#include <Common/T_test.h>
+#include <Common/StudentTTest.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -192,7 +192,7 @@ private:
     using MultiStats = std::vector<std::shared_ptr<Stats>>;
     MultiStats comparison_info_per_interval;
     MultiStats comparison_info_total;
-    T_test t_test;
+    StudentTTest t_test;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
