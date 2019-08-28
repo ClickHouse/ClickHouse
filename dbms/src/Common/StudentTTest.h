@@ -47,7 +47,7 @@ private:
         }
     };
 
-    std::array<DistributionData, 2> data;
+    std::array<DistributionData, 2> data {};
 
 public:
     void clear();
