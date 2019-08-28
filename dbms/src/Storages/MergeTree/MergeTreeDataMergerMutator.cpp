@@ -211,8 +211,11 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.level = part->info.level;
         part_info.data = &part;
         part_info.min_ttl = part->ttl_infos.part_min_ttl;
+        part_info.max_ttl = part->ttl_infos.part_max_ttl;
 
-        if (part_info.min_ttl && part_info.min_ttl <= current_time)
+        time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
+
+        if (ttl && ttl <= current_time)
             has_part_with_expired_ttl = true;
 
         partitions.back().emplace_back(part_info);
@@ -239,7 +242,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     /// NOTE Could allow selection of different merge strategy.
     if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
     {
-        merge_selector = std::make_unique<TTLMergeSelector>(current_time);
+        merge_selector = std::make_unique<TTLMergeSelector>(current_time, data_settings->ttl_only_drop_parts);
         last_merge_with_ttl = current_time;
     }
     else
