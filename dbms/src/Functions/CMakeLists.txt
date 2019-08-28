@@ -25,6 +25,7 @@ target_link_libraries(clickhouse_functions
         ${ZLIB_LIBRARIES}
         ${Boost_FILESYSTEM_LIBRARY}
         ${ZLIB_LIBRARIES} # crc32
+        ${CMAKE_DL_LIBS} # dladdr
 )
 
 if (OPENSSL_CRYPTO_LIBRARY)
