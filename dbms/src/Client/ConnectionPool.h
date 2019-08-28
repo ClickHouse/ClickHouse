@@ -74,7 +74,7 @@ public:
     {
         Entry entry;
         if (settings)
-            entry = Base::get(settings->queue_max_wait_ms.totalMilliseconds());
+            entry = Base::get(settings->connection_pool_max_wait_ms.totalMilliseconds());
         else
             entry = Base::get(-1);
 
