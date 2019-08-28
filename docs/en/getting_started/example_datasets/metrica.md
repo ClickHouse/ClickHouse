@@ -55,5 +55,8 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Queries
-Examples of queries to these tables (they are named `test.hits` and `test.visits`) can be found among [stateful tests](https://github.com/yandex/ClickHouse/tree/master/dbms/tests/queries/1_stateful) of ClickHouse.
+## Example Queries
+
+[ClickHouse tutorial](../tutorial.md) is based on Yandex.Metrica dataset and the recommended way to get started with this dataset is to just go through tutorial.
+
+Additional examples of queries to these tables can be found among [stateful tests](https://github.com/yandex/ClickHouse/tree/master/dbms/tests/queries/1_stateful) of ClickHouse (they are named `test.hists` and `test.visits` there).
