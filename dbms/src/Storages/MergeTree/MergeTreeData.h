@@ -331,7 +331,7 @@ public:
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
                   const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
-                  const MergeTreeSettings & settings_,
+                  std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
@@ -359,6 +359,8 @@ public:
             || merging_params.mode == MergingParams::Replacing
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
+
+    bool supportsSettings() const override { return true; }
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
 
@@ -535,11 +537,19 @@ public:
         bool skip_sanity_checks,
         AlterDataPartTransactionPtr& transaction);
 
+    /// Change MergeTreeSettings
+    void changeSettings(
+           const SettingsChanges & new_changes,
+           TableStructureWriteLockHolder & table_lock_holder);
+
+    /// All MergeTreeData children have settings.
+    bool hasSetting(const String & setting_name) const override;
+
     /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context);
+    void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -567,7 +577,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -606,10 +616,18 @@ public:
     /// Has additional constraint in replicated version
     virtual bool canUseAdaptiveGranularity() const
     {
-        return settings.index_granularity_bytes != 0 &&
-            (settings.enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
+        const auto settings = getSettings();
+        return settings->index_granularity_bytes != 0 &&
+            (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
+    /// Get constant pointer to storage settings.
+    /// Copy this pointer into your scope and you will
+    /// get consistent settings.
+    MergeTreeSettingsPtr getSettings() const
+    {
+        return storage_settings.get();
+    }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -660,8 +678,6 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    MergeTreeSettings settings;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
@@ -670,7 +686,9 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
+
 protected:
+
     friend struct MergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
     friend class ReplicatedMergeTreeAlterThread;
@@ -698,6 +716,9 @@ protected:
     String log_name;
     Logger * log;
 
+    /// Storage settings.
+    /// Use get and set to receive readonly versions.
+    MultiVersion<MergeTreeSettings> storage_settings;
 
     /// Work with data parts
 
@@ -785,6 +806,7 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
+    /// Mutex for settings usage
 
     void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
                                         const ColumnsDescription & new_columns,

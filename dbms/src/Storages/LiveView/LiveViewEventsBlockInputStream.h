@@ -51,7 +51,12 @@ public:
         const bool has_limit_, const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_,
         const UInt64 temporary_live_view_timeout_sec_)
-        : storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)), blocks_metadata_ptr(std::move(blocks_metadata_ptr_)), active_ptr(std::move(active_ptr_)), has_limit(has_limit_), limit(limit_), heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000), temporary_live_view_timeout_sec(temporary_live_view_timeout_sec_)
+        : storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
+          blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
+          active_ptr(std::move(active_ptr_)), has_limit(has_limit_),
+          limit(limit_),
+          heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000),
+          temporary_live_view_timeout_sec(temporary_live_view_timeout_sec_)
     {
         /// grab active pointer
         active = active_ptr.lock();

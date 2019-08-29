@@ -59,7 +59,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
 
     if (USE_UNWIND)
         target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
-        target_include_directories (jemalloc BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
-        target_link_libraries (jemalloc PRIVATE ${UNWIND_LIBRARY})
+        target_link_libraries (jemalloc PRIVATE ${UNWIND_LIBRARIES})
     endif ()
 endif ()
