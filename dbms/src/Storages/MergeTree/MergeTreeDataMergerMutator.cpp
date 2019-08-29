@@ -1042,6 +1042,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             auto indices_recalc_expr = ExpressionAnalyzer(
                     indices_recalc_expr_list,
                     indices_recalc_syntax, context).getActions(false);
+
+            /// We can update only one column, but some skip idx expression may depend on several
+            /// columns (c1 + c2 * c3). It works because in stream was created with help of
+            /// MutationsInterpreter which knows about skip indices and stream 'in' already has
+            /// all required columns.
+            /// TODO move this logic to single place.
             in = std::make_shared<MaterializingBlockInputStream>(
                     std::make_shared<ExpressionBlockInputStream>(in, indices_recalc_expr));
         }
