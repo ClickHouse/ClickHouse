@@ -379,7 +379,7 @@ static void extractMergingAndGatheringColumns(
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
     for (const auto & index : indexes)
     {
-        Names index_columns_vec = index->expr->getRequiredColumns();
+        Names index_columns_vec = index->getColumnsRequiredForIndexCalc();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
@@ -829,16 +829,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
 
-            std::vector<MergeTreeIndexPtr> skip_idx_to_recalc = data.getIndicesForColumn(column_name);
-            for (const auto & idx : skip_idx_to_recalc)
-                if (idx->getColumnsRequiredForIndexCalc().size() > 1)
-                    throw Exception("Skip index '" + idx->name + "' has expression on multiple columns. "
-                        + "Vertical merge is not supported for tables with skip indices with expressions on multiple columns. "
-                        + "It's better to avoid indices with multiple columns in expression. "
-                        + "Also you can disable vertical merges with setting enable_vertical_merge_algorithm=0, "
-                        + "but it will lead to additional memory consuption for big merges.",
-                        ErrorCodes::LOGICAL_ERROR);
-
             MergedColumnOnlyOutputStream column_to(
                 data,
                 column_gathered_stream.getHeader(),
@@ -846,10 +836,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 false,
                 compression_codec,
                 false,
-                skip_idx_to_recalc,
+                /// we don't need to recalc indices here
+                /// because all of them were already recalculated and written
+                /// as key part of vertical merge
+                std::vector<MergeTreeIndexPtr>{},
                 written_offset_columns,
-                to.getIndexGranularity()
-            );
+                to.getIndexGranularity());
+
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -1030,7 +1023,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             for (size_t i = 0; i < data.skip_indices.size(); ++i)
             {
                 const auto & index = data.skip_indices[i];
-                const auto & index_cols = index->expr->getRequiredColumns();
+                const auto & index_cols = index->getColumnsRequiredForIndexCalc();
                 auto it = std::find(std::cbegin(index_cols), std::cend(index_cols), col);
                 if (it != std::cend(index_cols) && indices_to_recalc.insert(index).second)
                 {
