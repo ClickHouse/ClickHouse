@@ -358,10 +358,10 @@ void MergeTreeData::setProperties(
             const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
             new_indices.push_back(
-                    MergeTreeIndexFactory::instance().get(
-                            all_columns,
-                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                            global_context));
+                 MergeTreeIndexFactory::instance().get(
+                        all_columns,
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
+                        global_context));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
@@ -1293,7 +1293,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
 
         if (columns_alter_forbidden.count(command.column_name))
-            throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 
         if (columns_alter_metadata_only.count(command.column_name))
         {
@@ -1578,7 +1578,8 @@ void MergeTreeData::alterDataPart(
     if (expression)
     {
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
-            *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+                *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+
 
         auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
@@ -1600,7 +1601,8 @@ void MergeTreeData::alterDataPart(
             true /* sync */,
             compression_codec,
             true /* skip_offsets */,
-            {},
+            /// Don't recalc indices because indices alter is restricted
+            std::vector<MergeTreeIndexPtr>{},
             unused_written_offsets,
             part->index_granularity,
             &part->index_granularity_info);
