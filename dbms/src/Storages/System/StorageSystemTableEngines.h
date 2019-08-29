@@ -10,6 +10,7 @@ namespace DB
 class StorageSystemTableEngines : public ext::shared_ptr_helper<StorageSystemTableEngines>,
                                   public IStorageSystemOneBlock<StorageSystemTableEngines>
 {
+    friend struct ext::shared_ptr_helper<StorageSystemTableEngines>;
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 

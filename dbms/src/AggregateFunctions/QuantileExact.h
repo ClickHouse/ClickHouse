@@ -176,7 +176,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
     }
 };
 
-/// QuantileExactInclusive is equivalent to Excel PERCENTILE and PERCENTILE.INC, R-7,  SciPy-(1,1)
+/// QuantileExactInclusive is equivalent to Excel PERCENTILE and PERCENTILE.INC, R-7, SciPy-(1,1)
 template <typename Value>
 struct QuantileExactInclusive : public QuantileExact<Value>
 {

@@ -278,8 +278,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
         case JOIN:
         {
             bool is_null_used_as_default = settings.join_use_nulls;
-            bool right_or_full_join = join_kind == ASTTableJoin::Kind::Right || join_kind == ASTTableJoin::Kind::Full;
-            bool left_or_full_join = join_kind == ASTTableJoin::Kind::Left || join_kind == ASTTableJoin::Kind::Full;
+            bool right_or_full_join = isRightOrFull(join_kind);
+            bool left_or_full_join = isLeftOrFull(join_kind);
 
             for (auto & col : sample_block)
             {
@@ -291,8 +291,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
                 bool make_nullable = is_null_used_as_default && right_or_full_join;
 
-                if (make_nullable && !col.type->isNullable())
-                    col.type = std::make_shared<DataTypeNullable>(col.type);
+                if (make_nullable && col.type->canBeInsideNullable())
+                    col.type = makeNullable(col.type);
             }
 
             for (const auto & col : columns_added_by_join)
@@ -316,8 +316,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                     }
                 }
 
-                if (make_nullable && !res_type->isNullable())
-                    res_type = std::make_shared<DataTypeNullable>(res_type);
+                if (make_nullable && res_type->canBeInsideNullable())
+                    res_type = makeNullable(res_type);
 
                 sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
             }

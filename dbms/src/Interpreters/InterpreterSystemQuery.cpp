@@ -278,6 +278,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         std::string data_path = database->getDataPath();
         auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+        auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
@@ -286,6 +287,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
             system_context,
             system_context.getGlobalContext(),
             columns,
+            constraints,
             create.attach,
             false);
 

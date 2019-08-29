@@ -327,6 +327,8 @@ protected:
     FallbackSearcher fallback_searcher;
 
 public:
+    using Searcher = FallbackSearcher;
+
     /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
       * If you specify it small enough, the fallback algorithm will be used,
       *  since it is considered that it's useless to waste time initializing the hash table.
@@ -373,7 +375,7 @@ public:
                 const auto res = pos - (hash[cell_num] - 1);
 
                 /// pointer in the code is always padded array so we can use pagesafe semantics
-                if (fallback_searcher.compare(res))
+                if (fallback_searcher.compare(haystack, haystack_end, res))
                     return res;
             }
         }
@@ -520,7 +522,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             return true;
                     }
                 }
@@ -552,7 +554,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             ans = std::min(ans, ind);
                     }
                 }
@@ -590,7 +592,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             ans = std::min<UInt64>(ans, res - haystack);
                     }
                 }
@@ -625,7 +627,7 @@ public:
                     {
                         const auto * res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (ans[ind] == 0 && res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (ans[ind] == 0 && res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             ans[ind] = count_chars(haystack, res);
                     }
                 }
@@ -649,6 +651,9 @@ using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using VolnitskyUTF8 = VolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>; /// exactly same as Volnitsky
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
+
+using VolnitskyCaseSensitiveToken = VolnitskyBase<true, true, ASCIICaseSensitiveTokenSearcher>;
+using VolnitskyCaseInsensitiveToken = VolnitskyBase<false, true, ASCIICaseInsensitiveTokenSearcher>;
 
 using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>;
