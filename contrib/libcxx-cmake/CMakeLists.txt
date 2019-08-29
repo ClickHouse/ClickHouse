@@ -42,7 +42,7 @@ add_library(cxx ${SRCS})
 
 target_include_directories(cxx BEFORE PUBLIC $<BUILD_INTERFACE:${LIBCXX_SOURCE_DIR}/include>)
 target_compile_definitions(cxx PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DLIBCXX_BUILDING_LIBCXXABI)
-target_compile_options(cxx PUBLIC -nostdinc++)
+target_compile_options(cxx PUBLIC -nostdinc++ -Wno-reserved-id-macro)
 target_link_libraries(cxx PUBLIC cxxabi)
 
 install(
