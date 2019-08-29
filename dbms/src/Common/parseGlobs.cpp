@@ -8,8 +8,10 @@ namespace DB
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library fo matching
  * with such steps:
  * 1) search intervals and enums in {}, replace them by regexp with pipe (expr1|expr2|expr3),
- * 2) search and replace "*" and "?".
+ * 2) search and replace "*" and "?" with "".
  * Before each search need to escape symbols that we would not search.
+ *
+ * There are few examples in unit tests.
  */
 std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs)
 {
@@ -55,18 +57,18 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         almost_regexp.append("(" + buffer + ")");
         current_index = input.data() - escaped_with_globs.data();
     }
-    almost_regexp += escaped_with_globs.substr(current_index); /////
+    almost_regexp += escaped_with_globs.substr(current_index);
     std::string result;
     result.reserve(almost_regexp.size());
     for (const auto & letter : almost_regexp)
     {
         if ((letter == '?') || (letter == '*'))
         {
-            result += "[^/]";
+            result += "[^/]";   /// '?' is any symbol except '/'
             if (letter == '?')
                 continue;
         }
-        if ((letter == '.') || (letter == '{') || (letter == '}') || (letter == '\\'))
+        if ((letter == '.') || (letter == '{') || (letter == '}'))
             result.push_back('\\');
         result.push_back(letter);
     }
