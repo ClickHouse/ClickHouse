@@ -1,4 +1,5 @@
 import os.path as p
+import threading
 import time
 import pytest
 
@@ -440,6 +441,78 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
     ''')
 
     kafka_check_result(result, True, 'test_kafka_virtual2.reference')
+
+
+@pytest.mark.timeout(120)
+def test_kafka_commit_on_block_write(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'block',
+                     kafka_group_name = 'block',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    cancel = threading.Event()
+
+    i = [0]
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            for _ in range(101):
+                messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+                i[0] += 1
+            kafka_produce('block', messages)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+
+    while int(instance.query('SELECT count() FROM test.view')) == 0:
+        time.sleep(1)
+
+    cancel.set()
+
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    while int(instance.query("SELECT count() FROM system.tables WHERE database='test' AND name='kafka'")) == 1:
+        time.sleep(1)
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'block',
+                     kafka_group_name = 'block',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 100,
+                     kafka_row_delimiter = '\\n';
+    ''')
+
+    while int(instance.query('SELECT uniqExact(key) FROM test.view')) < i[0]:
+        time.sleep(1)
+
+    result = int(instance.query('SELECT count() == uniqExact(key) FROM test.view'))
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    kafka_thread.join()
+
+    assert result == 1, 'Messages from kafka get duplicated!'
 
 
 if __name__ == '__main__':
