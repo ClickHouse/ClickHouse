@@ -104,7 +104,7 @@ public:
     }
 
     void checkTableCanBeDropped() const override;
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
     void startup() override;
     void shutdown() override;
 

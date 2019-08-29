@@ -3132,7 +3132,6 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
     if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
         /// NOTE Table lock must not be held while waiting. Some combination of R-W-R locks from different threads will yield to deadlock.
-        /// TODO Check all other "wait" places.
         for (auto & merge_entry : merge_entries)
             waitForAllReplicasToProcessLogEntry(merge_entry);
     }
@@ -3484,7 +3483,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, query_context);
+                freezePartition(command.partition, command.with_name, query_context, lock);
             }
             break;
 
@@ -3509,7 +3508,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezeAll(command.with_name, query_context);
+                freezeAll(command.with_name, query_context, lock);
             }
             break;
         }
@@ -3633,8 +3632,10 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 }
 
 
-void StorageReplicatedMergeTree::truncate(const ASTPtr & query, const Context & query_context)
+void StorageReplicatedMergeTree::truncate(const ASTPtr & query, const Context & query_context, TableStructureWriteLockHolder & table_lock)
 {
+    table_lock.release();   /// Truncate is done asynchronously.
+
     assertNotReadonly();
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
@@ -3701,7 +3702,7 @@ void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & parti
 }
 
 
-void StorageReplicatedMergeTree::drop()
+void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 {
     {
         auto zookeeper = tryGetZooKeeper();
@@ -3731,7 +3732,8 @@ void StorageReplicatedMergeTree::drop()
 }
 
 
-void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageReplicatedMergeTree::rename(
+    const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 

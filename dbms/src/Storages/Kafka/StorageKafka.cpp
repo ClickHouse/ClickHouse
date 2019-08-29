@@ -189,7 +189,7 @@ void StorageKafka::shutdown()
 }
 
 
-void StorageKafka::rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name)
+void StorageKafka::rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     table_name = new_table_name;
     database_name = new_database_name;
@@ -274,8 +274,10 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
         batch_size = settings.max_block_size.value;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
+    /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
+        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled),
+        row_delimiter);
 }
 
 
@@ -371,7 +373,7 @@ bool StorageKafka::streamToViews()
         block_size = settings.max_block_size;
 
     // Create a stream for each consumer and join them in a union stream
-    InterpreterInsertQuery interpreter{insert, global_context};
+    InterpreterInsertQuery interpreter(insert, global_context, false, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -396,7 +398,8 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    copyData(*in, *block_io.out, &stream_cancelled);
+    std::atomic<bool> stub;
+    copyData(*in, *block_io.out, &stub);
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;
