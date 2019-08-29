@@ -629,8 +629,6 @@ public:
         return storage_settings.get();
     }
 
-    std::vector<MergeTreeIndexPtr> getIndicesForColumn(const String & column_name) const;
-
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;

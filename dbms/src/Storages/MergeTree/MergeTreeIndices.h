@@ -109,11 +109,11 @@ public:
     /// Index name
     String name;
 
-    /// Index expression with columns arguments
+    /// Index expression (x * y)
+    /// with columns arguments
     ExpressionActionsPtr expr;
 
-    /// Names of columns which are used
-    /// to calculate expression for index
+    /// Names of columns for index
     Names columns;
 
     /// Data types of columns
