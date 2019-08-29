@@ -32,6 +32,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -2053,7 +2054,7 @@ private:
                 if (!skip_not_null_check)
                 {
                     const auto & col = block.getByPosition(arguments[0]).column;
-                    const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
+                    const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
                     const auto & null_map = nullable_col.getNullMapData();
 
                     if (!memoryIsZero(null_map.data(), null_map.size()))

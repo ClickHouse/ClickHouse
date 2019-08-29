@@ -28,6 +28,7 @@
 #include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
+#include <Common/TerminalSize.h>
 #include <Common/T_test.h>
 
 #include "TestStopConditions.h"
@@ -338,7 +339,7 @@ try
     using Strings = DB::Strings;
     using Ports = DB::Ports;
 
-    po::options_description desc("Allowed options");
+    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")

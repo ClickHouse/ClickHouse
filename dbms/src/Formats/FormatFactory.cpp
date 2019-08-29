@@ -100,7 +100,8 @@ BlockInputStreamPtr FormatFactory::getInput(
 }
 
 
-BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+BlockOutputStreamPtr FormatFactory::getOutput(
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
     if (name == "PrettyCompactMonoBlock")
     {
@@ -124,14 +125,14 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
         const Settings & settings = context.getSettingsRef();
         FormatSettings format_settings = getOutputFormatSetting(settings);
 
-        /** Materialization is needed, because formats can use the functions `IDataType`,
+        /**  Materialization is needed, because formats can use the functions `IDataType`,
           *  which only work with full columns.
           */
         return std::make_shared<MaterializingBlockOutputStream>(
-                output_getter(buf, sample, context, format_settings), sample);
+                output_getter(buf, sample, context, callback, format_settings), sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context);
+    auto format = getOutputFormat(name, buf, sample, context, callback);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
@@ -165,7 +166,8 @@ InputFormatPtr FormatFactory::getInputFormat(
 }
 
 
-OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+OutputFormatPtr FormatFactory::getOutputFormat(
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
@@ -177,7 +179,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    return output_getter(buf, sample, context, format_settings);
+    return output_getter(buf, sample, context, callback, format_settings);
 }
 
 
@@ -236,6 +238,7 @@ void registerOutputFormatProcessorTSKV(FormatFactory & factory);
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerInputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
@@ -250,6 +253,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
 void registerOutputFormatProcessorVertical(FormatFactory & factory);
 void registerOutputFormatProcessorJSON(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatProcessorXML(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
@@ -265,6 +269,8 @@ FormatFactory::FormatFactory()
     registerOutputFormatNative(*this);
     registerInputFormatTabSeparated(*this);
     registerInputFormatCSV(*this);
+
+    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
@@ -283,6 +289,7 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
     registerInputFormatProcessorCapnProto(*this);
+    registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
 

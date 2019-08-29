@@ -35,13 +35,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/Compiler.h>
 #include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/TraceLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
@@ -144,7 +139,6 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::optional<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
@@ -659,6 +653,10 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
+std::shared_ptr<const User> Context::getUser(const String & user_name)
+{
+    return shared->users_manager->getUser(user_name);
+}
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
@@ -1126,6 +1124,17 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
         applySettingChange(change);
 }
 
+void Context::updateSettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+    {
+        if (change.name == "profile")
+            setProfile(change.value.safeGet<String>());
+        else
+            settings.updateFromChange(change);
+    }
+}
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
@@ -1634,17 +1643,6 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 }
 
 
-Compiler & Context::getCompiler()
-{
-    auto lock = getLock();
-
-    if (!shared->compiler)
-        shared->compiler.emplace(shared->path + "build/", 1);
-
-    return *shared->compiler;
-}
-
-
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
@@ -1701,6 +1699,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     return shared->system_logs->part_log;
 }
 
+
 std::shared_ptr<TraceLog> Context::getTraceLog()
 {
     auto lock = getLock();
@@ -1711,6 +1710,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
     return shared->system_logs->trace_log;
 }
 
+
 std::shared_ptr<TextLog> Context::getTextLog()
 {
     auto lock = getLock();
@@ -1719,6 +1719,17 @@ std::shared_ptr<TextLog> Context::getTextLog()
         return {};
 
     return shared->system_logs->text_log;
+}
+
+
+std::shared_ptr<MetricLog> Context::getMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->metric_log)
+        return {};
+
+    return shared->system_logs->metric_log;
 }
 
 
@@ -1748,8 +1759,9 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     if (!shared->merge_tree_settings)
     {
         auto & config = getConfigRef();
-        shared->merge_tree_settings.emplace();
-        shared->merge_tree_settings->loadFromConfig("merge_tree", config);
+        MergeTreeSettings mt_settings;
+        mt_settings.loadFromConfig("merge_tree", config);
+        shared->merge_tree_settings.emplace(mt_settings);
     }
 
     return *shared->merge_tree_settings;
