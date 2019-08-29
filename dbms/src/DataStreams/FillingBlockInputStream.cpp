@@ -1,5 +1,7 @@
 #include "FillingBlockInputStream.h"
 #include <Common/FieldVisitors.h>
+#include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -22,22 +24,6 @@ static bool equals(const Field & lhs, const Field & rhs) { return applyVisitor(F
 
 FillingRow::FillingRow(const SortDescription & description_) : description(description_)
 {
-    for (size_t i = 0; i < description.size(); ++i)
-    {
-        auto & descr = description[i].fill_description;
-
-        /// Cast fields to same types. Otherwise, there will be troubles, when we reach zero, while generating rows.
-        if (descr.fill_to.getType() == Field::Types::Int64
-            || descr.fill_from.getType() == Field::Types::Int64 || descr.fill_step.getType() == Field::Types::Int64)
-        {
-            if (descr.fill_to.getType() == Field::Types::UInt64)
-                descr.fill_to = descr.fill_to.get<Int64>();
-            if (descr.fill_from.getType() == Field::Types::UInt64)
-                descr.fill_from = descr.fill_from.get<Int64>();
-            if (descr.fill_step.getType() == Field::Types::UInt64)
-                descr.fill_step = descr.fill_step.get<Int64>();
-        }
-    }
     row.resize(description.size());
 }
 
@@ -154,30 +140,54 @@ FillingBlockInputStream::FillingBlockInputStream(
 
     std::vector<bool> is_fill_column(header.columns());
     for (const auto & elem : sort_description)
+        is_fill_column[header.getPositionByName(elem.column_name)] = true;
+
+    auto try_convert_fields = [](FillColumnDescription & descr, const DataTypePtr & type)
     {
-        size_t pos = header.getPositionByName(elem.column_name);
-        fill_column_positions.push_back(pos);
-        is_fill_column[pos] = true;
-    }
+        auto max_type = Field::Types::Null;
+        WhichDataType which(type);
+        DataTypePtr to_type;
+        if (isInteger(type) || which.isDateOrDateTime())
+        {
+            max_type = Field::Types::Int64;
+            to_type = std::make_shared<DataTypeInt64>();
+        }
+        else if (which.isFloat())
+        {
+            max_type = Field::Types::Float64;
+            to_type = std::make_shared<DataTypeFloat64>();
+        }
+
+        if (descr.fill_from.getType() > max_type || descr.fill_to.getType() > max_type
+            || descr.fill_step.getType() > max_type)
+            return false;
+
+        descr.fill_from = convertFieldToType(descr.fill_from, *to_type);
+        descr.fill_to = convertFieldToType(descr.fill_to, *to_type);
+        descr.fill_step = convertFieldToType(descr.fill_step, *to_type);
+
+        return true;
+    };
 
     for (size_t i = 0; i < header.columns(); ++i)
     {
         if (is_fill_column[i])
         {
             auto type = header.getByPosition(i).type;
-            if (!isColumnedAsNumber(header.getByPosition(i).type))
-                throw Exception("WITH FILL can be used only with numeric types, but is set for column with type "
-                    + header.getByPosition(i).type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            auto & descr = filling_row.getFillDescription(i);
+            if (!try_convert_fields(descr, type))
+                throw Exception("Incompatible types of WITH FILL expression values with column type "
+                    + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
-            const auto & fill_from = sort_description[i].fill_description.fill_from;
-            const auto & fill_to = sort_description[i].fill_description.fill_to;
             if (type->isValueRepresentedByUnsignedInteger() &&
-                ((!fill_from.isNull() && less(fill_from, Field{0}, 1)) ||
-                    (!fill_to.isNull() && less(fill_to, Field{0}, 1))))
+                ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
+                    (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
             {
                 throw Exception("WITH FILL bound values cannot be negative for unsigned type "
                     + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
             }
+
+            fill_column_positions.push_back(i);
         }
         else
             other_column_positions.push_back(i);
