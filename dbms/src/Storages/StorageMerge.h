@@ -42,8 +42,11 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void drop() override {}
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override { table_name = new_table_name; database_name = new_database_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked

@@ -16,7 +16,7 @@ target_link_libraries (date_lut3 common ${PLATFORM_LIBS})
 target_link_libraries (date_lut4 common ${PLATFORM_LIBS})
 target_link_libraries (date_lut_default_timezone common ${PLATFORM_LIBS})
 target_link_libraries (local_date_time_comparison common)
-target_link_libraries (realloc-perf common Threads::Threads)
+target_link_libraries (realloc-perf common)
 add_check(local_date_time_comparison)
 
 if(USE_GTEST)

@@ -4,7 +4,7 @@ add_executable (zstd_test zstd_test.cpp)
 if(ZSTD_LIBRARY)
     target_link_libraries(zstd_test PRIVATE ${ZSTD_LIBRARY})
 endif()
-target_link_libraries (zstd_test PRIVATE common Threads::Threads)
+target_link_libraries (zstd_test PRIVATE common)
 
 add_executable (mutator mutator.cpp)
 target_link_libraries(mutator PRIVATE clickhouse_common_io)

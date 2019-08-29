@@ -51,6 +51,7 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
                                 return lft + ", " + rht.first;
                         }),
                 ErrorCodes::INCORRECT_QUERY);
+
     return it->second(columns, node, context);
 }
 

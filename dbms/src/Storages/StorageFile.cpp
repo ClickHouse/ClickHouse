@@ -264,13 +264,7 @@ BlockOutputStreamPtr StorageFile::write(
 }
 
 
-void StorageFile::drop()
-{
-    /// Extra actions are not required.
-}
-
-
-void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
