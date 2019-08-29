@@ -1699,7 +1699,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     empty_columns.clear();
 }
 
-void MergeTreeData::freezeAll(const String & with_name, const Context & context)
+void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
@@ -2559,7 +2559,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
+void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     std::optional<String> prefix;
     String partition_id;

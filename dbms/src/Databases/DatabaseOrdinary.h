@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/DatabasesCommon.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -35,7 +36,8 @@ public:
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
-        const String & to_table_name) override;
+        const String & to_table_name,
+        TableStructureWriteLockHolder &) override;
 
     void alterTable(
         const Context & context,

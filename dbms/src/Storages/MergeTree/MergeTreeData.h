@@ -549,7 +549,7 @@ public:
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context);
+    void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -577,7 +577,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     size_t getColumnCompressedSize(const std::string & name) const
     {

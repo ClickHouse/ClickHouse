@@ -95,7 +95,6 @@ struct HashTableCell
 
     /// Create a cell with the given key / key and value.
     HashTableCell(const Key & key_, const State &) : key(key_) {}
-/// HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
     /// Get what the value_type of the container will be.
     value_type & getValueMutable() { return key; }

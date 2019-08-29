@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 class IBlockOutputStream;
@@ -195,8 +196,6 @@ struct AggregationMethodString
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
 
     Data data;
 
@@ -223,8 +222,6 @@ struct AggregationMethodFixedString
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
 
     Data data;
 
@@ -253,8 +250,6 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Data = typename Base::Data;
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
-    using iterator = typename Base::iterator;
-    using const_iterator = typename Base::const_iterator;
 
     using Base::data;
 
@@ -364,8 +359,6 @@ struct AggregationMethodSerialized
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
 
     Data data;
 
@@ -459,8 +452,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>>     nullable_keys256_two_level;
 
     /// Support for low cardinality.
-    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key>>> low_cardinality_key8;
-    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key>>> low_cardinality_key16;
+    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>>> low_cardinality_key8;
+    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false>>> low_cardinality_key16;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt64Key>>> low_cardinality_key32;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64Key>>> low_cardinality_key64;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodString<AggregatedDataWithNullableStringKey>>> low_cardinality_key_string;
@@ -796,6 +789,7 @@ public:
         /// Settings is used to determine cache size. No threads are created.
         size_t max_threads;
 
+        const size_t min_free_disk_space;
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
@@ -803,21 +797,23 @@ public:
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
-            const std::string & tmp_path_, size_t max_threads_)
+            const std::string & tmp_path_, size_t max_threads_,
+            size_t min_free_disk_space_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
             group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
             empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
-            tmp_path(tmp_path_), max_threads(max_threads_)
+            tmp_path(tmp_path_), max_threads(max_threads_),
+            min_free_disk_space(min_free_disk_space_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, "", max_threads_)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, "", max_threads_, 0)
         {
             intermediate_header = intermediate_header_;
         }

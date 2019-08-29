@@ -57,5 +57,5 @@ target_link_libraries (users PRIVATE dbms clickhouse_common_config stdc++fs)
 
 if (OS_LINUX)
     add_executable (internal_iotop internal_iotop.cpp)
-    target_link_libraries (internal_iotop PRIVATE dbms Threads::Threads)
+    target_link_libraries (internal_iotop PRIVATE dbms)
 endif ()
