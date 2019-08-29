@@ -19,10 +19,10 @@ namespace ErrorCodes
 /// (e.g. by istr.position() = prev_pos), behavior is undefined.
 class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
+    friend class PeekableReadBufferCheckpoint;
 public:
-    constexpr static size_t default_limit = 32 * DBMS_DEFAULT_BUFFER_SIZE;
-
-    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t unread_limit_ = default_limit);
+    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+                                                       size_t unread_limit_ = 16 * DBMS_DEFAULT_BUFFER_SIZE);
 
     /// Use takeUnreadData() to extract unread data before destruct object
     ~PeekableReadBuffer() override;
@@ -59,7 +59,6 @@ private:
     inline bool currentlyReadFromOwnMemory() const;
     inline bool checkpointInOwnMemory() const;
 
-    // TODO add unit test for PeekableReadBuffer and remove this method
     void checkStateCorrect() const;
 
     /// Makes possible to append `bytes_to_append` bytes to data in own memory.
@@ -79,9 +78,18 @@ private:
 class PeekableReadBufferCheckpoint : boost::noncopyable
 {
     PeekableReadBuffer & buf;
+    bool auto_rollback;
 public:
-    explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_) : buf(buf_) { buf.setCheckpoint(); }
-    ~PeekableReadBufferCheckpoint() { buf.dropCheckpoint(); }
+    explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_, bool auto_rollback_ = false)
+                : buf(buf_), auto_rollback(auto_rollback_) { buf.setCheckpoint(); }
+    ~PeekableReadBufferCheckpoint()
+    {
+        if (!buf.checkpoint)
+            return;
+        if (auto_rollback)
+            buf.rollbackToCheckpoint();
+        buf.dropCheckpoint();
+    }
 
 };
 
