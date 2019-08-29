@@ -693,7 +693,7 @@ static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
     return field;
 }
 
-static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const Context &context)
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const Context & context)
 {
     FillColumnDescription descr;
     if (order_by_elem.fill_from)

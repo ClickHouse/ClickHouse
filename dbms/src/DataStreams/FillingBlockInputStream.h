@@ -23,7 +23,7 @@ public:
     bool operator==(const FillingRow & other) const;
 
     int getDirection(size_t ind) const { return description[ind].direction; }
-    const FillColumnDescription & getFillDescription(size_t ind) const { return description[ind].fill_description; }
+    FillColumnDescription & getFillDescription(size_t ind) { return description[ind].fill_description; }
 
 private:
     std::vector<Field> row;
