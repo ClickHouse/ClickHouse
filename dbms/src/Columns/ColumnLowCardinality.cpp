@@ -34,7 +34,7 @@ namespace
         auto & data = res_col->getData();
 
         data.resize(hash_map.size());
-        for (auto val : hash_map)
+        for (const auto & val : hash_map)
             data[val.getSecond()] = val.getFirst();
 
         for (auto & ind : index)
