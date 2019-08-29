@@ -364,12 +364,6 @@ void MergeTreeData::setProperties(
                 std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
                 global_context);
 
-            if (index_ptr->getColumnsRequiredForIndexCalc().size() > 1 && settings_ptr->enable_vertical_merge_algorithm)
-                throw Exception("Index '" + index_ptr->name + "' contains expression with multiple columns and "
-                    + "'enable_vertical_merge_algorithm' is set to true in storage settings. "
-                    + "Disable vertical merge or use only one column in index expression.",
-                    ErrorCodes::UNSUPPORTED_SKIP_INDEX_EXPRESSION);
-
             new_indices.push_back(std::move(index_ptr));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
@@ -1587,7 +1581,8 @@ void MergeTreeData::alterDataPart(
     if (expression)
     {
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
-            *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+                *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+
 
         auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
@@ -1609,7 +1604,8 @@ void MergeTreeData::alterDataPart(
             true /* sync */,
             compression_codec,
             true /* skip_offsets */,
-            {}, /// currently restricted
+            /// Don't recalc indices because indices alter is restricted
+            std::vector<MergeTreeIndexPtr>{},
             unused_written_offsets,
             part->index_granularity,
             &part->index_granularity_info);
