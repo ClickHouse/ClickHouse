@@ -30,7 +30,15 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
         if (partName == "data")
             return 0;
         else if (partName.empty())      /// For skipping some values in prefix and suffix
-            return std::optional<size_t>();
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+            /// Suppress false-positive warning (bug in GCC 9: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=86465)
+            return {};
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
         throw Exception("Unknown input part " + partName, ErrorCodes::SYNTAX_ERROR);
     });
 
@@ -58,7 +66,14 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
     row_format = ParsedTemplateFormatString(settings.template_settings.row_format, [&](const String & colName) -> std::optional<size_t>
     {
         if (colName.empty())
-            return std::optional<size_t>();
+#if !__clang__
+            #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+            return {};
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
         return header_.getPositionByName(colName);
     });
 
