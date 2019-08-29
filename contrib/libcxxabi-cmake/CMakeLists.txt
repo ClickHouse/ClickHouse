@@ -42,4 +42,5 @@ install(
     EXPORT global
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION lib
+    LIBRARY DESTINATION lib
 )
