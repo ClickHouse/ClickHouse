@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int EXPECTED_ALL_OR_ANY;
+    extern const int ALIAS_REQUIRED;
 }
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns)
@@ -99,14 +100,22 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
                              const Names & source_columns_list, const NameSet & source_columns_set,
                              const NameSet & columns_from_joined_table)
 {
+    auto & settings = context.getSettingsRef();
+
     std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
+    if (settings.subquery_requires_alias && tables_with_columns.size() > 1)
+    {
+        for (auto & pr : tables_with_columns)
+            if (pr.first.table.empty() && pr.first.alias.empty())
+                throw Exception("Not unique subquery in FROM requires an alias (or subquery_requires_alias=0 to disable restriction).",
+                                ErrorCodes::ALIAS_REQUIRED);
+    }
 
     if (tables_with_columns.empty())
     {
         Names all_columns_name = source_columns_list;
 
-        /// TODO: asterisk_left_columns_only probably does not work in some cases
-        if (!context.getSettingsRef().asterisk_left_columns_only)
+        if (!settings.asterisk_left_columns_only)
         {
             for (auto & column : columns_from_joined_table)
                 all_columns_name.emplace_back(column);

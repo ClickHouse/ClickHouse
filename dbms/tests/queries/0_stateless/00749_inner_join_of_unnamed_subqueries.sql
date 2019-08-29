@@ -1,3 +1,5 @@
+set subquery_requires_alias = 0;
+
 DROP TABLE IF EXISTS left_table;
 DROP TABLE IF EXISTS right_table;
 
