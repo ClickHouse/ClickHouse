@@ -4,20 +4,25 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
 
+void assertTrue(bool b)
+{
+    if (!b)
+        throw DB::Exception("assert failed", DB::ErrorCodes::LOGICAL_ERROR);
+}
 
 void readAndAssert(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
     char tmp[n];
     buf.readStrict(tmp, n);
-    assert(strncmp(tmp, str, n) == 0);
+    assertTrue(strncmp(tmp, str, n) == 0);
 }
 
 void assertAvailable(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
-    assert(buf.available() == n);
-    assert(strncmp(buf.position(), str, n) == 0);
+    assertTrue(buf.available() == n);
+    assertTrue(strncmp(buf.position(), str, n) == 0);
 }
 
 int main(int, char **)
@@ -36,7 +41,7 @@ int main(int, char **)
         DB::ConcatReadBuffer concat({&b1, &b2, &b3, &b4});
         DB::PeekableReadBuffer peekable(concat, 0, 16);
 
-        assert(!peekable.eof());
+        assertTrue(!peekable.eof());
         assertAvailable(peekable, "0123456789");
         {
             DB::PeekableReadBufferCheckpoint checkpoint{peekable};
@@ -53,7 +58,7 @@ int main(int, char **)
                 throw;
             exception = true;
         }
-        assert(exception);
+        assertTrue(exception);
         assertAvailable(peekable, "56789");
 
         readAndAssert(peekable, "56");
@@ -65,8 +70,8 @@ int main(int, char **)
         assertAvailable(peekable, "789");
         peekable.peekNext();
         assertAvailable(peekable, "789qwertyuiop");
-        assert(peekable.lastPeeked().size() == 10);
-        assert(strncmp(peekable.lastPeeked().begin(), "asdfghjkl;", 10) == 0);
+        assertTrue(peekable.lastPeeked().size() == 10);
+        assertTrue(strncmp(peekable.lastPeeked().begin(), "asdfghjkl;", 10) == 0);
 
         exception = false;
         try
@@ -80,10 +85,10 @@ int main(int, char **)
                 throw;
             exception = true;
         }
-        assert(exception);
+        assertTrue(exception);
         assertAvailable(peekable, "789qwertyuiop");
-        assert(peekable.lastPeeked().size() == 10);
-        assert(strncmp(peekable.lastPeeked().begin(), "asdfghjkl;", 10) == 0);
+        assertTrue(peekable.lastPeeked().size() == 10);
+        assertTrue(strncmp(peekable.lastPeeked().begin(), "asdfghjkl;", 10) == 0);
 
         readAndAssert(peekable, "789qwertyu");
         peekable.setCheckpoint();
@@ -93,9 +98,9 @@ int main(int, char **)
 
         peekable.setCheckpoint();
         readAndAssert(peekable, "kl;zxcvbnm,./");
-        assert(peekable.eof());
-        assert(peekable.eof());
-        assert(peekable.eof());
+        assertTrue(peekable.eof());
+        assertTrue(peekable.eof());
+        assertTrue(peekable.eof());
         peekable.rollbackToCheckpoint();
         readAndAssert(peekable, "kl;zxcvbnm");
         peekable.dropCheckpoint();
@@ -111,15 +116,15 @@ int main(int, char **)
                 throw;
             exception = true;
         }
-        assert(exception);
+        assertTrue(exception);
 
         auto buf_ptr = peekable.takeUnreadData();
-        assert(peekable.eof());
-        assert(peekable.eof());
-        assert(peekable.eof());
+        assertTrue(peekable.eof());
+        assertTrue(peekable.eof());
+        assertTrue(peekable.eof());
 
         readAndAssert(*buf_ptr, ",./");
-        assert(buf_ptr->eof());
+        assertTrue(buf_ptr->eof());
 
         peekable.assertCanBeDestructed();
     }

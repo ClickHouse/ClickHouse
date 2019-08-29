@@ -9,11 +9,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int INVALID_TEMPLATE_FORMAT;
 extern const int ATTEMPT_TO_READ_AFTER_EOF;
 extern const int CANNOT_READ_ALL_DATA;
 extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 extern const int CANNOT_PARSE_QUOTED_STRING;
+extern const int SYNTAX_ERROR;
 }
 
 
@@ -30,8 +30,8 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
         if (partName == "data")
             return 0;
         else if (partName.empty())      /// For skipping some values in prefix and suffix
-            return {};
-        throw Exception("invalid template format: unknown input part " + partName, ErrorCodes::INVALID_TEMPLATE_FORMAT);
+            return std::optional<size_t>();
+        throw Exception("Unknown input part " + partName, ErrorCodes::SYNTAX_ERROR);
     });
 
     /// Validate format string for whole input
@@ -41,16 +41,16 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
         if (format.format_idx_to_column_idx[i])
         {
             if (has_data)
-                throw Exception("${data} can occur only once", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                format.throwInvalidFormat("${data} can occur only once", i);
             if (format.formats[i] != ColumnFormat::None)
-                throw Exception("invalid template format: ${data} must have empty or None serialization type", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                format.throwInvalidFormat("${data} must have empty or None deserialization type", i);
             has_data = true;
             format_data_idx = i;
         }
         else
         {
             if (format.formats[i] == ColumnFormat::Xml || format.formats[i] == ColumnFormat::Raw)
-                throw Exception("None, XML and Raw deserialization is not supported", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                format.throwInvalidFormat("XML and Raw deserialization is not supported", i);
         }
     }
 
@@ -58,7 +58,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
     row_format = ParsedTemplateFormatString(settings.template_settings.row_format, [&](const String & colName) -> std::optional<size_t>
     {
         if (colName.empty())
-            return {};
+            return std::optional<size_t>();
         return header_.getPositionByName(colName);
     });
 
@@ -67,17 +67,16 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         if (row_format.formats[i] == ColumnFormat::Xml || row_format.formats[i] == ColumnFormat::Raw)
-            throw Exception("invalid template format: None, XML and Raw deserialization is not supported", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+            row_format.throwInvalidFormat("XML and Raw deserialization is not supported", i);
 
         if (row_format.format_idx_to_column_idx[i])
         {
             if (row_format.formats[i] == ColumnFormat::None)
-                throw Exception("invalid template format: None, XML and Raw deserialization is not supported", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                row_format.throwInvalidFormat("Column is not skipped, but deserialization type is None", i);
 
             size_t col_idx = *row_format.format_idx_to_column_idx[i];
             if (column_in_format[col_idx])
-                throw Exception("invalid template format: duplicate column " + header_.getColumnsWithTypeAndName()[col_idx].name,
-                                ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                row_format.throwInvalidFormat("Duplicate column", i);
             column_in_format[col_idx] = true;
         }
     }
@@ -85,14 +84,22 @@ TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & h
 
 void TemplateRowInputFormat::readPrefix()
 {
-    tryReadPrefixOrSuffix<void>(0, format_data_idx);
+    size_t last_successfully_parsed_idx = 0;
+    try
+    {
+        tryReadPrefixOrSuffix<void>(last_successfully_parsed_idx, format_data_idx);
+    }
+    catch (Exception & e)
+    {
+        format.throwInvalidFormat(e.message() + " While parsing prefix", last_successfully_parsed_idx);
+    }
 }
 
 /// Asserts delimiters and skips fields in prefix or suffix.
 /// tryReadPrefixOrSuffix<bool>(...) is used in checkForSuffix() to avoid throwing an exception after read of each row
 /// (most likely false will be returned on first call of checkString(...))
 template <typename ReturnType>
-ReturnType TemplateRowInputFormat::tryReadPrefixOrSuffix(size_t input_part_beg, size_t input_part_end)
+ReturnType TemplateRowInputFormat::tryReadPrefixOrSuffix(size_t & input_part_beg, size_t input_part_end)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -261,9 +268,10 @@ bool TemplateRowInputFormat::checkForSuffix()
 {
     PeekableReadBufferCheckpoint checkpoint{buf};
     bool suffix_found = false;
+    size_t last_successfully_parsed_idx = format_data_idx + 1;
     try
     {
-        suffix_found = tryReadPrefixOrSuffix<bool>(format_data_idx + 1, format.columnsCount());
+        suffix_found = tryReadPrefixOrSuffix<bool>(last_successfully_parsed_idx, format.columnsCount());
     }
     catch (const Exception & e)
     {
@@ -272,8 +280,6 @@ bool TemplateRowInputFormat::checkForSuffix()
             e.code() != ErrorCodes::CANNOT_PARSE_QUOTED_STRING)
             throw;
     }
-
-    /// TODO better diagnostic in case of invalid suffix
 
     if (unlikely(suffix_found))
     {
@@ -288,6 +294,24 @@ bool TemplateRowInputFormat::checkForSuffix()
 
 bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
+    out << "Suffix does not match: ";
+    size_t last_successfully_parsed_idx = format_data_idx + 1;
+    bool catched = false;
+    try
+    {
+        tryReadPrefixOrSuffix<void>(last_successfully_parsed_idx, format.columnsCount());
+    }
+    catch (Exception & e)
+    {
+        out << e.message() << " Near column " << last_successfully_parsed_idx;
+        catched = true;
+    }
+    if (!catched)
+        out << " There is some data after suffix (EOF expected). ";
+    out << " Format string (from format_schema): \n" << format.dump() << "\n";
+    out << "Trying to parse next row, because suffix does not match:\n";
+
+    out << "Using format string (from format_schema_rows): " << row_format.dump() << "\n";
     try
     {
         if (likely(row_num != 1))

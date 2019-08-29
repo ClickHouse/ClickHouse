@@ -95,8 +95,8 @@ bool PeekableReadBuffer::peekNext()
 void PeekableReadBuffer::setCheckpoint()
 {
     checkStateCorrect();
-#ifdef NDEBUG
-    if (!checkpoint)
+#ifndef NDEBUG
+    if (checkpoint)
         throw DB::Exception("Does not support recursive checkpoints.", ErrorCodes::LOGICAL_ERROR);
 #endif
     checkpoint_in_own_memory = currentlyReadFromOwnMemory();
@@ -112,7 +112,7 @@ void PeekableReadBuffer::setCheckpoint()
 void PeekableReadBuffer::dropCheckpoint()
 {
     checkStateCorrect();
-#ifdef NDEBUG
+#ifndef NDEBUG
     if (!checkpoint)
         throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
 #endif
@@ -185,7 +185,7 @@ bool PeekableReadBuffer::useSubbufferOnly() const
 
 void PeekableReadBuffer::checkStateCorrect() const
 {
-#ifdef NDEBUG
+#ifndef NDEBUG
     if (checkpoint)
     {
         if (checkpointInOwnMemory())
