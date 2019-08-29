@@ -1654,11 +1654,10 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 
     Aggregator::Params params(header, keys, aggregates,
         overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-        settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath(), settings.max_threads);
+        context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.streams.size() > 1)
@@ -1721,11 +1720,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
     Aggregator::Params params(header_before_aggregation, keys, aggregates,
                               overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                              settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context.getTemporaryPath(), settings.max_threads);
+                              context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
@@ -1943,10 +1941,9 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificato
 
     Aggregator::Params params(header, keys, aggregates,
         false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-        settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath(), settings.max_threads);
+        context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     if (modificator == Modificator::ROLLUP)
         pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
@@ -1973,10 +1970,9 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 
     Aggregator::Params params(header_before_transform, keys, aggregates,
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                              settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
                               SettingUInt64(0), SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context.getTemporaryPath(), settings.max_threads);
+                              context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
@@ -2077,7 +2073,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
         pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
             pipeline.firstStream(), order_descr, settings.max_block_size, limit,
             settings.max_bytes_before_remerge_sort,
-            settings.max_bytes_before_external_sort, context.getTemporaryPath());
+            settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     }
 }
 
@@ -2115,7 +2111,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
         return std::make_shared<MergeSortingTransform>(
                 header, order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
-                settings.max_bytes_before_external_sort, context.getTemporaryPath());
+                settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
 }
 

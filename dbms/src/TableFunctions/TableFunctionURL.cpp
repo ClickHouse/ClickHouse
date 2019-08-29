@@ -4,13 +4,14 @@
 #include <TableFunctions/TableFunctionURL.h>
 #include <Poco/URI.h>
 
+
 namespace DB
 {
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const
 {
     Poco::URI uri(source);
-    return StorageURL::create(uri, getDatabaseName(), table_name, format, columns, global_context);
+    return StorageURL::create(uri, getDatabaseName(), table_name, format, columns, ConstraintsDescription{}, global_context);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

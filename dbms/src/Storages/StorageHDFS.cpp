@@ -30,14 +30,16 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const std::string & table_name_,
     const String & format_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     Context & context_)
-    : IStorage(columns_)
-    , uri(uri_)
+    : uri(uri_)
     , format_name(format_name_)
     , table_name(table_name_)
     , database_name(database_name_)
     , context(context_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 namespace
@@ -146,7 +148,7 @@ BlockInputStreams StorageHDFS::read(
         max_block_size)};
 }
 
-void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name)
+void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     table_name = new_table_name;
     database_name = new_database_name;
@@ -175,7 +177,7 @@ void registerStorageHDFS(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.context);
+        return StorageHDFS::create(url, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
     });
 }
 

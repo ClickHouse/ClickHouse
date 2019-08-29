@@ -95,7 +95,6 @@ struct HashTableCell
 
     /// Create a cell with the given key / key and value.
     HashTableCell(const Key & key_, const State &) : key(key_) {}
-/// HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
     /// Get what the value_type of the container will be.
     value_type & getValueMutable() { return key; }
@@ -280,8 +279,7 @@ protected:
 #endif
 
     /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
-    template <typename ObjectToCompareWith>
-    size_t ALWAYS_INLINE findCell(const ObjectToCompareWith & x, size_t hash_value, size_t place_value) const
+    size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
     {
         while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value, *this))
         {
@@ -700,13 +698,6 @@ protected:
         emplaceNonZeroImpl(place_value, x, it, inserted, hash_value);
     }
 
-    /// Same but find place using object. Hack for ReverseIndex.
-    template <typename ObjectToCompareWith>
-    void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value, const ObjectToCompareWith & object)
-    {
-        size_t place_value = findCell(object, hash_value, grower.place(hash_value));
-        emplaceNonZeroImpl(place_value, x, it, inserted, hash_value);
-    }
 
 
 public:
@@ -763,14 +754,6 @@ public:
             emplaceNonZero(x, it, inserted, hash_value);
     }
 
-    /// Same, but search position by object. Hack for ReverseIndex.
-    template <typename ObjectToCompareWith>
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value, const ObjectToCompareWith & object)
-    {
-        if (!emplaceIfZero(x, it, inserted, hash_value))
-            emplaceNonZero(x, it, inserted, hash_value, object);
-    }
-
     /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
     void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
     {
@@ -783,9 +766,7 @@ public:
             resize();
     }
 
-
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith x)
+    iterator ALWAYS_INLINE find(Key x)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -796,8 +777,7 @@ public:
     }
 
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x) const
+    const_iterator ALWAYS_INLINE find(Key x) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -808,8 +788,7 @@ public:
     }
 
 
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value)
+    iterator ALWAYS_INLINE find(Key x, size_t hash_value)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -819,8 +798,7 @@ public:
     }
 
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value) const
+    const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
