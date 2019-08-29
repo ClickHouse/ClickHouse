@@ -7,6 +7,7 @@
 #include "config_functions.h"
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
@@ -215,7 +216,7 @@ private:
 
                 if (isColumnConst(*column.column))
                 {
-                    const auto & column_const = static_cast<const ColumnConst &>(*column.column);
+                    const auto & column_const = assert_cast<const ColumnConst &>(*column.column);
                     if (isString(column.type))
                         moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
                     else
@@ -300,7 +301,7 @@ public:
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator &)
     {
-        ColumnVector<UInt8> & col_vec = static_cast<ColumnVector<UInt8> &>(dest);
+        ColumnVector<UInt8> & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
         col_vec.insertValue(1);
         return true;
     }
@@ -330,7 +331,7 @@ public:
         else
             return false;
 
-        ColumnVector<UInt64> & col_vec = static_cast<ColumnVector<UInt64> &>(dest);
+        ColumnVector<UInt64> & col_vec = assert_cast<ColumnVector<UInt64> &>(dest);
         col_vec.insertValue(size);
         return true;
     }
@@ -355,7 +356,7 @@ public:
         if (!JSONParser::isObjectMember(it))
             return false;
         StringRef key = JSONParser::getKey(it);
-        ColumnString & col_str = static_cast<ColumnString &>(dest);
+        ColumnString & col_str = assert_cast<ColumnString &>(dest);
         col_str.insertData(key.data, key.size);
         return true;
     }
@@ -407,7 +408,7 @@ public:
         else
             return false;
 
-        ColumnVector<Int8> & col_vec = static_cast<ColumnVector<Int8> &>(dest);
+        ColumnVector<Int8> & col_vec = assert_cast<ColumnVector<Int8> &>(dest);
         col_vec.insertValue(type);
         return true;
     }
@@ -451,7 +452,7 @@ public:
         else
             return false;
 
-        auto & col_vec = static_cast<ColumnVector<NumberType> &>(dest);
+        auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
         return true;
     }
@@ -497,7 +498,7 @@ public:
         if (!JSONParser::isBool(it))
             return false;
 
-        auto & col_vec = static_cast<ColumnVector<UInt8> &>(dest);
+        auto & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
         col_vec.insertValue(static_cast<UInt8>(JSONParser::getBool(it)));
         return true;
     }
@@ -523,7 +524,7 @@ public:
             return false;
 
         StringRef str = JSONParser::getString(it);
-        ColumnString & col_str = static_cast<ColumnString &>(dest);
+        ColumnString & col_str = assert_cast<ColumnString &>(dest);
         col_str.insertData(str.data, str.size);
         return true;
     }
@@ -573,7 +574,7 @@ struct JSONExtractTree
         {
             if (!JSONParser::isString(it))
                 return false;
-            auto & col_str = static_cast<ColumnFixedString &>(dest);
+            auto & col_str = assert_cast<ColumnFixedString &>(dest);
             StringRef str = JSONParser::getString(it);
             if (str.size > col_str.getN())
                 return false;
@@ -597,7 +598,7 @@ struct JSONExtractTree
 
         bool addValueToColumn(IColumn & dest, const Iterator & it) override
         {
-            auto & col_vec = static_cast<ColumnVector<Type> &>(dest);
+            auto & col_vec = assert_cast<ColumnVector<Type> &>(dest);
 
             if (JSONParser::isInt64(it))
             {
@@ -642,7 +643,7 @@ struct JSONExtractTree
 
         bool addValueToColumn(IColumn & dest, const Iterator & it) override
         {
-            ColumnNullable & col_null = static_cast<ColumnNullable &>(dest);
+            ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
             if (!nested->addValueToColumn(col_null.getNestedColumn(), it))
                 return false;
             col_null.getNullMapColumn().insertValue(0);
@@ -667,7 +668,7 @@ struct JSONExtractTree
             if (!JSONParser::firstArrayElement(it2))
                 return false;
 
-            ColumnArray & col_arr = static_cast<ColumnArray &>(dest);
+            ColumnArray & col_arr = assert_cast<ColumnArray &>(dest);
             auto & data = col_arr.getData();
             size_t old_size = data.size();
             bool were_valid_elements = false;
@@ -706,7 +707,7 @@ struct JSONExtractTree
 
         bool addValueToColumn(IColumn & dest, const Iterator & it) override
         {
-            ColumnTuple & tuple = static_cast<ColumnTuple &>(dest);
+            ColumnTuple & tuple = assert_cast<ColumnTuple &>(dest);
             size_t old_size = dest.size();
             bool were_valid_elements = false;
 
@@ -916,10 +917,10 @@ public:
         if (!JSONParser::isObject(it))
             return false;
 
-        auto & col_arr = static_cast<ColumnArray &>(dest);
-        auto & col_tuple = static_cast<ColumnTuple &>(col_arr.getData());
+        auto & col_arr = assert_cast<ColumnArray &>(dest);
+        auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
         size_t old_size = col_tuple.size();
-        auto & col_key = static_cast<ColumnString &>(col_tuple.getColumn(0));
+        auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
         auto & col_value = col_tuple.getColumn(1);
 
         StringRef key;
@@ -958,7 +959,7 @@ public:
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator & it)
     {
-        ColumnString & col_str = static_cast<ColumnString &>(dest);
+        ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
         WriteBufferFromVector<ColumnString::Chars> buf(chars, WriteBufferFromVector<ColumnString::Chars>::AppendModeTag());
         traverse(it, buf);

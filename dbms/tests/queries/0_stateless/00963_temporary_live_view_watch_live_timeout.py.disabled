@@ -16,6 +16,11 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
     client2.expect(prompt)
 
+    client1.send('SET allow_experimental_live_view = 1')
+    client1.expect(prompt)
+    client2.send('SET allow_experimental_live_view = 1')
+    client2.expect(prompt)
+
     client1.send('DROP TABLE IF EXISTS test.lv')
     client1.expect(prompt)
     client1.send('DROP TABLE IF EXISTS test.mt')

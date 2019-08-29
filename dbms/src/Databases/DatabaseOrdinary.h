@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Databases/DatabasesCommon.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -35,13 +36,15 @@ public:
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
-        const String & to_table_name) override;
+        const String & to_table_name,
+        TableStructureWriteLockHolder &) override;
 
     void alterTable(
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
         const IndicesDescription & indices,
+        const ConstraintsDescription & constraints,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(

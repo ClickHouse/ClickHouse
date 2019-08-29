@@ -108,7 +108,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Block & block)
 
 
 MergeTreeRangeReader::Stream::Stream(
-        size_t from_mark, size_t to_mark,  MergeTreeReader * merge_tree_reader_)
+        size_t from_mark, size_t to_mark, MergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader_)

@@ -18,6 +18,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
@@ -49,7 +50,7 @@ static std::unordered_map<String, DataTypePtr> requiredRightKeys(const Names & k
 
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    if (column.type->isNullable())
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
     column.type = makeNullable(column.type);
@@ -70,10 +71,10 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     if (nullable)
     {
         convertColumnToNullable(column);
-        if (negative_null_map.size())
+        if (column.type->isNullable() && negative_null_map.size())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
-            static_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
+            assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
             column.column = std::move(mutable_column);
         }
     }
@@ -140,7 +141,7 @@ Join::Type Join::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_siz
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1
         && (typeid_cast<const ColumnString *>(key_columns[0])
-            || (isColumnConst(*key_columns[0]) && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
+            || (isColumnConst(*key_columns[0]) && typeid_cast<const ColumnString *>(&assert_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
@@ -872,7 +873,7 @@ void Join::joinBlockImpl(
     {
         /// Some trash to represent IColumn::Filter as ColumnUInt8 needed for ColumnNullable::applyNullMap()
         auto null_map_filter_ptr = ColumnUInt8::create();
-        ColumnUInt8 & null_map_filter = static_cast<ColumnUInt8 &>(*null_map_filter_ptr);
+        ColumnUInt8 & null_map_filter = assert_cast<ColumnUInt8 &>(*null_map_filter_ptr);
         null_map_filter.getData().swap(row_filter);
         const IColumn::Filter & filter = null_map_filter.getData();
 
@@ -1399,7 +1400,7 @@ private:
         for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
             const Block * block = it->first;
-            const NullMap & nullmap = static_cast<const ColumnUInt8 &>(*it->second).getData();
+            const NullMap & nullmap = assert_cast<const ColumnUInt8 &>(*it->second).getData();
 
             for (size_t row = 0; row < nullmap.size(); ++row)
             {

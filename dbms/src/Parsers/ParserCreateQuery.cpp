@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 
 
 namespace DB
@@ -143,12 +144,41 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
+bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_check("CHECK");
 
-bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+    ParserIdentifier name_p;
+    ParserLogicalOrExpression expression_p;
+
+    ASTPtr name;
+    ASTPtr expr;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!s_check.ignore(pos, expected))
+        return false;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    auto constraint = std::make_shared<ASTConstraintDeclaration>();
+    constraint->name = name->as<ASTIdentifier &>().name;
+    constraint->set(constraint->expr, expr);
+    node = constraint;
+
+    return true;
+}
+
+
+bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
+    ParserKeyword s_constraint("CONSTRAINT");
 
     ParserIndexDeclaration index_p;
+    ParserConstraintDeclaration constraint_p;
     ParserColumnDeclaration column_p;
 
     ASTPtr new_node = nullptr;
@@ -156,6 +186,11 @@ bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expecte
     if (s_index.ignore(pos, expected))
     {
         if (!index_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else if (s_constraint.ignore(pos, expected))
+    {
+        if (!constraint_p.parse(pos, new_node, expected))
             return false;
     }
     else
@@ -174,16 +209,24 @@ bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             .parse(pos, node, expected);
 }
 
+bool ParserConstraintDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserConstraintDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, node, expected);
+}
 
-bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list;
-    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+    if (!ParserList(
+            std::make_unique<ParserTablePropertyDeclaration>(),
+                    std::make_unique<ParserToken>(TokenType::Comma), false)
             .parse(pos, list, expected))
         return false;
 
     ASTPtr columns = std::make_shared<ASTExpressionList>();
     ASTPtr indices = std::make_shared<ASTExpressionList>();
+    ASTPtr constraints = std::make_shared<ASTExpressionList>();
 
     for (const auto & elem : list->children)
     {
@@ -191,6 +234,8 @@ bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, 
             columns->children.push_back(elem);
         else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
+        else if (elem->as<ASTConstraintDeclaration>())
+            constraints->children.push_back(elem);
         else
             return false;
     }
@@ -201,6 +246,8 @@ bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, 
         res->set(res->columns, columns);
     if (!indices->children.empty())
         res->set(res->indices, indices);
+    if (!constraints->children.empty())
+        res->set(res->constraints, constraints);
 
     node = res;
 
@@ -318,7 +365,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_live("LIVE");
-    ParserKeyword s_channel("CHANNEL");
     ParserKeyword s_populate("POPULATE");
     ParserKeyword s_or_replace("OR REPLACE");
     ParserToken s_dot(TokenType::Dot);
@@ -326,7 +372,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
     ParserIdentifier name_p;
-    ParserColumnsOrIndicesDeclarationList columns_or_indices_p;
+    ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
     ParserFunction table_function_p;
     ParserNameList names_p;
@@ -349,7 +395,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool is_view = false;
     bool is_materialized_view = false;
     bool is_live_view = false;
-    bool is_live_channel = false;
     bool is_populate = false;
     bool is_temporary = false;
     bool replace_view = false;
@@ -407,7 +452,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_or_indices_p.parse(pos, columns_list, expected))
+            if (!table_properties_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -447,9 +492,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_live.ignore(pos, expected))
     {
-        if (s_channel.ignore(pos, expected))
-           is_live_channel = true;
-        else if (s_view.ignore(pos, expected))
+        if (s_view.ignore(pos, expected))
            is_live_view = true;
         else
            return false;
@@ -473,50 +516,36 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (!is_live_channel)
+        // TO [db.]table
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
         {
-            // TO [db.]table
-            if (ParserKeyword{"TO"}.ignore(pos, expected))
+            if (!name_p.parse(pos, to_table, expected))
+                return false;
+
+            if (s_dot.ignore(pos, expected))
             {
+                to_database = to_table;
                 if (!name_p.parse(pos, to_table, expected))
                     return false;
-
-                if (s_dot.ignore(pos, expected))
-                {
-                    to_database = to_table;
-                    if (!name_p.parse(pos, to_table, expected))
-                        return false;
-                }
             }
         }
 
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_or_indices_p.parse(pos, columns_list, expected))
+            if (!table_properties_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
                 return false;
         }
 
-        if (is_live_channel)
-        {
-            if (s_with.ignore(pos, expected))
-            {
-                if (!names_p.parse(pos, tables, expected))
-                    return false;
-            }
-        }
-        else
-        {
-            /// AS SELECT ...
-            if (!s_as.ignore(pos, expected))
-                return false;
+        /// AS SELECT ...
+        if (!s_as.ignore(pos, expected))
+            return false;
 
-            if (!select_p.parse(pos, select, expected))
-                return false;
-        }
+        if (!select_p.parse(pos, select, expected))
+            return false;
     }
     else if (is_temporary)
         return false;
@@ -590,7 +619,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_or_indices_p.parse(pos, columns_list, expected))
+            if (!table_properties_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -626,7 +655,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_view = is_view;
     query->is_materialized_view = is_materialized_view;
     query->is_live_view = is_live_view;
-    query->is_live_channel = is_live_channel;
     query->is_populate = is_populate;
     query->temporary = is_temporary;
     query->replace_view = replace_view;

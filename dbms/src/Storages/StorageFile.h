@@ -20,6 +20,7 @@ class StorageFileBlockOutputStream;
 
 class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
     std::string getTableName() const override { return table_name; }
@@ -37,9 +38,7 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
-    void drop() override;
-
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     Strings getDataPaths() const override { return {path}; }
 
@@ -60,6 +59,7 @@ protected:
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_);
 
 private:

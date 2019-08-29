@@ -1,3 +1,5 @@
+SET allow_experimental_live_view = 1;
+
 DROP TABLE IF EXISTS test.lv;
 DROP TABLE IF EXISTS test.mt;
 

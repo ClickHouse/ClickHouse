@@ -43,7 +43,7 @@ Block KafkaBlockInputStream::getHeader() const
 
 void KafkaBlockInputStream::readPrefixImpl()
 {
-    auto timeout = std::chrono::milliseconds(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+    auto timeout = std::chrono::milliseconds(context.getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
     claimed = !!buffer;
 
