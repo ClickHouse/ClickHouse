@@ -97,8 +97,6 @@ add_subdirectory (src)
 set(dbms_headers)
 set(dbms_sources)
 
-include(../cmake/dbms_glob_sources.cmake)
-
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
@@ -163,9 +161,7 @@ if (OS_FREEBSD)
 endif ()
 
 if (USE_UNWIND)
-    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARY})
-    endif ()
+    target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARIES})
 endif ()
 
 add_subdirectory(src/Common/ZooKeeper)
@@ -241,14 +237,9 @@ target_link_libraries(clickhouse_common_io
     ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+    ${Boost_PROGRAM_OPTIONS_LIBRARY}
         PRIVATE
     apple_rt
-        PUBLIC
-    Threads::Threads
-        PRIVATE
-    ${CMAKE_DL_LIBS}
-        PRIVATE
-    rt
         PUBLIC
     roaring
 )
@@ -297,7 +288,6 @@ target_link_libraries (dbms
     ${Boost_FILESYSTEM_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
-    Threads::Threads
 )
 
 target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
@@ -364,10 +354,7 @@ if (USE_ICU)
 endif ()
 
 if (USE_CAPNP)
-    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARY})
-    if (NOT USE_INTERNAL_CAPNP_LIBRARY)
-        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
-    endif ()
+    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARIES})
 endif ()
 
 if (USE_PARQUET)
@@ -380,7 +367,6 @@ endif ()
 if(OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
-target_link_libraries(dbms PRIVATE Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})

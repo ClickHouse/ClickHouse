@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS table_for_concurrent_alter"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE table_for_concurrent_alter (id UInt64, Data String) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096;";
 
 n=0
-while [ "$n" -lt 100 ];
+while [ "$n" -lt 50 ];
 do
     n=$(( n + 1 ))
     $CLICKHOUSE_CLIENT --query="INSERT INTO table_for_concurrent_alter VALUES(1, 'Hello')" > /dev/null 2> /dev/null &
@@ -17,7 +17,7 @@ done &
 
 
 q=0
-while [ "$q" -lt 100 ];
+while [ "$q" -lt 50 ];
 do
     q=$(( q + 1 ))
     counter=$(( 100 + q ))
