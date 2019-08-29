@@ -11,18 +11,19 @@ public:
     FillingRow(const SortDescription & sort_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
-    /// Returns true, if generated row less than to_row in terms of sorting order.
     bool next(const FillingRow & to_row);
 
-    void initFromColumns(const Columns & columns, size_t row_num, size_t from_pos = 0);
     void initFromDefaults(size_t from_pos = 0);
+    void initFromColumns(const Columns & columns, size_t row_ind, size_t from_pos);
 
     Field & operator[](size_t ind) { return row[ind]; }
     const Field & operator[](size_t ind) const { return row[ind]; }
     size_t size() const { return row.size(); }
+    bool operator<(const FillingRow & other) const;
+    bool operator==(const FillingRow & other) const;
 
-    int getDirection(size_t ind) { return description[ind].direction; }
-    const FillColumnDescription & getFillDescription(size_t ind) { return description[ind].fill_description; }
+    int getDirection(size_t ind) const { return description[ind].direction; }
+    const FillColumnDescription & getFillDescription(size_t ind) const { return description[ind].fill_description; }
 
 private:
     std::vector<Field> row;
