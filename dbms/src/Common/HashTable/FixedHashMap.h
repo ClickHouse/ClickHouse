@@ -11,8 +11,8 @@ struct FixedHashMapCell
     using State = TState;
 
     using value_type = PairNoInit<Key, Mapped>;
-    bool full;
     Mapped mapped;
+    bool full;
 
     FixedHashMapCell() {}
     FixedHashMapCell(const Key &, const State &) : full(true) {}

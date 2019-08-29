@@ -14,6 +14,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+}
 class MergeSorter;
 
 class MergeSortingTransform : public SortingTransform
@@ -24,7 +28,8 @@ public:
                           const SortDescription & description_,
                           size_t max_merged_block_size_, UInt64 limit_,
                           size_t max_bytes_before_remerge_,
-                          size_t max_bytes_before_external_sort_, const std::string & tmp_path_);
+                          size_t max_bytes_before_external_sort_, const std::string & tmp_path_,
+                          size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSortingTransform"; }
 
@@ -39,6 +44,7 @@ private:
     size_t max_bytes_before_remerge;
     size_t max_bytes_before_external_sort;
     const std::string tmp_path;
+    size_t min_free_disk_space;
 
     Logger * log = &Logger::get("MergeSortingTransform");
 
