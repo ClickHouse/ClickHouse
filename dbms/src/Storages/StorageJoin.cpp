@@ -55,7 +55,7 @@ StorageJoin::StorageJoin(
 }
 
 
-void StorageJoin::truncate(const ASTPtr &, const Context &)
+void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
