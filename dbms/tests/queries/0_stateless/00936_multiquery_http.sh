@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-echo 'SELECT 1; SELECT 2; SELECT 3;' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}?multiquery=true" -d @-
+echo 'SELECT 1; SELECT 2; SELECT 3;' | ${CLICKHOUSE_CURL} -H "Multi-Query: true" -sSg ${CLICKHOUSE_URL} -d @-
 
 echo '
 DROP TABLE IF EXISTS test.test_table_1;
@@ -11,8 +11,7 @@ DROP TABLE IF EXISTS test.test_table_2;
 DROP TABLE IF EXISTS test.test_table_3;
 DROP TABLE IF EXISTS test.test_table_4;
 DROP TABLE IF EXISTS test.test_table_5;
-' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}?multiquery=true" -d @-
-
+' | ${CLICKHOUSE_CURL} -H "Multi-Query: true" -sSg ${CLICKHOUSE_URL} -d @-
 
 echo '
 CREATE TABLE test.test_table_1 (x String) ENGINE = Memory;
@@ -20,7 +19,7 @@ CREATE TABLE test.test_table_2 (x String) ENGINE = Memory;
 CREATE TABLE test.test_table_3 (x String) ENGINE = Memory;
 CREATE TABLE test.test_table_4 (x String) ENGINE = Memory;
 CREATE TABLE test.test_table_5 (x String) ENGINE = Memory;
-' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}?multiquery=true" -d @-
+' | ${CLICKHOUSE_CURL} -H "Multi-Query: true" -sSg ${CLICKHOUSE_URL} -d @-
 
 COUNT=$(echo "
 select count(*) from system.tables where name in (
@@ -44,7 +43,7 @@ DROP TABLE test.test_table_2;
 DROP TABLE test.test_table_3;
 DROP TABLE test.test_table_4;
 DROP TABLE test.test_table_5;
-' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}?multiquery=true" -d @-
+' | ${CLICKHOUSE_CURL} -H "Multi-Query: true" -sSg ${CLICKHOUSE_URL} -d @-
 
 COUNT=$(echo "
 select count(*) from system.tables where name in (

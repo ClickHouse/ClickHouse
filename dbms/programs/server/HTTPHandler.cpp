@@ -444,7 +444,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     static const NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "multiquery"};
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
 
     Names reserved_param_suffixes;
 
@@ -624,7 +624,7 @@ void HTTPHandler::processQuery(
 
     customizeContext(context);
 
-    if (params.get("multiquery", "") == "true")
+    if (request.get("Multi-Query", "") == "true")
     {
         size_t max_query_size = context.getSettingsRef().max_query_size;
         std::vector<String> queries;
