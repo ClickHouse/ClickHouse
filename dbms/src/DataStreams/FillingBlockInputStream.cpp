@@ -24,18 +24,40 @@ FillingRow::FillingRow(const SortDescription & description_) : description(descr
 {
     for (size_t i = 0; i < description.size(); ++i)
     {
-        auto & fill_from = description[i].fill_description.fill_from;
-        auto & fill_to = description[i].fill_description.fill_to;
+        auto & descr = description[i].fill_description;
 
         /// Cast fields to same types. Otherwise, there will be troubles, when we reach zero, while generating rows.
-        if (fill_to.getType() == Field::Types::Int64 && fill_from.getType() == Field::Types::UInt64)
-            fill_from = fill_from.get<Int64>();
-
-        if (fill_from.getType() == Field::Types::Int64 && fill_to.getType() == Field::Types::UInt64)
-            fill_to = fill_to.get<Int64>();
-
+        if (descr.fill_to.getType() == Field::Types::Int64
+            || descr.fill_from.getType() == Field::Types::Int64 || descr.fill_step.getType() == Field::Types::Int64)
+        {
+            if (descr.fill_to.getType() == Field::Types::UInt64)
+                descr.fill_to = descr.fill_to.get<Int64>();
+            if (descr.fill_from.getType() == Field::Types::UInt64)
+                descr.fill_from = descr.fill_from.get<Int64>();
+            if (descr.fill_step.getType() == Field::Types::UInt64)
+                descr.fill_step = descr.fill_step.get<Int64>();
+        }
     }
     row.resize(description.size());
+}
+
+bool FillingRow::operator<(const FillingRow & other) const
+{
+    for (size_t i = 0; i < size(); ++i)
+    {
+        if (row[i].isNull() || other[i].isNull() || equals(row[i], other[i]))
+            continue;
+        return less(row[i], other[i], getDirection(i));
+    }
+    return false;
+}
+
+bool FillingRow::operator==(const FillingRow & other) const
+{
+    for (size_t i = 0; i < size(); ++i)
+        if (!equals(row[i], other[i]))
+            return false;
+    return true;
 }
 
 bool FillingRow::next(const FillingRow & to_row)
@@ -61,8 +83,8 @@ bool FillingRow::next(const FillingRow & to_row)
         applyVisitor(FieldVisitorSum(getFillDescription(i).fill_step), next_value);
         if (less(next_value, getFillDescription(i).fill_to, getDirection(i)))
         {
-            initFromDefaults(i + 1);
             row[i] = next_value;
+            initFromDefaults(i + 1);
             return true;
         }
     }
@@ -70,41 +92,30 @@ bool FillingRow::next(const FillingRow & to_row)
     auto next_value = row[pos];
     applyVisitor(FieldVisitorSum(getFillDescription(pos).fill_step), next_value);
 
-    if (equals(next_value, to_row[pos]))
+    if (less(to_row[pos], next_value, getDirection(pos)))
+        return false;
+
+    row[pos] = next_value;
+    if (equals(row[pos], to_row[pos]))
     {
         bool is_less = false;
-        for (size_t i = pos + 1; i < row.size(); ++i)
+        for (size_t i = pos + 1; i < size(); ++i)
         {
             const auto & fill_from = getFillDescription(i).fill_from;
-            if (!fill_from.isNull() && !to_row[i].isNull() && less(fill_from, to_row[i], getDirection(i)))
-            {
-                is_less = true;
-                initFromDefaults(i);
-                break;
-            }
+            if (!fill_from.isNull())
+                row[i] = fill_from;
             else
                 row[i] = to_row[i];
+            is_less |= less(row[i], to_row[i], getDirection(i));
         }
 
-        row[pos] = next_value;
         return is_less;
     }
 
-    if (less(next_value, to_row[pos], getDirection(pos)))
-    {
-        initFromDefaults(pos + 1);
-        row[pos] = next_value;
-        return true;
-    }
-
-    return false;
+    initFromDefaults(pos + 1);
+    return true;
 }
 
-void FillingRow::initFromColumns(const Columns & columns, size_t row_num, size_t from_pos)
-{
-    for (size_t i = from_pos; i < columns.size(); ++i)
-        columns[i]->get(row_num, row[i]);
-}
 
 void FillingRow::initFromDefaults(size_t from_pos)
 {
@@ -125,7 +136,6 @@ static void insertFromFillingRow(MutableColumns & filling_columns, MutableColumn
 
     for (size_t i = 0; i < other_columns.size(); ++i)
         other_columns[i]->insertDefault();
-
 }
 
 static void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num)
@@ -199,9 +209,14 @@ Block FillingBlockInputStream::readImpl()
         init_columns_by_positions(header, old_fill_columns, res_fill_columns, fill_column_positions);
         init_columns_by_positions(header, old_other_columns, res_other_columns, other_column_positions);
 
+        bool should_insert_first = next_row < filling_row;
+
         bool generated = false;
         for (size_t i = 0; i < filling_row.size(); ++i)
             next_row[i] = filling_row.getFillDescription(i).fill_to;
+
+        if (should_insert_first && filling_row < next_row)
+            insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
 
         while (filling_row.next(next_row))
         {
@@ -221,25 +236,41 @@ Block FillingBlockInputStream::readImpl()
 
     if (first)
     {
-        filling_row.initFromColumns(old_fill_columns, 0);
         for (size_t i = 0; i < filling_row.size(); ++i)
         {
-            if (!filling_row.getFillDescription(i).fill_from.isNull() &&
-                less(filling_row.getFillDescription(i).fill_from, (*old_fill_columns[i])[0], filling_row.getDirection(i)))
+            auto current_value = (*old_fill_columns[i])[0];
+            const auto & fill_from = filling_row.getFillDescription(i).fill_from;
+            if (!fill_from.isNull() && !equals(current_value, fill_from))
             {
-                /// Insert filling row, if it's less than first row in block, because of set 'fill_from' value.
                 filling_row.initFromDefaults(i);
-                insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
+                if (less(fill_from, current_value, filling_row.getDirection(i)))
+                    insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
                 break;
             }
+            filling_row[i] = current_value;
         }
-
         first = false;
     }
 
     for (size_t row_ind = 0; row_ind < rows; ++row_ind)
     {
-        next_row.initFromColumns(old_fill_columns, row_ind);
+        bool should_insert_first = next_row < filling_row;
+
+        for (size_t i = 0; i < filling_row.size(); ++i)
+        {
+            auto current_value = (*old_fill_columns[i])[row_ind];
+            const auto & fill_to = filling_row.getFillDescription(i).fill_to;
+
+            if (fill_to.isNull() || less(current_value, fill_to, filling_row.getDirection(i)))
+                next_row[i] = current_value;
+            else
+                next_row[i] = fill_to;
+        }
+
+        /// A case, when at previous step row was initialized from defaults 'fill_from' values
+        ///  and probably we need to insert it to block.
+        if (should_insert_first && filling_row < next_row)
+            insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
 
         /// Insert generated filling row to block, while it is less than current row in block.
         while (filling_row.next(next_row))
