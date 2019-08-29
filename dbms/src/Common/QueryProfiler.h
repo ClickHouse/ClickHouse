@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Common/config.h>
 #include <common/config_common.h>
 #include <signal.h>
 #include <time.h>
@@ -43,7 +44,7 @@ private:
 
     Poco::Logger * log;
 
-#if USE_INTERNAL_UNWIND_LIBRARY
+#if USE_UNWIND
     /// Timer id from timer_create(2)
     timer_t timer_id = nullptr;
 #endif

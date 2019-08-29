@@ -8,9 +8,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/LiveViewCommands.h>
+#include <Storages/LiveView/LiveViewCommands.h>
+#include <Storages/LiveView/StorageLiveView.h>
 #include <Common/typeid_cast.h>
-#include <Storages/StorageLiveView.h>
 
 #include <algorithm>
 
@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -56,7 +57,13 @@ BlockIO InterpreterAlterQuery::execute()
         if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
+        {
+            if (partition_command->type == PartitionCommand::DROP_DETACHED_PARTITION
+                && !context.getSettingsRef().allow_drop_detached)
+                throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
+                                    "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
             partition_commands.emplace_back(std::move(*partition_command));
+        }
         else if (auto mut_command = MutationCommand::parse(command_ast))
             mutation_commands.emplace_back(std::move(*mut_command));
         else if (auto live_view_command = LiveViewCommand::parse(command_ast))
@@ -97,7 +104,7 @@ BlockIO InterpreterAlterQuery::execute()
     {
         auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
         alter_commands.validate(*table, context);
-        table->alter(alter_commands, database_name, table_name, context, table_lock_holder);
+        table->alter(alter_commands, context, table_lock_holder);
     }
 
     return {};

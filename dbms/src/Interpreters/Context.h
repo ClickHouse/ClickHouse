@@ -288,6 +288,9 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
+    /// Update checking that each setting is updatable
+    void updateSettingsChanges(const SettingsChanges & changes);
+
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change);
     void checkSettingsConstraints(const SettingsChanges & changes);

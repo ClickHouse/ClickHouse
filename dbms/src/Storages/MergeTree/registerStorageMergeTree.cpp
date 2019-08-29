@@ -422,21 +422,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     switch (merging_params.mode)
     {
-    default:
-        break;
-    case MergeTreeData::MergingParams::Summing:
-        add_optional_param("list of columns to sum");
-        break;
-    case MergeTreeData::MergingParams::Replacing:
-        add_optional_param("version");
-        break;
-    case MergeTreeData::MergingParams::Collapsing:
-        add_mandatory_param("sign column");
-        break;
-    case MergeTreeData::MergingParams::Graphite:
-        add_mandatory_param("'config_element_for_graphite_schema'");
-        break;
-    case MergeTreeData::MergingParams::VersionedCollapsing:
+        default:
+            break;
+        case MergeTreeData::MergingParams::Summing:
+            add_optional_param("list of columns to sum");
+            break;
+        case MergeTreeData::MergingParams::Replacing:
+            add_optional_param("version");
+            break;
+        case MergeTreeData::MergingParams::Collapsing:
+            add_mandatory_param("sign column");
+            break;
+        case MergeTreeData::MergingParams::Graphite:
+            add_mandatory_param("'config_element_for_graphite_schema'");
+            break;
+        case MergeTreeData::MergingParams::VersionedCollapsing:
         {
             add_mandatory_param("sign column");
             add_mandatory_param("version");
@@ -574,7 +574,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr sample_by_ast;
     ASTPtr ttl_table_ast;
     IndicesDescription indices_description;
-    MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
+    ConstraintsDescription constraints_description;
+
+    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(args.context.getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
@@ -600,10 +602,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (const auto & index : args.query.columns_list->indices->children)
                 indices_description.indices.push_back(
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+                    std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
 
-
-        storage_settings.loadFromQuery(*args.storage_def);
+        storage_settings->loadFromQuery(*args.storage_def);
     }
     else
     {
@@ -625,7 +626,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         const auto * ast = engine_args.back()->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
-            storage_settings.index_granularity = safeGet<UInt64>(ast->value);
+            storage_settings->index_granularity = safeGet<UInt64>(ast->value);
         else
             throw Exception(
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -639,15 +640,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.database_name, args.table_name,
-            args.columns, indices_description,
+            args.columns, indices_description, args.constraints,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, ttl_table_ast, merging_params, storage_settings,
+            sample_by_ast, ttl_table_ast, merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.database_name, args.table_name, args.columns, indices_description,
-            args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
-            primary_key_ast, sample_by_ast, ttl_table_ast, merging_params, storage_settings,
+            args.constraints, args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
+            primary_key_ast, sample_by_ast, ttl_table_ast, merging_params, std::move(storage_settings),
             args.has_force_restore_data_flag);
 }
 

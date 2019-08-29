@@ -65,13 +65,15 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     else
         throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
+    const auto data_settings = data.getSettings();
+
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     static std::atomic_uint total_sends {0};
 
-    if ((data.settings.replicated_max_parallel_sends && total_sends >= data.settings.replicated_max_parallel_sends)
-        || (data.settings.replicated_max_parallel_sends_for_table && data.current_table_sends >= data.settings.replicated_max_parallel_sends_for_table))
+    if ((data_settings->replicated_max_parallel_sends && total_sends >= data_settings->replicated_max_parallel_sends)
+        || (data_settings->replicated_max_parallel_sends_for_table && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
     {
         response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
         response.setReason("Too many concurrent fetches, try again later");
@@ -198,6 +200,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 {
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
+    const auto data_settings = data.getSettings();
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
@@ -228,7 +231,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             timeouts,
             creds,
             DBMS_DEFAULT_BUFFER_SIZE,
-            data.settings.replicated_max_parallel_fetches_for_host
+            data_settings->replicated_max_parallel_fetches_for_host
         };
 
         UInt64 sum_files_size;
@@ -267,7 +270,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         timeouts,
         creds,
         DBMS_DEFAULT_BUFFER_SIZE,
-        data.settings.replicated_max_parallel_fetches_for_host
+        data_settings->replicated_max_parallel_fetches_for_host
     };
 
     /// We don't know real size of part

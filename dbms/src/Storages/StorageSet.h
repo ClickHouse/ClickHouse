@@ -22,7 +22,7 @@ public:
     String getTableName() const override { return table_name; }
     String getDatabaseName() const override { return database_name; }
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -33,7 +33,8 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_);
 
     String path;
     String table_name;
@@ -68,7 +69,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
 private:
     SetPtr set;
@@ -81,7 +82,8 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_);
 };
 
 }

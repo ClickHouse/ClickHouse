@@ -99,7 +99,7 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTL
     else
         throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
 
-    ttl_infos.updatePartMinTTL(ttl_info.min);
+    ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 }
 
 }

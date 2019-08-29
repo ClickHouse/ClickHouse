@@ -15,6 +15,9 @@ log = None
 with client(name='client1>', log=log) as client1:
     client1.expect(prompt)
 
+    client1.send('SET allow_experimental_live_view = 1')
+    client1.expect(prompt)
+
     client1.send('DROP TABLE IF EXISTS test.lv')
     client1.expect(prompt)
     client1.send(' DROP TABLE IF EXISTS test.mt')
@@ -25,7 +28,7 @@ with client(name='client1>', log=log) as client1:
     client1.expect(prompt)
 
 
-    with http_client({'method':'GET', 'url': '/?query=WATCH%20test.lv%20EVENTS'}, name='client2>', log=log) as client2:
+    with http_client({'method':'GET', 'url': '/?allow_experimental_live_view=1&query=WATCH%20test.lv%20EVENTS'}, name='client2>', log=log) as client2:
         client2.expect('.*1\n')
         client1.send('INSERT INTO test.mt VALUES (1),(2),(3)')
         client1.expect(prompt)
