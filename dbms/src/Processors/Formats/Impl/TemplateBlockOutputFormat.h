@@ -4,41 +4,11 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Parsers/ParsedTemplateFormatString.h>
 
 
 namespace DB
 {
-
-struct ParsedTemplateFormatString
-{
-    enum class ColumnFormat
-    {
-        None,
-        Escaped,
-        Quoted,
-        Csv,
-        Json,
-        Xml,
-        Raw
-    };
-
-    /// Format string has syntax: "Delimiter0 ${ColumnName0:Format0} Delimiter1 ${ColumnName1:Format1} Delimiter2"
-    /// The following vectors is filled with corresponding values, delimiters.size() - 1 = formats.size() = format_idx_to_column_idx.size()
-    /// If format_idx_to_column_idx[i] has no value, then TemplateRowInputStream will skip i-th column.
-
-    std::vector<String> delimiters;
-    std::vector<ColumnFormat> formats;
-    std::vector<std::optional<size_t>> format_idx_to_column_idx;
-
-    typedef std::function<std::optional<size_t>(const String &)> ColumnIdxGetter;
-
-    ParsedTemplateFormatString() = default;
-    ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idxByName);
-    static ColumnFormat stringToFormat(const String & format);
-    static String formatToString(ColumnFormat format);
-    static const char * readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s);
-    size_t columnsCount() const;
-};
 
 class TemplateBlockOutputFormat : public IOutputFormat
 {

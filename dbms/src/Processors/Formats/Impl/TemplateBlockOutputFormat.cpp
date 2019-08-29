@@ -1,10 +1,7 @@
 #include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/ReadBufferFromMemory.h>
 
 
 namespace DB
@@ -12,156 +9,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_TEMPLATE_FORMAT;
+    extern const int SYNTAX_ERROR;
 }
-
-ParsedTemplateFormatString::ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idxByName)
-{
-    enum ParserState
-    {
-        Delimiter,
-        Column,
-        Format
-    };
-
-    const char * pos = format_string.c_str();
-    const char * end = format_string.c_str() + format_string.size();
-    const char * token_begin = pos;
-    String column_name;
-    ParserState state = Delimiter;
-    delimiters.emplace_back();
-    for (; *pos; ++pos)
-    {
-        switch (state)
-        {
-        case Delimiter:
-            if (*pos == '$')
-            {
-                delimiters.back().append(token_begin, pos - token_begin);
-                ++pos;
-                if (*pos == '{')
-                {
-                    token_begin = pos + 1;
-                    state = Column;
-                }
-                else if (*pos == '$')
-                {
-                    token_begin = pos;
-                }
-                else
-                {
-                    throw Exception("Invalid template format string: pos " + std::to_string(pos - format_string.c_str()) +
-                    ": expected '{' or '$' after '$'", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-                }
-            }
-            break;
-
-        case Column:
-            pos = readMayBeQuotedColumnNameInto(pos, end - pos, column_name);
-
-            if (*pos == ':')
-                state = Format;
-            else if (*pos == '}')
-            {
-                formats.push_back(ColumnFormat::None);
-                delimiters.emplace_back();
-                state = Delimiter;
-            }
-            else
-                throw Exception("Invalid template format string: Expected ':' or '}' after column name: \"" + column_name + "\"",
-                                ErrorCodes::INVALID_TEMPLATE_FORMAT);
-
-            token_begin = pos + 1;
-            format_idx_to_column_idx.emplace_back(idxByName(column_name));
-            break;
-
-        case Format:
-            if (*pos == '}')
-            {
-                formats.push_back(stringToFormat(String(token_begin, pos - token_begin)));
-                token_begin = pos + 1;
-                delimiters.emplace_back();
-                state = Delimiter;
-            }
-        }
-    }
-    if (state != Delimiter)
-        throw Exception("Invalid template format string: check parentheses balance", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-    delimiters.back().append(token_begin, pos - token_begin);
-}
-
-
-ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format)
-{
-    if (col_format.empty())
-        return ColumnFormat::None;
-    else if (col_format == "None")
-        return ColumnFormat::None;
-    else if (col_format == "Escaped")
-        return ColumnFormat::Escaped;
-    else if (col_format == "Quoted")
-        return ColumnFormat::Quoted;
-    else if (col_format == "CSV")
-        return ColumnFormat::Csv;
-    else if (col_format == "JSON")
-        return ColumnFormat::Json;
-    else if (col_format == "XML")
-        return ColumnFormat::Xml;
-    else if (col_format == "Raw")
-        return ColumnFormat::Raw;
-    else
-        throw Exception("Invalid template format string: unknown field format " + col_format,
-                        ErrorCodes::INVALID_TEMPLATE_FORMAT);
-}
-
-size_t ParsedTemplateFormatString::columnsCount() const
-{
-    return format_idx_to_column_idx.size();
-}
-
-String ParsedTemplateFormatString::formatToString(ParsedTemplateFormatString::ColumnFormat format)
-{
-    switch (format)
-    {
-        case ColumnFormat::None:
-            return "None";
-        case ColumnFormat::Escaped:
-            return "Escaped";
-        case ColumnFormat::Quoted:
-            return "Quoted";
-        case ColumnFormat::Csv:
-            return "CSV";
-        case ColumnFormat::Json:
-            return "Json";
-        case ColumnFormat::Xml:
-            return "Xml";
-        case ColumnFormat::Raw:
-            return "Raw";
-    }
-    __builtin_unreachable();
-}
-
-const char * ParsedTemplateFormatString::readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s)
-{
-    s.clear();
-    if (!size)
-        return pos;
-    ReadBufferFromMemory buf{pos, size};
-    if (*pos == '"')
-        readDoubleQuotedStringWithSQLStyle(s, buf);
-    else if (*pos == '`')
-        readBackQuotedStringWithSQLStyle(s, buf);
-    else if (isWordCharASCII(*pos))
-    {
-        size_t name_size = 1;
-        while (name_size < size && isWordCharASCII(*(pos + name_size)))
-            ++name_size;
-        s = String{pos, name_size};
-        return pos + name_size;
-    }
-    return pos + buf.count();
-}
-
 
 TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
         : IOutputFormat(header_, out_), settings(settings_)
@@ -185,7 +34,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const B
     for (size_t i = 0; i < format.format_idx_to_column_idx.size(); ++i)
     {
         if (!format.format_idx_to_column_idx[i])
-            throw Exception("Output part name cannot be empty, it's a bug.", ErrorCodes::LOGICAL_ERROR);
+            format.throwInvalidFormat("Output part name cannot be empty, it's a bug.", i);
         switch (static_cast<OutputPart>(*format.format_idx_to_column_idx[i]))
         {
             case OutputPart::Data:
@@ -195,17 +44,17 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const B
             case OutputPart::ExtremesMin:
             case OutputPart::ExtremesMax:
                 if (format.formats[i] != ColumnFormat::None)
-                    throw Exception("invalid template: wrong serialization type for data, totals, min or max",
-                                    ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                    format.throwInvalidFormat("Serialization type for data, totals, min and max must be empty or None", i);
                 break;
             default:
                 if (format.formats[i] == ColumnFormat::None)
-                    throw Exception("Serialization type for output part rows, rows_before_limit, time, rows_read or bytes_read not specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                    format.throwInvalidFormat("Serialization type for output part rows, rows_before_limit, time, "
+                                              "rows_read or bytes_read is not specified", i);
                 break;
         }
     }
     if (data_idx != 0)
-        throw Exception("invalid template: ${data} must be the first output part", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+        format.throwInvalidFormat("${data} must be the first output part", 0);
 
     /// Parse format string for rows
     row_format = ParsedTemplateFormatString(settings.template_settings.row_format, [&](const String & colName)
@@ -215,13 +64,13 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const B
 
     /// Validate format string for rows
     if (row_format.delimiters.size() == 1)
-        throw Exception("invalid template: no columns specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+        row_format.throwInvalidFormat("No columns specified", 0);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         if (!row_format.format_idx_to_column_idx[i])
-            throw Exception("Cannot skip format field for output, it's a bug.", ErrorCodes::LOGICAL_ERROR);
+            row_format.throwInvalidFormat("Cannot skip format field for output, it's a bug.", i);
         if (row_format.formats[i] == ColumnFormat::None)
-            throw Exception("Serialization type for file column " + std::to_string(i) + " not specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+            row_format.throwInvalidFormat("Serialization type for file column is not specified", i);
     }
 }
 
@@ -246,7 +95,7 @@ TemplateBlockOutputFormat::OutputPart TemplateBlockOutputFormat::stringToOutputP
     else if (part == "bytes_read")
         return OutputPart::BytesRead;
     else
-        throw Exception("invalid template: unknown output part " + part, ErrorCodes::INVALID_TEMPLATE_FORMAT);
+        throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
@@ -331,48 +180,48 @@ void TemplateBlockOutputFormat::finalize()
 
     size_t parts = format.format_idx_to_column_idx.size();
 
-    for (size_t j = 0; j < parts; ++j)
+    for (size_t i = 0; i < parts; ++i)
     {
         auto type = std::make_shared<DataTypeUInt64>();
         ColumnWithTypeAndName col(type->createColumnConst(1, row_count), type, String("tmp"));
-        switch (static_cast<OutputPart>(*format.format_idx_to_column_idx[j]))
+        switch (static_cast<OutputPart>(*format.format_idx_to_column_idx[i]))
         {
             case OutputPart::Totals:
                 if (!totals)
-                    throw Exception("invalid template: cannot print totals for this request", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                    format.throwInvalidFormat("Cannot print totals for this request", i);
                 writeRow(totals, 0);
                 break;
             case OutputPart::ExtremesMin:
                 if (!extremes)
-                    throw Exception("invalid template: cannot print extremes for this request", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                    format.throwInvalidFormat("Cannot print extremes for this request", i);
                 writeRow(extremes, 0);
                 break;
             case OutputPart::ExtremesMax:
                 if (!extremes)
-                    throw Exception("invalid template: cannot print extremes for this request", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                    format.throwInvalidFormat("Cannot print extremes for this request", i);
                 writeRow(extremes, 1);
                 break;
             case OutputPart::Rows:
-                writeValue<size_t, DataTypeUInt64>(row_count, format.formats[j]);
+                writeValue<size_t, DataTypeUInt64>(row_count, format.formats[i]);
                 break;
             case OutputPart::RowsBeforeLimit:
                 if (!rows_before_limit_set)
-                    throw Exception("invalid template: cannot print rows_before_limit for this request", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-                writeValue<size_t, DataTypeUInt64>(rows_before_limit, format.formats[j]);
+                    format.throwInvalidFormat("Cannot print rows_before_limit for this request", i);
+                writeValue<size_t, DataTypeUInt64>(rows_before_limit, format.formats[i]);
                 break;
             case OutputPart::TimeElapsed:
-                writeValue<double, DataTypeFloat64>(watch.elapsedSeconds(), format.formats[j]);
+                writeValue<double, DataTypeFloat64>(watch.elapsedSeconds(), format.formats[i]);
                 break;
             case OutputPart::RowsRead:
-                writeValue<size_t, DataTypeUInt64>(progress.read_rows.load(), format.formats[j]);
+                writeValue<size_t, DataTypeUInt64>(progress.read_rows.load(), format.formats[i]);
                 break;
             case OutputPart::BytesRead:
-                writeValue<size_t, DataTypeUInt64>(progress.read_bytes.load(), format.formats[j]);
+                writeValue<size_t, DataTypeUInt64>(progress.read_bytes.load(), format.formats[i]);
                 break;
             default:
                 break;
         }
-        writeString(format.delimiters[j + 1], out);
+        writeString(format.delimiters[i + 1], out);
     }
 
     finalized = true;

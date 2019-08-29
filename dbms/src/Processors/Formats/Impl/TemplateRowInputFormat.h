@@ -33,7 +33,7 @@ private:
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
     template <typename ReturnType = void>
-    ReturnType tryReadPrefixOrSuffix(size_t input_part_beg, size_t input_part_end);
+    ReturnType tryReadPrefixOrSuffix(size_t & input_part_beg, size_t input_part_end);
     bool checkForSuffix();
     [[noreturn]] void throwUnexpectedEof();
 
