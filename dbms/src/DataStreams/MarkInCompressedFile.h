@@ -41,4 +41,5 @@ struct MarkInCompressedFile
 };
 
 using MarksInCompressedFile = PODArray<MarkInCompressedFile>;
+
 }
