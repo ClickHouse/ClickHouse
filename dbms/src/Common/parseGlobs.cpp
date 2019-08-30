@@ -8,7 +8,7 @@ namespace DB
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library fo matching
  * with such steps:
  * 1) search intervals and enums in {}, replace them by regexp with pipe (expr1|expr2|expr3),
- * 2) search and replace "*" and "?" with "".
+ * 2) search and replace "*" and "?".
  * Before each search need to escape symbols that we would not search.
  *
  * There are few examples in unit tests.
