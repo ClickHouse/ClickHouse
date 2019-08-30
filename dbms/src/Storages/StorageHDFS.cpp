@@ -137,13 +137,13 @@ private:
  */
 Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
 {
-    size_t first_glob = for_match.find_first_of("*?{");
+    const size_t first_glob = for_match.find_first_of("*?{");
 
-    size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
-    String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
-    String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+    const String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
 
-    size_t next_slash = suffix_with_globs.find('/', 1);
+    const size_t next_slash = suffix_with_globs.find('/', 1);
     re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
 
     HDFSFileInfo ls;
@@ -151,19 +151,19 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
     Strings result;
     for (int i = 0; i < ls.length; ++i)
     {
-        String full_path = String(ls.file_info[i].mName);
-        size_t last_slash = full_path.rfind('/');
-        String file_name = full_path.substr(last_slash);
-        /// Condition with next_slash means what we are looking for (it is from current position in psttern of path)
+        const String full_path = String(ls.file_info[i].mName);
+        const size_t last_slash = full_path.rfind('/');
+        const String file_name = full_path.substr(last_slash);
+        const bool looking_for_directory = next_slash != std::string::npos;
         /// Condition with type of current file_info means what kind of path is it in current iteration of ls
-        if ((ls.file_info[i].mKind == 'F') && (next_slash == std::string::npos))
+        if ((ls.file_info[i].mKind == 'F') && !looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 result.push_back(String(ls.file_info[i].mName));
             }
         }
-        else if ((ls.file_info[i].mKind == 'D') && (next_slash != std::string::npos))
+        else if ((ls.file_info[i].mKind == 'D') && looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
