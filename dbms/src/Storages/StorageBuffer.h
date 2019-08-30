@@ -39,6 +39,7 @@ class Context;
   */
 class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
+friend struct ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 
@@ -72,7 +73,11 @@ public:
     void shutdown() override;
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override { table_name = new_table_name; database_name = new_database_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
@@ -92,6 +97,8 @@ public:
     /// The structure of the subordinate table is not checked and does not change.
     void alter(
         const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+
+    ~StorageBuffer() override;
 
 private:
     String table_name;
@@ -144,8 +151,6 @@ protected:
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_, bool allow_materialized_);
-
-    ~StorageBuffer() override;
 };
 
 }

@@ -157,13 +157,13 @@ void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
     global_context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
 }
 
-void StorageMergeTree::drop()
+void StorageMergeTree::drop(TableStructureWriteLockHolder &)
 {
     shutdown();
     dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &, const Context &)
+void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -181,7 +181,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     clearOldPartsFromFilesystem();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
@@ -995,7 +995,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, context);
+                freezePartition(command.partition, command.with_name, context, lock);
             }
             break;
 
@@ -1020,7 +1020,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezeAll(command.with_name, context);
+                freezeAll(command.with_name, context, lock);
             }
             break;
 

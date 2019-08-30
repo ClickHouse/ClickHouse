@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/NamesAndTypes.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
@@ -11,6 +9,8 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <mutex>
+#include <atomic>
+
 
 namespace DB
 {
@@ -20,6 +20,7 @@ namespace DB
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
@@ -39,10 +40,9 @@ public:
 
     BlockOutputStreamPtr write(
         const ASTPtr & query,
-        const Context & context
-    ) override;
+        const Context & context) override;
 
-    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void updateDependencies() override;
 

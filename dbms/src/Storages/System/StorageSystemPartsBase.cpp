@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_DROPPED;
+}
+
 bool StorageSystemPartsBase::hasStateColumn(const Names & column_names) const
 {
     bool has_state_column = false;

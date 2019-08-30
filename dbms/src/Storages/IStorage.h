@@ -9,11 +9,13 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/CheckResults.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/SettingsChanges.h>
-#include <Storages/ConstraintsDescription.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -24,7 +26,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -139,7 +140,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     void check(const Block & block, bool need_all = false) const;
 
     /// Check storage has setting and setting can be modified.
-    virtual bool checkSetting(const String & setting_name) const;
+    virtual void checkSetting(const String & setting_name) const;
 
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
@@ -261,12 +262,12 @@ public:
       * The table is not usable during and after call to this method.
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
-    virtual void drop() {}
+    virtual void drop(TableStructureWriteLockHolder &) {}
 
     /** Clear the table data and leave it empty.
       * Must be called under lockForAlter.
       */
-    virtual void truncate(const ASTPtr & /*query*/, const Context & /* context */)
+    virtual void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -276,7 +277,8 @@ public:
       * In this function, you need to rename the directory with the data, if any.
       * Called when the table structure is locked for write.
       */
-    virtual void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/)
+    virtual void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/,
+                        TableStructureWriteLockHolder &)
     {
         throw Exception("Method rename is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
