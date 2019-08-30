@@ -84,12 +84,9 @@ namespace ErrorCodes
   * - random hint address for mmap
   * - mmap_threshold for using mmap less or more
   */
-template <bool clear_memory_>
+template <bool clear_memory_, bool mmap_populate = false>
 class Allocator
 {
-protected:
-    static constexpr bool clear_memory = clear_memory_;
-
 public:
     /// Allocate memory range.
     void * alloc(size_t size, size_t alignment = 0)
@@ -137,7 +134,8 @@ public:
             CurrentMemoryTracker::realloc(old_size, new_size);
 
             // On apple and freebsd self-implemented mremap used (common/mremap.h)
-            buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
+                                    PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
 
@@ -172,6 +170,17 @@ protected:
         return 0;
     }
 
+    static constexpr bool clear_memory = clear_memory_;
+
+    // Freshly mmapped pages are copy-on-write references to a global zero page.
+    // On the first write, a page fault occurs, and an actual writable page is
+    // allocated. If we are going to use this memory soon, such as when resizing
+    // hash tables, it makes sense to pre-fault the pages by passing
+    // MAP_POPULATE to mmap(). This takes some time, but should be faster
+    // overall than having a hot loop interrupted by page faults.
+    static constexpr int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS
+            | (mmap_populate ? MAP_POPULATE : 0);
+
 private:
     void * allocNoTrack(size_t size, size_t alignment)
     {
@@ -183,7 +192,8 @@ private:
                 throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
                     + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
-            buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
+                       mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
