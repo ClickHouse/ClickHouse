@@ -1,5 +1,5 @@
 if (OS_LINUX AND COMPILER_CLANG)
-    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ${HAVE_LIBCXX})
+    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ON)
     option (USE_INTERNAL_LIBCXX_LIBRARY "Set to FALSE to use system libcxx and libcxxabi libraries instead of bundled" ${NOT_UNBUNDLED})
 endif()
 

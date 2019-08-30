@@ -336,9 +336,9 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
     size_t skip_index_current_mark = 0;
 
     /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
-    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+    for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        const auto index = storage.skip_indices[i];
+        const auto index = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
         size_t prev_pos = 0;
         skip_index_current_mark = skip_index_mark;
