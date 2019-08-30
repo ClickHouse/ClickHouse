@@ -41,7 +41,7 @@ try
 
     RowInputFormatParams params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0, 0, []{}};
 
-    InputFormatPtr input_format = std::make_shared<TabSeparatedRowInputFormat>(in_buf, sample, false, false, params, format_settings);
+    InputFormatPtr input_format = std::make_shared<TabSeparatedRowInputFormat>(sample, in_buf, params, false, false, format_settings);
     BlockInputStreamPtr block_input = std::make_shared<InputStreamFromInputFormat>(std::move(input_format));
 
     BlockOutputStreamPtr block_output = std::make_shared<OutputStreamToOutputFormat>(

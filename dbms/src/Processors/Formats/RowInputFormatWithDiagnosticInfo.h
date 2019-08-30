@@ -19,16 +19,13 @@ public:
 protected:
     void updateDiagnosticInfo();
     bool deserializeFieldAndPrintDiagnosticInfo(const String & col_name, const DataTypePtr & type, IColumn & column,
-                                                WriteBuffer & out, size_t input_position);
+                                                WriteBuffer & out, size_t file_column);
     String alignedName(const String & name, size_t max_length) const;
 
     virtual bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) = 0;
-    virtual void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
-                                     ReadBuffer::Position & curr_pos) = 0;
+    virtual void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
+                                     ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) = 0;
     virtual bool isGarbageAfterField(size_t after_input_pos_idx, ReadBuffer::Position pos) = 0;
-
-    //ReadBuffer & istr;
-    //Block header;
 
     /// For convenient diagnostics in case of an error.
     size_t row_num = 0;

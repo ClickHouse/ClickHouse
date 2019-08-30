@@ -8,9 +8,6 @@
 namespace DB
 {
 
-class ReadBuffer;
-
-
 /** A stream to input data in tsv format.
   */
 class TabSeparatedRowInputFormat : public RowInputFormatWithDiagnosticInfo
@@ -19,8 +16,8 @@ public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
-    TabSeparatedRowInputFormat(
-        ReadBuffer & in_, Block header_, bool with_names_, bool with_types_, Params params_, const FormatSettings & format_settings_);
+    TabSeparatedRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                               bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
@@ -49,8 +46,8 @@ private:
     void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
-    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
-                             ReadBuffer::Position & curr_pos) override;
+    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
+                             ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 };
 

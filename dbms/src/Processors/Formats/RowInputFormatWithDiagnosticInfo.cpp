@@ -84,12 +84,13 @@ String DB::RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
     return out.str();
 }
 
-bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(const String & col_name, const DataTypePtr & type,
+bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(const String & col_name,
+                                                                              const DataTypePtr & type,
                                                                               IColumn & column,
                                                                               WriteBuffer & out,
-                                                                              size_t input_position)
+                                                                              size_t file_column)
 {
-    out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
+    out << "Column " << file_column << ", " << std::string((file_column < 10 ? 2 : file_column < 100 ? 1 : 0), ' ')
         << "name: " << alignedName(col_name, max_length_of_column_name)
         << "type: " << alignedName(type->getName(), max_length_of_data_type_name);
 
@@ -99,7 +100,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
 
     try
     {
-        tryDeserializeFiled(type, column, input_position, prev_position, curr_position);
+        tryDeserializeFiled(type, column, file_column, prev_position, curr_position);
     }
     catch (...)
     {
@@ -139,7 +140,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
 
     if (type->haveMaximumSizeOfValue())
     {
-        if (isGarbageAfterField(input_position, curr_position))
+        if (isGarbageAfterField(file_column, curr_position))
         {
             out << "ERROR: garbage after " << type->getName() << ": ";
             verbosePrintString(curr_position, std::min(curr_position + 10, in.buffer().end()), out);
