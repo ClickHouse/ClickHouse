@@ -672,7 +672,7 @@ private:
         String text;
 
         if (config().has("query"))
-            text = config().getString("query");
+            text = config().getRawString("query");  /// Poco configuration should not process substitutions in form of ${...} inside query.
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
