@@ -101,7 +101,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     void loadFromQuery(ASTStorage & storage_def);
 
     /// We check settings after storage creation
-    static bool isImmutableSetting(const String & name)
+    static bool isReadonlySetting(const String & name)
     {
         return name == "index_granularity" || name == "index_granularity_bytes";
     }

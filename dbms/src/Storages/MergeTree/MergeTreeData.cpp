@@ -91,7 +91,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
     extern const int UNKNOWN_SETTING;
-    extern const int IMMUTABLE_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 
@@ -1661,8 +1661,8 @@ void MergeTreeData::checkSetting(const String & setting_name) const
 {
     if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
         throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
-    if (MergeTreeSettings::isImmutableSetting(setting_name))
-        throw Exception{"Setting '" + setting_name + "' is immutable for storage '" + getName() + "'", ErrorCodes::IMMUTABLE_SETTING};
+    if (MergeTreeSettings::isReadonlySetting(setting_name))
+        throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
 
 }
 
