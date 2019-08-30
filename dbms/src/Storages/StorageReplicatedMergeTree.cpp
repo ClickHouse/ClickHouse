@@ -5163,12 +5163,18 @@ void StorageReplicatedMergeTree::movePartitionTo(const StoragePtr & dest_table, 
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
         dest_table_storage->waitForAllReplicasToProcessLogEntry(entry);
 
-        Coordination::Requests ops_dest;
+    Coordination::Requests ops_dest;
+
     ops_dest.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry_delete.toString(), zkutil::CreateMode::PersistentSequential));
 
-    zookeeper->multi(ops_dest);
-}
+    ops_results = zookeeper->multi(ops_dest);
 
+    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
+    entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+        waitForAllReplicasToProcessLogEntry(entry_delete);
+}
 
 void StorageReplicatedMergeTree::getCommitPartOps(
     Coordination::Requests & ops,
