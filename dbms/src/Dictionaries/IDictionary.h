@@ -56,6 +56,8 @@ struct IDictionaryBase : public IExternalLoadable
         return source && source->isModified();
     }
 
+    virtual std::exception_ptr getLastException() const { return {}; }
+
     std::shared_ptr<IDictionaryBase> shared_from_this()
     {
         return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
