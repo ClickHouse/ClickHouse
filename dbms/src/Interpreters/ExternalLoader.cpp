@@ -1,6 +1,5 @@
 #include "ExternalLoader.h"
 
-#include <cmath>
 #include <mutex>
 #include <pcg_random.hpp>
 #include <common/DateLUT.h>
@@ -928,6 +927,8 @@ private:
 class ExternalLoader::PeriodicUpdater : private boost::noncopyable
 {
 public:
+    static constexpr UInt64 check_period_sec = 5;
+
     PeriodicUpdater(ConfigFilesReader & config_files_reader_, LoadingDispatcher & loading_dispatcher_)
         : config_files_reader(config_files_reader_), loading_dispatcher(loading_dispatcher_)
     {
@@ -935,11 +936,10 @@ public:
 
     ~PeriodicUpdater() { enable(false); }
 
-    void enable(bool enable_, const ExternalLoaderUpdateSettings & settings_ = {})
+    void enable(bool enable_)
     {
         std::unique_lock lock{mutex};
         enabled = enable_;
-        settings = settings_;
 
         if (enable_)
         {
@@ -980,9 +980,7 @@ public:
             return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
         }
 
-        std::uniform_int_distribution<UInt64> distribution(0, static_cast<UInt64>(std::exp2(error_count - 1)));
-        std::chrono::seconds delay(std::min<UInt64>(settings.backoff_max_sec, settings.backoff_initial_sec + distribution(rnd_engine)));
-        return std::chrono::system_clock::now() + delay;
+        return std::chrono::system_clock::now() + std::chrono::seconds(ExternalLoadableBackoff{}.calculateDuration(rnd_engine, error_count));
     }
 
 private:
@@ -991,9 +989,8 @@ private:
         setThreadName("ExterLdrReload");
 
         std::unique_lock lock{mutex};
-        auto timeout = [this] { return std::chrono::seconds(settings.check_period_sec); };
         auto pred = [this] { return !enabled; };
-        while (!event.wait_for(lock, timeout(), pred))
+        while (!event.wait_for(lock, std::chrono::seconds(check_period_sec), pred))
         {
             lock.unlock();
             loading_dispatcher.setConfiguration(config_files_reader.read());
@@ -1007,7 +1004,6 @@ private:
 
     mutable std::mutex mutex;
     bool enabled = false;
-    ExternalLoaderUpdateSettings settings;
     ThreadFromGlobalPool thread;
     std::condition_variable event;
     mutable pcg64 rnd_engine{randomSeed()};
@@ -1046,9 +1042,9 @@ void ExternalLoader::enableAsyncLoading(bool enable)
     loading_dispatcher->enableAsyncLoading(enable);
 }
 
-void ExternalLoader::enablePeriodicUpdates(bool enable_, const ExternalLoaderUpdateSettings & settings_)
+void ExternalLoader::enablePeriodicUpdates(bool enable_)
 {
-    periodic_updater->enable(enable_, settings_);
+    periodic_updater->enable(enable_);
 }
 
 bool ExternalLoader::hasCurrentlyLoadedObjects() const
