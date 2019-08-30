@@ -131,25 +131,26 @@ world
  `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
   где `delimiter_i` - разделители между значениями (символ `$` в разделителе экранируется как `$$`), 
-  `column_i` - имена столбцов, значения которых должны быть выведены или считаны, 
+  `column_i` - имена столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается), 
   `serializeAs_i` - тип экранирования для значений соответствующего столбца. Поддерживаются следующие типы экранирования:
   
   - `CSV`, `JSON`, `XML` (как в одноимённых форматах)
   - `Escaped` (как в `TSV`)
   - `Quoted` (как в `Values`)
   - `Raw` (без экранирования, как в `TSVRaw`)
+  - `None` (тип экранирования отсутствует, см. далее)
   
-  Тип экранирования для столбца можно не указывать, в таком случае используется `Escaped`. `XML` и `Raw` поддерживаются только для вывода. 
+  Если для столбца не указан тип экранирования, используется `None`. `XML` и `Raw` поддерживаются только для вывода. 
   
   Так, в форматной строке 
   
-  `Search phrase: ${SearchPhrase:Quoted}, count: ${c}, ad price: $$${price:JSON};`
+  `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
   
   между разделителями `Search phrase: `, `, count: `, `, ad price: $` и `;` при выводе будут подставлены (при вводе - будут ожидаться) значения столбцов `SearchPhrase`, `c` и `price`, сериализованные как `Quoted`, `Escaped` и `JSON` соответственно, например:
 
   `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
   
- Настройка `format_schema_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней.
+ Настройка `format_schema_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
   
 Форматная строка `format_schema` имеет аналогичный `format_schema_rows` синтаксис и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
 
@@ -163,9 +164,10 @@ world
  - `rows_read` - сколько строк было прочитано при выполнении запроса
  - `bytes_read` - сколько байт (несжатых) было прочитано при выполнении запроса
  
- У подстановок `data`, `totals`, `min` и `max` не должны быть указаны типы экранирования. Остальные подстановки - это отдельные значения, для них может быть указан любой тип экранирования.
+ У подстановок `data`, `totals`, `min` и `max` не должны быть указаны типы экранирования (или должен быть указан `None`). Остальные подстановки - это отдельные значения, для них может быть указан любой тип экранирования.
  Если строка `format_schema` пустая, то по-умолчанию используется `${data}`.
- При вводе форматная строка `format_schema` должна иметь вид `some prefix ${data} some suffix` т.е. содержать единственную подстановку `data`.
+ Из всех перечисленных подстановок форматная строка `format_schema` для ввода может содержать только `data`.
+ Также при вводе формат поддерживает пропуск значений столбцов и пропуск значений в префиксе и суффиксе (см. пример).
  
  Пример вывода:
 ```sql
@@ -208,32 +210,29 @@ format_schema_rows_between_delimiter = '\n    '
 ```
 
 Пример ввода:
-```json
-{"array":
-  [
-    {"PageViews": 5, "UserID": "4324182021466249494", "Duration": 146, "Sign": -1},
-    {"PageViews": 6, "UserID": "4324182021466249494", "Duration": 185, "Sign": 1}
-  ]
-}
+```
+Some header
+Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+Total rows: 2
 ```
 ```sql
-cat data.json | ./clickhouse client --query "INSERT INTO UserActivity FORMAT Template SETTINGS format_schema = '{\"array\":\n  [\n    \${data}\n  ]\n}', format_schema_rows = '{\"PageViews\": \${project:JSON}, \"UserID\": \${date:JSON}, \"Duration\": \${size:JSON}, \"Sign\": \${hits:JSON}}', format_schema_rows_between_delimiter = ',\n    '"
+INSERT INTO UserActivity FORMAT Template SETTINGS 
+format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
+format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
 ```
-В данном примере экранирование `"` и `$` нужно, чтобы настройки корректно передались через аргумент командной строки. Без этих экранирований настройки могли бы выглядеть так:
-```
-format_schema = '{"array":
-  [
-    ${data}
-  ]
-}',
-format_schema_rows = '{"PageViews": ${PageViews:JSON}, "UserID": ${UserID:JSON}, "Duration": ${Duration:JSON}, "Sign": ${Sign:JSON}}',
-format_schema_rows_between_delimiter = ',\n    '
-```
+`PageViews`, `UserID`, `Duration` и `Sign` внутри подстановок - имена столбцов в таблице, в которую вставляются данные. Значения после `Useless field` в строках и значение после `\nTotal rows: ` в суффиксе будут проигнорированы.
 Все разделители во входных данных должны строго соответствовать разделителям в форматных строках.
  
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
-Отличается от формата `Template` тем, что пропускает пробельные символы между разделителями и значениями во входном потоке. При этом, если форматные строки содержат пробельные символы, эти символы будут ожидаться во входных данных. Подходит только для ввода.
+Подходит только для ввода. Отличается от формата `Template` тем, что пропускает пробельные символы между разделителями и значениями во входном потоке. Также в этом формате можно указать пустые подстановки с типом экранирования `None` (`${}` или `${:None}`), чтобы разбить разделители на несколько частей, пробелы между которыми должны игнорироваться. Такие подстановки используются только для пропуска пробелов. С помощью этого формата можно считывать `JSON`, если значения столбцов в нём всегда идут в одном порядке в каждой строке. Например, для вставки данных из примера вывода формата [JSON](#json) в таблицу со столбцами `phrase` и `cnt` можно использовать следующий запрос:
+```sql
+INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
+format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
+format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
+format_schema_rows_between_delimiter = ','
+```
 
 ## TSKV {#tskv}
 

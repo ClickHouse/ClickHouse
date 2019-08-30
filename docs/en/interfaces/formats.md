@@ -132,25 +132,26 @@ Format string `format_schema_rows` specifies rows format with the following synt
  `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
   where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`), 
-  `column_i` is a name of a column whose values are to be selected or inserted, 
+  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped), 
   `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
   
   - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
   - `Escaped` (similarly to `TSV`)
   - `Quoted` (similarly to `Values`)
   - `Raw` (without escaping, similarly to `TSVRaw`)
+  - `None` (no escaping rule, see further)
   
-  Escaping rule may be omitted and in this case `Escaped` will be used. `XML` and `Raw` are suitable only for output. 
+  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
   
   So, for the following format string:
     
-    `Search phrase: ${SearchPhrase:Quoted}, count: ${c}, ad price: $$${price:JSON};`
+    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
     
   the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
 
   `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
   
- The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one.
+ The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
 Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
@@ -164,9 +165,9 @@ Format string `format_schema` has the same syntax as `format_schema_rows` and al
  - `rows_read` is the number of rows have been read
  - `bytes_read` is the number of bytes (uncompressed) have been read
  
- The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified. The remaining placeholders may have any escaping rule specified.
+ The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
  If the `format_schema` setting is an empty string, `${data}` is used as default value.
-  For insert queries `format_schema` must be like  `some prefix ${data} some suffix` i.e. it must contain a single placeholder `data`.
+  For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
  
  `Select` example:
 ```sql
@@ -209,32 +210,31 @@ format_schema_rows_between_delimiter = '\n    '
 ```
 
 `Insert` example:
-```json
-{"array":
-  [
-    {"PageViews": 5, "UserID": "4324182021466249494", "Duration": 146, "Sign": -1},
-    {"PageViews": 6, "UserID": "4324182021466249494", "Duration": 185, "Sign": 1}
-  ]
-}
+```
+Some header
+Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+Total rows: 2
 ```
 ```sql
-cat data.json | ./clickhouse client --query "INSERT INTO UserActivity FORMAT Template SETTINGS format_schema = '{\"array\":\n  [\n    \${data}\n  ]\n}', format_schema_rows = '{\"PageViews\": \${project:JSON}, \"UserID\": \${date:JSON}, \"Duration\": \${size:JSON}, \"Sign\": \${hits:JSON}}', format_schema_rows_between_delimiter = ',\n    '"
+INSERT INTO UserActivity FORMAT Template SETTINGS 
+format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
+format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
 ```
-In this example, `"` and `$` are escaped with `\` to pass settings through the command line argument correctly. The settings may look like this without escaping:
-```
-format_schema = '{"array":
-  [
-    ${data}
-  ]
-}',
-format_schema_rows = '{"PageViews": ${PageViews:JSON}, "UserID": ${UserID:JSON}, "Duration": ${Duration:JSON}, "Sign": ${Sign:JSON}}',
-format_schema_rows_between_delimiter = ',\n    '
-```
+`PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
  
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
-Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. This format is suitable only for input.
+This format is suitable only for input.
+Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters. 
+It's possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
+```sql
+INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
+format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
+format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
+format_schema_rows_between_delimiter = ','
+```
 
 ## TSKV {#tskv}
 
