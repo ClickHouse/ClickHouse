@@ -13,5 +13,5 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-def test_check_client_logs_level(start_cluster):
+def test_check_timezone_config(start_cluster):
     assert TSV(instance.query("SELECT toDateTime(1111111111)")) == TSV("2005-03-17 17:58:31\n")
