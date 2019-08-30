@@ -54,36 +54,36 @@ namespace
 std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
 
-    size_t first_glob = for_match.find_first_of("*?{");
+    const size_t first_glob = for_match.find_first_of("*?{");
 
-    size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
-    std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
-    size_t next_slash = suffix_with_globs.find('/', 1);
+    const size_t next_slash = suffix_with_globs.find('/', 1);
     re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
 
     std::vector<std::string> result;
-    std::string preffix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
-    if (!fs::exists(fs::path(preffix_without_globs.data())))
+    const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
+    if (!fs::exists(fs::path(prefix_without_globs.data())))
     {
         return result;
     }
-    fs::directory_iterator end;
-    for (fs::directory_iterator it(preffix_without_globs); it != end; ++it)
+    const fs::directory_iterator end;
+    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
     {
-        std::string full_path = it->path().string();
-        size_t last_slash = full_path.rfind('/');
-        String file_name = full_path.substr(last_slash);
-        /// Condition with next_slash means what we are looking for (it is from current position in psttern of path)
+        const std::string full_path = it->path().string();
+        const size_t last_slash = full_path.rfind('/');
+        const String file_name = full_path.substr(last_slash);
+        const bool looking_for_directory = next_slash != std::string::npos;
         /// Condition is_directory means what kind of path is it in current iteration of ls
-        if ((!fs::is_directory(it->path())) && (next_slash == std::string::npos))
+        if (!fs::is_directory(it->path()) && !looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 result.push_back(it->path().string());
             }
         }
-        else if ((fs::is_directory(it->path())) && (next_slash != std::string::npos))
+        else if (fs::is_directory(it->path()) && looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
