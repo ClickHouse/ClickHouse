@@ -561,7 +561,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
 
-    NamesAndTypesList gathering_columns, merging_columns;
+    NamesAndTypesList gathering_columns;
+    NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
         all_columns, data.sorting_key_expr, data.skip_indices,
