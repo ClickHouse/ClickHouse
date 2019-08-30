@@ -166,7 +166,7 @@ else()
 endif()
 
 if(NOT DISABLE_CPU_OPTIMIZE)
-    include(cmake/test_cpu.cmake)
+    include(cmake/cpu_features.cmake)
 endif()
 
 if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
