@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -215,11 +216,11 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        const auto timestamp = static_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
+        const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
         // reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
         for (auto i = events_size; i > 0; --i)
         {
-            auto event = static_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
+            auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
                 this->data(place).add(timestamp, i);
         }
@@ -242,7 +243,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
+        assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
     }
 
     const char * getHeaderFilePath() const override

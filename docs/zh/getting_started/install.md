@@ -1,18 +1,14 @@
 ## 系统要求
 
-如果从官方仓库安装，需要确保您使用的是x86\_64处理器构架的Linux并且支持SSE 4.2指令集
+ClickHouse可以在任何具有x86\_64，AArch64或PowerPC64LE CPU架构的Linux，FreeBSD或Mac OS X上运行。
 
-检查是否支持SSE 4.2：
+虽然预构建的二进制文件通常是为x86 \ _64编译并利用SSE 4.2指令集，但除非另有说明，否则使用支持它的CPU将成为额外的系统要求。这是检查当前CPU是否支持SSE 4.2的命令：
 
-```bash
-grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+``` bash
+$ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-我们推荐使用Ubuntu或者Debian。终端必须使用UTF-8编码。
-
-基于rpm的系统,你可以使用第三方的安装包：https://packagecloud.io/altinity/clickhouse 或者直接安装debian安装包。
-
-ClickHouse还可以在FreeBSD与Mac OS X上工作。同时它可以在不支持SSE 4.2的x86\_64构架和AArch64 CPUs上编译。
+要在不支持SSE 4.2或具有AArch64或PowerPC64LE体系结构的处理器上运行ClickHouse，您应该[通过源构建ClickHouse](#from-sources)进行适当的配置调整。
 
 ##可用的安装选项
 
@@ -67,7 +63,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/)上的指南。那些图像使用官方的`deb`包。
 
-### 使用源码安装
+### 使用源码安装 {#from-sources}
 
 具体编译方式可以参考build.md。
 

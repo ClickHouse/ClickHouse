@@ -54,6 +54,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/QueryNormalizer.h>
+
 #include <Interpreters/ActionsVisitor.h>
 
 #include <Interpreters/ExternalTablesVisitor.h>
@@ -140,7 +141,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                 for (const auto & key_ast : analyzedJoin().key_asts_left)
                     getRootActions(key_ast, true, temp_actions);
 
-            addJoinAction(temp_actions);
+            addJoinAction(table_join, temp_actions);
         }
     }
 
@@ -424,9 +425,9 @@ static void appendRequiredColumns(
 }
 
 /// It's possible to set nullptr as join for only_types mode
-void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr join) const
+void ExpressionAnalyzer::addJoinAction(const ASTTableJoin & join_params, ExpressionActionsPtr & actions, JoinPtr join) const
 {
-    actions->add(ExpressionAction::ordinaryJoin(join, analyzedJoin().key_names_left, columnsAddedByJoin()));
+    actions->add(ExpressionAction::ordinaryJoin(join_params, std::move(join), analyzedJoin().key_names_left, analyzedJoin().key_names_right, columnsAddedByJoin()));
 }
 
 bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -443,8 +444,10 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
+    auto & join_params = ast_join->table_join->as<ASTTableJoin &>();
+
     getRootActions(left_keys_list, only_types, step.actions);
-    addJoinAction(step.actions, subquery_for_set.join);
+    addJoinAction(join_params, step.actions, subquery_for_set.join);
 
     return true;
 }

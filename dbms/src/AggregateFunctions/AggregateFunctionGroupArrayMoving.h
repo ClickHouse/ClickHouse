@@ -11,6 +11,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -164,7 +165,7 @@ public:
         const auto & data = this->data(place);
         size_t size = data.value.size();
 
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         offsets_to.push_back(offsets_to.back() + size);

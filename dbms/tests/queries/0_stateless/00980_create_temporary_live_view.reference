@@ -1,0 +1,3 @@
+temporary_live_view_timeout	5
+live_view_heartbeat_interval	15
+0

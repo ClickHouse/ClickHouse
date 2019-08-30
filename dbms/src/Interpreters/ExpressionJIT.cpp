@@ -9,6 +9,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/LRUCache.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -418,9 +419,9 @@ static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column
         return value ? llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null) : nullptr;
     }
     if (type->isFloatTy())
-        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float32> &>(column).getElement(i));
+        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float32> &>(column).getElement(i));
     if (type->isDoubleTy())
-        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float64> &>(column).getElement(i));
+        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float64> &>(column).getElement(i));
     if (type->isIntegerTy())
         return llvm::ConstantInt::get(type, column.getUInt(i));
     /// TODO: if (type->isVectorTy())

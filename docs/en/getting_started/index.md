@@ -2,8 +2,6 @@
 
 If you are new to ClickHouse and want to get a hands-on feeling of it's performance, first of all you need to go through the [installation process](install.md).
 
-After that you can choose one of the following options:
-
 * [Go through detailed tutorial](tutorial.md)
 * [Experiment with example datasets](example_datasets/ontime.md)
 
