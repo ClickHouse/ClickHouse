@@ -41,7 +41,7 @@ public:
         return res;
     }
 
-    void formatImpl(const FormatSettings & s, FormatState &state, FormatStateStacked frame) const override
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
     {
         frame.need_parens = false;
         std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');

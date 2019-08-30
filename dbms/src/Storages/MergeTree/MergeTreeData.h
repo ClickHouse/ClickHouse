@@ -645,6 +645,13 @@ public:
             (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
+    /// Get constant pointer to storage settings.
+    /// Copy this pointer into your scope and you will
+    /// get consistent settings.
+    MergeTreeSettingsPtr getSettings() const
+    {
+        return storage_settings.get();
+    }
 
     String getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const;
     DiskSpace::DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
@@ -717,13 +724,6 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
-    /// Get constant pointer to storage settings.
-    /// Copy this pointer into your scope and you will
-    /// get consistent settings.
-    MergeTreeSettingsPtr getSettings() const
-    {
-        return storage_settings.get();
-    }
 
 protected:
 
