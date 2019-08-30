@@ -17,9 +17,9 @@ extern const int SYNTAX_ERROR;
 }
 
 
-TemplateRowInputFormat::TemplateRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
-        const FormatSettings & settings_, bool ignore_spaces_)
-    : RowInputFormatWithDiagnosticInfo(header_, in_, params_), buf(in_), data_types(header_.getDataTypes()),
+TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                                               const FormatSettings & settings_, bool ignore_spaces_)
+    : RowInputFormatWithDiagnosticInfo(header_, buf, params_), buf(in_), data_types(header_.getDataTypes()),
     settings(settings_), ignore_spaces(ignore_spaces_)
 {
     /// Parse format string for whole input
@@ -311,22 +311,35 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 {
     out << "Suffix does not match: ";
     size_t last_successfully_parsed_idx = format_data_idx + 1;
-    bool catched = false;
+    const ReadBuffer::Position row_begin_pos = buf.position();
+    bool caught = false;
     try
     {
+        PeekableReadBufferCheckpoint checkpoint{buf, true};
         tryReadPrefixOrSuffix<void>(last_successfully_parsed_idx, format.columnsCount());
     }
     catch (Exception & e)
     {
         out << e.message() << " Near column " << last_successfully_parsed_idx;
-        catched = true;
+        caught = true;
     }
-    if (!catched)
-        out << " There is some data after suffix (EOF expected). ";
+    if (!caught)
+    {
+        out << " There is some data after suffix (EOF expected, got ";
+        verbosePrintString(buf.position(), std::min(buf.buffer().end(), buf.position() + 16), out);
+        out << "). ";
+    }
     out << " Format string (from format_schema): \n" << format.dump() << "\n";
-    out << "Trying to parse next row, because suffix does not match:\n";
 
-    out << "Using format string (from format_schema_rows): " << row_format.dump() << "\n";
+    if (row_begin_pos != buf.position())
+    {
+        /// Pointers to buffer memory were invalidated during checking for suffix
+        out << "\nCannot print more diagnostic info.";
+        return false;
+    }
+
+    out << "\nUsing format string (from format_schema_rows): " << row_format.dump() << "\n";
+    out << "\nTrying to parse next row, because suffix does not match:\n";
     try
     {
         if (likely(row_num != 1))
@@ -400,14 +413,14 @@ void TemplateRowInputFormat::writeErrorStringForWrongDelimiter(WriteBuffer & out
     out << '\n';
 }
 
-void TemplateRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
-                                                 ReadBuffer::Position & curr_pos)
+void TemplateRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
+                                                 ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos)
 {
     prev_pos = buf.position();
-    if (row_format.format_idx_to_column_idx[input_position])
-        deserializeField(*type, column, row_format.formats[input_position]);
+    if (row_format.format_idx_to_column_idx[file_column])
+        deserializeField(*type, column, row_format.formats[file_column]);
     else
-        skipField(row_format.formats[input_position]);
+        skipField(row_format.formats[file_column]);
     curr_pos = buf.position();
 }
 
@@ -499,7 +512,7 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
         {
-            return std::make_shared<TemplateRowInputFormat>(buf, sample, std::move(params), settings, ignore_spaces);
+            return std::make_shared<TemplateRowInputFormat>(sample, buf, params, settings, ignore_spaces);
         });
     }
 }

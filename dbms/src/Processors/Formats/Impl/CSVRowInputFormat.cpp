@@ -18,8 +18,8 @@ namespace ErrorCodes
 }
 
 
-CSVRowInputFormat::CSVRowInputFormat(
-    ReadBuffer & in_, Block header_, Params params_, bool with_names_, const FormatSettings & format_settings_)
+CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                                     bool with_names_, const FormatSettings & format_settings_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , with_names(with_names_)
     , format_settings(format_settings_)
@@ -356,16 +356,16 @@ void CSVRowInputFormat::syncAfterError()
     skipToNextLineOrEOF(in);
 }
 
-void CSVRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
-                                       ReadBuffer::Position & curr_pos)
+void CSVRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
+                                            ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos)
 {
     skipWhitespacesAndTabs(in);
     prev_pos = in.position();
 
-    if (column_indexes_for_input_fields[input_position])
+    if (column_indexes_for_input_fields[file_column])
     {
-        const bool is_last_file_column = input_position + 1 == column_indexes_for_input_fields.size();
-        if (!readField(column, type, is_last_file_column, *column_indexes_for_input_fields[input_position]))
+        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
+        if (!readField(column, type, is_last_file_column, *column_indexes_for_input_fields[file_column]))
             column.insertDefault();
     }
     else
@@ -428,7 +428,7 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<CSVRowInputFormat>(buf, sample, std::move(params), with_names, settings);
+            return std::make_shared<CSVRowInputFormat>(sample, buf, params, with_names, settings);
         });
     }
 }

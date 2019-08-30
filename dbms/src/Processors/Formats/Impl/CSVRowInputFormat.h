@@ -11,8 +11,6 @@
 namespace DB
 {
 
-class ReadBuffer;
-
 /** A stream for inputting data in csv format.
   * Does not conform with https://tools.ietf.org/html/rfc4180 because it skips spaces and tabs between values.
   */
@@ -21,7 +19,8 @@ class CSVRowInputFormat : public RowInputFormatWithDiagnosticInfo
 public:
     /** with_names - in the first line the header with column names
       */
-    CSVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, bool with_names_, const FormatSettings & format_settings_);
+    CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                      bool with_names_, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSVRowInputFormat"; }
 
@@ -42,7 +41,7 @@ private:
     using OptionalIndexes = std::vector<std::optional<size_t>>;
     OptionalIndexes column_indexes_for_input_fields;
 
-    /// Tracks which colums we have read in a single read() call.
+    /// Tracks which columns we have read in a single read() call.
     /// For columns that are never read, it is initialized to false when we
     /// read the file header, and never changed afterwards.
     /// For other columns, it is updated on each read() call.
@@ -55,8 +54,8 @@ private:
     void addInputColumn(const String & column_name);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
-    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
-                             ReadBuffer::Position & curr_pos) override;
+    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
+                             ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override
     {
         return *pos != '\n' && *pos != '\r' && *pos != format_settings.csv.delimiter;

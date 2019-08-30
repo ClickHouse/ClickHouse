@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-TemplateBlockOutputFormat::TemplateBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_)
         : IOutputFormat(header_, out_), settings(settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
@@ -237,7 +237,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
             FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
-        return std::make_shared<TemplateBlockOutputFormat>(buf, sample, settings);
+        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings);
     });
 }
 }

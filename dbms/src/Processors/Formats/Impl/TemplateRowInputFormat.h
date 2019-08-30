@@ -15,8 +15,8 @@ class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
 {
     using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
-    TemplateRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
-            const FormatSettings & settings_, bool ignore_spaces_);
+    TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                           const FormatSettings & settings_, bool ignore_spaces_);
 
     String getName() const override { return "TemplateRowInputFormat"; }
 
@@ -38,7 +38,7 @@ private:
     [[noreturn]] void throwUnexpectedEof();
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
-    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
+    void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column, ReadBuffer::Position & prev_pos,
                              ReadBuffer::Position & curr_pos) override;
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
     void writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim);

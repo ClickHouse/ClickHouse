@@ -15,7 +15,6 @@ PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_
     checkStateCorrect();
 }
 
-/// Saves unread data to own memory, so it will be possible to read it later. Loads next data to sub-buffer
 bool PeekableReadBuffer::peekNext()
 {
     checkStateCorrect();
@@ -29,7 +28,7 @@ bool PeekableReadBuffer::peekNext()
         if (checkpoint)
             copy_from = checkpoint;
         bytes_read = copy_from - sub_buf.buffer().begin();
-        bytes_to_copy = sub_buf.buffer().end() - copy_from; // sub_buf.available();
+        bytes_to_copy = sub_buf.buffer().end() - copy_from; /// sub_buf.available();
         if (!bytes_to_copy)
         {
             bytes += bytes_read;
@@ -143,7 +142,7 @@ bool PeekableReadBuffer::nextImpl()
     /// FIXME wrong bytes count because it can read the same data again after rollbackToCheckpoint()
     /// However, changing bytes count on every call of next() (even after rollback) allows to determine if some pointers were invalidated.
     checkStateCorrect();
-    bool res = true;
+    bool res;
 
     if (!checkpoint)
     {
@@ -207,7 +206,6 @@ void PeekableReadBuffer::checkStateCorrect() const
     }
     else
     {
-
         if (!currentlyReadFromOwnMemory() && peeked_size)
             throw DB::Exception("Own buffer is not empty", ErrorCodes::LOGICAL_ERROR);
     }

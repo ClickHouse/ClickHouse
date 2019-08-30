@@ -14,7 +14,7 @@ class TemplateBlockOutputFormat : public IOutputFormat
 {
     using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
-    TemplateBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_);
 
     String getName() const override { return "TemplateBlockOutputFormat"; }
 

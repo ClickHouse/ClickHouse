@@ -42,9 +42,9 @@ static void checkForCarriageReturn(ReadBuffer & in)
 }
 
 
-TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
-    ReadBuffer & in_, Block header_, bool with_names_, bool with_types_, Params params_, const FormatSettings & format_settings_)
-    : RowInputFormatWithDiagnosticInfo(std::move(header_), in_, std::move(params_)), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
+TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                                                       bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : RowInputFormatWithDiagnosticInfo(header_, in_, params_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
@@ -174,9 +174,9 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
     updateDiagnosticInfo();
 
-    for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
+    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
-        const auto & column_index = column_indexes_for_input_fields[input_position];
+        const auto & column_index = column_indexes_for_input_fields[file_column];
         if (column_index)
         {
             data_types[*column_index]->deserializeAsTextEscaped(*columns[*column_index], in, format_settings);
@@ -188,7 +188,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
         }
 
         /// skip separators
-        if (input_position + 1 < column_indexes_for_input_fields.size())
+        if (file_column + 1 < column_indexes_for_input_fields.size())
         {
             assertChar('\t', in);
         }
@@ -208,20 +208,20 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
 bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
-    for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
+    for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
-        if (input_position == 0 && in.eof())
+        if (file_column == 0 && in.eof())
         {
             out << "<End of stream>\n";
             return false;
         }
 
-        if (column_indexes_for_input_fields[input_position].has_value())
+        if (column_indexes_for_input_fields[file_column].has_value())
         {
             auto & header = getPort().getHeader();
-            size_t col_idx = column_indexes_for_input_fields[input_position].value();
+            size_t col_idx = column_indexes_for_input_fields[file_column].value();
             if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx],
-                                                        out, input_position))
+                                                        out, file_column))
                 return false;
         }
         else
@@ -229,12 +229,12 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
             static const String skipped_column_str = "<SKIPPED COLUMN>";
             static const DataTypePtr skipped_column_type = std::make_shared<DataTypeNothing>();
             static const MutableColumnPtr skipped_column = skipped_column_type->createColumn();
-            if (!deserializeFieldAndPrintDiagnosticInfo(skipped_column_str, skipped_column_type, *skipped_column, out, input_position))
+            if (!deserializeFieldAndPrintDiagnosticInfo(skipped_column_str, skipped_column_type, *skipped_column, out, file_column))
                 return false;
         }
 
         /// Delimiters
-        if (input_position + 1 == column_indexes_for_input_fields.size())
+        if (file_column + 1 == column_indexes_for_input_fields.size())
         {
             if (!in.eof())
             {
@@ -277,7 +277,8 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
                 {
                     out << "ERROR: Line feed found where tab is expected."
                            " It's like your file has less columns than expected.\n"
-                           "And if your file have right number of columns, maybe it have unescaped backslash in value before tab, which cause tab has escaped.\n";
+                           "And if your file have right number of columns, "
+                           "maybe it have unescaped backslash in value before tab, which cause tab has escaped.\n";
                 }
                 else if (*in.position() == '\r')
                 {
@@ -297,12 +298,11 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
     return true;
 }
 
-void TabSeparatedRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position,
-                                                     ReadBuffer::Position & prev_pos,
-                                                     ReadBuffer::Position & curr_pos)
+void TabSeparatedRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
+                                                     ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos)
 {
     prev_pos = in.position();
-    if (column_indexes_for_input_fields[input_position])
+    if (column_indexes_for_input_fields[file_column])
         type->deserializeAsTextEscaped(column, in, format_settings);
     else
     {
@@ -329,7 +329,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowInputFormat>(buf, sample, false, false, std::move(params), settings);
+            return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, params, false, false, settings);
         });
     }
 
@@ -342,7 +342,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowInputFormat>(buf, sample, true, false, std::move(params), settings);
+            return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, params, true, false, settings);
         });
     }
 
@@ -355,7 +355,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<TabSeparatedRowInputFormat>(buf, sample, true, true, std::move(params), settings);
+            return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, params, true, true, settings);
         });
     }
 }
