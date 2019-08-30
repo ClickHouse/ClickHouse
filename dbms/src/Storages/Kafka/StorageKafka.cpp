@@ -45,7 +45,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_SETTING;
-    extern const int IMMUTABLE_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 namespace
@@ -417,7 +417,7 @@ void StorageKafka::checkSetting(const String & setting_name) const
     if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
         throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
 
-    throw Exception{"Setting '" + setting_name + "' is immutable for storage '" + getName() + "'", ErrorCodes::IMMUTABLE_SETTING};
+    throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
 }
 
 void registerStorageKafka(StorageFactory & factory)
