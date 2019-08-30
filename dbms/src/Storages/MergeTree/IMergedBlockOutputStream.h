@@ -142,7 +142,7 @@ protected:
 
     size_t current_mark = 0;
 
-    /// Number of mark in data from which skip indicies have to start
+    /// Number of mark in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
     size_t skip_index_data_mark = 0;
 
