@@ -29,6 +29,7 @@ class StorageDistributedDirectoryMonitor;
   */
 class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
@@ -76,12 +77,17 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop() override {}
+    void drop(TableStructureWriteLockHolder &) override {}
 
     /// Removes temporary data in local filesystem.
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override { table_name = new_table_name; database_name = new_database_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
+
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
     void alter(

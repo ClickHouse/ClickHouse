@@ -266,11 +266,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr owned_cluster_,
     const Context & context_)
 {
-    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, table_name_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
-
+    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
     res->owned_cluster = owned_cluster_;
-
     return res;
 }
 
@@ -282,11 +279,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
-    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, table_name_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
-
+    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
     res->owned_cluster = owned_cluster_;
-
     return res;
 }
 
@@ -421,7 +415,7 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::truncate(const ASTPtr &, const Context &)
+void StorageDistributed::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 

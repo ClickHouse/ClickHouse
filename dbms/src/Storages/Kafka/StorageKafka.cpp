@@ -34,35 +34,16 @@
 namespace DB
 {
 
-namespace ProfileEvents
-{
-    extern const Event RejectedInserts;
-    extern const Event DelayedInserts;
-    extern const Event DelayedInsertsMilliseconds;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric DelayedInserts;
-}
-
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
+    extern const int UNKNOWN_EXCEPTION;
+    extern const int CANNOT_READ_FROM_ISTREAM;
+    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int SYNTAX_ERROR;
-    extern const int INVALID_PARTITION_VALUE;
-    extern const int METADATA_MISMATCH;
-    extern const int PART_IS_TEMPORARILY_LOCKED;
-    extern const int TOO_MANY_PARTS;
-    extern const int INCOMPATIBLE_COLUMNS;
-    extern const int CANNOT_UPDATE_COLUMN;
-    extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_MUNMAP;
-    extern const int CANNOT_MREMAP;
-    extern const int BAD_TTL_EXPRESSION;
-    extern const int INCORRECT_FILE_NAME;
-    extern const int BAD_DATA_PART_NAME;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_SETTING;
     extern const int IMMUTABLE_SETTING;
 }
@@ -210,7 +191,7 @@ void StorageKafka::shutdown()
 }
 
 
-void StorageKafka::rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name)
+void StorageKafka::rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     table_name = new_table_name;
     database_name = new_database_name;
@@ -295,8 +276,10 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
         batch_size = settings.max_block_size.value;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
+    /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
+        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled),
+        row_delimiter);
 }
 
 
@@ -392,7 +375,7 @@ bool StorageKafka::streamToViews()
         block_size = settings.max_block_size;
 
     // Create a stream for each consumer and join them in a union stream
-    InterpreterInsertQuery interpreter{insert, global_context};
+    InterpreterInsertQuery interpreter(insert, global_context, false, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -417,7 +400,8 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    copyData(*in, *block_io.out, &stream_cancelled);
+    std::atomic<bool> stub;
+    copyData(*in, *block_io.out, &stub);
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;

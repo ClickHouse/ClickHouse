@@ -67,6 +67,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
+#include <Common/TerminalSize.h>
 
 #if USE_READLINE
 #include "Suggest.h"
@@ -130,7 +131,7 @@ private:
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
-    winsize terminal_size {};            /// Terminal size is needed to render progress bar.
+    uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
@@ -671,7 +672,7 @@ private:
         String text;
 
         if (config().has("query"))
-            text = config().getString("query");
+            text = config().getRawString("query");  /// Poco configuration should not process substitutions in form of ${...} inside query.
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
@@ -1465,7 +1466,7 @@ private:
 
                 if (show_progress_bar)
                 {
-                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
@@ -1642,22 +1643,13 @@ public:
 
         stdin_is_not_tty = !isatty(STDIN_FILENO);
 
+        if (!stdin_is_not_tty)
+            terminal_width = getTerminalWidth();
+
         namespace po = boost::program_options;
 
-        unsigned line_length = po::options_description::m_default_line_length;
-        unsigned min_description_length = line_length / 2;
-        if (!stdin_is_not_tty)
-        {
-            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
-                throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", ErrorCodes::SYSTEM_ERROR);
-            line_length = std::max(
-                static_cast<unsigned>(strlen("--http_native_compression_disable_checksumming_on_decompress ")),
-                static_cast<unsigned>(terminal_size.ws_col));
-            min_description_length = std::min(min_description_length, line_length - 2);
-        }
-
         /// Main commandline options related to client functionality and all parameters from Settings.
-        po::options_description main_description("Main options", line_length, min_description_length);
+        po::options_description main_description = createOptionsDescription("Main options", terminal_width);
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,C", po::value<std::string>(), "config-file path")
@@ -1672,7 +1664,7 @@ public:
               * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
               * as the password.
               */
-            ("password", po::value<std::string>()->implicit_value("\n"), "password")
+            ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1703,7 +1695,7 @@ public:
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
-        po::options_description external_description("External tables options");
+        po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
         external_description.add_options()
             ("file", po::value<std::string>(), "data file or - for stdin")
             ("name", po::value<std::string>()->default_value("_data"), "name of the table")

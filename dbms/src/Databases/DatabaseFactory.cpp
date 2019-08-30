@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/parseAddress.h>
 #include "config_core.h"
 #if USE_MYSQL

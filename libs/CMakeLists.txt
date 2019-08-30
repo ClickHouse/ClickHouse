@@ -15,10 +15,6 @@ if (USE_INTERNAL_MEMCPY)
     add_subdirectory (libmemcpy)
 endif()
 
-if (GLIBC_COMPATIBILITY)
-    add_subdirectory (libglibc-compatibility)
-endif ()
-
 if (USE_MYSQL)
     add_subdirectory (libmysqlxx)
 endif ()

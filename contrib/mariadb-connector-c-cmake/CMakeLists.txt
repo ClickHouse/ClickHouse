@@ -62,11 +62,6 @@ endif()
 
 add_library(mysqlclient ${SRCS})
 
-target_link_libraries(mysqlclient PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
-if(M_LIBRARY)
-    target_link_libraries(mysqlclient PRIVATE ${M_LIBRARY})
-endif()
-
 if(OPENSSL_LIBRARIES)
     target_link_libraries(mysqlclient PRIVATE ${OPENSSL_LIBRARIES})
     target_compile_definitions(mysqlclient PRIVATE -D HAVE_OPENSSL -D HAVE_TLS)
