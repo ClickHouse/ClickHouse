@@ -13,6 +13,8 @@ foreach(policy
     endif()
 endforeach()
 
+include (cmake/target.cmake)
+
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
 macro (export)
@@ -40,22 +42,6 @@ if(ENABLE_IPO)
 else()
     message(STATUS "IPO/LTO not enabled.")
 endif()
-
-if (COMPILER_GCC)
-    # Require minimum version of gcc
-    set (GCC_MINIMUM_VERSION 8)
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION} AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
-    endif ()
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require minimum version of clang
-    set (CLANG_MINIMUM_VERSION 7)
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
-        message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
-    endif ()
-else ()
-    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 6+ and GCC 7+.")
-endif ()
 
 # Check that submodules are present only if source was downloaded with git
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
@@ -134,22 +120,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
         message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
     endif ()
-endif ()
-
-string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
-
-find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
-find_program (GOLD_PATH NAMES "gold")
-
-if (COMPILER_CLANG AND LLD_PATH AND NOT LINKER_NAME)
-    set (LINKER_NAME "lld")
-elseif (GOLD_PATH)
-    set (LINKER_NAME "gold")
-endif ()
-
-if (LINKER_NAME)
-    message(STATUS "Using linker: ${LINKER_NAME} (selected from: LLD_PATH=${LLD_PATH}; GOLD_PATH=${GOLD_PATH}; COMPILER_POSTFIX=${COMPILER_POSTFIX})")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
 # Make sure the final executable has symbols exported
@@ -233,7 +203,9 @@ if (NOT SANITIZE)
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
-include(cmake/default_libs.cmake)
+if (OS_LINUX)
+    include(cmake/linux/default_libs.cmake)
+endif ()
 
 ######################################
 ### Add targets below this comment ###
