@@ -30,8 +30,8 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 add_subdirectory(libs/libglibc-compatibility)
-include (cmake/find_unwind.cmake)
-include (cmake/find_cxx.cmake)
+include (cmake/find/unwind.cmake)
+include (cmake/find/cxx.cmake)
 
 add_library(global-group INTERFACE)
 target_link_libraries(global-group INTERFACE
