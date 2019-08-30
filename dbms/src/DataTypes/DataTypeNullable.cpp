@@ -11,6 +11,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -84,7 +85,7 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
     col.checkConsistency();
 
     /// First serialize null map.
@@ -105,7 +106,7 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
-    ColumnNullable & col = static_cast<ColumnNullable &>(column);
+    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     settings.path.push_back(Substream::NullMap);
     if (auto stream = settings.getter(settings.path))
@@ -119,7 +120,7 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
 
 void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     bool is_null = col.isNullAt(row_num);
     writeBinary(is_null, ostr);
@@ -134,7 +135,7 @@ static void safeDeserialize(
     IColumn & column,
     CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
-    ColumnNullable & col = static_cast<ColumnNullable &>(column);
+    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
     if (check_for_null())
     {
@@ -167,7 +168,7 @@ void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) co
 
 void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
@@ -235,7 +236,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 
 void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
         writeCString("NULL", ostr);
@@ -262,7 +263,7 @@ void DataTypeNullable::deserializeWholeText(IColumn & column, ReadBuffer & istr,
 
 void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
@@ -342,7 +343,7 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     /// In simple text format (like 'Pretty' format) (these formats are suitable only for output and cannot be parsed back),
     ///  data is printed without escaping.
@@ -358,7 +359,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
 
 void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
         writeCString("null", ostr);
@@ -375,7 +376,7 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
         writeCString("\\N", ostr);
@@ -385,14 +386,14 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 
 void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
     if (!col.isNullAt(row_num))
         nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf, value_index);
 }
 
 void DataTypeNullable::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
-    ColumnNullable & col = static_cast<ColumnNullable &>(column);
+    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
     IColumn & nested_column = col.getNestedColumn();
     size_t old_size = nested_column.size();
     try

@@ -172,6 +172,7 @@ The number of columns in the primary key is not explicitly limited. Depending on
 - Improve the performance of an index.
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
+    
     - There are queries with a condition on column `c`.
     - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 

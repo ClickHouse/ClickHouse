@@ -4,7 +4,9 @@
 
 ## نیازمندی های سیستم
 
-این یک سیستم چند سکویی (Cross-Platform) نمی باشد. این ابزار نیاز به Linux Ubuntu Precise (12.04) یا جدیدتر، با معماری x86\_64 و پشتیبانی از SSE 4.2 می باشد. برای چک کردن SSE 4.2 خروجی دستور زیر را بررسی کنید:
+ClickHouse ﺲﮐﻮﻨﯿﻟ ﻉﻮﻧ ﺮﻫ ﯼﻭﺭ ﺮﺑ ﺪﻧﺍﻮﺗ ﯽﻣ ، FreeBSD ﺎﯾ Mac OS X ﯼﺭﺎﻤﻌﻣ ﺎﺑ CPU x
+
+:ﺖﺳﺍ ﻩﺪﻣﺁ ، ﺪﻨﮐ ﯽﻣ ﯽﻧﺎﺒﯿﺘﺸﭘ SSE 4.2 ﺯﺍ ﯽﻠﻌﻓ CPU ﺎﯾﺁ ﻪﮑﻨﯾﺍ ﯽﺳﺭﺮﺑ ﯼﺍﺮﺑ ﺭﻮﺘﺳﺩ ﻦﯾﺍ
 
 </div>
 
@@ -14,7 +16,7 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 <div dir="rtl" markdown="1">
 
-پیشنهاد می کنیم از Ubuntu Trusty، Ubuntu Xenial یا Ubuntu Precise استفاده کنید. ترمینال باید از UTF-8 پشتیبانی کند. (به صورت پیش فرض در Ubuntu پشتیبانی می شود).
+ﺪﯾﺎﺑ ، ﺪﻧﺭﺍﺪﻧ PowerPC64LE ﺎﯾ AArch64 ﯼﺭﺎﻤﻌﻣ ﺎﯾ ﺪﻨﻨﮐ ﯽﻤﻧ ﯽﻧﺎﺒﯿﺘﺸﭘ SSE 4.2 ﺯﺍ ﻪﮐ[ClickHouse ﺪﯿﻨﮐ ﺩﺎﺠﯾﺍ ﻊﺑﺎﻨﻣ ﺯﺍ ﺍﺭ](#from-sources) ﺐﺳﺎﻨﻣ ﺕﺎﻤﯿﻈﻨﺗ ﺎﺑ
 
 ##ﺩﻮﺟﻮﻣ ﺐﺼﻧ ﯼﺎﻫ ﻪﻨﯾﺰﮔ
 
@@ -49,7 +51,7 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 ClickHouse دارای تنظیمات محدودیت دسترسی می باشد. این تنظیمات در فایل 'users.xml' (کنار 'config.xml') می باشد. به صورت پیش فرض دسترسی برای کاربر 'default' از همه جا بدون نیاز به پسورد وجود دارد. 'user/default/networks' را مشاهده کنید. برای اطلاعات بیشتر قسمت "تنظیمات فایل ها" را مشاهده کنید.
 
-                                                           RPM ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ ###
+### RPM ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ
 
 .ﺪﻨﮐ ﯽﻣ ﻪﯿﺻﻮﺗ ﺲﮐﻮﻨﯿﻟ ﺮﺑ ﯽﻨﺘﺒﻣ rpm ﺮﺑ ﯽﻨﺘﺒﻣ ﯼﺎﻫ ﻊﯾﺯﻮﺗ ﺮﯾﺎﺳ ﻭ CentOS ، RedHat ﯼﺍ
 

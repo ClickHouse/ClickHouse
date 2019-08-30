@@ -11,6 +11,7 @@ namespace DB
  */
 class StorageValues : public ext::shared_ptr_helper<StorageValues>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageValues>;
 public:
     std::string getName() const override { return "Values"; }
     std::string getTableName() const override { return table_name; }

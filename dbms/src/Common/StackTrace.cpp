@@ -1,15 +1,20 @@
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
-#include <Common/config.h>
 #include <Common/StackTrace.h>
-#include <Common/SymbolIndex.h>
+
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <sstream>
-#include <filesystem>
-#include <unordered_map>
-#include <cstring>
+#include <Common/SymbolIndex.h>
+#include <Common/config.h>
+#include <common/SimpleCache.h>
+#include <common/demangle.h>
 
+#include <cstring>
+#include <filesystem>
+#include <sstream>
+#include <unordered_map>
+
+#if USE_UNWIND
+#   include <libunwind.h>
+#endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
@@ -215,12 +220,6 @@ StackTrace::StackTrace(NoCapture)
 {
 }
 
-
-#if USE_UNWIND
-extern "C" int unw_backtrace(void **, int);
-#endif
-
-
 void StackTrace::tryCapture()
 {
     size = 0;
@@ -250,6 +249,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
     if (size == 0)
         return callback("<Empty trace>");
 
+#ifdef __ELF__
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
@@ -290,6 +290,18 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         callback(out.str());
         out.str({});
     }
+#else
+    std::stringstream out;
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        const void * addr = frames[i];
+        out << i << ". " << addr;
+
+        callback(out.str());
+        out.str({});
+    }
+#endif
 }
 
 static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
