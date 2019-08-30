@@ -17,11 +17,6 @@ class Field;
 class ReadBuffer;
 class WriteBuffer;
 
-namespace ErrorCodes
-{
-    extern const int IMMUTABLE_SETTING;
-}
-
 /** One setting for any type.
   * Stores a value within itself, as well as a flag - whether the value was changed.
   * This is done so that you can send to the remote servers only changed settings (or explicitly specified in the config) values.
@@ -34,7 +29,6 @@ struct SettingNumber
 {
     Type value;
     bool changed = false;
-    bool immutable = false;
 
     SettingNumber(Type x = 0) : value(x) {}
 
@@ -77,7 +71,6 @@ struct SettingMaxThreads
     UInt64 value;
     bool is_auto;
     bool changed = false;
-    bool immutable = false;
 
     SettingMaxThreads(UInt64 x = 0) : value(x ? x : getAutoValue()), is_auto(x == 0) {}
 
@@ -106,7 +99,6 @@ struct SettingTimespan
 {
     Poco::Timespan value;
     bool changed = false;
-    bool immutable = false;
 
     SettingTimespan(UInt64 x = 0) : value(x * microseconds_per_io_unit) {}
 
@@ -139,7 +131,6 @@ struct SettingString
 {
     String value;
     bool changed = false;
-    bool immutable = false;
 
     SettingString(const String & x = String{}) : value(x) {}
 
@@ -162,7 +153,6 @@ struct SettingChar
 public:
     char value;
     bool changed = false;
-    bool immutable = false;
 
     SettingChar(char x = '\0') : value(x) {}
 
@@ -187,7 +177,6 @@ struct SettingEnum
 {
     EnumType value;
     bool changed = false;
-    bool immutable = false;
 
     SettingEnum(EnumType x) : value(x) {}
 
@@ -322,8 +311,6 @@ private:
     using SerializeFunction = void (*)(const Derived &, WriteBuffer & buf);
     using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf);
     using CastValueWithoutApplyingFunction = Field (*)(const Field &);
-    using SetImmutable = void(*)(Derived &);
-    using IsImmutable = bool(*)(const Derived &);
 
 
     struct MemberInfo
@@ -331,8 +318,6 @@ private:
         IsChangedFunction is_changed;
         StringRef name;
         StringRef description;
-        /// At one moment this setting can became immutable
-        const bool can_be_immutable;
         GetStringFunction get_string;
         GetFieldFunction get_field;
         SetStringFunction set_string;
@@ -340,8 +325,6 @@ private:
         SerializeFunction serialize;
         DeserializeFunction deserialize;
         CastValueWithoutApplyingFunction cast_value_without_applying;
-        SetImmutable set_immutable;
-        IsImmutable is_immutable;
 
         bool isChanged(const Derived & collection) const { return is_changed(collection); }
     };
@@ -431,20 +414,8 @@ public:
     public:
         reference(Derived & collection_, const MemberInfo & member_) : const_reference(collection_, member_) {}
         reference(const const_reference & src) : const_reference(src) {}
-        void setValue(const Field & value)
-        {
-            if (this->member->is_immutable(*this->collection))
-                throw Exception("Setting '" + this->member->name.toString() + "' is restricted for updates.", ErrorCodes::IMMUTABLE_SETTING);
-            this->member->set_field(*const_cast<Derived *>(this->collection), value);
-        }
-        void setValue(const String & value)
-        {
-            if (this->member->is_immutable(*this->collection))
-                throw Exception("Setting '" + this->member->name.toString() + "' is restricted for updates.", ErrorCodes::IMMUTABLE_SETTING);
-            this->member->set_string(*const_cast<Derived *>(this->collection), value);
-        }
-        bool canBeImmutable() const { return this->member->can_be_immutable; }
-        void makeImmutableForever() { this->member->set_immutable(*const_cast<Derived *>(this->collection)); }
+        void setValue(const Field & value) { this->member->set_field(*const_cast<Derived *>(this->collection), value); }
+        void setValue(const String & value) { this->member->set_string(*const_cast<Derived *>(this->collection), value); }
     };
 
     /// Iterator to iterating through all the settings.
@@ -615,14 +586,6 @@ public:
         dest.copyChangesFrom(castToDerived());
     }
 
-    /// Make all possible immutable settings (can_be_immutable) immutable forever
-    void finishSettingsInitialization()
-    {
-        for (auto & member : *this)
-            if (member.canBeImmutable())
-                member.makeImmutableForever();
-    }
-
     /// Writes the settings to buffer (e.g. to be sent to remote server).
     /// Only changed settings are written. They are written as list of contiguous name-value pairs,
     /// finished with empty name.
@@ -666,7 +629,7 @@ public:
         { \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_, IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
         }; \
-        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_, IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_) \
+        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_) \
     }
 
 
@@ -682,8 +645,6 @@ public:
     static void NAME##_serialize(const Derived & collection, WriteBuffer & buf) { collection.NAME.serialize(buf); } \
     static void NAME##_deserialize(Derived & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); } \
     static Field NAME##_castValueWithoutApplying(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
-    static void NAME##_setImmutable(Derived & collection) { collection.NAME.immutable = true; } \
-    static bool NAME##_isImmutable(const Derived & collection) { return collection.NAME.immutable; }
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
@@ -693,14 +654,4 @@ public:
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
          &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
          &Functions::NAME##_castValueWithoutApplying, \
-         &Functions::NAME##_setImmutable, &Functions::NAME##_isImmutable });
-
-#define IMPLEMENT_SETTINGS_COLLECTION_ADD_IMMUTABLE_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    add({[](const Derived & d) { return d.NAME.changed; },              \
-        StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), true, \
-        &Functions::NAME##_getString, &Functions::NAME##_getField, \
-        &Functions::NAME##_setString, &Functions::NAME##_setField, \
-        &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
-        &Functions::NAME##_castValueWithoutApplying, \
-        &Functions::NAME##_setImmutable, &Functions::NAME##_isImmutable });
 }
