@@ -138,8 +138,8 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
-    /// Check storage has setting. Exception will be thrown if it doesn't support settings at all.
-    virtual bool hasSetting(const String & setting_name) const;
+    /// Check storage has setting and setting can be modified.
+    virtual bool checkSetting(const String & setting_name) const;
 
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
@@ -149,7 +149,7 @@ protected: /// still thread-unsafe part.
     virtual bool isVirtualColumn(const String & column_name) const;
 
     /// Returns modifier of settings in storage definition
-    virtual IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
+    IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const;
 
 private:
     ColumnsDescription columns; /// combined real and virtual columns

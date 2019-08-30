@@ -34,16 +34,37 @@
 namespace DB
 {
 
+namespace ProfileEvents
+{
+    extern const Event RejectedInserts;
+    extern const Event DelayedInserts;
+    extern const Event DelayedInsertsMilliseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric DelayedInserts;
+}
+
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int INVALID_CONFIG_PARAMETER;
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNSUPPORTED_METHOD;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int SYNTAX_ERROR;
+    extern const int INVALID_PARTITION_VALUE;
+    extern const int METADATA_MISMATCH;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int TOO_MANY_PARTS;
+    extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_UPDATE_COLUMN;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MUNMAP;
+    extern const int CANNOT_MREMAP;
+    extern const int BAD_TTL_EXPRESSION;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int BAD_DATA_PART_NAME;
+    extern const int UNKNOWN_SETTING;
+    extern const int IMMUTABLE_SETTING;
 }
 
 namespace
@@ -407,14 +428,12 @@ bool StorageKafka::streamToViews()
 }
 
 
-bool StorageKafka::hasSetting(const String & setting_name) const
+void StorageKafka::checkSetting(const String & setting_name) const
 {
-    return KafkaSettings::findIndex(setting_name) != KafkaSettings::npos;
-}
+    if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
+        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
 
-IDatabase::ASTModifier StorageKafka::getSettingsModifier(const SettingsChanges & /* new_changes */) const
-{
-    throw Exception("Storage '" + getName() + "' doesn't support settings alter", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception{"Setting '" + setting_name + "' is immutable for storage '" + getName() + "'", ErrorCodes::IMMUTABLE_SETTING};
 }
 
 void registerStorageKafka(StorageFactory & factory)

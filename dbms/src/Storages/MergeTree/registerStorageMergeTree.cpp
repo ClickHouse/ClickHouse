@@ -637,9 +637,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
-    /// Finalize settings and disable updates
-    storage_settings->finishSettingsInitialization();
-
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,

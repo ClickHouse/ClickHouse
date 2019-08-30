@@ -543,15 +543,8 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             }
         }
         else if (command.type == AlterCommand::MODIFY_SETTING)
-        {
             for (const auto & change : command.settings_changes)
-            {
-                if (!table.hasSetting(change.name))
-                {
-                    throw Exception{"Storage '" + table.getName() + "' doesn't have setting '" + change.name + "'", ErrorCodes::UNKNOWN_SETTING};
-                }
-            }
-        }
+                table.checkSetting(change.name);
     }
 
     /** Existing defaulted columns may require default expression extensions with a type conversion,
