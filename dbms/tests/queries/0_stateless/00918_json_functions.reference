@@ -46,6 +46,13 @@ hello
 1
 Thursday
 Friday
+(3,5)
+(7,3)
+(5,0)
+(3,5)
+(3,0)
+(3,5)
+(3,0)
 --JSONExtractKeysAndValues--
 [('a','hello')]
 [('b',[-100,200,300])]
@@ -121,6 +128,13 @@ hello
 1
 Thursday
 Friday
+(3,5)
+(7,3)
+(5,0)
+(3,5)
+(3,0)
+(3,5)
+(3,0)
 --JSONExtractKeysAndValues--
 [('a','hello')]
 [('b',[-100,200,300])]

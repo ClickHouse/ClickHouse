@@ -291,8 +291,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
                 bool make_nullable = is_null_used_as_default && right_or_full_join;
 
-                if (make_nullable && !col.type->isNullable())
-                    col.type = std::make_shared<DataTypeNullable>(col.type);
+                if (make_nullable && col.type->canBeInsideNullable())
+                    col.type = makeNullable(col.type);
             }
 
             for (const auto & col : columns_added_by_join)
@@ -316,8 +316,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
                     }
                 }
 
-                if (make_nullable && !res_type->isNullable())
-                    res_type = std::make_shared<DataTypeNullable>(res_type);
+                if (make_nullable && res_type->canBeInsideNullable())
+                    res_type = makeNullable(res_type);
 
                 sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
             }
@@ -726,7 +726,7 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
-    /// Compiled functions are custom functions and them don't need building
+    /// Compiled functions are custom functions and they don't need building
     if (action.type == ExpressionAction::APPLY_FUNCTION && !action.is_function_compiled)
     {
         if (sample_block.has(action.result_name))

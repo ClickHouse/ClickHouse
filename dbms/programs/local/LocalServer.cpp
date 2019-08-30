@@ -268,7 +268,7 @@ void LocalServer::attachSystemTables()
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query + config().getString("query");
+    String queries_str = initial_create_query + config().getRawString("query");
 
     std::vector<String> queries;
     auto parse_res = splitMultipartQuery(queries_str, queries);

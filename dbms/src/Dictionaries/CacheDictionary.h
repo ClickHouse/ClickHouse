@@ -7,6 +7,7 @@
 #include <shared_mutex>
 #include <variant>
 #include <vector>
+#include <common/logger_useful.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <pcg_random.hpp>
@@ -73,6 +74,8 @@ public:
         const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+
+    std::exception_ptr getLastException() const override;
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
@@ -253,8 +256,9 @@ private:
 
     const std::string name;
     const DictionaryStructure dict_struct;
-    const DictionarySourcePtr source_ptr;
+    mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+    Logger * const log;
 
     mutable std::shared_mutex rw_lock;
 
@@ -273,6 +277,10 @@ private:
     mutable std::vector<CellMetadata> cells;
     Attribute * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
+
+    mutable std::exception_ptr last_exception;
+    mutable size_t error_count = 0;
+    mutable std::chrono::system_clock::time_point backoff_end_time;
 
     mutable pcg64 rnd_engine;
 
