@@ -1162,6 +1162,12 @@ String Context::getCurrentQueryId() const
 }
 
 
+String Context::getInitialQueryId() const
+{
+    return client_info.initial_query_id;
+}
+
+
 void Context::setCurrentDatabase(const String & name)
 {
     auto lock = getLock();
