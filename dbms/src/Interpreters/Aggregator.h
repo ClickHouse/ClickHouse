@@ -838,6 +838,10 @@ public:
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
         bool & no_more_keys);
 
+    bool executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        bool & no_more_keys);
+
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
       *
