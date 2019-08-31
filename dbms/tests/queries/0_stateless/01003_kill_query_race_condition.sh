@@ -8,7 +8,7 @@ set -e
 function thread1()
 {
     while true; do 
-        $CLICKHOUSE_CLIENT --query_id=hello --query "SELECT count() FROM system.numbers";
+        $CLICKHOUSE_CLIENT --query_id=hello --query "SELECT count() FROM numbers(1000000000)" --format Null;
     done
 }
 
