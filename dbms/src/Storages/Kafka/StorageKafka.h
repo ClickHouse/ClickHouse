@@ -57,7 +57,7 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
-    void checkSetting(const String & setting_name) const override;
+    void checkSettingCanBeChanged(const String & setting_name) const override;
 
 protected:
     StorageKafka(

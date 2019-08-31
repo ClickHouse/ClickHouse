@@ -543,7 +543,7 @@ public:
            TableStructureWriteLockHolder & table_lock_holder);
 
     /// All MergeTreeData children have settings.
-    void checkSetting(const String & setting_name) const override;
+    void checkSettingCanBeChanged(const String & setting_name) const override;
 
     /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);

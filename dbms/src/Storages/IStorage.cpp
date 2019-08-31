@@ -309,7 +309,7 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-void IStorage::checkSetting(const String & /* setting_name */) const
+void IStorage::checkSettingCanBeChanged(const String & /* setting_name */) const
 {
     if (!supportsSettings())
         throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
@@ -380,7 +380,7 @@ IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new
             /// Make storage settings unique
             for (const auto & change : new_changes)
             {
-                checkSetting(change.name);
+                checkSettingCanBeChanged(change.name);
 
                 auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
                 if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
