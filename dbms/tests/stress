@@ -13,8 +13,8 @@ function thread()
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
 export -f thread;
 
-NUM_THREADS=16
-TIMEOUT=300
+NUM_THREADS=${1:-"16"}
+TIMEOUT=${2:-"300"}
 
 for i in $(seq 1 $NUM_THREADS); do
     timeout $TIMEOUT bash -c "thread $i" 2> /dev/null &
