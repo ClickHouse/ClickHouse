@@ -412,7 +412,7 @@ bool StorageKafka::streamToViews()
 }
 
 
-void StorageKafka::checkSetting(const String & setting_name) const
+void StorageKafka::checkSettingCanBeChanged(const String & setting_name) const
 {
     if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
         throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};

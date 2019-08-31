@@ -544,7 +544,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
         }
         else if (command.type == AlterCommand::MODIFY_SETTING)
             for (const auto & change : command.settings_changes)
-                table.checkSetting(change.name);
+                table.checkSettingCanBeChanged(change.name);
     }
 
     /** Existing defaulted columns may require default expression extensions with a type conversion,

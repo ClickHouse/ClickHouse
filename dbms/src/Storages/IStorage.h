@@ -140,7 +140,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     void check(const Block & block, bool need_all = false) const;
 
     /// Check storage has setting and setting can be modified.
-    virtual void checkSetting(const String & setting_name) const;
+    virtual void checkSettingCanBeChanged(const String & setting_name) const;
 
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);

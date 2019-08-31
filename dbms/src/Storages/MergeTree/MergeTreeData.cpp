@@ -1325,7 +1325,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
 
     for (const auto & setting : new_changes)
-        checkSetting(setting.name);
+        checkSettingCanBeChanged(setting.name);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -1657,7 +1657,7 @@ void MergeTreeData::changeSettings(
     }
 }
 
-void MergeTreeData::checkSetting(const String & setting_name) const
+void MergeTreeData::checkSettingCanBeChanged(const String & setting_name) const
 {
     if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
         throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
