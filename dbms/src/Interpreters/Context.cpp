@@ -1132,7 +1132,7 @@ void Context::updateSettingsChanges(const SettingsChanges & changes)
         if (change.name == "profile")
             setProfile(change.value.safeGet<String>());
         else
-            settings.updateFromChange(change);
+            settings.applyChange(change);
     }
 }
 
