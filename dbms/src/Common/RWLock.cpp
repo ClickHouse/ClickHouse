@@ -153,7 +153,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
 
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
     {
-        if (queue.back().type == Type::Write && query_id != RWLockImpl::NO_QUERY)
+        if (type == Type::Read && !queue.empty() && queue.back().type == Type::Write && query_id != RWLockImpl::NO_QUERY)
             all_read_locks.check(query_id);
 
         /// Create new group of clients
