@@ -86,7 +86,7 @@ namespace
         {
             std::lock_guard lock(mutex);
             if (queries.count(query_id))
-                throw Exception("Deadlock avoided. Client must retry.", ErrorCodes::DEADLOCK_AVOIDED);
+                throw Exception("Possible deadlock avoided. Client should retry.", ErrorCodes::DEADLOCK_AVOIDED);
         }
     };
 
