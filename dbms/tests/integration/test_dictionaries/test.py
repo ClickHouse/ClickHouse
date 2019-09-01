@@ -17,6 +17,10 @@ def get_status(dictionary_name):
     return instance.query("SELECT status FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
 
 
+def get_last_exception(dictionary_name):
+    return instance.query("SELECT last_exception FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n").replace("\\'", "'")
+
+
 def get_loading_start_time(dictionary_name):
     s = instance.query("SELECT loading_start_time FROM system.dictionaries WHERE name='" + dictionary_name + "'").rstrip("\n")
     if s == "0000-00-00 00:00:00":
@@ -350,3 +354,58 @@ def test_reload_after_fail_by_timer(started_cluster):
     time.sleep(6);
     query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
     assert get_status("no_file_2") == "LOADED"
+
+
+def test_reload_after_fail_in_cache_dictionary(started_cluster):
+    query = instance.query
+    query_and_get_error = instance.query_and_get_error
+
+    # Can't get a value from the cache dictionary because the source (table `test.xypairs`) doesn't respond.
+    expected_error = "Table test.xypairs doesn't exist"
+    assert expected_error in query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(1))")
+    assert get_status("cache_xypairs") == "LOADED"
+    assert expected_error in get_last_exception("cache_xypairs")
+
+    # Create table `test.xypairs`.
+    query('''
+        drop table if exists test.xypairs;
+        create table test.xypairs (x UInt64, y UInt64) engine=Log;
+        insert into test.xypairs values (1, 56), (3, 78);
+        ''')
+
+    # Cache dictionary now works.
+    assert_eq_with_retry(instance, "SELECT dictGet('cache_xypairs', 'y', toUInt64(1))", "56", ignore_error=True)
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(2))") == "0"
+    assert get_last_exception("cache_xypairs") == ""
+
+    # Drop table `test.xypairs`.
+    query('drop table if exists test.xypairs')
+
+    # Values are cached so we can get them.
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(1))") == "56"
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(2))") == "0"
+    assert get_last_exception("cache_xypairs") == ""
+
+    # But we can't get a value from the source table which isn't cached.
+    assert expected_error in query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(3))")
+    assert expected_error in get_last_exception("cache_xypairs")
+
+    # Passed time should not spoil the cache.
+    time.sleep(5);
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(1))") == "56"
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(2))") == "0"
+    assert expected_error in query_and_get_error("SELECT dictGetUInt64('cache_xypairs', 'y', toUInt64(3))")
+    assert expected_error in get_last_exception("cache_xypairs")
+
+    # Create table `test.xypairs` again with changed values.
+    query('''
+        drop table if exists test.xypairs;
+        create table test.xypairs (x UInt64, y UInt64) engine=Log;
+        insert into test.xypairs values (1, 57), (3, 79);
+        ''')
+
+    # The cache dictionary returns new values now.
+    assert_eq_with_retry(instance, "SELECT dictGet('cache_xypairs', 'y', toUInt64(1))", "57")
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(2))") == "0"
+    query("SELECT dictGet('cache_xypairs', 'y', toUInt64(3))") == "79"
+    assert get_last_exception("cache_xypairs") == ""

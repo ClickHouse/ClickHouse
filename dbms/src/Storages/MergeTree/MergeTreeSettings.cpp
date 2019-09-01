@@ -46,7 +46,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromChanges(storage_def.settings->changes);
+            applyChanges(storage_def.settings->changes);
         }
         catch (Exception & e)
         {
