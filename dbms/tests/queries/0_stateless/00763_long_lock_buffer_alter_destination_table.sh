@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
@@ -18,7 +20,7 @@ function thread1()
 
 function thread2()
 {
-    seq 1 2000 | sed -r -e 's/.+/SELECT sum(length(s)) FROM test.buffer_00763_1;/' | ${CLICKHOUSE_CLIENT} --multiquery --server_logs_file='/dev/null' --ignore-error 2>&1 | grep -vP '^3$'
+    seq 1 2000 | sed -r -e 's/.+/SELECT sum(length(s)) FROM test.buffer_00763_1;/' | ${CLICKHOUSE_CLIENT} --multiquery --ignore-error 2>&1 | grep -vP '(^3$|^Received exception from server|^Code: 473)'
 }
 
 thread1 &
