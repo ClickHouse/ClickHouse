@@ -60,6 +60,7 @@ struct QueryLogElement
     ClientInfo client_info;
 
     std::vector<UInt32> thread_numbers;
+    std::vector<UInt32> os_thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 
