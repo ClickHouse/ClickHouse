@@ -61,6 +61,7 @@ public:
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
     std::vector<UInt32> thread_numbers;
+    std::vector<UInt32> os_thread_ids;
 
     /// The first thread created this thread group
     UInt32 master_thread_number = 0;
