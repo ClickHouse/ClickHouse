@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
     extern const int UNKNOWN_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 
@@ -1324,10 +1325,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
 
     for (const auto & setting : new_changes)
-    {
-        if (!hasSetting(setting.name))
-            throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting.name + "'", ErrorCodes::UNKNOWN_SETTING};
-    }
+        checkSettingCanBeChanged(setting.name);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -1654,14 +1652,18 @@ void MergeTreeData::changeSettings(
     if (!new_changes.empty())
     {
         MergeTreeSettings copy = *getSettings();
-        copy.updateFromChanges(new_changes);
+        copy.applyChanges(new_changes);
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
     }
 }
 
-bool MergeTreeData::hasSetting(const String & setting_name) const
+void MergeTreeData::checkSettingCanBeChanged(const String & setting_name) const
 {
-    return MergeTreeSettings::findIndex(setting_name) != MergeTreeSettings::npos;
+    if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
+        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
+    if (MergeTreeSettings::isReadonlySetting(setting_name))
+        throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
+
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
