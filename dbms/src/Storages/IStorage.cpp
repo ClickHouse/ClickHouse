@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int SETTINGS_ARE_NOT_SUPPORTED;
     extern const int UNKNOWN_SETTING;
+    extern const int TABLE_IS_DROPPED;
 }
 
 IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
@@ -308,11 +309,10 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-bool IStorage::hasSetting(const String & /* setting_name */) const
+void IStorage::checkSettingCanBeChanged(const String & /* setting_name */) const
 {
     if (!supportsSettings())
         throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
-    return false;
 }
 
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
@@ -380,16 +380,13 @@ IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new
             /// Make storage settings unique
             for (const auto & change : new_changes)
             {
-                if (hasSetting(change.name))
-                {
-                    auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
-                    if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
-                        it->value = change.value;
-                    else
-                        storage_changes.push_back(change);
-                }
+                checkSettingCanBeChanged(change.name);
+
+                auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
+                if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
+                    it->value = change.value;
                 else
-                    throw Exception{"Storage '" + getName() + "' doesn't have setting '" + change.name + "'", ErrorCodes::UNKNOWN_SETTING};
+                    storage_changes.push_back(change);
             }
         }
     };

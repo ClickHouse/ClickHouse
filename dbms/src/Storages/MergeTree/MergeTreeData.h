@@ -543,13 +543,13 @@ public:
            TableStructureWriteLockHolder & table_lock_holder);
 
     /// All MergeTreeData children have settings.
-    bool hasSetting(const String & setting_name) const override;
+    void checkSettingCanBeChanged(const String & setting_name) const override;
 
     /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context);
+    void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -577,7 +577,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -621,6 +621,13 @@ public:
             (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
     }
 
+    /// Get constant pointer to storage settings.
+    /// Copy this pointer into your scope and you will
+    /// get consistent settings.
+    MergeTreeSettingsPtr getSettings() const
+    {
+        return storage_settings.get();
+    }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -679,13 +686,6 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
-    /// Get constant pointer to storage settings.
-    /// Copy this pointer into your scope and you will
-    /// get consistent settings.
-    MergeTreeSettingsPtr getSettings() const
-    {
-        return storage_settings.get();
-    }
 
 protected:
 
