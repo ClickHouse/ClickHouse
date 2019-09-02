@@ -474,14 +474,20 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         /// Just travers graph and prepare any processor.
         while (!finished)
         {
+            /// Fast branch.
+            if (task_queue.pop(state))
+                break;
+
             std::unique_lock lock(task_queue_mutex);
 
-            if (!task_queue.empty())
-            {
-                state = task_queue.front();
-                task_queue.pop();
-                break;
-            }
+            auto popped = task_queue.num_popped.load();
+
+//            if (!task_queue.empty())
+//            {
+//                state = task_queue.front();
+//                task_queue.pop();
+//                break;
+//            }
 
             ++num_waiting_threads;
 
@@ -495,7 +501,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
             task_queue_condvar.wait(lock, [&]()
             {
-                return finished || !task_queue.empty();
+                return finished || popped < task_queue.num_pushed.load();
             });
 
             --num_waiting_threads;
