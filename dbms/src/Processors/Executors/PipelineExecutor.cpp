@@ -474,8 +474,20 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         /// Just travers graph and prepare any processor.
         while (!finished)
         {
-            /// Fast branch.
-            if (task_queue.pop(state))
+            auto pushed = task_queue.num_pushed.load();
+            bool found = false;
+
+            while (pushed > task_queue.num_popped.load())
+            {
+                /// Fast branch.
+                if (task_queue.pop(state))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found)
                 break;
 
             std::unique_lock lock(task_queue_mutex);
