@@ -437,6 +437,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
     Stopwatch total_time_watch;
     ExecutionState * state = nullptr;
+    std::queue<ExecutionState *> local_queue;
 
     auto prepare_processor = [&](UInt64 pid, Stack & children, Stack & parents)
     {
@@ -474,13 +475,18 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         /// Just travers graph and prepare any processor.
         while (!finished)
         {
-            std::unique_lock lock(task_queue_mutex);
-
-            if (!task_queue.empty())
+            if (!local_queue.empty())
             {
-                state = task_queue.pop(thread_num);
+                state = local_queue.front();
+                local_queue.pop();
                 break;
             }
+
+            state = task_queue.pop(thread_num);
+            if (state)
+                break;
+
+            std::unique_lock lock(task_queue_mutex);
 
             ++num_waiting_threads;
 
@@ -494,7 +500,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
             task_queue_condvar.wait(lock, [&]()
             {
-                return finished || !task_queue.empty();
+                return finished || !task_queue.empty(thread_num) || !task_queue.empty(num_threads);
             });
 
             --num_waiting_threads;
@@ -541,42 +547,34 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
 
-                if (!state)
+
+                for (auto & exec_state : queue)
                 {
-                    for (auto & exec_state : queue)
-                    {
-                        auto stream = exec_state->processor->getStream();
+                    auto stream = exec_state->processor->getStream();
 
-                        if (stream == thread_num)
-                        {
-                            state = exec_state;
-                            break;
-                        }
-
-                        if (stream == IProcessor::NO_STREAM)
-                            state = exec_state;
-                    }
+                    if (stream == thread_num)
+                        local_queue.push(exec_state);
+                    else
+                        task_queue.push(exec_state);
                 }
 
-                if (!state && !queue.empty())
-                    state = queue.back();
+                queue.clear();
 
                 prepare_all_processors(queue, parents, parents, parents);
 
-                if (!queue.empty())
+                for (auto & exec_state : queue)
                 {
-                    std::lock_guard lock(task_queue_mutex);
+                    auto stream = exec_state->processor->getStream();
 
-                    while (!queue.empty() && !finished)
-                    {
-                        if (queue.back() != state)
-                            task_queue.push(queue.back());
-
-                        queue.pop_back();
-                    }
-
-                    task_queue_condvar.notify_all();
+                    if (stream == thread_num)
+                        local_queue.push(exec_state);
+                    else
+                        task_queue.push(exec_state);
                 }
+
+                queue.clear();
+
+                task_queue_condvar.notify_all();
 
                 --num_processing_executors;
                 while (auto task = expand_pipeline_task.load())
@@ -599,6 +597,8 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
+    task_queue.init(num_threads);
+
     Stack stack;
 
     executor_contexts.reserve(num_threads);

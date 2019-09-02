@@ -122,31 +122,52 @@ private:
     {
         void push(ExecutionState * state)
         {
-            map.emplace(state->processor->getStream(), state);
+            auto stream = state->processor->getStream();
+            if (stream >= queues.size())
+                stream = queues.size() - 1;
+
+            std::lock_guard lg(mutexes[stream]);
+            queues[stream].push(state);
         }
 
         ExecutionState * pop(size_t stream)
         {
-            auto it = map.find(stream);
+            {
+                std::lock_guard lg(mutexes[stream]);
 
-            if (it == map.end())
-                it = map.find(IProcessor::NO_STREAM);
+                if (!queues[stream].empty())
+                {
+                    auto res = queues[stream].front();
+                    queues[stream].pop();
+                    return res;
+                }
+            }
 
-            if (it == map.end())
-                it = map.begin();
+            stream = queues.size() - 1;
+            if (!queues[stream].empty())
+            {
+                auto res = queues[stream].front();
+                queues[stream].pop();
+                return res;
+            }
 
-            if (it == map.end())
-                return nullptr;
-
-            auto res = it->second;
-            map.erase(it);
-
-            return res;
+            return nullptr;
         }
 
-        bool empty() const { return map.empty(); }
+        bool empty(size_t stream) const
+        {
+            std::lock_guard lg(mutexes[stream]);
+            return queues[stream].empty();
+        }
 
-        std::unordered_multimap<size_t, ExecutionState *> map;
+        void init(size_t num_streams)
+        {
+            queues.resize(num_streams + 1);
+            mutexes.resize(num_streams + 1);
+        }
+
+        std::vector<std::queue<ExecutionState *>> queues;
+        std::vector<std::mutex> mutexes;
     };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
