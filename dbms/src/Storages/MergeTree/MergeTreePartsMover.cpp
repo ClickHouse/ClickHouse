@@ -6,15 +6,21 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
+
 namespace
 {
+
 /// Contains minimal number of heaviest parts, which sum size on disk is greater than required.
 /// If there are not enough summary size, than contains all.
 class LargestPartsWithRequiredSize
 {
     struct PartsSizeOnDiskComparator
     {
-        bool operator() (const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
+        bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
         {
             return f->bytes_on_disk < s->bytes_on_disk;
         }
@@ -25,10 +31,7 @@ class LargestPartsWithRequiredSize
     UInt64 current_size_sum = 0;
 
 public:
-    LargestPartsWithRequiredSize(UInt64 required_sum_size_)
-        : required_size_sum(required_sum_size_)
-    {
-    }
+    LargestPartsWithRequiredSize(UInt64 required_sum_size_) : required_size_sum(required_sum_size_) {}
 
     void add(MergeTreeData::DataPartPtr part)
     {
@@ -100,8 +103,13 @@ bool MergeTreePartsMover::selectPartsToMove(
 
     for (const auto & part : data_parts)
     {
-        if (!can_move(part, nullptr))
+        String reason;
+        if (!can_move(part, &reason))
+        {
+            LOG_TRACE(log, "Cannot select part '" << part->name << "' to move, becase " << reason);
             continue;
+        }
+
         auto to_insert = need_to_move.find(part->disk);
         if (to_insert != need_to_move.end())
             to_insert->second.add(part);
@@ -132,6 +140,15 @@ MergeTreeData::DataPartsVector MergeTreePartsMover::cloneParts(const MergeTreeMo
     MergeTreeData::DataPartsVector res;
     for (auto && move : parts)
     {
+        if (moves_blocker.isCancelled())
+        {
+            /// Removing all copied parts from disk
+            for (auto & part : res)
+                part->remove();
+
+            throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
+        }
+
         LOG_TRACE(log, "Cloning part " << move.part->name);
         move.part->makeCloneOnDiskDetached(move.reserved_space);
 
@@ -151,22 +168,31 @@ MergeTreeData::DataPartsVector MergeTreePartsMover::cloneParts(const MergeTreeMo
 bool MergeTreePartsMover::swapClonedParts(const MergeTreeData::DataPartsVector & cloned_parts, String * out_reason)
 {
     std::vector<String> failed_parts;
-    for (auto && cloned_part : cloned_parts)
+    for (size_t i = 0; i < cloned_parts.size(); ++i)
     {
-        auto part = data.getActiveContainingPart(cloned_part->name);
-        if (!part || part->name != cloned_part->name)
+        if (moves_blocker.isCancelled())
         {
-            LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."
+            /// Removing all copied parts from disk
+            for (size_t j = i; j < cloned_parts.size(); ++j)
+                cloned_parts[j]->remove();
+
+            throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
+        }
+
+        auto part = data.getActiveContainingPart(cloned_parts[i]->name);
+        if (!part || part->name != cloned_parts[i]->name)
+        {
+            LOG_INFO(log, "Failed to swap " << cloned_parts[i]->name << ". Active part doesn't exist."
                 << " It can be removed by merge or deleted by hand. Will remove copy on path '"
-                << cloned_part->getFullPath() << "'.");
-            failed_parts.push_back(cloned_part->name);
-            cloned_part->remove();
+                << cloned_parts[i]->getFullPath() << "'.");
+            failed_parts.push_back(cloned_parts[i]->name);
+            cloned_parts[i]->remove();
             continue;
         }
 
-        cloned_part->renameTo(part->name);
+        cloned_parts[i]->renameTo(part->name);
 
-        data.swapActivePart(cloned_part);
+        data.swapActivePart(cloned_parts[i]);
     }
 
     if (!failed_parts.empty())

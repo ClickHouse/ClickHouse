@@ -126,7 +126,6 @@ namespace ActionLocks
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
 static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS   = 1 * 1000;
-static const auto MOVE_PARTS_SLEEP_MS             = 1 * 1000;
 
 /** There are three places for each part, where it should be
   * 1. In the RAM, data_parts, all_data_parts.
@@ -233,9 +232,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     merge_selecting_task->deactivate();
 
     mutations_finalizing_task = global_context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
-
-    moving_parts_task = global_context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::movingPartsTask)", [this] { movingPartsTask(); });
-    moving_parts_task->activateAndSchedule();
 
     if (global_context.hasZooKeeper())
         current_zookeeper = global_context.getZooKeeper();
@@ -2208,34 +2204,62 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
     return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
-void StorageReplicatedMergeTree::movingPartsTask()
+BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movingPartsTask()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
-    MergeTreeMovingParts parts_to_move;
 
-    auto can_move = [this](const DataPartPtr & part, String *) -> bool
-    {
-        return !queue.isPartAssignedToBackgroundOperation(part);
-    };
 
-    if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
+    try
     {
-        moving_parts_task->scheduleAfter(MOVE_PARTS_SLEEP_MS);
-        return;
+        std::optional<MovingPartsTagger> moving_tagger;
+        {
+            MergeTreeMovingParts parts_to_move;
+            std::unique_lock moving_parts_lock(moving_parts_mutex);
+
+            auto can_move = [this](const DataPartPtr & part, String * reason) -> bool
+            {
+                if (queue.isPartAssignedToBackgroundOperation(part))
+                {
+                    *reason = "part already assigned to replicated background operation.";
+                    return false;
+                }
+                if (!currently_moving_parts.count(part))
+                {
+                    *reason = "part is already moving.";
+                    return false;
+                }
+
+                return true;
+            };
+
+            if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
+                return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+
+            LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
+            moving_tagger.emplace(std::move(parts_to_move), std::move(moving_parts_lock), currently_moving_parts);
+        }
+
+        auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
+
+        std::string reason;
+        if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+        {
+            LOG_INFO(log, "Move failed. " << reason);
+            return BackgroundProcessingPoolTaskResult::ERROR;
+        }
+
+        return BackgroundProcessingPoolTaskResult::SUCCESS;
     }
-
-    LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
-
-    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
-
-    std::string reason;
-    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+    catch (const Exception & e)
     {
-        LOG_INFO(log, "Move failed. " << reason);
-        moving_parts_task->scheduleAfter(MOVE_PARTS_SLEEP_MS);
+        if (e.code() == ErrorCodes::ABORTED)
+        {
+            LOG_INFO(log, e.message());
+            return BackgroundProcessingPoolTaskResult::ERROR;
+        }
+
+        throw;
     }
-    else
-        moving_parts_task->schedule();
 }
 
 
@@ -2243,30 +2267,37 @@ void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataParts
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-    MergeTreeMovingParts parts_to_move;
-    for (const auto & part : parts)
+
+    std::optional<MovingPartsTagger> moving_tagger;
     {
-        auto reservation = space->reserve(part->bytes_on_disk);
-        if (!reservation)
-            throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
+        MergeTreeMovingParts parts_to_move;
+        std::unique_lock moving_parts_lock(moving_parts_mutex);
+        for (const auto & part : parts)
+        {
+            auto reservation = space->reserve(part->bytes_on_disk);
+            if (!reservation)
+                throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
 
-        auto & reserved_disk = reservation->getDisk();
-        String path_to_clone = getFullPathOnDisk(reserved_disk);
+            auto & reserved_disk = reservation->getDisk();
+            String path_to_clone = getFullPathOnDisk(reserved_disk);
 
-        if (Poco::File(path_to_clone + part->name).exists())
-            throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
-                ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+            if (Poco::File(path_to_clone + part->name).exists())
+                throw Exception(
+                    "Move is not possible: " + path_to_clone + part->name + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-        if (queue.isPartAssignedToBackgroundOperation(part))
-            throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
-                ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+            if (queue.isPartAssignedToBackgroundOperation(part))
+                throw Exception(
+                    "Cannot move part '" + part->name + "' because it's participating in background process.",
+                    ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
 
-        parts_to_move.emplace_back(part, std::move(reservation));
+            parts_to_move.emplace_back(part, std::move(reservation));
+        }
+        moving_tagger.emplace(std::move(parts_to_move), std::move(moving_parts_lock), currently_moving_parts);
     }
 
-    std::string reason;
-    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
+    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
 
+    std::string reason;
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
         throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
 }
@@ -2973,6 +3004,7 @@ void StorageReplicatedMergeTree::startup()
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
+    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return movingPartsTask(); } );
 
     /// In this thread replica will be activated.
     restarting_thread.start();
@@ -2987,12 +3019,17 @@ void StorageReplicatedMergeTree::shutdown()
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
+    parts_mover.moves_blocker.cancelForever();
 
     restarting_thread.shutdown();
 
     if (queue_task_handle)
         global_context.getBackgroundPool().removeTask(queue_task_handle);
     queue_task_handle.reset();
+
+    if (move_parts_task_handle)
+        global_context.getBackgroundPool().removeTask(move_parts_task_handle);
+    move_parts_task_handle.reset();
 
     if (data_parts_exchange_endpoint_holder)
     {

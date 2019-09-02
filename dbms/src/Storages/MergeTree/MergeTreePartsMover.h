@@ -1,14 +1,20 @@
 #pragma once
 
-#include <Common/DiskSpaceMonitor.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <functional>
 #include <vector>
+#include <optional>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Common/ActionBlocker.h>
+#include <Common/DiskSpaceMonitor.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 struct MargeTreeMoveEntry
 {
@@ -23,6 +29,44 @@ struct MargeTreeMoveEntry
 };
 
 using MergeTreeMovingParts = std::vector<MargeTreeMoveEntry>;
+
+struct MovingPartsTagger
+{
+    MergeTreeMovingParts parts_to_move;
+    std::unique_lock<std::mutex> background_lock;
+    MergeTreeData::DataParts & all_moving_parts;
+
+
+    MovingPartsTagger(MergeTreeMovingParts && moving_parts_,
+        std::unique_lock<std::mutex> && background_lock_,
+        MergeTreeData::DataParts & all_moving_data_parts_)
+        : parts_to_move(std::move(moving_parts_))
+        , background_lock(std::move(background_lock_))
+        , all_moving_parts(all_moving_data_parts_)
+    {
+        if (!background_lock)
+            throw Exception("Cannot tag moving parts without background lock.", ErrorCodes::LOGICAL_ERROR);
+
+        for (const auto & moving_part : parts_to_move)
+            if(!all_moving_parts.emplace(moving_part.part).second)
+                throw Exception("Cannot move part '" + moving_part.part->name + "'. It's already moving.", ErrorCodes::LOGICAL_ERROR);
+
+        background_lock.unlock();
+    }
+
+    ~MovingPartsTagger()
+    {
+        background_lock.lock();
+        for (const auto & moving_part : parts_to_move)
+        {
+            /// Something went completely wrong
+            if (!all_moving_parts.count(moving_part.part))
+                std::terminate();
+            all_moving_parts.erase(moving_part.part);
+        }
+
+    }
+};
 
 class MergeTreePartsMover
 {
@@ -41,6 +85,9 @@ public:
     MergeTreeData::DataPartsVector cloneParts(const MergeTreeMovingParts & parts);
 
     bool swapClonedParts(const MergeTreeData::DataPartsVector & cloned_parts, String * out_reason);
+
+public:
+    ActionBlocker moves_blocker;
 
 private:
 
