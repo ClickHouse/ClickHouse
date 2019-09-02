@@ -124,6 +124,8 @@
 #endif
 #endif
 
+/// TODO Strange enough, there is no way to detect UB sanitizer.
+
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
 /// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
 /// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.

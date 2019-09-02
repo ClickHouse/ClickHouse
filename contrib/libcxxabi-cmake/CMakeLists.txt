@@ -29,17 +29,13 @@ target_include_directories(cxxabi SYSTEM BEFORE
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/include>
 )
 target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
-target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
-
-if (USE_UNWIND)
-    target_link_libraries(cxxabi PRIVATE ${UNWIND_LIBRARIES})
-else ()
-    target_link_libraries(cxxabi PRIVATE gcc_eh)
-endif ()
+target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
+target_link_libraries(cxxabi PUBLIC ${EXCEPTION_HANDLING_LIBRARY})
 
 install(
     TARGETS cxxabi
     EXPORT global
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION lib
+    LIBRARY DESTINATION lib
 )

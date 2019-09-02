@@ -28,7 +28,8 @@ set (KJ_SRCS
 )
 
 add_library(kj ${KJ_SRCS})
-target_include_directories(kj INTERFACE ${CAPNPROTO_SOURCE_DIR})
+target_include_directories(kj PUBLIC ${CAPNPROTO_SOURCE_DIR})
+target_compile_options(kj PUBLIC -Wno-non-virtual-dtor)
 
 set (CAPNP_SRCS
     ${CAPNPROTO_SOURCE_DIR}/capnp/c++.capnp.c++
