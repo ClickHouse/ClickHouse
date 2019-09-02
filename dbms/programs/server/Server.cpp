@@ -530,7 +530,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_UNWIND && !WITH_COVERAGE
+    ///
+    /// It also cannot work with sanitizers.
+    /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
+    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    ///  and query profiler decide to unwind stack with libunwind at this moment.
+    ///
+    /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
+    ///
+    /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
+    ///
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
         global_context->initializeTraceCollector();

@@ -50,10 +50,11 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.origin);
 
-        if (load_result.object)
-        {
-            const auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(load_result.object);
+        std::exception_ptr last_exception = load_result.exception;
 
+        const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
+        if (dict_ptr)
+        {
             res_columns[i++]->insert(dict_ptr->getTypeName());
 
             const auto & dict_struct = dict_ptr->getStructure();
@@ -66,6 +67,9 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
             res_columns[i++]->insert(dict_ptr->getElementCount());
             res_columns[i++]->insert(dict_ptr->getLoadFactor());
             res_columns[i++]->insert(dict_ptr->getSource()->toString());
+
+            if (!last_exception)
+                last_exception = dict_ptr->getLastException();
         }
         else
         {
@@ -76,8 +80,8 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.loading_start_time)));
         res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::duration<float>>(load_result.loading_duration).count());
 
-        if (load_result.exception)
-            res_columns[i++]->insert(getExceptionMessage(load_result.exception, false));
+        if (last_exception)
+            res_columns[i++]->insert(getExceptionMessage(last_exception, false));
         else
             res_columns[i++]->insertDefault();
     }
