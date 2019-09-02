@@ -1136,7 +1136,7 @@ void Context::updateSettingsChanges(const SettingsChanges & changes)
         if (change.name == "profile")
             setProfile(change.value.safeGet<String>());
         else
-            settings.updateFromChange(change);
+            settings.applyChange(change);
     }
 }
 
@@ -1163,6 +1163,12 @@ String Context::getCurrentDatabase() const
 String Context::getCurrentQueryId() const
 {
     return client_info.current_query_id;
+}
+
+
+String Context::getInitialQueryId() const
+{
+    return client_info.initial_query_id;
 }
 
 
