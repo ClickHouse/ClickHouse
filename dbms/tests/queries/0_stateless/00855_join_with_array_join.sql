@@ -1,4 +1,4 @@
-SET subquery_requires_alias = 0;
+SET joined_subquery_requires_alias = 0;
 
 set allow_experimental_multiple_joins_emulation = 0;
 set allow_experimental_cross_to_join_conversion = 0;

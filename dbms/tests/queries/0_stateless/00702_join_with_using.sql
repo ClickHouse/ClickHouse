@@ -30,7 +30,7 @@ select * from persons all inner join children using id;
 select * from persons all inner join (select * from children) as j using id;
 select * from (select * from persons) as s all inner join (select * from children ) as j using id;
 --
-set subquery_requires_alias = 0;
+set joined_subquery_requires_alias = 0;
 select * from persons all inner join (select * from children) using id;
 select * from (select * from persons) all inner join (select * from children) using id;
 select * from (select * from persons) as s all inner join (select * from children) using id;

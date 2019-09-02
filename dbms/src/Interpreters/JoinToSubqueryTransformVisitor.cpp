@@ -441,7 +441,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
 
         /// attach an alias to subquery.
         /// TODO: remove setting check after testing period
-        if (data.context.getSettingsRef().subquery_requires_alias)
+        if (data.context.getSettingsRef().joined_subquery_requires_alias)
         {
             SetSubqueryAliasVisitor::Data alias_data{String("--.join") + std::to_string(i)};
             SetSubqueryAliasVisitor(alias_data).visit(left_table);

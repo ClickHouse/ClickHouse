@@ -1,5 +1,5 @@
 set any_join_distinct_right_table_keys = 1;
-set subquery_requires_alias = 0;
+set joined_subquery_requires_alias = 0;
 
 SELECT
     CounterID,

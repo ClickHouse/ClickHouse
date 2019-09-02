@@ -1,4 +1,4 @@
-SET subquery_requires_alias = 0;
+SET joined_subquery_requires_alias = 0;
 
 select toTypeName(key), toTypeName(value) from (
     select 1 as key, '' as value

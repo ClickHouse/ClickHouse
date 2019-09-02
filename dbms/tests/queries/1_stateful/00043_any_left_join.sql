@@ -13,4 +13,4 @@ FROM test.hits ANY LEFT JOIN
 GROUP BY EventDate
 ORDER BY hits DESC
 LIMIT 10
-SETTINGS subquery_requires_alias = 0;
+SETTINGS joined_subquery_requires_alias = 0;
