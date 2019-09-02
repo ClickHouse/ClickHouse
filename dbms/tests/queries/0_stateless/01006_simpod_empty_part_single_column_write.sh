@@ -26,7 +26,9 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO table_with_empty_part VALUES (2, 2)"
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE table_with_empty_part DELETE WHERE id % 2 == 0"
 
-mutation_id=`${CLICKHOUSE_CLIENT} --query="SELECT mutation_id FROM system.mutations WHERE table='table_with_empty_part' LIMIT 1"`
+sleep 0.5
+
+mutation_id=`${CLICKHOUSE_CLIENT} --query="SELECT max(mutation_id) FROM system.mutations WHERE table='table_with_empty_part'"`
 
 wait_for_mutation "table_with_empty_part" "$mutation_id"
 
