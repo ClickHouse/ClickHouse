@@ -83,8 +83,6 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
-
-    moving_parts_task = global_context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageMergeTree::movingPartsTask)", [this] { movingPartsTask(); });
 }
 
 
@@ -99,7 +97,6 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
     background_task_handle = background_pool.addTask([this] { return backgroundTask(); });
-    moving_parts_task->activateAndSchedule();
 }
 
 
@@ -109,8 +106,12 @@ void StorageMergeTree::shutdown()
         return;
     shutdown_called = true;
     merger_mutator.merges_blocker.cancelForever();
+    parts_mover.moves_blocker.cancelForever();
+
     if (background_task_handle)
         background_pool.removeTask(background_task_handle);
+
+    background_task_handle.reset();
 }
 
 
@@ -317,7 +318,7 @@ void StorageMergeTree::alter(
 }
 
 
-/// While exists, marks parts as 'currently_processing_in_background' and reserves free space on filesystem.
+/// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.
 struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPart future_part;
@@ -339,10 +340,10 @@ public:
 
         for (const auto & part : future_part.parts)
         {
-            if (storage.currently_processing_in_background.count(part))
+            if (storage.currently_merging_mutating_parts.count(part))
                 throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
-        storage.currently_processing_in_background.insert(future_part.parts.begin(), future_part.parts.end());
+        storage.currently_merging_mutating_parts.insert(future_part.parts.begin(), future_part.parts.end());
     }
 
     ~CurrentlyMergingPartsTagger()
@@ -351,9 +352,9 @@ public:
 
         for (const auto & part : future_part.parts)
         {
-            if (!storage.currently_processing_in_background.count(part))
+            if (!storage.currently_merging_mutating_parts.count(part))
                 std::terminate();
-            storage.currently_processing_in_background.erase(part);
+            storage.currently_merging_mutating_parts.erase(part);
         }
 
         /// Update the information about failed parts in the system.mutations table.
@@ -533,7 +534,7 @@ bool StorageMergeTree::merge(
 
         auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *)
         {
-            return !currently_processing_in_background.count(left) && !currently_processing_in_background.count(right)
+            return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
                 && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
         };
 
@@ -641,9 +642,10 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-    MergeTreeMovingParts parts_to_move;
+    std::optional<MovingPartsTagger> moving_tagger;
     {
-        std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
+        MergeTreeMovingParts parts_to_move;
+        std::unique_lock background_processing_lock(currently_processing_in_background_mutex);
 
         for (const auto & part : parts)
         {
@@ -658,51 +660,68 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
                 throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
                     ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-            if (currently_processing_in_background.count(part))
+            if (currently_merging_mutating_parts.count(part))
                 throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
                     ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
 
             parts_to_move.emplace_back(part, std::move(reservation));
-
         }
+
+        moving_tagger.emplace(std::move(parts_to_move), std::move(background_processing_lock), currently_moving_parts);
     }
 
     std::string reason;
-    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
+    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
 
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
         throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
 }
 
-void StorageMergeTree::movingPartsTask()
+bool StorageMergeTree::moveParts()
 {
     LOG_INFO(log, "TRYING TO MOVE SMS");
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-    MergeTreeMovingParts parts_to_move;
+    std::optional<MovingPartsTagger> moving_tagger;
     {
-        std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
+        MergeTreeMovingParts parts_to_move;
+        std::unique_lock background_processing_lock(currently_processing_in_background_mutex);
 
-        auto can_move = [this](const DataPartPtr & part, String *) -> bool
+        auto can_move = [this](const DataPartPtr & part, String * reason) -> bool
         {
-            return !currently_processing_in_background.count(part);
+
+            if (currently_merging_mutating_parts.count(part))
+            {
+                *reason = "part is already assigned to merge or mutation.";
+                return false;
+            }
+
+            if (currently_moving_parts.count(part))
+            {
+                *reason = "part is already moving.";
+                return false;
+            }
+
+            return true;
         };
 
         if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-        {
-            moving_parts_task->scheduleAfter(1 * 1000);
-            return;
-        }
-    }
-    LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
+            return false;
 
-    auto cloned_parts = parts_mover.cloneParts(parts_to_move);
+        LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
+        moving_tagger.emplace(std::move(parts_to_move), std::move(background_processing_lock), currently_moving_parts);
+    }
+
+    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
 
     std::string reason;
     if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+    {
         LOG_WARNING(log, "Move failed: " << reason);
+        return false;
+    }
 
-    moving_parts_task->scheduleAfter(1 * 1000);
+    return true;
 }
 
 
@@ -726,7 +745,7 @@ bool StorageMergeTree::tryMutatePart()
         auto mutations_end_it = current_mutations_by_version.end();
         for (const auto & part : getDataPartsVector())
         {
-            if (currently_processing_in_background.count(part))
+            if (currently_merging_mutating_parts.count(part))
                 continue;
 
             auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
@@ -828,8 +847,8 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
     if (shutdown_called)
         return BackgroundProcessingPoolTaskResult::ERROR;
 
-    if (merger_mutator.merges_blocker.isCancelled())
-        return BackgroundProcessingPoolTaskResult::ERROR;
+    bool merges_mutations_blocked = merger_mutator.merges_blocker.isCancelled();
+    bool moves_blocked = parts_mover.moves_blocker.isCancelled();
 
     try
     {
@@ -846,10 +865,13 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         }
 
         ///TODO: read deduplicate option from table config
-        if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
+        if (!merges_mutations_blocked && merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        if (tryMutatePart())
+        if (!moves_blocked && moveParts())
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+
+        if (!merges_mutations_blocked && tryMutatePart())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
         else
             return BackgroundProcessingPoolTaskResult::ERROR;
@@ -1155,52 +1177,6 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, context, renamed_parts);
-
-            //String source_dir = "detached/";
-
-            //std::map<String, DiskSpace::DiskPtr> name_to_disk;
-
-    ///// Let's make a list of parts to add.
-    //Strings parts;
-    //if (attach_part)
-    //{
-    //    parts.push_back(partition_id);
-    //}
-    //else
-    //{
-    //    LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-    //    ActiveDataPartSet active_parts(format_version);
-    //    const auto disks = storage_policy->getDisks();
-    //    for (const DiskSpace::DiskPtr & disk : disks)
-    //    {
-    //        const auto full_path = getFullPathOnDisk(disk);
-    //        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
-    //        {
-    //            const String & name = it.name();
-    //            MergeTreePartInfo part_info;
-    //            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
-    //                || part_info.partition_id != partition_id)
-    //            {
-    //                continue;
-    //            }
-    //            LOG_DEBUG(log, "Found part " << name);
-    //            active_parts.add(name);
-    //            name_to_disk[name] = disk;
-    //        }
-    //    }
-    //    LOG_DEBUG(log, active_parts.size() << " of them are active");
-    //    parts = active_parts.getParts();
-    //}
-
-    //for (const auto & source_part_name : parts)
-    //{
-    //    const auto & source_part_disk = name_to_disk[source_part_name];
-
-    //    LOG_DEBUG(log, "Checking data");
-    //    MergeTreeData::MutableDataPartPtr part = loadPartAndFixMetadata(source_part_disk, source_dir + source_part_name);
-
-    //    LOG_INFO(log, "Attaching part " << source_part_name << " from " << getFullPathOnDisk(source_part_disk));
-    //    renameTempPartAndAdd(part, &increment);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {

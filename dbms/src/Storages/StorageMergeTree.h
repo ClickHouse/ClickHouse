@@ -84,18 +84,29 @@ private:
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
 
+    /// Mutex for parts currently processing in background
+    /// merging (also with TTL), mutating or moving.
     mutable std::mutex currently_processing_in_background_mutex;
-    DataParts currently_processing_in_background;
+
+    /// Parts that currently participate in merge or mutation.
+    /// This set have to be used with `currently_processing_in_background_mutex`.
+    DataParts currently_merging_mutating_parts;
+
+    /// Parts that currently moving from disk/volume to another.
+    /// This set have to be used with `currently_processing_in_background_mutex`.
+    /// Moving may conflict with merges and mutations, but this is OK, because
+    /// if we decide to move some part to another disk, than we
+    /// assuredly will choose this disk for containing part, which will appear
+    /// as result of merge or mutation.
+    DataParts currently_moving_parts;
+
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
 
+    /// Task handler for merges, mutations and moves.
     BackgroundProcessingPool::TaskHandle background_task_handle;
-
-    /// A task which move parts to another disks/volumes
-    /// executes in background schedule pool
-    BackgroundSchedulePool::TaskHolder moving_parts_task;
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> prepareAlterTransactions(
         const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context);
@@ -108,7 +119,7 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
-    void movingPartsTask();
+    bool moveParts();
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();

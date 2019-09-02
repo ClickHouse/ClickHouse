@@ -264,6 +264,8 @@ private:
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
+    /// A task which move parts to another disks/volumes
+    /// Transparent for replication.
     BackgroundProcessingPool::TaskHandle move_parts_task_handle;
 
     /// A task that selects parts to merge.
@@ -273,10 +275,6 @@ private:
 
     /// A task that marks finished mutations as done.
     BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
-
-    /// A task which move parts to another disks/volumes
-    /// Transparent for replication.
-    BackgroundSchedulePool::TaskHolder moving_parts_task;
 
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
@@ -412,9 +410,9 @@ private:
       */
     BackgroundProcessingPoolTaskResult queueTask();
 
-    /// Perform moves of parts to another disks
-    /// No log entry, because moves are not replicated
-    void movingPartsTask();
+    /// Perform moves of parts to another disks.
+    /// Local operation, doesn't interact with replicationg queue.
+    BackgroundProcessingPoolTaskResult movingPartsTask();
 
 
     /// Postcondition:
@@ -472,6 +470,10 @@ private:
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
+
+    ///
+    DataParts currently_moving_parts;
+    std::mutex moving_parts_mutex;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
