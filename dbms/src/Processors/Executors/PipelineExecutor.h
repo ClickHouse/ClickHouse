@@ -3,6 +3,7 @@
 #include <queue>
 #include <stack>
 #include <Processors/IProcessor.h>
+#include <Processors/Executors/LFStack.h>
 #include <mutex>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
@@ -117,7 +118,29 @@ private:
 
     using Stack = std::stack<UInt64>;
 
-    using TaskQueue = std::queue<ExecutionState *>;
+    struct TaskQueue
+    {
+        bool pop(ExecutionState *& state)
+        {
+            if (stack.pop(state))
+            {
+                num_popped.fetch_add(1);
+                return true;
+            }
+
+            return false;
+        }
+
+        void push(ExecutionState * state)
+        {
+            stack.push(state);
+            num_pushed.fetch_add(1);
+        }
+
+        lfs::LFStack<ExecutionState> stack;
+        std::atomic<UInt64> num_pushed {0};
+        std::atomic<UInt64> num_popped {0};
+    };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
