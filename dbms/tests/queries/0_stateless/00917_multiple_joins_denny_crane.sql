@@ -1,4 +1,4 @@
-SET subquery_requires_alias = 0;
+SET joined_subquery_requires_alias = 0;
 
 DROP TABLE IF EXISTS ANIMAL;
 

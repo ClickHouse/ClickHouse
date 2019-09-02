@@ -1,4 +1,4 @@
-SET subquery_requires_alias = 0;
+SET joined_subquery_requires_alias = 0;
 
 -- This test (SELECT) without cache can take tens minutes
 DROP TABLE IF EXISTS dict_string;

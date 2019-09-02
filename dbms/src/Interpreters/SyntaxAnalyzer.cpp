@@ -103,11 +103,11 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     auto & settings = context.getSettingsRef();
 
     std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
-    if (settings.subquery_requires_alias && tables_with_columns.size() > 1)
+    if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
         for (auto & pr : tables_with_columns)
             if (pr.first.table.empty() && pr.first.alias.empty())
-                throw Exception("Not unique subquery in FROM requires an alias (or subquery_requires_alias=0 to disable restriction).",
+                throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
                                 ErrorCodes::ALIAS_REQUIRED);
     }
 
