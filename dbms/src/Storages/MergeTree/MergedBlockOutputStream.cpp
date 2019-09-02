@@ -332,7 +332,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             else if (skip_indexes_column_name_to_position.end() != skip_index_column_it)
             {
                 const auto & index_column = *skip_indexes_columns[skip_index_column_it->second].column;
-                writeColumn(column.name, *column.type, index_column, offset_columns, false, serialization_states[i], current_mark);
+                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, index_column, offset_columns, false, serialization_states[i], current_mark);
             }
             else
             {
@@ -349,6 +349,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     rows_count += rows;
 
+    /// Should be written before index offset update, because we calculate,
+    /// indices of currently written granules
     calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
 
     {
