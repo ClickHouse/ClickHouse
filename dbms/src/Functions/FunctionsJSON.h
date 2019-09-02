@@ -733,16 +733,15 @@ struct JSONExtractTree
                 if (!JSONParser::firstArrayElement(it2))
                     return false;
 
-                size_t index = 0;
-                do
+                for (size_t index = 0; index != nested.size(); ++index)
                 {
                     if (nested[index]->addValueToColumn(tuple.getColumn(index), it2))
                         were_valid_elements = true;
                     else
                         tuple.getColumn(index).insertDefault();
-                    ++index;
+                    if (!JSONParser::nextArrayElement(it2))
+                        break;
                 }
-                while (JSONParser::nextArrayElement(it2));
 
                 set_size(old_size + static_cast<size_t>(were_valid_elements));
                 return were_valid_elements;
@@ -756,16 +755,15 @@ struct JSONExtractTree
                     if (!JSONParser::firstObjectMember(it2))
                         return false;
 
-                    size_t index = 0;
-                    do
+                    for (size_t index = 0; index != nested.size(); ++index)
                     {
                         if (nested[index]->addValueToColumn(tuple.getColumn(index), it2))
                             were_valid_elements = true;
                         else
                             tuple.getColumn(index).insertDefault();
-                        ++index;
+                        if (!JSONParser::nextObjectMember(it2))
+                            break;
                     }
-                    while (JSONParser::nextObjectMember(it2));
                 }
                 else
                 {

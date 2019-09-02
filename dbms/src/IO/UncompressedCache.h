@@ -6,11 +6,6 @@
 #include <Common/ProfileEvents.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#include <Common/config.h>
-#if USE_MIMALLOC
-#include <Common/MiAllocator.h>
-#endif
-
 
 namespace ProfileEvents
 {
@@ -25,11 +20,7 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-#if USE_MIMALLOC
-    Memory<MiAllocator> data;
-#else
     Memory<> data;
-#endif
     size_t compressed_size;
     UInt32 additional_bytes;
 };

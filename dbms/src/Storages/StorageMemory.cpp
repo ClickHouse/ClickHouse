@@ -123,13 +123,13 @@ BlockOutputStreamPtr StorageMemory::write(
 }
 
 
-void StorageMemory::drop()
+void StorageMemory::drop(TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(mutex);
     data.clear();
 }
 
-void StorageMemory::truncate(const ASTPtr &, const Context &)
+void StorageMemory::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(mutex);
     data.clear();

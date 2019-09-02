@@ -3132,7 +3132,6 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
     if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
         /// NOTE Table lock must not be held while waiting. Some combination of R-W-R locks from different threads will yield to deadlock.
-        /// TODO Check all other "wait" places.
         for (auto & merge_entry : merge_entries)
             waitForAllReplicasToProcessLogEntry(merge_entry);
     }
@@ -3158,7 +3157,12 @@ void StorageReplicatedMergeTree::alter(
         LOG_DEBUG(log, "ALTER storage_settings_ptr only");
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
-        alterSettings(new_changes, query_context, table_lock_holder);
+
+        changeSettings(new_changes, table_lock_holder);
+
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        global_context.getDatabase(current_database_name)->alterTable(
+            query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
         return;
     }
 
@@ -3230,6 +3234,18 @@ void StorageReplicatedMergeTree::alter(
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(*this).toString())
             changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);
+
+        /// Perform settings update locally
+        if (!new_changes.empty())
+        {
+            IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+
+            changeSettings(new_changes, table_lock_holder);
+
+            global_context.getDatabase(current_database_name)->alterTable(
+                query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+
+        }
 
         /// Modify shared metadata nodes in ZooKeeper.
         Coordination::Requests ops;
@@ -3476,7 +3492,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, query_context);
+                freezePartition(command.partition, command.with_name, query_context, lock);
             }
             break;
 
@@ -3501,7 +3517,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockStructureForShare(false, query_context.getCurrentQueryId());
-                freezeAll(command.with_name, query_context);
+                freezeAll(command.with_name, query_context, lock);
             }
             break;
         }
@@ -3625,8 +3641,10 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 }
 
 
-void StorageReplicatedMergeTree::truncate(const ASTPtr & query, const Context & query_context)
+void StorageReplicatedMergeTree::truncate(const ASTPtr & query, const Context & query_context, TableStructureWriteLockHolder & table_lock)
 {
+    table_lock.release();   /// Truncate is done asynchronously.
+
     assertNotReadonly();
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
@@ -3693,7 +3711,7 @@ void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & parti
 }
 
 
-void StorageReplicatedMergeTree::drop()
+void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 {
     {
         auto zookeeper = tryGetZooKeeper();
@@ -3723,7 +3741,8 @@ void StorageReplicatedMergeTree::drop()
 }
 
 
-void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageReplicatedMergeTree::rename(
+    const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
@@ -4971,7 +4990,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
     /// If necessary, wait until the operation is performed on all replicas.
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    {
+        lock2.release();
+        lock1.release();
         waitForAllReplicasToProcessLogEntry(entry);
+    }
 }
 
 void StorageReplicatedMergeTree::movePartitionTo(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context)

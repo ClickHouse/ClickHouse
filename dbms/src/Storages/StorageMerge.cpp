@@ -366,8 +366,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
         if (storage.get() != this)
         {
-            virtual_column->insert(storage->getTableName());
             selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
+            virtual_column->insert(storage->getTableName());
         }
 
         iterator->next();
