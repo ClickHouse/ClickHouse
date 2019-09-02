@@ -409,7 +409,7 @@ WHERE diff != 1
 │  65536 │    0 │
 └────────┴──────┘
 
-set max_block_size=100000 // default value is 65536!
+set max_block_size=100000 -- default value is 65536! 
 
 SELECT
     number,
