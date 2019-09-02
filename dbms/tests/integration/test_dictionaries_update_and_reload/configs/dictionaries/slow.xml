@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
   <dictionary>
-    <name>longload</name>
+    <name>slow</name>
     <source>
       <executable>
         <command>sleep 100 &amp;&amp; echo '5\t6';</command>
