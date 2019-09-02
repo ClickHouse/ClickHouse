@@ -1,4 +1,4 @@
-#include "FillingBlockInputStream.h"
+#include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -10,16 +10,17 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
-FillingBlockInputStream::FillingBlockInputStream(
-        const BlockInputStreamPtr & input, const SortDescription & sort_description_)
-        : sort_description(sort_description_), filling_row(sort_description_), next_row(sort_description_)
-{
-    children.push_back(input);
-    header = children.at(0)->getHeader();
 
-    std::vector<bool> is_fill_column(header.columns());
+FillingTransform::FillingTransform(
+        const Block & header_, const SortDescription & sort_description_)
+        : ISimpleTransform(header_, header_, true)
+        , sort_description(sort_description_)
+        , filling_row(sort_description_)
+        , next_row(sort_description_)
+{
+    std::vector<bool> is_fill_column(header_.columns());
     for (const auto & elem : sort_description)
-        is_fill_column[header.getPositionByName(elem.column_name)] = true;
+        is_fill_column[header_.getPositionByName(elem.column_name)] = true;
 
     auto try_convert_fields = [](FillColumnDescription & descr, const DataTypePtr & type)
     {
@@ -48,11 +49,11 @@ FillingBlockInputStream::FillingBlockInputStream(
         return true;
     };
 
-    for (size_t i = 0; i < header.columns(); ++i)
+    for (size_t i = 0; i < header_.columns(); ++i)
     {
         if (is_fill_column[i])
         {
-            auto type = header.getByPosition(i).type;
+            auto type = header_.getByPosition(i).type;
             auto & descr = filling_row.getFillDescription(i);
             if (!try_convert_fields(descr, type))
                 throw Exception("Incompatible types of WITH FILL expression values with column type "
@@ -73,55 +74,64 @@ FillingBlockInputStream::FillingBlockInputStream(
     }
 }
 
+IProcessor::Status FillingTransform::prepare()
+{
+    if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
+    {
+        should_insert_first = next_row < filling_row;
 
-Block FillingBlockInputStream::readImpl()
+        for (size_t i = 0; i < filling_row.size(); ++i)
+            next_row[i] = filling_row.getFillDescription(i).fill_to;
+
+        if (filling_row < next_row)
+        {
+            generate_suffix = true;
+            return Status::Ready;
+        }
+    }
+
+    return ISimpleTransform::prepare();
+}
+
+
+void FillingTransform::transform(Chunk & chunk)
 {
     Columns old_fill_columns;
     Columns old_other_columns;
     MutableColumns res_fill_columns;
     MutableColumns res_other_columns;
 
-    auto init_columns_by_positions = [](const Block & block, Columns & columns,
-        MutableColumns & mutable_columns, const Positions & positions)
+    auto init_columns_by_positions = [](const Columns & old_columns, Columns & new_columns,
+        MutableColumns & new_mutable_columns, const Positions & positions)
     {
         for (size_t pos : positions)
         {
-            auto column = block.getByPosition(pos).column;
-            columns.push_back(column);
-            mutable_columns.push_back(column->cloneEmpty()->assumeMutable());
+            new_columns.push_back(old_columns[pos]);
+            new_mutable_columns.push_back(old_columns[pos]->cloneEmpty()->assumeMutable());
         }
     };
 
-    auto block = children.back()->read();
-    if (!block)
+    if (generate_suffix)
     {
-        init_columns_by_positions(header, old_fill_columns, res_fill_columns, fill_column_positions);
-        init_columns_by_positions(header, old_other_columns, res_other_columns, other_column_positions);
-
-        bool should_insert_first = next_row < filling_row;
-
-        bool generated = false;
-        for (size_t i = 0; i < filling_row.size(); ++i)
-            next_row[i] = filling_row.getFillDescription(i).fill_to;
+        const auto & empty_columns = inputs.front().getHeader().getColumns();
+        init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
+        init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
 
         if (should_insert_first && filling_row < next_row)
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
 
         while (filling_row.next(next_row))
-        {
-            generated = true;
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
-        }
 
-        if (generated)
-            return createResultBlock(res_fill_columns, res_other_columns);
-
-        return block;
+        setResultColumns(chunk, res_fill_columns, res_other_columns);
+        return;
     }
 
-    size_t rows = block.rows();
-    init_columns_by_positions(block, old_fill_columns, res_fill_columns, fill_column_positions);
-    init_columns_by_positions(block, old_other_columns, res_other_columns, other_column_positions);
+    size_t num_rows = chunk.getNumRows();
+    auto old_columns = chunk.detachColumns();
+
+    init_columns_by_positions(old_columns, old_fill_columns, res_fill_columns, fill_column_positions);
+    init_columns_by_positions(old_columns, old_other_columns, res_other_columns, other_column_positions);
 
     if (first)
     {
@@ -129,6 +139,7 @@ Block FillingBlockInputStream::readImpl()
         {
             auto current_value = (*old_fill_columns[i])[0];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
+
             if (!fill_from.isNull() && !equals(current_value, fill_from))
             {
                 filling_row.initFromDefaults(i);
@@ -141,9 +152,9 @@ Block FillingBlockInputStream::readImpl()
         first = false;
     }
 
-    for (size_t row_ind = 0; row_ind < rows; ++row_ind)
+    for (size_t row_ind = 0; row_ind < num_rows; ++row_ind)
     {
-        bool should_insert_first = next_row < filling_row;
+        should_insert_first = next_row < filling_row;
 
         for (size_t i = 0; i < filling_row.size(); ++i)
         {
@@ -169,18 +180,21 @@ Block FillingBlockInputStream::readImpl()
         copyRowFromColumns(res_other_columns, old_other_columns, row_ind);
     }
 
-    return createResultBlock(res_fill_columns, res_other_columns);
+    setResultColumns(chunk, res_fill_columns, res_other_columns);
 }
 
-Block FillingBlockInputStream::createResultBlock(MutableColumns & fill_columns, MutableColumns & other_columns) const
+void FillingTransform::setResultColumns(Chunk & chunk, MutableColumns & fill_columns, MutableColumns & other_columns) const
 {
-    MutableColumns result_columns(header.columns());
+    MutableColumns result_columns(fill_columns.size() + other_columns.size());
+    /// fill_columns always non-empty.
+    size_t num_rows = fill_columns[0]->size();
+
     for (size_t i = 0; i < fill_columns.size(); ++i)
         result_columns[fill_column_positions[i]] = std::move(fill_columns[i]);
     for (size_t i = 0; i < other_columns.size(); ++i)
         result_columns[other_column_positions[i]] = std::move(other_columns[i]);
 
-    return header.cloneWithColumns(std::move(result_columns));
+    chunk.setColumns(std::move(result_columns), num_rows);
 }
 
 }

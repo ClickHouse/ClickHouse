@@ -83,6 +83,7 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
+#include <Processors/Transforms/FillingTransform.h>
 #include <Processors/LimitTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
@@ -2491,7 +2492,7 @@ void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
     }
 }
 
-void InterpreterSelectQuery::executeWithFill(QueryPipeline &)
+void InterpreterSelectQuery::executeWithFill(QueryPipeline & pipeline)
 {
     auto & query = getSelectQuery();
     if (query.orderBy())
@@ -2507,7 +2508,10 @@ void InterpreterSelectQuery::executeWithFill(QueryPipeline &)
         if (fill_descr.empty())
             return;
 
-        throw Exception("Unsupported WITH FILL with processors", ErrorCodes::NOT_IMPLEMENTED);
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FillingTransform>(header, fill_descr);
+        });
     }
 }
 
