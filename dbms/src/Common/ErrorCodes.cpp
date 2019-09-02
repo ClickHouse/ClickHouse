@@ -446,12 +446,11 @@ namespace ErrorCodes
     extern const int VIOLATED_CONSTRAINT = 469;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 470;
     extern const int SETTINGS_ARE_NOT_SUPPORTED = 471;
-    extern const int IMMUTABLE_SETTING = 472;
+    extern const int READONLY_SETTING = 472;
     extern const int UNKNOWN_POLICY = 473;
     extern const int UNKNOWN_DISK = 474;
     extern const int UNKNOWN_PROTOCOL = 475;
     extern const int PATH_ACCESS_DENIED = 476;
-
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
