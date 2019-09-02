@@ -163,7 +163,9 @@ private:
         void init(size_t num_streams)
         {
             queues.resize(num_streams + 1);
-            mutexes.resize(num_streams + 1);
+
+            for (size_t i = 0; i <= num_streams; ++i)
+                mutexes.emplace_back();
         }
 
         std::vector<std::queue<ExecutionState *>> queues;
