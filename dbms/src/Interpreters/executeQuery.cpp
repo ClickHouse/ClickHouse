@@ -150,7 +150,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool has_query_tail)
+    bool has_query_tail,
+    bool allow_processors = true)
 {
     time_t current_time = time(nullptr);
 
@@ -239,7 +240,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         context.initializeExternalTablesIfSet();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = settings.experimental_use_processors && interpreter->canExecuteWithProcessors();
+        bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
 
         if (use_processors)
             pipeline = interpreter->executeWithProcessors();
@@ -483,10 +484,11 @@ BlockIO executeQuery(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data)
+    bool may_have_embedded_data,
+    bool allow_processors)
 {
     BlockIO streams;
-    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, !may_have_embedded_data);
+    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, !may_have_embedded_data, allow_processors);
     return streams;
 }
 
