@@ -448,6 +448,7 @@ namespace ErrorCodes
     extern const int SETTINGS_ARE_NOT_SUPPORTED = 471;
     extern const int READONLY_SETTING = 472;
     extern const int DEADLOCK_AVOIDED = 473;
+    extern const int INVALID_TEMPLATE_FORMAT = 474;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
