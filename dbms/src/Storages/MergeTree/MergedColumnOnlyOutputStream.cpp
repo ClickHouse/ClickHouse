@@ -68,7 +68,6 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!rows)
         return;
 
-    calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
 
     size_t new_index_offset = 0;
     size_t new_current_mark = 0;
@@ -78,6 +77,10 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         const ColumnWithTypeAndName & column = block.getByName(header.getByPosition(i).name);
         std::tie(new_current_mark, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_mark);
     }
+
+    /// Should be written before index offset update, because we calculate,
+    /// indices of currently written granules
+    calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
 
     index_offset = new_index_offset;
     current_mark = new_current_mark;
@@ -102,7 +105,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         auto & column = header.getByPosition(i);
         serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
-
 
         if (with_final_mark)
             writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);

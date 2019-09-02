@@ -201,7 +201,7 @@ All tables are renamed under global locking. Renaming tables is a light operatio
 SET param = value
 ```
 
-Assigns `value` to the `param` configurations settings for the current session. You cannot change [server settings](../operations/server_settings/index.md) this way.
+Assigns `value` to the `param` [setting](../operations/settings/index.md) for the current session. You cannot change [server settings](../operations/server_settings/index.md) this way.
 
 You can also set all the values from the specified settings profile in a single query.
 

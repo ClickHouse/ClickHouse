@@ -229,7 +229,8 @@ try
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
-                1 /// max_threads
+                1, /// max_threads
+                0
             );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);
@@ -301,7 +302,8 @@ try
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
-                1 /// max_threads
+                1, /// max_threads
+                0
         );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);
