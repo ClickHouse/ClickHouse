@@ -12,13 +12,6 @@ types = [
     'Date', 'DateTime'
 ]
 
-explicit_defaults = [
-    '42', '42', '42', '42',
-    '-42', '-42', '-42', '-42',
-    '1.5', '1.6',
-    "'explicit-default'",
-    "'2015-01-01'", "'2015-01-01 00:00:00'"
-]
 
 implicit_defaults = [
     '1', '1', '1', '',
@@ -181,9 +174,6 @@ def generate_dictionaries(path, structure):
     ]
 
     file_names = []
-
-    # Add ready dictionaries.
-    file_names.extend(glob.glob(os.path.join(path, "*dictionary_preset*")))
 
     # Generate dictionaries.
     for (name, key_idx, has_parent), (source, layout) in zip(structure, sources_and_layouts):

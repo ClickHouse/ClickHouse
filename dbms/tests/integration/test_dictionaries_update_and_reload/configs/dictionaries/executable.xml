@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
   <dictionary>
-    <name>cmd</name>
+    <name>executable</name>
     <source>
       <executable>
         <command>echo '7\t8';</command>
