@@ -44,6 +44,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
+    extern const int UNKNOWN_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 namespace
@@ -410,14 +412,12 @@ bool StorageKafka::streamToViews()
 }
 
 
-bool StorageKafka::hasSetting(const String & setting_name) const
+void StorageKafka::checkSettingCanBeChanged(const String & setting_name) const
 {
-    return KafkaSettings::findIndex(setting_name) != KafkaSettings::npos;
-}
+    if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
+        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
 
-IDatabase::ASTModifier StorageKafka::getSettingsModifier(const SettingsChanges & /* new_changes */) const
-{
-    throw Exception("Storage '" + getName() + "' doesn't support settings alter", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
 }
 
 void registerStorageKafka(StorageFactory & factory)

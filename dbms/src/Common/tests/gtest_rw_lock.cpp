@@ -94,7 +94,7 @@ TEST(Common, RWLock_Recursive)
     {
         for (int i = 0; i < 2 * cycles; ++i)
         {
-            auto lock = fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
+            auto lock = fifo_lock->getLock(RWLockImpl::Write, "q1");
 
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
             std::this_thread::sleep_for(sleep_for);
@@ -105,17 +105,17 @@ TEST(Common, RWLock_Recursive)
     {
         for (int i = 0; i < cycles; ++i)
         {
-            auto lock1 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            auto lock1 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
             std::this_thread::sleep_for(sleep_for);
 
-            auto lock2 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            auto lock2 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
-            EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);});
+            EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, "q2");});
         }
 
-        fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
+        fifo_lock->getLock(RWLockImpl::Write, "q2");
     });
 
     t1.join();
