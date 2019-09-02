@@ -110,11 +110,12 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
 
+    /// This object is placed above unique_lock, because it may lock in destructor.
+    LockHolder res;
+
     std::unique_lock lock(mutex);
 
     /// Check if the same query is acquiring previously acquired lock
-    LockHolder existing_holder_ptr;
-
     auto this_thread_id = std::this_thread::get_id();
     auto it_thread = thread_to_holder.find(this_thread_id);
 
@@ -123,17 +124,17 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         it_query = query_id_to_holder.find(query_id);
 
     if (it_thread != thread_to_holder.end())
-        existing_holder_ptr = it_thread->second.lock();
+        res = it_thread->second.lock();
     else if (it_query != query_id_to_holder.end())
-        existing_holder_ptr = it_query->second.lock();
+        res = it_query->second.lock();
 
-    if (existing_holder_ptr)
+    if (res)
     {
         /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
-        if (type != Read || existing_holder_ptr->it_group->type != Read)
+        if (type != Read || res->it_group->type != Read)
             throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
 
-        return existing_holder_ptr;
+        return res;
     }
 
     /** If the query already has any active read lock and tries to acquire another read lock
@@ -182,7 +183,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         throw;
     }
 
-    LockHolder res(new LockHolderImpl(shared_from_this(), it_group, it_client));
+    res.reset(new LockHolderImpl(shared_from_this(), it_group, it_client));
 
     /// Wait a notification until we will be the only in the group.
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
