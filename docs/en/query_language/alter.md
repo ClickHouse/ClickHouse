@@ -190,6 +190,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 - [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
+- [MOVE PARTITION](#alter_move-partition) - Move the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -268,6 +269,21 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
+
+#### MOVE PARTITION {#alter_move-partition}
+
+``` sql
+ALTER TABLE table2 MOVE PARTITION partition_expr FROM table1
+```
+
+This query move the data partition from the `table1` to `table2` with deleting the data from `table1`.
+
+For the query to run successfully, the following conditions must be met:
+
+- Both tables must have the same structure.
+- Both tables must have the same partition key.
+
+
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
