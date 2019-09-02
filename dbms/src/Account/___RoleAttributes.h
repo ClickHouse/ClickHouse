@@ -29,9 +29,6 @@ struct RoleAttributes : public IAccessAttributes
     /// Granted roles.
     std::unordered_map<UUID, GrantedRoleParams> granted_roles;
 
-    /// Row-level security policies applied.
-    std::unordered_set<UUID> applied_rls_policies;
-
     std::shared_ptr<IAccessAttributes> clone() const override;
     bool isEqual(const IAccessAttributes & other) const override;
 

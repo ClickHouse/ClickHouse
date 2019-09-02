@@ -7,7 +7,7 @@
 namespace DB
 {
 /// Represents a role in Role-based Access Control.
-class Role : public IAccessControlElement
+class RowLevelSecurityPolicy : public IAccessControlElement
 {
 public:
     struct Attributes : public IAccessControlElement::Attributes

@@ -80,10 +80,10 @@ public:
     /// Revokes privileges.
     /// Returns false if there is nothing to revoke.
     bool revoke(Types access);
-    bool revoke(Types access, const String & database);
-    bool revoke(Types access, const String & database, const String & table);
-    bool revoke(Types access, const String & database, const String & table, const String & column);
-    bool revoke(Types access, const String & database, const String & table, const Strings & columns);
+    bool revoke(Types access, const String & database, bool partial_revokes = false);
+    bool revoke(Types access, const String & database, const String & table, bool partial_revokes = false);
+    bool revoke(Types access, const String & database, const String & table, const String & column, bool partial_revokes = false);
+    bool revoke(Types access, const String & database, const String & table, const Strings & columns, bool partial_revokes = false);
 
     /// Returns granted privileges for a specified object.
     Types getAccess() const { return root.getAccess(); }
@@ -165,13 +165,13 @@ private:
         bool grant(Types add_access, const String & name1, const String & name2, const String & name3);
         bool grant(Types add_access, const String & name1, const String & name2, const Strings & names3);
 
-        bool revoke(Types remove_access);
-        bool revoke(Types remove_access, const String & name);
-        bool revoke(Types remove_access, const Strings & names);
-        bool revoke(Types remove_access, const String & name1, const String & name2);
-        bool revoke(Types remove_access, const String & name1, const Strings & names2);
-        bool revoke(Types remove_access, const String & name1, const String & name2, const String & name3);
-        bool revoke(Types remove_access, const String & name1, const String & name2, const Strings & names3);
+        bool revoke(Types remove_access, bool partial_revokes = false);
+        bool revoke(Types remove_access, const String & name, bool partial_revokes = false);
+        bool revoke(Types remove_access, const Strings & names, bool partial_revokes = false);
+        bool revoke(Types remove_access, const String & name1, const String & name2, bool partial_revokes = false);
+        bool revoke(Types remove_access, const String & name1, const Strings & names2, bool partial_revokes = false);
+        bool revoke(Types remove_access, const String & name1, const String & name2, const String & name3, bool partial_revokes = false);
+        bool revoke(Types remove_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes = false);
 
         void merge(const Node & other);
 

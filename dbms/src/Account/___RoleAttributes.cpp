@@ -1,3 +1,4 @@
+#if 0
 #include <Account/RoleAttributes.h>
 #include <Common/Exception.h>
 
@@ -24,7 +25,6 @@ void RoleAttributes::copyTo(RoleAttributes & dest) const
     dest.privileges = privileges;
     dest.grant_options = grant_options;
     dest.granted_roles = granted_roles;
-    dest.applied_rls_policies = applied_rls_policies;
 }
 
 
@@ -33,8 +33,7 @@ bool RoleAttributes::isEqual(const IAccessAttributes & other) const
     if (!IAccessAttributes::isEqual(other))
         return false;
     const auto & o = static_cast<const RoleAttributes &>(other);
-    return (privileges == o.privileges) && (grant_options == o.grant_options) && (granted_roles == o.granted_roles)
-        && (applied_rls_policies == o.applied_rls_policies);
+    return (privileges == o.privileges) && (grant_options == o.grant_options) && (granted_roles == o.granted_roles);
 }
 
 
@@ -55,3 +54,4 @@ const RoleAttributes & IAccessAttributes::as<RoleAttributes>() const
 }
 
 }
+#endif

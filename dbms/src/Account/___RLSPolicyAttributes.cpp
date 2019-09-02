@@ -1,3 +1,4 @@
+#if 0
 #include <Account/RLSPolicyAttributes.h>
 #include <Common/Exception.h>
 
@@ -26,6 +27,7 @@ void RLSPolicyAttributes::copyTo(RLSPolicyAttributes & dest) const
     dest.policy_type = policy_type;
     dest.select_filter = select_filter;
     dest.insert_filter = insert_filter;
+    dest.apply_to_roles = apply_to_roles;
 }
 
 
@@ -35,7 +37,7 @@ bool RLSPolicyAttributes::isEqual(const IAccessAttributes & other) const
         return false;
     const auto & o = static_cast<const RLSPolicyAttributes &>(other);
     return (database == o.database) && (table == o.table) && (policy_type == o.policy_type) && (select_filter == o.select_filter)
-        && (insert_filter == o.insert_filter);
+        && (insert_filter == o.insert_filter) && (apply_to_roles == o.apply_to_roles);
 }
 
 
@@ -55,3 +57,4 @@ const RLSPolicyAttributes & IAccessAttributes::as<RLSPolicyAttributes>() const
     throw Exception("Access attributes has unexpected type", ErrorCodes::BAD_CAST);
 }
 }
+#endif

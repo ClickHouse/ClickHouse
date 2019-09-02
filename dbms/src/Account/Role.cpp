@@ -1,251 +1,262 @@
 #include <Account/Role.h>
-#include <Account/IAccessStorage.h>
 #include <Common/Exception.h>
-#include <boost/algorithm/string/join.hpp>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NO_SUCH_GRANT;
-    extern const int NOT_GRANTED_ROLE_SET;
+    extern const int ROLE_NOT_FOUND;
+    extern const int ROLE_ALREADY_EXISTS;
+}
+
+using Operation = IAccessControlElement::Operation;
+
+
+bool Role::Attributes::equal(const IAccessControlElement::Attributes & other) const
+{
+    if (!IAccessControlElement::Attributes::equal(other))
+        return false;
+    const auto * o = dynamic_cast<const Attributes *>(&other);
+    return o && (privileges == o->privileges) && (grant_options == o->grant_options) && (granted_roles == o->granted_roles);
 }
 
 
-RoleAttributesPtr Role::getAttributes() const
+std::shared_ptr<IAccessControlElement::Attributes> Role::Attributes::clone() const
 {
-    auto attrs = storage->read(id);
-    attrs->as<RoleAttributes>();
-    return std::static_pointer_cast<const RoleAttributes>(attrs);
+    auto result = std::make_shared<Attributes>();
+    *result == *this;
+    return result;
 }
 
 
-void Role::grant(Privileges::Types access, bool with_grant_option)
+bool Role::Attributes::hasReferences(UUID ref_id) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return granted_roles.count(ref_id);
+}
+
+
+void Role::Attributes::removeReferences(UUID ref_id)
+{
+    granted_roles.erase(ref_id);
+}
+
+
+Operation Role::grantOp(Privileges::Types access, const GrantParams & params) const
+{
+    return prepareOperation([access, params](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        a.privileges.grant(access);
-        if (with_grant_option)
-            a.grant_options.grant(access);
+        attrs.privileges.grant(access);
+        if (params.with_grant_option)
+            attrs.grant_options.grant(access);
     });
 }
 
 
-void Role::grant(Privileges::Types access, const String & database, bool with_grant_option)
+Operation Role::grantOp(Privileges::Types access, const String & database, const GrantParams & params) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, params](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        a.privileges.grant(access, database);
-        if (with_grant_option)
-            a.grant_options.grant(access, database);
+        attrs.privileges.grant(access, database);
+        if (params.with_grant_option)
+            attrs.grant_options.grant(access, database);
     });
 }
 
 
-void Role::grant(Privileges::Types access, const String & database, const String & table, bool with_grant_option)
+Operation Role::grantOp(Privileges::Types access, const String & database, const String & table, const GrantParams & params) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, table, params](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        a.privileges.grant(access, database, table);
-        if (with_grant_option)
-            a.grant_options.grant(access, database, table);
+        attrs.privileges.grant(access, database, table);
+        if (params.with_grant_option)
+            attrs.grant_options.grant(access, database, table);
     });
 }
 
 
-void Role::grant(Privileges::Types access, const String & database, const String & table, const String & column, bool with_grant_option)
+Operation Role::grantOp(Privileges::Types access, const String & database, const String & table, const String & column, const GrantParams & params) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, table, column, params](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        a.privileges.grant(access, database, table, column);
-        if (with_grant_option)
-            a.grant_options.grant(access, database, table, column);
+        attrs.privileges.grant(access, database, table, column);
+        if (params.with_grant_option)
+            attrs.grant_options.grant(access, database, table, column);
     });
 }
 
 
-void Role::grant(Privileges::Types access, const String & database, const String & table, const Strings & columns, bool with_grant_option)
+Operation Role::grantOp(Privileges::Types access, const String & database, const String & table, const Strings & columns, const GrantParams & params) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, table, columns, params](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        a.privileges.grant(access, database, table, columns);
-        if (with_grant_option)
-            a.grant_options.grant(access, database, table, columns);
+        attrs.privileges.grant(access, database, table, columns);
+        if (params.with_grant_option)
+            attrs.grant_options.grant(access, database, table, columns);
     });
 }
 
 
-void Role::revoke(Privileges::Types access, bool only_grant_option)
+Operation Role::revokeOp(Privileges::Types access, const RevokeParams & params, bool * revoked) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, params, revoked](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        bool revoked = a.grant_options.revoke(access);
-        if (!only_grant_option)
-            revoked |= a.privileges.revoke(access);
-        if (!revoked)
-            throw Exception("No such grant: " + Privileges::accessToString(access), ErrorCodes::NO_SUCH_GRANT);
+        bool r = attrs.grant_options.revoke(access);
+        if (!params.only_grant_option)
+            r |= attrs.privileges.revoke(access);
+        if (revoked)
+            *revoked = r;
     });
 }
 
 
-void Role::revoke(Privileges::Types access, const String & database, bool only_grant_option)
+Operation Role::revokeOp(Privileges::Types access, const String & database, const RevokeParams & params, bool * revoked) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, params, revoked](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        bool revoked = a.grant_options.revoke(access, database);
-        if (!only_grant_option)
-            revoked |= a.privileges.revoke(access, database);
-        if (!revoked)
-            throw Exception("No such grant: " + Privileges::accessToString(access, database), ErrorCodes::NO_SUCH_GRANT);
+        bool r = attrs.grant_options.revoke(access, database);
+        if (!params.only_grant_option)
+            r |= attrs.privileges.revoke(access, database);
+        if (revoked)
+            *revoked = r;
     });
 }
 
 
-void Role::revoke(Privileges::Types access, const String & database, const String & table, bool only_grant_option)
+Operation Role::revokeOp(Privileges::Types access, const String & database, const String & table, const RevokeParams & params, bool * revoked) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, table, params, revoked](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        bool revoked = a.grant_options.revoke(access, database, table);
-        if (!only_grant_option)
-            revoked |= a.privileges.revoke(access, database, table);
-        if (!revoked)
-            throw Exception("No such grant: " + Privileges::accessToString(access, database, table), ErrorCodes::NO_SUCH_GRANT);
+        bool r = attrs.grant_options.revoke(access, database, table);
+        if (!params.only_grant_option)
+            r |= attrs.privileges.revoke(access, database, table);
+        if (revoked)
+            *revoked = r;
     });
 }
 
 
-void Role::revoke(Privileges::Types access, const String & database, const String & table, const String & column, bool only_grant_option)
+Operation Role::revokeOp(Privileges::Types access, const String & database, const String & table, const String & column, const RevokeParams & params, bool * revoked) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, table, column, params, revoked](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        bool revoked = a.grant_options.revoke(access, database, table, column);
-        if (!only_grant_option)
-            revoked |= a.privileges.revoke(access, database, table, column);
-        if (!revoked)
-            throw Exception("No such grant: " + Privileges::accessToString(access, database, table, column), ErrorCodes::NO_SUCH_GRANT);
+        bool r = attrs.grant_options.revoke(access, database, table, column);
+        if (!params.only_grant_option)
+            r |= attrs.privileges.revoke(access, database, table, column);
+        if (revoked)
+            *revoked = r;
     });
 }
 
 
-void Role::revoke(Privileges::Types access, const String & database, const String & table, const Strings & columns, bool only_grant_option)
+Operation Role::revokeOp(Privileges::Types access, const String & database, const String & table, const Strings & columns, const RevokeParams & params, bool * revoked) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([access, database, table, columns, params, revoked](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        bool revoked = a.grant_options.revoke(access, database, table, columns);
-        if (!only_grant_option)
-            revoked |= a.privileges.revoke(access, database, table, columns);
-        if (!revoked)
-            throw Exception("No such grant: " + Privileges::accessToString(access, database, table, columns), ErrorCodes::NO_SUCH_GRANT);
+        bool r = attrs.grant_options.revoke(access, database, table, columns);
+        if (!params.only_grant_option)
+            r |= attrs.privileges.revoke(access, database, table, columns);
+        if (revoked)
+            *revoked = r;
     });
 }
 
 
-void Role::grantRole(const Role & role, bool with_admin_option)
+Privileges Role::getPrivileges() const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return getAttributes()->privileges;
+}
+
+
+Privileges Role::getGrantOptions() const
+{
+    return getAttributes()->grant_options;
+}
+
+
+Operation Role::grantRoleOp(const Role & role, const GrantRoleParams & params) const
+{
+    return prepareOperation([role, params](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        a.granted_roles[role.getID()].with_admin_option |= with_admin_option;
+        attrs.granted_roles[role.getID()].admin_option |= params.with_admin_option;
     });
 }
 
 
-void Role::revokeRole(const Role & role, bool only_admin_option)
+Operation Role::revokeRoleOp(const Role & role, const RevokeRoleParams & params, bool * revoked) const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    return prepareOperation([role, params, revoked](Attributes & attrs)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        auto it = a.granted_roles.find(role.getID());
-        bool revoked = false;
-        if (it != a.granted_roles.end())
+        bool r = false;
+        auto it = attrs.granted_roles.find(role.getID());
+        if (it != attrs.granted_roles.end())
         {
-            if (only_admin_option)
+            if (params.only_admin_option)
             {
-                if (it->second.with_admin_option)
+                if (it->second.admin_option)
                 {
-                    it->second.with_admin_option = false;
-                    revoked = true;
+                    it->second.admin_option = false;
+                    r = true;
                 }
             }
             else
             {
-                a.granted_roles.erase(it);
-                revoked = true;
+                attrs.granted_roles.erase(it);
+                r = true;
             }
         }
-        if (!revoked)
-            throw Exception("Role " + role.getName() + " is not granted", ErrorCodes::NO_SUCH_GRANT);
+        if (revoked)
+            *revoked = r;
     });
 }
 
 
-void Role::revokeRoles(const std::vector<Role> & roles, bool only_admin_option)
+std::vector<Role> Role::getGrantedRoles() const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    auto attrs = getAttributes();
+    std::vector<Role> result;
+    result.reserve(attrs->granted_roles.size());
+    for (const auto & granted_id_with_settings : attrs->granted_roles)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        bool revoked = false;
-        for (const auto & role : roles)
-        {
-            auto it = a.granted_roles.find(role.getID());
-            if (it != a.granted_roles.end())
-            {
-                if (only_admin_option)
-                {
-                    if (it->second.with_admin_option)
-                    {
-                        it->second.with_admin_option = false;
-                        revoked = true;
-                    }
-                }
-                else
-                {
-                    a.granted_roles.erase(it);
-                    revoked = true;
-                }
-            }
-        }
-        if (!revoked)
-        {
-            String message = "None of roles ";
-            for (size_t i = 0; i != roles.size(); ++i)
-                message += (i ? ", " : "") + roles[i].getName();
-            message += " is granted";
-            throw Exception(message, ErrorCodes::NO_SUCH_GRANT);
-        }
-    });
+        const auto & granted_id = granted_id_with_settings.first;
+        result.push_back({granted_id, getManager()});
+    }
+    return result;
 }
 
 
-void Role::setDefaultRoles(const std::vector<Role> & roles)
+std::vector<Role> Role::getGrantedRolesWithAdminOption() const
 {
-    storage->write(id, [&](IAccessAttributes & attrs)
+    auto attrs = getAttributes();
+    std::vector<Role> result;
+    result.reserve(attrs->granted_roles.size());
+    for (const auto & [granted_id, settings] : attrs->granted_roles)
     {
-        auto & a = attrs.as<RoleAttributes>();
-        for (const auto & role : roles)
-            if (!a.granted_roles.count(role.getID()))
-                throw Exception("Role " + role.getName() + " is not granted, only granted roles can be set", ErrorCodes::NOT_GRANTED_ROLE_SET);
-        for (auto & params : a.granted_roles)
-            params.second.enabled_by_default = false;
-        for (const auto & role : roles)
-            a.granted_roles[role.getID()].enabled_by_default = true;
-    });
+        if (settings.admin_option)
+            result.push_back({granted_id, getManager()});
+    }
+    return result;
 }
 
 
-void Role::drop()
+Operation Role::prepareOperation(const std::function<void(Attributes &)> & fn) const
 {
-    storage->drop(id);
+    return prepareOperationImpl<Attributes>(fn);
+}
+
+const String & Role::getTypeName() const
+{
+    static const String type_name = "role";
+    return type_name;
+}
+
+int Role::getNotFoundErrorCode() const
+{
+    return ErrorCodes::ROLE_NOT_FOUND;
+}
+
+int Role::getAlreadyExistsErrorCode() const
+{
+    return ErrorCodes::ROLE_ALREADY_EXISTS;
 }
 }

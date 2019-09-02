@@ -231,9 +231,13 @@ bool Privileges::Node::grant(Types add_access, const String & name1, const Strin
 }
 
 
-bool Privileges::Node::revoke(Types remove_access)
+bool Privileges::Node::revoke(Types remove_access, bool partial_revokes)
 {
-    remove_access &= access; /// Skip access types which we don't have.
+    if (partial_revokes)
+        remove_access &= access; /// Skip access types we don't have.
+    else
+        remove_access &= grants; /// Skip access types which are not granted.
+
     if (!remove_access)
         return false; /// Nothing to revoke.
 
@@ -270,59 +274,59 @@ void Privileges::Node::removeAccess(Types remove_access)
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name)
+bool Privileges::Node::revoke(Types add_access, const String & name, bool partial_revokes)
 {
     auto it = getIterator(name);
-    if (!it->second.revoke(add_access))
+    if (!it->second.revoke(add_access, partial_revokes))
         return false;
     eraseOrIncrement(it);
     return true;
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const Strings & names)
+bool Privileges::Node::revoke(Types add_access, const Strings & names, bool partial_revokes)
 {
     bool changed = false;
     for (const String & name : names)
-        changed |= revoke(add_access, name);
+        changed |= revoke(add_access, name, partial_revokes);
     return changed;
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2)
+bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, bool partial_revokes)
 {
     auto it = getIterator(name1);
-    if (!it->second.revoke(add_access, name2))
+    if (!it->second.revoke(add_access, name2, partial_revokes))
         return false;
     eraseOrIncrement(it);
     return true;
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const Strings & names2)
+bool Privileges::Node::revoke(Types add_access, const String & name1, const Strings & names2, bool partial_revokes)
 {
     auto it = getIterator(name1);
-    if (!it->second.revoke(add_access, names2))
+    if (!it->second.revoke(add_access, names2, partial_revokes))
         return false;
     eraseOrIncrement(it);
     return true;
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, const String & name3)
+bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, const String & name3, bool partial_revokes)
 {
     auto it = getIterator(name1);
-    if (!it->second.revoke(add_access, name2, name3))
+    if (!it->second.revoke(add_access, name2, name3, partial_revokes))
         return false;
     eraseOrIncrement(it);
     return true;
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, const Strings & names3)
+bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes)
 {
     auto it = getIterator(name1);
-    if (!it->second.revoke(add_access, name2, names3))
+    if (!it->second.revoke(add_access, name2, names3, partial_revokes))
         return false;
     eraseOrIncrement(it);
     return true;
@@ -562,27 +566,27 @@ bool Privileges::revoke(Types access)
 }
 
 
-bool Privileges::revoke(Types access, const String & database)
+bool Privileges::revoke(Types access, const String & database, bool partial_revokes)
 {
-    return root.revoke(access, database);
+    return root.revoke(access, database, partial_revokes);
 }
 
 
-bool Privileges::revoke(Types access, const String & database, const String & table)
+bool Privileges::revoke(Types access, const String & database, const String & table, bool partial_revokes)
 {
-    return root.revoke(access, database, table);
+    return root.revoke(access, database, table, partial_revokes);
 }
 
 
-bool Privileges::revoke(Types access, const String & database, const String & table, const String & column)
+bool Privileges::revoke(Types access, const String & database, const String & table, const String & column, bool partial_revokes)
 {
-    return root.revoke(access, database, table, column);
+    return root.revoke(access, database, table, column, partial_revokes);
 }
 
 
-bool Privileges::revoke(Types access, const String & database, const String & table, const Strings & columns)
+bool Privileges::revoke(Types access, const String & database, const String & table, const Strings & columns, bool partial_revokes)
 {
-    return root.revoke(access, database, table, columns);
+    return root.revoke(access, database, table, columns, partial_revokes);
 }
 
 

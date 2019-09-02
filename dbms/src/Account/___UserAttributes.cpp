@@ -1,3 +1,4 @@
+#if 0
 #include <Account/UserAttributes.h>
 #include <Common/Exception.h>
 
@@ -58,3 +59,4 @@ const UserAttributes & IAccessAttributes::as<UserAttributes>() const
 }
 
 }
+#endif

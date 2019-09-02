@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Account/IAccessAttributes.h>
-
+#include <Core/UUID.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -20,6 +21,8 @@ struct RLSPolicyAttributes : public IAccessAttributes
 
     String select_filter;
     String insert_filter;
+
+    std::unordered_set<UUID> apply_to_roles;
 
     RLSPolicyAttributes() : IAccessAttributes(Type::RLS_POLICY) {}
     std::shared_ptr<IAccessAttributes> clone() const override;

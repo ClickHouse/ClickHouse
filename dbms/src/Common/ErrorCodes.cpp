@@ -452,7 +452,6 @@ namespace ErrorCodes
     extern const int USER_NOT_FOUND = 475;
     extern const int ROLE_NOT_FOUND = 476;
     extern const int RLS_POLICY_NOT_FOUND = 477;
-    extern const int ACCESS_ATTRIBUTES_NOT_FOUND = 478;
     extern const int NOT_GRANTED_ROLE_SET = 479;
 
     extern const int KEEPER_EXCEPTION = 999;

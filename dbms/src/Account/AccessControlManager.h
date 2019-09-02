@@ -1,3 +1,31 @@
+#pragma once
+
+#include <Core/Types.h>
+#include <Core/UUID.h>
+#include <Account/IAccessControlElement.h>
+
+
+namespace DB
+{
+class IAccessControlStorage;
+
+
+class AccessControlManager
+{
+public:
+    using StoragePtr = std::shared_ptr<IAccessControlStorage>;
+    using ElementType = IAccessControlElement::Type;
+
+    //std::pair<StoragePtr, UUID> findElement(const String & name, ElementType type);
+    StoragePtr findStorage(UUID id) const;
+    String findNameInCache(UUID id) const;
+
+    //void checkNewName(UUID id, const String & new_name, ElementType type);
+};
+
+}
+
+
 #if 0
 #pragma once
 
