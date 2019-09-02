@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_DROPPED;
 }
 
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)

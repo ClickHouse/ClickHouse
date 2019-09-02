@@ -50,7 +50,7 @@ static std::unordered_map<String, DataTypePtr> requiredRightKeys(const Names & k
 
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    if (column.type->isNullable())
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
     column.type = makeNullable(column.type);
@@ -71,7 +71,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     if (nullable)
     {
         convertColumnToNullable(column);
-        if (negative_null_map.size())
+        if (column.type->isNullable() && negative_null_map.size())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
             assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);

@@ -135,7 +135,25 @@ void DatabaseOrdinary::loadTables(
         if (endsWith(dir_it.name(), ".sql.bak"))
             continue;
 
-        /// There are files .sql.tmp - delete.
+        // There are files that we tried to delete previously
+        static const char * tmp_drop_ext = ".sql.tmp_drop";
+        if (endsWith(dir_it.name(), tmp_drop_ext))
+        {
+            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+            if (Poco::File(data_path + '/' + table_name).exists())
+            {
+                Poco::File(dir_it->path()).renameTo(table_name + ".sql");
+                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
+            }
+            else
+            {
+                LOG_INFO(log, "Removing file " << dir_it->path());
+                Poco::File(dir_it->path()).remove();
+            }
+            continue;
+        }
+
+        /// There are files .sql.tmp - delete
         if (endsWith(dir_it.name(), ".sql.tmp"))
         {
             LOG_INFO(log, "Removing file " << dir_it->path());
@@ -302,6 +320,15 @@ void DatabaseOrdinary::removeTable(
     }
     catch (...)
     {
+        try
+        {
+            Poco::File(table_metadata_path + ".tmp_drop").remove();
+            return;
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        }
         attachTable(table_name, res);
         throw;
     }
@@ -355,7 +382,8 @@ void DatabaseOrdinary::renameTable(
     const Context & context,
     const String & table_name,
     IDatabase & to_database,
-    const String & to_table_name)
+    const String & to_table_name,
+    TableStructureWriteLockHolder & lock)
 {
     DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
@@ -372,7 +400,7 @@ void DatabaseOrdinary::renameTable(
     {
         table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
             to_database_concrete->name,
-            to_table_name);
+            to_table_name, lock);
     }
     catch (const Exception &)
     {

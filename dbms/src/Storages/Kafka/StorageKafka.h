@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/NamesAndTypes.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
@@ -11,6 +9,8 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <mutex>
+#include <atomic>
+
 
 namespace DB
 {
@@ -40,10 +40,9 @@ public:
 
     BlockOutputStreamPtr write(
         const ASTPtr & query,
-        const Context & context
-    ) override;
+        const Context & context) override;
 
-    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void updateDependencies() override;
 
@@ -58,8 +57,7 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
-    bool hasSetting(const String & setting_name) const override;
-
+    void checkSettingCanBeChanged(const String & setting_name) const override;
 
 protected:
     StorageKafka(
@@ -72,7 +70,6 @@ protected:
         size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken,
         bool intermediate_commit_);
 
-    IDatabase::ASTModifier getSettingsModifier(const SettingsChanges & new_changes) const override;
 private:
     // Configuration and state
     String table_name;

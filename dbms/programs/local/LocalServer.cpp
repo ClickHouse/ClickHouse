@@ -35,6 +35,7 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <common/argsToConfig.h>
+#include <Common/TerminalSize.h>
 
 
 namespace DB
@@ -267,7 +268,7 @@ void LocalServer::attachSystemTables()
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query + config().getString("query");
+    String queries_str = initial_create_query + config().getRawString("query");
 
     std::vector<String> queries;
     auto parse_res = splitMultipartQuery(queries_str, queries);
@@ -409,17 +410,7 @@ void LocalServer::init(int argc, char ** argv)
     /// Don't parse options with Poco library, we prefer neat boost::program_options
     stopOptionsProcessing();
 
-    unsigned line_length = po::options_description::m_default_line_length;
-    unsigned min_description_length = line_length / 2;
-    if (isatty(STDIN_FILENO))
-    {
-        winsize terminal_size{};
-        ioctl(0, TIOCGWINSZ, &terminal_size);
-        line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
-        min_description_length = std::min(min_description_length, line_length - 2);
-    }
-
-    po::options_description description("Main options", line_length, min_description_length);
+    po::options_description description = createOptionsDescription("Main options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")
