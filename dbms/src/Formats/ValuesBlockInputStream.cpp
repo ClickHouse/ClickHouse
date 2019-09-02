@@ -6,7 +6,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Formats/ValuesBlockInputStream.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Common/FieldVisitors.h>
 #include <Core/Block.h>
 #include <Common/typeid_cast.h>
@@ -33,8 +33,8 @@ namespace ErrorCodes
 
 
 ValuesBlockInputStream::ValuesBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_,
-                                               const FormatSettings & format_settings, UInt64 max_block_size_, UInt64 rows_portion_size_)
-        : istr(istr_), header(header_), context(std::make_unique<Context>(context_)), format_settings(format_settings),
+                                               const FormatSettings & format_settings_, UInt64 max_block_size_, UInt64 rows_portion_size_)
+        : istr(istr_), header(header_), context(std::make_unique<Context>(context_)), format_settings(format_settings_),
           max_block_size(max_block_size_), rows_portion_size(rows_portion_size_), num_columns(header.columns()),
           attempts_to_generate_template(num_columns), rows_parsed_using_template(num_columns)
 {
@@ -48,8 +48,14 @@ Block ValuesBlockInputStream::readImpl()
 {
     MutableColumns columns = header.cloneEmptyColumns();
 
-    for (size_t rows_in_block = 0; rows_in_block < max_block_size; ++rows_in_block)
+    for (size_t rows_in_block = 0, batch = 0; rows_in_block < max_block_size; ++rows_in_block, ++batch)
     {
+        if (rows_portion_size && batch == rows_portion_size)
+        {
+            batch = 0;
+            if (!checkTimeLimit() || isCancelled())
+                break;
+        }
         try
         {
             skipWhitespaceIfAny(istr);
@@ -187,7 +193,7 @@ ValuesBlockInputStream::parseExpression(IColumn & column, size_t column_idx, boo
 
     // TODO make tokenizer to work with buffers, not only with continuous memory
     Tokens tokens(istr.position(), istr.buffer().end());
-    TokenIterator token_iterator(tokens);
+    IParser::Pos token_iterator(tokens);
 
     ASTPtr ast;
     if (!parser.parse(token_iterator, ast, expected))
@@ -276,9 +282,11 @@ void registerInputFormatValues(FormatFactory & factory)
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
+        UInt64 rows_portion_size,
+        FormatFactory::ReadCallback,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesBlockInputStream>(buf, sample, context, settings, max_block_size);
+        return std::make_shared<ValuesBlockInputStream>(buf, sample, context, settings, max_block_size, rows_portion_size);
     });
 }
 
