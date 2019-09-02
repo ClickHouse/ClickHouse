@@ -76,3 +76,14 @@ TEST(TransformQueryForExternalDatabase, Substring)
           "SELECT \"column\" FROM \"test\".\"table\"",
           state().context, state().columns);
 }
+
+TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
+{
+    check("SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(column, 10) = RIGHT(column, 10) AND column IN (1, 42) AND SUBSTRING(column FROM 1 FOR 2) = 'Hello' AND column != 4",
+          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1 AND (\"column\" = 42) AND (\"column\" IN (1, 42)) AND (\"column\" != 4)",
+          state().context, state().columns);
+    check("SELECT column FROM test.table WHERE toString(column) = '42' AND left(column, 10) = RIGHT(column, 10) AND column = 42",
+          "SELECT \"column\" FROM \"test\".\"table\" WHERE (\"column\" = 42)",
+          state().context, state().columns);
+
+}

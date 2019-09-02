@@ -415,7 +415,7 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::truncate(const ASTPtr &, const Context &)
+void StorageDistributed::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 

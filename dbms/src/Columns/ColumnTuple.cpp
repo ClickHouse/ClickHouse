@@ -81,6 +81,16 @@ MutableColumnPtr ColumnTuple::cloneEmpty() const
     return ColumnTuple::create(std::move(new_columns));
 }
 
+MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
+{
+    const size_t tuple_size = columns.size();
+    MutableColumns new_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->cloneResized(new_size);
+
+    return ColumnTuple::create(std::move(new_columns));
+}
+
 Field ColumnTuple::operator[](size_t n) const
 {
     return Tuple{ext::map<TupleBackend>(columns, [n] (const auto & column) { return (*column)[n]; })};

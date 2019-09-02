@@ -211,8 +211,11 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.level = part->info.level;
         part_info.data = &part;
         part_info.min_ttl = part->ttl_infos.part_min_ttl;
+        part_info.max_ttl = part->ttl_infos.part_max_ttl;
 
-        if (part_info.min_ttl && part_info.min_ttl <= current_time)
+        time_t ttl = data_settings->ttl_only_drop_parts ? part_info.max_ttl : part_info.min_ttl;
+
+        if (ttl && ttl <= current_time)
             has_part_with_expired_ttl = true;
 
         partitions.back().emplace_back(part_info);
@@ -239,7 +242,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     /// NOTE Could allow selection of different merge strategy.
     if (can_merge_with_ttl && has_part_with_expired_ttl && !ttl_merges_blocker.isCancelled())
     {
-        merge_selector = std::make_unique<TTLMergeSelector>(current_time);
+        merge_selector = std::make_unique<TTLMergeSelector>(current_time, data_settings->ttl_only_drop_parts);
         last_merge_with_ttl = current_time;
     }
     else
@@ -376,7 +379,7 @@ static void extractMergingAndGatheringColumns(
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
     for (const auto & index : indexes)
     {
-        Names index_columns_vec = index->expr->getRequiredColumns();
+        Names index_columns_vec = index->getColumnsRequiredForIndexCalc();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
@@ -558,7 +561,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
 
-    NamesAndTypesList gathering_columns, merging_columns;
+    NamesAndTypesList gathering_columns;
+    NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
         all_columns, data.sorting_key_expr, data.skip_indices,
@@ -825,6 +829,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
+
             MergedColumnOnlyOutputStream column_to(
                 data,
                 column_gathered_stream.getHeader(),
@@ -832,10 +837,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 false,
                 compression_codec,
                 false,
-                {},
+                /// we don't need to recalc indices here
+                /// because all of them were already recalculated and written
+                /// as key part of vertical merge
+                std::vector<MergeTreeIndexPtr>{},
                 written_offset_columns,
-                to.getIndexGranularity()
-            );
+                to.getIndexGranularity());
+
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -1016,9 +1024,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             for (size_t i = 0; i < data.skip_indices.size(); ++i)
             {
                 const auto & index = data.skip_indices[i];
-                const auto & index_cols = index->expr->getRequiredColumns();
-                auto it = find(cbegin(index_cols), cend(index_cols), col);
-                if (it != cend(index_cols) && indices_to_recalc.insert(index).second)
+                const auto & index_cols = index->getColumnsRequiredForIndexCalc();
+                auto it = std::find(std::cbegin(index_cols), std::cend(index_cols), col);
+                if (it != std::cend(index_cols) && indices_to_recalc.insert(index).second)
                 {
                     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(
                             storage_from_source_part->getIndices().indices[i]->expr->clone());
@@ -1035,6 +1043,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             auto indices_recalc_expr = ExpressionAnalyzer(
                     indices_recalc_expr_list,
                     indices_recalc_syntax, context).getActions(false);
+
+            /// We can update only one column, but some skip idx expression may depend on several
+            /// columns (c1 + c2 * c3). It works because in stream was created with help of
+            /// MutationsInterpreter which knows about skip indices and stream 'in' already has
+            /// all required columns.
+            /// TODO move this logic to single place.
             in = std::make_shared<MaterializingBlockInputStream>(
                     std::make_shared<ExpressionBlockInputStream>(in, indices_recalc_expr));
         }

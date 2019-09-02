@@ -141,7 +141,10 @@ protected:
     size_t aio_threshold;
 
     size_t current_mark = 0;
-    size_t skip_index_mark = 0;
+
+    /// Number of mark in data from which skip indices have to start
+    /// aggregation. I.e. it's data mark number, not skip indices mark.
+    size_t skip_index_data_mark = 0;
 
     const bool can_use_adaptive_granularity;
     const std::string marks_file_extension;

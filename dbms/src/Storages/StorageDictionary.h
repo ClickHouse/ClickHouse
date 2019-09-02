@@ -34,7 +34,6 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    void drop() override {}
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
     template <typename ForwardIterator>

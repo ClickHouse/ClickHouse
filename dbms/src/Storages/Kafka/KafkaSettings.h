@@ -15,8 +15,7 @@ struct KafkaSettings : public SettingsCollection<KafkaSettings>
 {
 
 
-/// M (mutable) for normal settings, IM (immutable) for not updateable settings.
-#define LIST_OF_KAFKA_SETTINGS(M, IM)                                      \
+#define LIST_OF_KAFKA_SETTINGS(M)                                      \
     M(SettingString, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.") \
     M(SettingString, kafka_topic_list, "", "A list of Kafka topics.") \
     M(SettingString, kafka_group_name, "", "A group of Kafka consumers.") \

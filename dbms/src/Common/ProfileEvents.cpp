@@ -36,8 +36,10 @@
     M(MarkCacheMisses, "") \
     M(CreatedReadBufferOrdinary, "") \
     M(CreatedReadBufferAIO, "") \
+    M(CreatedReadBufferAIOFailed, "") \
     M(CreatedWriteBufferOrdinary, "") \
     M(CreatedWriteBufferAIO, "") \
+    M(CreatedWriteBufferAIOFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "") \
