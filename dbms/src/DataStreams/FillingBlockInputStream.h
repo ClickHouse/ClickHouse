@@ -1,34 +1,10 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
+#include <Common/FillingRow.h>
 
 namespace DB
 {
-
-class FillingRow
-{
-public:
-    FillingRow(const SortDescription & sort_description);
-
-    /// Generates next row according to fill 'from', 'to' and 'step' values.
-    bool next(const FillingRow & to_row);
-
-    void initFromDefaults(size_t from_pos = 0);
-    void initFromColumns(const Columns & columns, size_t row_ind, size_t from_pos);
-
-    Field & operator[](size_t ind) { return row[ind]; }
-    const Field & operator[](size_t ind) const { return row[ind]; }
-    size_t size() const { return row.size(); }
-    bool operator<(const FillingRow & other) const;
-    bool operator==(const FillingRow & other) const;
-
-    int getDirection(size_t ind) const { return description[ind].direction; }
-    FillColumnDescription & getFillDescription(size_t ind) { return description[ind].fill_description; }
-
-private:
-    std::vector<Field> row;
-    SortDescription description;
-};
 
 /** Implements the WITH FILL part of ORDER BY operation.
 */
