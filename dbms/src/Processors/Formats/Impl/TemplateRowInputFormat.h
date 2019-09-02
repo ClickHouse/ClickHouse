@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
+#include <Formats/ParsedTemplateFormatString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 

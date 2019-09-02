@@ -4,7 +4,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Parsers/ParsedTemplateFormatString.h>
+#include <Formats/ParsedTemplateFormatString.h>
 
 
 namespace DB
