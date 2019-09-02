@@ -593,7 +593,7 @@ void registerStorageLiveView(StorageFactory & factory)
 {
     factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
     {
-        if (!args.local_context.getSettingsRef().allow_experimental_live_view)
+        if (!args.attach && !args.local_context.getSettingsRef().allow_experimental_live_view)
             throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
 
         return StorageLiveView::create(args.table_name, args.database_name, args.local_context, args.query, args.columns);

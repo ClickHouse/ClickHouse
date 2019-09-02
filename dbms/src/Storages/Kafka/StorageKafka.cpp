@@ -44,6 +44,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
+    extern const int UNKNOWN_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 namespace
@@ -274,8 +276,10 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
         batch_size = settings.max_block_size.value;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
+    /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
+        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled),
+        row_delimiter);
 }
 
 
@@ -371,7 +375,7 @@ bool StorageKafka::streamToViews()
         block_size = settings.max_block_size;
 
     // Create a stream for each consumer and join them in a union stream
-    InterpreterInsertQuery interpreter{insert, global_context};
+    InterpreterInsertQuery interpreter(insert, global_context, false, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -396,7 +400,8 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    copyData(*in, *block_io.out, &stream_cancelled);
+    std::atomic<bool> stub;
+    copyData(*in, *block_io.out, &stub);
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;
@@ -407,14 +412,12 @@ bool StorageKafka::streamToViews()
 }
 
 
-bool StorageKafka::hasSetting(const String & setting_name) const
+void StorageKafka::checkSettingCanBeChanged(const String & setting_name) const
 {
-    return KafkaSettings::findIndex(setting_name) != KafkaSettings::npos;
-}
+    if (KafkaSettings::findIndex(setting_name) == KafkaSettings::npos)
+        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
 
-IDatabase::ASTModifier StorageKafka::getSettingsModifier(const SettingsChanges & /* new_changes */) const
-{
-    throw Exception("Storage '" + getName() + "' doesn't support settings alter", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
 }
 
 void registerStorageKafka(StorageFactory & factory)

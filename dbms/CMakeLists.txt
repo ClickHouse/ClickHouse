@@ -256,11 +256,6 @@ if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
 
-if (USE_MIMALLOC)
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MIMALLOC_INCLUDE_DIR})
-    target_link_libraries (clickhouse_common_io PRIVATE ${MIMALLOC_LIBRARY})
-endif ()
-
 if(CPUID_LIBRARY)
     target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
 endif()
