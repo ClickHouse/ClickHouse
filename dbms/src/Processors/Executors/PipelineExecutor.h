@@ -126,14 +126,14 @@ private:
             if (stream >= queues.size())
                 stream = queues.size() - 1;
 
-            std::lock_guard lg(mutexes[stream]);
+            std::lock_guard lg(*mutexes[stream]);
             queues[stream].push(state);
         }
 
         ExecutionState * pop(size_t stream)
         {
             {
-                std::lock_guard lg(mutexes[stream]);
+                std::lock_guard lg(*mutexes[stream]);
 
                 if (!queues[stream].empty())
                 {
@@ -156,7 +156,7 @@ private:
 
         bool empty(size_t stream)
         {
-            std::lock_guard lg(mutexes[stream]);
+            std::lock_guard lg(*mutexes[stream]);
             return queues[stream].empty();
         }
 
@@ -165,11 +165,11 @@ private:
             queues.resize(num_streams + 1);
 
             for (size_t i = 0; i <= num_streams; ++i)
-                mutexes.emplace_back();
+                mutexes.emplace_back(std::make_unique<std::mutex>());
         }
 
         std::vector<std::queue<ExecutionState *>> queues;
-        std::vector<std::mutex> mutexes;
+        std::vector<std::unique_ptr<std::mutex>> mutexes;
     };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
