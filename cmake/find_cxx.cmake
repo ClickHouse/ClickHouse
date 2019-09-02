@@ -25,6 +25,8 @@ if (USE_LIBCXX)
         find_library (LIBCXXFS_LIBRARY c++fs)
         find_library (LIBCXXABI_LIBRARY c++abi)
 
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+
         target_link_libraries(global-libs INTERFACE ${EXCEPTION_HANDLING_LIBRARY})
     else ()
         set (LIBCXX_LIBRARY cxx)
@@ -38,7 +40,6 @@ if (USE_LIBCXX)
     target_link_libraries(global-libs INTERFACE ${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} ${LIBCXXFS_LIBRARY})
 
     set (HAVE_LIBCXX 1)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 
     message (STATUS "Using libcxx: ${LIBCXX_LIBRARY}")
     message (STATUS "Using libcxxfs: ${LIBCXXFS_LIBRARY}")
