@@ -679,7 +679,6 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
 
 bool StorageMergeTree::moveParts()
 {
-    LOG_INFO(log, "TRYING TO MOVE SMS");
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     std::optional<MovingPartsTagger> moving_tagger;
