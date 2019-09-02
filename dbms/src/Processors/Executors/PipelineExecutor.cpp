@@ -155,9 +155,9 @@ void PipelineExecutor::addJob(ExecutionState * execution_state)
     {
         try
         {
-            Stopwatch watch;
+            // Stopwatch watch;
             executeJob(execution_state->processor);
-            execution_state->execution_time_ns += watch.elapsed();
+            // execution_state->execution_time_ns += watch.elapsed();
 
             ++execution_state->num_executed_jobs;
         }
@@ -512,9 +512,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             addJob(state);
 
             {
-                Stopwatch execution_time_watch;
+                // Stopwatch execution_time_watch;
                 state->job();
-                execution_time_ns += execution_time_watch.elapsed();
+                // execution_time_ns += execution_time_watch.elapsed();
             }
 
             if (state->exception)
@@ -523,7 +523,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
-            Stopwatch processing_time_watch;
+            // Stopwatch processing_time_watch;
 
             /// Try to execute neighbour processor.
             {
@@ -568,7 +568,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     doExpandPipeline(task, false);
             }
 
-            processing_time_ns += processing_time_watch.elapsed();
+            // processing_time_ns += processing_time_watch.elapsed();
         }
     }
 
