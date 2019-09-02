@@ -154,7 +154,7 @@ private:
             return nullptr;
         }
 
-        bool empty(size_t stream) const
+        bool empty(size_t stream)
         {
             std::lock_guard lg(mutexes[stream]);
             return queues[stream].empty();
