@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ConstantExpressionTemplate.h>
+#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 
 #include <IO/PeekableReadBuffer.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -17,41 +18,41 @@ class ReadBuffer;
 
 /** Stream to read data in VALUES format (as in INSERT query).
   */
-class ValuesBlockInputStream : public IBlockInputStream
+class ValuesBlockInputFormat : public IInputFormat
 {
 public:
     /** Data is parsed using fast, streaming parser.
       * If interpret_expressions is true, it will, in addition, try to use SQL parser and interpreter
       *  in case when streaming parser could not parse field (this is very slow).
       */
-    ValuesBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, const FormatSettings & format_settings_, UInt64 max_block_size_, UInt64 rows_portion_size_);
+    ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
+                           const Context & context_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "ValuesBlockOutputStream"; }
-    Block getHeader() const override { return header; }
-
-
-    void readPrefix() override { }
-    void readSuffix() override { }
+    String getName() const override { return "ValuesBlockInputFormat"; }
 
 private:
     typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
-    Block readImpl() override;
+    Chunk generate() override;
     bool parseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     void readValue(IColumn & column, size_t column_idx, bool generate_template);
 
     void parseExpression(IColumn & column, size_t column_idx, bool generate_template);
-    inline void assertDelimAfterValue(size_t column_idx);
+    inline void assertDelimiterAfterValue(size_t column_idx);
 
     bool shouldGenerateNewTemplate(size_t column_idx);
 
+    void readSuffix() { buf.assertCanBeDestructed(); }
+
 private:
-    PeekableReadBuffer istr;
-    Block header;
+    PeekableReadBuffer buf;
+
+    RowInputFormatParams params;
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+
     std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
-    UInt64 max_block_size;
-    UInt64 rows_portion_size;
+
     size_t num_columns;
     size_t total_rows = 0;
 

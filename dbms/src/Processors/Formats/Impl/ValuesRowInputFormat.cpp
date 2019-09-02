@@ -149,9 +149,9 @@ bool ValuesRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 }
 
 
-void registerInputFormatProcessorValues(FormatFactory & factory)
+void _registerInputFormatProcessorValues(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Values", [](
+    factory.registerInputFormatProcessor("_Values", [](
         ReadBuffer & buf,
         const Block & sample,
         const Context & context,
