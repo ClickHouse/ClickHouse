@@ -123,18 +123,30 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     if (query_id != RWLockImpl::NO_QUERY)
         it_query = query_id_to_holder.find(query_id);
 
+    bool recursive_by_query_id = false;
     if (it_thread != thread_to_holder.end())
+    {
         res = it_thread->second.lock();
+    }
     else if (it_query != query_id_to_holder.end())
+    {
+        recursive_by_query_id = true;
         res = it_query->second.lock();
+    }
 
     if (res)
     {
         /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
         if (type != Read || res->it_group->type != Read)
-            throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
+        {
+            if (recursive_by_query_id)
+                throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
 
-        return res;
+            /// threads are reused between queries. If lock found by thread_id, it does not necessarily means that it's recursive.
+            res.reset();
+        }
+        else
+            return res;
     }
 
     /** If the query already has any active read lock and tries to acquire another read lock
