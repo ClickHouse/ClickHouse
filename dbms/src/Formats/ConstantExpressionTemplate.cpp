@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -198,7 +198,7 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
                     type_info = WhichDataType(dynamic_cast<const DataTypeNullable &>(type).getNestedType());
 
                 Tokens tokens_number(istr.position(), istr.buffer().end());
-                TokenIterator iterator(tokens_number);
+                IParser::Pos iterator(tokens_number);
                 Expected expected;
                 ASTPtr ast;
                 if (nullable && parser_null.parse(iterator, ast, expected))

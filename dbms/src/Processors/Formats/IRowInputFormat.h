@@ -36,6 +36,8 @@ struct RowInputFormatParams
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
 
+bool isParseError(int code);
+
 ///Row oriented input format: reads data row by row.
 class IRowInputFormat : public IInputFormat
 {
