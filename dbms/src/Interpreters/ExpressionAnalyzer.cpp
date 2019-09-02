@@ -29,7 +29,6 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/Join.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -134,14 +133,8 @@ void ExpressionAnalyzer::analyzeAggregation()
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
-            const auto & table_join = join->table_join->as<ASTTableJoin &>();
-            if (table_join.using_expression_list)
-                getRootActions(table_join.using_expression_list, true, temp_actions);
-            if (table_join.on_expression)
-                for (const auto & key_ast : analyzedJoin().key_asts_left)
-                    getRootActions(key_ast, true, temp_actions);
-
-            addJoinAction(table_join, temp_actions);
+            getRootActions(analyzedJoin().leftKeysList(), true, temp_actions);
+            addJoinAction(temp_actions);
         }
     }
 
@@ -298,7 +291,8 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
             {
                 NamesAndTypesList temp_columns = sourceColumns();
                 temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
-                temp_columns.insert(temp_columns.end(), columnsAddedByJoin().begin(), columnsAddedByJoin().end());
+                temp_columns.insert(temp_columns.end(),
+                                    analyzedJoin().columnsAddedByJoin().begin(), analyzedJoin().columnsAddedByJoin().end());
 
                 ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
                 getRootActions(left_in_operand, true, temp_actions);
@@ -412,22 +406,10 @@ bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & cha
     return true;
 }
 
-static void appendRequiredColumns(
-    NameSet & required_columns, const Block & sample, const Names & key_names_right, const NamesAndTypesList & columns_added_by_join)
-{
-    for (auto & column : key_names_right)
-        if (!sample.has(column))
-            required_columns.insert(column);
-
-    for (auto & column : columns_added_by_join)
-        if (!sample.has(column.name))
-            required_columns.insert(column.name);
-}
-
 /// It's possible to set nullptr as join for only_types mode
-void ExpressionAnalyzer::addJoinAction(const ASTTableJoin & join_params, ExpressionActionsPtr & actions, JoinPtr join) const
+void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr join) const
 {
-    actions->add(ExpressionAction::ordinaryJoin(join_params, std::move(join), analyzedJoin().key_names_left, analyzedJoin().key_names_right, columnsAddedByJoin()));
+    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join, join));
 }
 
 bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -438,16 +420,11 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
 
     SubqueryForSet & subquery_for_set = getSubqueryForJoin(*ast_join);
 
-    ASTPtr left_keys_list = std::make_shared<ASTExpressionList>();
-    left_keys_list->children = analyzedJoin().key_asts_left;
-
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    auto & join_params = ast_join->table_join->as<ASTTableJoin &>();
-
-    getRootActions(left_keys_list, only_types, step.actions);
-    addJoinAction(join_params, step.actions, subquery_for_set.join);
+    getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions);
+    addJoinAction(step.actions, subquery_for_set.join);
 
     return true;
 }
@@ -524,11 +501,9 @@ void SelectQueryExpressionAnalyzer::makeHashJoin(const ASTTablesInSelectQueryEle
         Names action_columns = joined_block_actions->getRequiredColumns();
         NameSet required_columns(action_columns.begin(), action_columns.end());
 
-        auto & analyzed_join = analyzedJoin();
-        appendRequiredColumns(
-            required_columns, joined_block_actions->getSampleBlock(), analyzed_join.key_names_right, columnsAddedByJoin());
+        analyzedJoin().appendRequiredColumns(joined_block_actions->getSampleBlock(), required_columns);
 
-        auto original_map = analyzed_join.getOriginalColumnsMap(required_columns);
+        auto original_map = analyzedJoin().getOriginalColumnsMap(required_columns);
         Names original_columns;
         for (auto & pr : original_map)
             original_columns.push_back(pr.second);
@@ -542,29 +517,16 @@ void SelectQueryExpressionAnalyzer::makeHashJoin(const ASTTablesInSelectQueryEle
     joined_block_actions->execute(sample_block);
 
     /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-    auto & join_params = join_element.table_join->as<ASTTableJoin &>();
-    subquery_for_set.join = std::make_shared<Join>(analyzedJoin().key_names_right, settings.join_use_nulls,
-        settings.size_limits_for_join, join_params.kind, join_params.strictness);
-    subquery_for_set.join->setSampleBlock(sample_block);
+    subquery_for_set.join = analyzedJoin().makeHashJoin(sample_block, settings.size_limits_for_join);
     subquery_for_set.joined_block_actions = joined_block_actions;
 }
 
 ExpressionActionsPtr SelectQueryExpressionAnalyzer::createJoinedBlockActions() const
 {
-    /// Create custom expression list with join keys from right table.
-    ASTPtr expression_list = std::make_shared<ASTExpressionList>();
-    ASTs & children = expression_list->children;
+    ASTPtr expression_list = analyzedJoin().rightKeysList();
+    Names required_columns = analyzedJoin().requiredJoinedNames();
 
-    if (analyzedJoin().hasOn())
-        for (const auto & join_right_key : analyzedJoin().key_asts_right)
-            children.emplace_back(join_right_key);
-
-    NameSet required_columns_set(analyzedJoin().key_names_right.begin(), analyzedJoin().key_names_right.end());
-    for (const auto & joined_column : columnsAddedByJoin())
-        required_columns_set.insert(joined_column.name);
-    Names required_columns(required_columns_set.begin(), required_columns_set.end());
-
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list, analyzedJoin().columns_from_joined_table, required_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list, analyzedJoin().columnsFromJoinedTable(), required_columns);
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
