@@ -313,6 +313,17 @@ INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100
 INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
 
+#### Functions Support
+
+
+Comparison and search functions can use different indexes instead of the full scan of the table during the query processing. All the functions can use primary key index. Some of the functions can use data skipping indexes.
+
+ Index | Functions
+-------|-----------
+`ngrambf_v1` | [equals](../../query_language/functions/comparison_functions.md#function-equals), [notEquals](../../query_language/functions/comparison_functions.md#function-notequals), [like](../../query_language/functions/string_search_functions.md#function-like), [notLike](../../query_language/functions/string_search_functions.md#function-notlike), [startsWith](../../query_language/functions/string_functions.md#function-startswith), [endsWith](../../query_language/functions/string_functions.md#function-endswith), [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany), [in](../../query_language/functions/in_functions.md#in-functions), [notIn](../../query_language/functions/in_functions.md#in-functions)
+`set` | [equals](../../query_language/functions/comparison_functions.md#function-equals), [notEquals](../../query_language/functions/comparison_functions.md#function-notequals), [like](../../query_language/functions/string_search_functions.md#function-like), [startsWith](../../query_language/functions/string_functions.md#function-startswith), [endsWith](../../query_language/functions/string_functions.md#function-endswith), [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany), [in](../../query_language/functions/in_functions.md#in-functions), [notIn](../../query_language/functions/in_functions.md#in-functions), [less](../../query_language/functions/comparison_functions.md#function-less), [greater](../../query_language/functions/comparison_functions.md#function-greater), [lessOrEquals](../../query_language/functions/comparison_functions.md#function-lessorequals), [greaterOrEquals](../../query_language/functions/comparison_functions.md#function-greaterorequals)
+
+
 ## Concurrent Data Access
 
 For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
