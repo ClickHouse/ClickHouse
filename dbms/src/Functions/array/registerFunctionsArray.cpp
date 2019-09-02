@@ -31,6 +31,7 @@ void registerFunctionArrayEnumerateDenseRanked(FunctionFactory &);
 void registerFunctionArrayUniq(FunctionFactory &);
 void registerFunctionArrayDistinct(FunctionFactory &);
 void registerFunctionArrayFlatten(FunctionFactory &);
+void registerFunctionArrayRoundCarry(FunctionFactory &);
 void registerFunctionArrayWithConstant(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
@@ -63,6 +64,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayUniq(factory);
     registerFunctionArrayDistinct(factory);
     registerFunctionArrayFlatten(factory);
+    registerFunctionArrayRoundCarry(factory);
     registerFunctionArrayWithConstant(factory);
 }
 
