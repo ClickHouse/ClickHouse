@@ -26,7 +26,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructureForShare(true, context.getCurrentQueryId()));
+    addTableLock(storage->lockStructureForShare(true, context.getInitialQueryId()));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
