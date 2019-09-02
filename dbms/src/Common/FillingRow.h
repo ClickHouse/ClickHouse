@@ -10,6 +10,10 @@ namespace DB
 bool less(const Field & lhs, const Field & rhs, int direction);
 bool equals(const Field & lhs, const Field & rhs);
 
+/** Helps to implement modifier WITH FILL for ORDER BY clause. 
+ *  Stores row as array of fields and provides functions to generate next row for filling gaps and for comparing rows.
+ *  Used in FillingBlockInputStream and in FillingTransform.
+ */
 class FillingRow
 {
 public:
