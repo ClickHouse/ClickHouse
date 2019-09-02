@@ -9,12 +9,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <Formats/TabSeparatedRowInputStream.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 
 #include <DataStreams/copyData.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 
 using namespace DB;
@@ -39,13 +39,15 @@ try
 
     FormatSettings format_settings;
 
-    RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, false, false, format_settings);
-    BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, []{}, format_settings);
+    RowInputFormatParams params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0, 0, []{}};
+
+    InputFormatPtr input_format = std::make_shared<TabSeparatedRowInputFormat>(sample, in_buf, params, false, false, format_settings);
+    BlockInputStreamPtr block_input = std::make_shared<InputStreamFromInputFormat>(std::move(input_format));
 
     BlockOutputStreamPtr block_output = std::make_shared<OutputStreamToOutputFormat>(
         std::make_shared<TabSeparatedRowOutputFormat>(out_buf, sample, false, false, [] {}, format_settings));
 
-    copyData(block_input, *block_output);
+    copyData(*block_input, *block_output);
     return 0;
 }
 catch (...)
