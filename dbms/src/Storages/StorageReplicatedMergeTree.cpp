@@ -2208,7 +2208,6 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movingPartsTask()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
-
     try
     {
         std::optional<MovingPartsTagger> moving_tagger;
@@ -2223,7 +2222,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movingPartsTask()
                     *reason = "part already assigned to replicated background operation.";
                     return false;
                 }
-                if (!currently_moving_parts.count(part))
+                if (currently_moving_parts.count(part))
                 {
                     *reason = "part is already moving.";
                     return false;
@@ -2292,6 +2291,7 @@ void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataParts
 
             parts_to_move.emplace_back(part, std::move(reservation));
         }
+        LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
         moving_tagger.emplace(std::move(parts_to_move), std::move(moving_parts_lock), currently_moving_parts);
     }
 
