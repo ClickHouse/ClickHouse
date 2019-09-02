@@ -723,7 +723,8 @@ class ClickHouseInstance:
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
-        shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
+        # The file is named with 0_ prefix to be processed before other configuration overloads.
+        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), config_d_dir)
 
         # Generate and write macros file
         macros = self.macros.copy()
