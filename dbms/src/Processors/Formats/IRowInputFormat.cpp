@@ -48,7 +48,7 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
 }
 
 
-static bool checkTimeLimit(const IRowInputFormat::Params & params, const Stopwatch & stopwatch)
+bool checkTimeLimit(const IRowInputFormat::Params & params, const Stopwatch & stopwatch)
 {
     if (params.max_execution_time != 0
         && stopwatch.elapsed() > static_cast<UInt64>(params.max_execution_time.totalMicroseconds()) * 1000)

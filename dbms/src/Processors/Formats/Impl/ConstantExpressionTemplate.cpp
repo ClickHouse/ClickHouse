@@ -14,7 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
-#include <Formats/ConstantExpressionTemplate.h>
+#include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 
 
