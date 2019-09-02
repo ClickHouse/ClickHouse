@@ -40,7 +40,6 @@ class RWLockImpl::LockHolderImpl
     RWLock parent;
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
-    ThreadToHolder::key_type thread_id;
     QueryIdToHolder::key_type query_id;
     CurrentMetrics::Increment active_client_increment;
 
@@ -116,35 +115,18 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     std::unique_lock lock(mutex);
 
     /// Check if the same query is acquiring previously acquired lock
-    auto this_thread_id = std::this_thread::get_id();
-    auto it_thread = thread_to_holder.find(this_thread_id);
-
-    auto it_query = query_id_to_holder.end();
     if (query_id != RWLockImpl::NO_QUERY)
-        it_query = query_id_to_holder.find(query_id);
-
-    bool recursive_by_query_id = false;
-    if (it_thread != thread_to_holder.end())
     {
-        res = it_thread->second.lock();
-    }
-    else if (it_query != query_id_to_holder.end())
-    {
-        recursive_by_query_id = true;
-        res = it_query->second.lock();
+        auto it_query = query_id_to_holder.find(query_id);
+        if (it_query != query_id_to_holder.end())
+            res = it_query->second.lock();
     }
 
     if (res)
     {
         /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
         if (type != Read || res->it_group->type != Read)
-        {
-            if (recursive_by_query_id)
-                throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
-
-            /// threads are reused between queries. If lock found by thread_id, it does not necessarily means that it's recursive.
-            res.reset();
-        }
+            throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
         else
             return res;
     }
@@ -200,10 +182,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     /// Wait a notification until we will be the only in the group.
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
-    /// Insert myself (weak_ptr to the holder) to threads set to implement recursive lock
-    thread_to_holder.emplace(this_thread_id, res);
-    res->thread_id = this_thread_id;
-
+    /// Insert myself (weak_ptr to the holder) to queries set to implement recursive lock
     if (query_id != RWLockImpl::NO_QUERY)
     {
         query_id_to_holder.emplace(query_id, res);
@@ -223,7 +202,6 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
     std::lock_guard lock(parent->mutex);
 
     /// Remove weak_ptrs to the holder, since there are no owners of the current lock
-    parent->thread_to_holder.erase(thread_id);
     parent->query_id_to_holder.erase(query_id);
 
     if (*it_client == RWLockImpl::Read && query_id != RWLockImpl::NO_QUERY)
