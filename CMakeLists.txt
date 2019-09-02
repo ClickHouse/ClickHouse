@@ -1,14 +1,22 @@
+foreach(policy
+        CMP0023
+        CMP0048 # CMake 3.0
+        CMP0074 # CMake 3.12
+        CMP0077
+        CMP0079
+    )
+    if(POLICY ${policy})
+        cmake_policy(SET ${policy} NEW)
+    endif()
+endforeach()
+
 project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
 
-foreach(policy
-    CMP0023
-    CMP0074 # CMake 3.12
-    )
-  if(POLICY ${policy})
-    cmake_policy(SET ${policy} NEW)
-  endif()
-endforeach()
+# Ignore export() since we don't use it,
+# but it gets broken with a global targets via link_libraries()
+macro (export)
+endmacro ()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
@@ -128,12 +136,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     endif ()
 endif ()
 
-if (GLIBC_COMPATIBILITY)
-    set (USE_INTERNAL_MEMCPY ON)
-else ()
-    message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
-endif ()
-
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
 find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
@@ -172,20 +174,15 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-# Special options for better optimized code with clang
-#if (COMPILER_CLANG)
-#    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
-#endif ()
-
 if (CMAKE_VERSION VERSION_LESS "3.8.0")
     if (NOT MSVC)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
     endif ()
 else ()
     set (CMAKE_CXX_STANDARD 17)
     set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
     set (CMAKE_CXX_STANDARD_REQUIRED ON)
-    set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
+    set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++17")
 endif ()
 
 if (COMPILER_GCC OR COMPILER_CLANG)
@@ -207,16 +204,12 @@ endif()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
-#set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_CXX_FLAGS_ADD}")
 
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CMAKE_C_FLAGS_ADD}")
-#set (CMAKE_C_FLAGS_RELEASE               "${CMAKE_C_FLAGS_RELEASE} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
-
-# Uses MAKE_STATIC_LIBRARIES
 
 
 option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
@@ -225,149 +218,27 @@ if (UNBUNDLED)
 else ()
     set(NOT_UNBUNDLED 1)
 endif ()
+
 # Using system libs can cause lot of warnings in includes.
 if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
-
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package (Threads)
-
-include (cmake/find_cxx.cmake)
-
-include (cmake/test_compiler.cmake)
-
-if (OS_LINUX AND COMPILER_CLANG AND USE_STATIC_LIBRARIES)
-    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux)" ${HAVE_LIBCXX})
-
-    if (USE_LIBCXX)
-        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
-    endif ()
+# Make this extra-checks for correct library dependencies.
+if (NOT SANITIZE)
+    set (CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
-if (USE_LIBCXX)
-    set (STATIC_STDLIB_FLAGS "")
-else ()
-    set (STATIC_STDLIB_FLAGS "-static-libgcc -static-libstdc++")
-endif ()
+include(cmake/dbms_glob_sources.cmake)
+include(cmake/default_libs.cmake)
 
-if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
-
-    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
-endif ()
-
-if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
-    set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
-    set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
-endif ()
-
-# TODO: only make this extra-checks in CI builds, since a lot of contrib libs won't link -
-#       CI works around this problem by explicitly adding GLIBC_COMPATIBILITY flag.
-if (NOT SANITIZE AND YANDEX_OFFICIAL_BUILD)
-    set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS           "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
-endif ()
-
-include (cmake/find_unwind.cmake)
-
-if (USE_INTERNAL_UNWIND_LIBRARY)
-    option (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING "Use internal unwind library for exception handling" ${USE_STATIC_LIBRARIES})
-endif ()
-
-
-# Set standard, system and compiler libraries explicitly.
-# This is intended for more control of what we are linking.
+######################################
+### Add targets below this comment ###
+######################################
 
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-set (DEFAULT_LIBS "")
-if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING OR USE_LIBCXX))
-    # Note: this probably has no effect, but I'm not an expert in CMake.
-    set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
-    set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
-
-    # Disable default linked libraries.
-    set (DEFAULT_LIBS "-nodefaultlibs")
-
-    # We need builtins from Clang's RT even without libcxx - for ubsan+int128. See https://bugs.llvm.org/show_bug.cgi?id=16404
-    set (BUILTINS_LIB_PATH "")
-    if (COMPILER_CLANG)
-        execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
-    else ()
-        set (BUILTINS_LIB_PATH "-lgcc")
-    endif ()
-
-    string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-    set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-    # Add C++ libraries.
-    #
-    # This consist of:
-    # - C++ standard library (like implementation of std::string);
-    # - C++ ABI implementation (functions for exceptions like __cxa_throw, RTTI, etc);
-    # - functions for internal implementation of exception handling (stack unwinding based on DWARF info; TODO replace with bundled libunwind);
-    # - compiler builtins (example: functions for implementation of __int128 operations);
-    #
-    # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
-
-    if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        if (USE_STATIC_LIBRARIES)
-            set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_static${${CMAKE_POSTFIX_VARIABLE}}.a")
-        else ()
-            set (EXCEPTION_HANDLING_LIBRARY "${ClickHouse_BINARY_DIR}/contrib/libunwind-cmake/libunwind_shared${${CMAKE_POSTFIX_VARIABLE}}.so")
-        endif ()
-    else ()
-        set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
-    endif ()
-
-    message (STATUS "Using exception handling library: ${EXCEPTION_HANDLING_LIBRARY}")
-
-    if (USE_LIBCXX)
-        if (USE_INTERNAL_LIBCXX_LIBRARY)
-            set (LIBCXX_LIBS "${ClickHouse_BINARY_DIR}/contrib/libcxx-cmake/libcxx_static${${CMAKE_POSTFIX_VARIABLE}}.a ${ClickHouse_BINARY_DIR}/contrib/libcxxabi-cmake/libcxxabi_static${${CMAKE_POSTFIX_VARIABLE}}.a")
-        else ()
-            set (LIBCXX_LIBS "-lc++ -lc++abi -lc++fs")
-        endif ()
-
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBS} ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
-    else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lstdc++fs ${EXCEPTION_HANDLING_LIBRARY} ${COVERAGE_OPTION} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
-    endif ()
-
-    # Linking with GLIBC prevents portability of binaries to older systems.
-    # We overcome this behaviour by statically linking with our own implementation of all new symbols (that don't exist in older Libc or have infamous "symbol versioning").
-    # The order of linking is important: 'glibc-compatibility' must be before libc but after all other libraries.
-    if (GLIBC_COMPATIBILITY)
-        message (STATUS "Some symbols from glibc will be replaced for compatibility")
-
-        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-        set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-        # FIXME: glibc-compatibility may be non-static in some builds!
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} ${ClickHouse_BINARY_DIR}/libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
-    endif ()
-
-    # Add Libc. GLIBC is actually a collection of interdependent libraries.
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc")
-
-    # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
-
-    message(STATUS "Default libraries: ${DEFAULT_LIBS}")
-endif ()
-
-if (NOT GLIBC_COMPATIBILITY)
-    set (M_LIBRARY m)
-endif ()
-
-if (DEFAULT_LIBS)
-    # Add default libs to all targets as the last dependency.
-    set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
-    set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
-endif ()
 
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -421,18 +292,10 @@ if (UNBUNDLED)
 else ()
     set(NOT_UNBUNDLED 1)
 endif ()
+
 # Using system libs can cause lot of warnings in includes.
 if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
-endif ()
-
-if (USE_LIBCXX)
-    set (HAVE_LIBCXX 1)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-endif()
-
-if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
 endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
@@ -477,10 +340,10 @@ include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_parquet.cmake)
 include (cmake/find_hyperscan.cmake)
-include (cmake/find_mimalloc.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
 include (cmake/find_fastops.cmake)
+include (cmake/find_orc.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
@@ -499,79 +362,11 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
 include (cmake/print_flags.cmake)
 
+install (EXPORT global DESTINATION cmake)
+
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
-
-if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-    # FIXME: actually glibc-compatibility should always be built first,
-    #        because it's unconditionally linked via $DEFAULT_LIBS,
-    #        and these looks like the first places that get linked.
-    function (add_default_dependencies target_name)
-        if (TARGET ${target_name})
-            if (GLIBC_COMPATIBILITY)
-                add_dependencies(${target_name} glibc-compatibility)
-            endif ()
-
-            if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
-                add_dependencies(${target_name} cxx_static cxxabi_static)
-            endif ()
-
-            if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-                add_dependencies(${target_name} unwind_static)
-            endif ()
-        endif ()
-    endfunction ()
-
-    add_default_dependencies(ltdl)
-    add_default_dependencies(zlibstatic)
-    add_default_dependencies(jemalloc)
-    add_default_dependencies(memcpy)
-    add_default_dependencies(Foundation)
-    add_default_dependencies(common)
-    add_default_dependencies(gtest)
-    add_default_dependencies(lz4)
-    add_default_dependencies(zstd)
-    add_default_dependencies(snappy)
-    add_default_dependencies(arrow)
-    add_default_dependencies(protoc)
-    add_default_dependencies(thrift_static)
-    add_default_dependencies(cityhash)
-    add_default_dependencies(farmhash)
-    add_default_dependencies(murmurhash)
-    add_default_dependencies(metrohash)
-    add_default_dependencies(metrohash128)
-    add_default_dependencies(consistent-hashing)
-    add_default_dependencies(double-conversion)
-    add_default_dependencies(cctz)
-    add_default_dependencies(kj)
-    add_default_dependencies(simdjson)
-    add_default_dependencies(apple_rt)
-    add_default_dependencies(h3)
-    add_default_dependencies(re2)
-    add_default_dependencies(re2_st)
-    add_default_dependencies(hs_compile_shared)
-    add_default_dependencies(hs_exec_shared)
-    add_default_dependencies(hs_shared)
-    add_default_dependencies(widechar_width)
-    add_default_dependencies(string_utils)
-    add_default_dependencies(consistent-hashing-sumbur)
-    add_default_dependencies(boost_program_options_internal)
-    add_default_dependencies(boost_system_internal)
-    add_default_dependencies(boost_regex_internal)
-    add_default_dependencies(roaring)
-    add_default_dependencies(btrie)
-    add_default_dependencies(cpuid)
-    add_default_dependencies(mysqlclient)
-    add_default_dependencies(zlib)
-    add_default_dependencies(thrift)
-    add_default_dependencies(brotli)
-    add_default_dependencies(libprotobuf)
-    add_default_dependencies(base64)
-    add_default_dependencies(readpassphrase)
-    add_default_dependencies(unwind_static)
-    add_default_dependencies(fastops)
-endif ()

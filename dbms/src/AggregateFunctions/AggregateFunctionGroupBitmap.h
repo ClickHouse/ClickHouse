@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnVector.h>
-#include <boost/noncopyable.hpp>
+#include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -26,7 +26,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).rbs.add(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+        this->data(place).rbs.add(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -46,7 +46,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

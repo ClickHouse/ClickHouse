@@ -12,7 +12,7 @@
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageLiveView.h>
+#include <Storages/LiveView/StorageLiveView.h>
 
 namespace DB
 {
@@ -26,7 +26,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructureForShare(true, context.getCurrentQueryId()));
+    addTableLock(storage->lockStructureForShare(true, context.getInitialQueryId()));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -106,8 +106,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
-        BlockOutputStreamPtr output_ = std::make_shared<LiveViewBlockOutputStream>(*live_view);
-        StorageLiveView::writeIntoLiveView(*live_view, block, context, output_);
+        StorageLiveView::writeIntoLiveView(*live_view, block, context);
     }
     else
     {

@@ -75,8 +75,6 @@ BlockIO InterpreterRenameQuery::execute()
         }
     };
 
-    std::set<UniqueTableName> unique_tables_from;
-
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
@@ -87,39 +85,26 @@ BlockIO InterpreterRenameQuery::execute()
         UniqueTableName from(descriptions.back().from_database_name, descriptions.back().from_table_name);
         UniqueTableName to(descriptions.back().to_database_name, descriptions.back().to_table_name);
 
-        unique_tables_from.emplace(from);
-
-        if (!table_guards.count(from))
-            table_guards.emplace(from, context.getDDLGuard(from.database_name, from.table_name));
-
-        if (!table_guards.count(to))
-            table_guards.emplace(to, context.getDDLGuard(to.database_name, to.table_name));
+        table_guards[from];
+        table_guards[to];
     }
 
-    std::vector<TableStructureWriteLockHolder> locks;
-    locks.reserve(unique_tables_from.size());
+    /// Must do it in consistent order.
+    for (auto & table_guard : table_guards)
+        table_guard.second = context.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
 
-    for (const auto & names : unique_tables_from)
-        if (auto table = context.tryGetTable(names.database_name, names.table_name))
-            locks.emplace_back(table->lockExclusively(context.getCurrentQueryId()));
-
-    /** All tables are locked. If there are more than one rename in chain,
-      *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.
-      * It provides atomicity of all RENAME chain as a whole, from the point of view of DBMS client,
-      *  but only in cases when there was no exceptions during this process and server does not fall.
-      */
-
-    decltype(context.getLock()) lock;
-
-    if (descriptions.size() > 1)
-        lock = context.getLock();
-
-    for (const auto & elem : descriptions)
+    for (auto & elem : descriptions)
     {
         context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
+        auto from_table = context.getTable(elem.from_database_name, elem.from_table_name);
+        auto from_table_lock = from_table->lockExclusively(context.getCurrentQueryId());
 
         context.getDatabase(elem.from_database_name)->renameTable(
-            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name);
+            context,
+            elem.from_table_name,
+            *context.getDatabase(elem.to_database_name),
+            elem.to_table_name,
+            from_table_lock);
     }
 
     return {};

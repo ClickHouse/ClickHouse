@@ -6,6 +6,7 @@
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
@@ -37,8 +38,8 @@ namespace ErrorCodes
 
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
-    : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
+    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_)
+    : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_), no_squash(no_squash_)
 {
     checkStackSize();
 }
@@ -99,7 +100,7 @@ BlockIO InterpreterInsertQuery::execute()
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructureForShare(true, context.getCurrentQueryId());
+    auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
@@ -108,7 +109,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
+    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
     {
         out = std::make_shared<SquashingBlockOutputStream>(
             out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
@@ -119,6 +120,10 @@ BlockIO InterpreterInsertQuery::execute()
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
         out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
+
+    if (const auto & constraints = table->getConstraints(); !constraints.empty())
+        out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table,
+            out, query_sample_block, table->getConstraints(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());

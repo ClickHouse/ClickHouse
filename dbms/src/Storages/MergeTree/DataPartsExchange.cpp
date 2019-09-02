@@ -54,14 +54,15 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
     String part_name = params.get("part");
+    const auto data_settings = data.getSettings();
 
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     static std::atomic_uint total_sends {0};
 
-    if ((data.settings.replicated_max_parallel_sends && total_sends >= data.settings.replicated_max_parallel_sends)
-        || (data.settings.replicated_max_parallel_sends_for_table && data.current_table_sends >= data.settings.replicated_max_parallel_sends_for_table))
+    if ((data_settings->replicated_max_parallel_sends && total_sends >= data_settings->replicated_max_parallel_sends)
+        || (data_settings->replicated_max_parallel_sends_for_table && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
     {
         response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
         response.setReason("Too many concurrent fetches, try again later");
@@ -174,6 +175,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 {
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
+    const auto data_settings = data.getSettings();
 
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
@@ -200,7 +202,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         timeouts,
         creds,
         DBMS_DEFAULT_BUFFER_SIZE,
-        data.settings.replicated_max_parallel_fetches_for_host
+        data_settings->replicated_max_parallel_fetches_for_host
     };
 
     static const String TMP_PREFIX = "tmp_fetch_";

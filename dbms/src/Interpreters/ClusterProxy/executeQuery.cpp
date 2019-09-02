@@ -18,6 +18,8 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
+    new_settings.connection_pool_max_wait_ms = Cluster::saturate(new_settings.connection_pool_max_wait_ms, settings.max_execution_time);
+    new_settings.replace_running_query_max_wait_ms = Cluster::saturate(new_settings.replace_running_query_max_wait_ms, settings.max_execution_time);
 
     /// Does not matter on remote servers, because queries are sent under different user.
     new_settings.max_concurrent_queries_for_user = 0;
@@ -28,7 +30,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     /// Set as unchanged to avoid sending to remote server.
     new_settings.max_concurrent_queries_for_user.changed = false;
     new_settings.max_memory_usage_for_user.changed = false;
-    new_settings.max_memory_usage_for_all_queries.changed = false;
+    new_settings.max_memory_usage_for_all_queries = false;
 
     Context new_context(context);
     new_context.setSettings(new_settings);

@@ -40,6 +40,9 @@ INSERT INTO t FORMAT TabSeparated
 
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
 
+### Constraints
+
+If table has [constraints](create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
 ### Inserting The Results of `SELECT` {#insert_query_insert-select}
 
