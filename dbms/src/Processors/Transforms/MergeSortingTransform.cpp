@@ -5,6 +5,7 @@
 
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
+#include <common/config_common.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -236,11 +237,13 @@ MergeSortingTransform::MergeSortingTransform(
     SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_,
     size_t max_bytes_before_remerge_,
-    size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
+    size_t max_bytes_before_external_sort_, const std::string & tmp_path_,
+    size_t min_free_disk_space_)
     : IProcessor({header}, {header})
     , description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
+    , min_free_disk_space(min_free_disk_space_)
 {
     auto & sample = inputs.front().getHeader();
 
@@ -504,6 +507,12 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
+#if !UNBUNDLED
+        auto free_space = Poco::File(tmp_path).freeSpace();
+        if (sum_bytes_in_blocks + min_free_disk_space > free_space)
+            throw Exception("Not enough space for external sort in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+#endif
+
         Poco::File(tmp_path).createDirectories();
         temporary_files.emplace_back(std::make_unique<Poco::TemporaryFile>(tmp_path));
         const std::string & path = temporary_files.back()->path();

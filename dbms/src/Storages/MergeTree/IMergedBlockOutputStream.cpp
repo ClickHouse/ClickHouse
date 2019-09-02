@@ -39,7 +39,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , compute_granularity(index_granularity.empty())
     , codec(std::move(codec_))
     , skip_indices(indices_to_recalc)
-    , with_final_mark(storage.settings.write_final_mark && can_use_adaptive_granularity)
+    , with_final_mark(storage.getSettings()->write_final_mark && can_use_adaptive_granularity)
 {
     if (blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
@@ -139,10 +139,11 @@ void fillIndexGranularityImpl(
 
 void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 {
+    const auto storage_settings = storage.getSettings();
     fillIndexGranularityImpl(
         block,
-        storage.settings.index_granularity_bytes,
-        storage.settings.index_granularity,
+        storage_settings->index_granularity_bytes,
+        storage_settings->index_granularity,
         blocks_are_granules_size,
         index_offset,
         index_granularity,
@@ -332,15 +333,15 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
 {
     /// Creating block for update
     Block indices_update_block(skip_indexes_columns);
-    size_t skip_index_current_mark = 0;
+    size_t skip_index_current_data_mark = 0;
 
     /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
-    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+    for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        const auto index = storage.skip_indices[i];
+        const auto index = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
         size_t prev_pos = 0;
-        skip_index_current_mark = skip_index_mark;
+        skip_index_current_data_mark = skip_index_data_mark;
         while (prev_pos < rows)
         {
             UInt64 limit = 0;
@@ -350,7 +351,7 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
             }
             else
             {
-                limit = index_granularity.getMarkRows(skip_index_current_mark);
+                limit = index_granularity.getMarkRows(skip_index_current_data_mark);
                 if (skip_indices_aggregators[i]->empty())
                 {
                     skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -365,9 +366,9 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
                     /// to be compatible with normal .mrk2 file format
                     if (can_use_adaptive_granularity)
                         writeIntBinary(1UL, stream.marks);
-
-                    ++skip_index_current_mark;
                 }
+                /// this mark is aggregated, go to the next one
+                skip_index_current_data_mark++;
             }
 
             size_t pos = prev_pos;
@@ -387,7 +388,7 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
             prev_pos = pos;
         }
     }
-    skip_index_mark = skip_index_current_mark;
+    skip_index_data_mark = skip_index_current_data_mark;
 }
 
 void IMergedBlockOutputStream::finishSkipIndicesSerialization(

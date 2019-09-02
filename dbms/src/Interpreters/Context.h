@@ -264,6 +264,10 @@ public:
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
+
+    /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
+    String getInitialQueryId() const;
+
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
@@ -286,6 +290,9 @@ public:
     void setSetting(const String & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
+
+    /// Update checking that each setting is updatable
+    void updateSettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change);

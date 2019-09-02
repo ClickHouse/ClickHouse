@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
@@ -152,12 +153,12 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        const auto timestamp = static_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
+        const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
         typename Data::Events events;
         for (const auto i : ext::range(1, arg_count))
         {
-            const auto event = static_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
+            const auto event = assert_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
             events.set(i - 1, event);
         }
 
@@ -574,7 +575,7 @@ public:
         auto events_it = events_begin;
 
         bool match = this->pattern_has_time ? this->backtrackingMatch(events_it, events_end) : this->dfaMatch(events_it, events_end);
-        static_cast<ColumnUInt8 &>(to).getData().push_back(match);
+        assert_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
 
@@ -594,7 +595,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         const_cast<Data &>(this->data(place)).sort();
-        static_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
 
 private:

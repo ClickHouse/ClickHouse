@@ -45,9 +45,9 @@ StorageMySQL::StorageMySQL(
     const bool replace_query_,
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     const Context & context_)
-    : IStorage{columns_}
-    , table_name(table_name_)
+    : table_name(table_name_)
     , database_name(database_name_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
@@ -56,6 +56,8 @@ StorageMySQL::StorageMySQL(
     , pool(std::move(pool_))
     , global_context(context_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 
@@ -241,6 +243,7 @@ void registerStorageMySQL(StorageFactory & factory)
             replace_query,
             on_duplicate_clause,
             args.columns,
+            args.constraints,
             args.context);
     });
 }
