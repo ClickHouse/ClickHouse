@@ -97,7 +97,7 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         }
 
         extractSettings(config, "settings", config_settings, settings_to_apply);
-        settings.loadFromChanges(settings_to_apply);
+        settings.applyChanges(settings_to_apply);
 
         if (settings_contain("average_rows_speed_precision"))
             TestStats::avg_rows_speed_precision =

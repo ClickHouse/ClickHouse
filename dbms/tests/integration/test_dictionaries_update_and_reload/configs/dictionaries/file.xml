@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<yandex>
+    <dictionary>
+      <name>file</name>
+      <source>
+        <file>
+          <path>/etc/clickhouse-server/config.d/file.txt</path>
+          <format>TabSeparated</format>
+        </file>
+      </source>
+      <lifetime>1</lifetime>
+      <layout><flat/></layout>
+      <structure><id><name>key</name> </id>
+        <attribute><name>a</name><type>Int32</type>
+          <null_value>0</null_value>
+        </attribute>
+      </structure>
+    </dictionary>
+  
+    <dictionary>
+      <name>no_file</name>
+      <source>
+        <file>
+          <path>/etc/clickhouse-server/config.d/no_file.txt</path>
+          <format>TabSeparated</format>
+        </file>
+      </source>
+      <lifetime>1</lifetime>
+      <layout><flat/></layout>
+      <structure><id><name>key</name> </id>
+        <attribute><name>a</name><type>Int32</type>
+          <null_value>0</null_value>
+        </attribute>
+      </structure>
+    </dictionary>
+  
+    <dictionary>
+      <name>no_file_2</name>
+      <source>
+        <file>
+          <path>/etc/clickhouse-server/config.d/no_file_2.txt</path>
+          <format>TabSeparated</format>
+        </file>
+      </source>
+      <lifetime>1</lifetime>
+      <layout><flat/></layout>
+      <structure><id><name>key</name> </id>
+        <attribute><name>a</name><type>Int32</type>
+          <null_value>0</null_value>
+        </attribute>
+      </structure>
+    </dictionary>
+</yandex>
