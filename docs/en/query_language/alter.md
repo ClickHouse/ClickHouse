@@ -273,15 +273,16 @@ For the query to run successfully, the following conditions must be met:
 #### MOVE PARTITION {#alter_move-partition}
 
 ``` sql
-ALTER TABLE table2 MOVE PARTITION partition_expr FROM table1
+ALTER TABLE table_source MOVE PARTITION partition_expr TO table_dest
 ```
 
-This query move the data partition from the `table1` to `table2` with deleting the data from `table1`.
+This query move the data partition from the `table_source` to `table_dest` with deleting the data from `table_source`.
 
 For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key.
+- Both tables must be the same engine family. (replicated or non-replicated)
 
 
 
