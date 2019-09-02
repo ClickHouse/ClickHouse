@@ -386,7 +386,7 @@ WHERE diff != 1
 └────────┴──────┘
 
 
-set max_block_size=100000 // по умолчанию 65536!
+set max_block_size=100000 -- по умолчанию 65536!
 
 SELECT
     number,
