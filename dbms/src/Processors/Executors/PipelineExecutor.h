@@ -120,26 +120,33 @@ private:
 
     struct TaskQueue
     {
-        bool pop(ExecutionState *& state)
-        {
-            if (stack.pop(state))
-            {
-                num_popped.fetch_add(1);
-                return true;
-            }
-
-            return false;
-        }
-
         void push(ExecutionState * state)
         {
-            stack.push(state);
-            num_pushed.fetch_add(1);
+            map.emplace(state->processor->getStream(), state);
         }
 
-        lfs::LFStack<ExecutionState> stack;
-        std::atomic<UInt64> num_pushed {0};
-        std::atomic<UInt64> num_popped {0};
+        ExecutionState * pop(size_t stream)
+        {
+            auto it = map.find(stream);
+
+            if (it == map.end())
+                it = map.find(IProcessor::NO_STREAM);
+
+            if (it == map.end())
+                it = map.begin();
+
+            if (it == map.end())
+                return nullptr;
+
+            auto res = it->second;
+            map.erase(it);
+
+            return res;
+        }
+
+        bool empty() const { return map.empty(); }
+
+        std::unordered_multimap<size_t, ExecutionState *> map;
     };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.

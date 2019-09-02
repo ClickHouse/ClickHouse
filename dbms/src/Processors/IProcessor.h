@@ -228,10 +228,17 @@ public:
     void setDescription(const std::string & description_) { processor_description = description_; }
     const std::string & getDescription() const { return processor_description; }
 
+    /// Helpers for pipeline executor.
+    void setStream(size_t value) { stream = value; }
+    size_t getStream() const { return stream; }
+    constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
+
 private:
     std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
+
+    size_t stream = NO_STREAM;
 };
 
 
