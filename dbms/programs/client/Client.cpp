@@ -1026,6 +1026,8 @@ private:
         while (true)
         {
             Block block = async_block_input->read();
+
+            /// Check if server send Log packet
             receiveLogs();
 
             /// Check if server send Exception packet
