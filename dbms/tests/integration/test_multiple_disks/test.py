@@ -189,7 +189,6 @@ def test_background_move(start_cluster, name, engine):
 
         # first (oldest) part was moved to external
         assert path.startswith("/external")
-        print node1.query("SELECT * FROM system.part_log WHERE table = '{}' AND event_type='MovePart' ORDER BY event_time".format(name))
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
