@@ -369,6 +369,39 @@ FROM
 └─────────┴─────────────────────┴───────┘
 ```
 
+Обратите внимание — размер блока влияет на результат. С каждым новым блоком состояние `runningDifference` сбрасывается.
+
+``` sql
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+┌─number─┬─diff─┐
+│  65536 │    0 │
+└────────┴──────┘
+
+
+set max_block_size=100000 // по умолчанию 65536!
+
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+```
+
+## runningDifferenceStartingWithFirstValue
+То же, что и [runningDifference] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
+
 ## MACNumToString(num)
 Принимает число типа UInt64. Интерпретирует его, как MAC-адрес в big endian. Возвращает строку, содержащую соответствующий MAC-адрес в формате AA:BB:CC:DD:EE:FF (числа в шестнадцатеричной форме через двоеточие).
 
