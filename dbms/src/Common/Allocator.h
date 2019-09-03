@@ -3,8 +3,6 @@
 #include <string.h>
 
 #ifdef NDEBUG
-    /// If set to 1 - randomize memory mappings manually (address space layout randomization) to reproduce more memory stomping bugs.
-    /// Note that Linux doesn't do it by default. This may lead to worse TLB performance.
     #define ALLOCATOR_ASLR 0
 #else
     #define ALLOCATOR_ASLR 1
@@ -38,23 +36,27 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-
-/** Many modern allocators (for example, tcmalloc) do not do a mremap for realloc,
-  *  even in case of large enough chunks of memory.
-  * Although this allows you to increase performance and reduce memory consumption during realloc.
+/**
+  * Many modern allocators (for example, tcmalloc) do not do a mremap for
+  * realloc, even in case of large enough chunks of memory. Although this allows
+  * you to increase performance and reduce memory consumption during realloc.
   * To fix this, we do mremap manually if the chunk of memory is large enough.
-  * The threshold (64 MB) is chosen quite large, since changing the address space is
-  *  very slow, especially in the case of a large number of threads.
-  * We expect that the set of operations mmap/something to do/mremap can only be performed about 1000 times per second.
+  * The threshold (64 MB) is chosen quite large, since changing the address
+  * space is very slow, especially in the case of a large number of threads. We
+  * expect that the set of operations mmap/something to do/mremap can only be
+  * performed about 1000 times per second.
   *
-  * PS. This is also required, because tcmalloc can not allocate a chunk of memory greater than 16 GB.
+  * P.S. This is also required, because tcmalloc can not allocate a chunk of
+  * memory greater than 16 GB.
   */
 #ifdef NDEBUG
     static constexpr size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
 #else
-    /// In debug build, use small mmap threshold to reproduce more memory stomping bugs.
-    /// Along with ASLR it will hopefully detect more issues than ASan.
-    /// The program may fail due to the limit on number of memory mappings.
+    /**
+      * In debug build, use small mmap threshold to reproduce more memory
+      * stomping bugs. Along with ASLR it will hopefully detect more issues than
+      * ASan. The program may fail due to the limit on number of memory mappings.
+      */
     static constexpr size_t MMAP_THRESHOLD = 4096;
 #endif
 
@@ -72,25 +74,6 @@ namespace ErrorCodes
 }
 }
 
-namespace AllocatorHints
-{
-struct DefaultHint
-{
-    void * mmap_hint()
-    {
-        return nullptr;
-    }
-};
-
-struct RandomHint
-{
-    void * mmap_hint()
-    {
-        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
-    }
-};
-}
-
 /** Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
   * Also used in hash tables.
   * The interface is different from std::allocator
@@ -98,16 +81,12 @@ struct RandomHint
   * - passing the size into the `free` method;
   * - by the presence of the `alignment` argument;
   * - the possibility of zeroing memory (used in hash tables);
-  * - hint class for mmap
+  * - random hint address for mmap
   * - mmap_threshold for using mmap less or more
   */
-template <bool clear_memory_, typename Hint, size_t mmap_threshold>
-class AllocatorWithHint : Hint
+template <bool clear_memory_, bool mmap_populate = false>
+class Allocator
 {
-protected:
-    static constexpr bool clear_memory = clear_memory_;
-    static constexpr size_t small_memory_threshold = mmap_threshold;
-
 public:
     /// Allocate memory range.
     void * alloc(size_t size, size_t alignment = 0)
@@ -134,7 +113,8 @@ public:
             /// nothing to do.
             /// BTW, it's not possible to change alignment while doing realloc.
         }
-        else if (old_size < mmap_threshold && new_size < mmap_threshold && alignment <= MALLOC_MIN_ALIGNMENT)
+        else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD
+                 && alignment <= MALLOC_MIN_ALIGNMENT)
         {
             /// Resize malloc'd memory region with no special alignment requirement.
             CurrentMemoryTracker::realloc(old_size, new_size);
@@ -148,19 +128,20 @@ public:
                 if (new_size > old_size)
                     memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
         }
-        else if (old_size >= mmap_threshold && new_size >= mmap_threshold)
+        else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
         {
             /// Resize mmap'd memory region.
             CurrentMemoryTracker::realloc(old_size, new_size);
 
             // On apple and freebsd self-implemented mremap used (common/mremap.h)
-            buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE,
+                                    PROT_READ | PROT_WRITE, mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
 
             /// No need for zero-fill, because mmap guarantees it.
         }
-        else if (new_size < small_memory_threshold)
+        else if (new_size < MMAP_THRESHOLD)
         {
             /// Small allocs that requires a copy. Assume there's enough memory in system. Call CurrentMemoryTracker once.
             CurrentMemoryTracker::realloc(old_size, new_size);
@@ -189,18 +170,30 @@ protected:
         return 0;
     }
 
+    static constexpr bool clear_memory = clear_memory_;
+
+    // Freshly mmapped pages are copy-on-write references to a global zero page.
+    // On the first write, a page fault occurs, and an actual writable page is
+    // allocated. If we are going to use this memory soon, such as when resizing
+    // hash tables, it makes sense to pre-fault the pages by passing
+    // MAP_POPULATE to mmap(). This takes some time, but should be faster
+    // overall than having a hot loop interrupted by page faults.
+    static constexpr int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS
+            | (mmap_populate ? MAP_POPULATE : 0);
+
 private:
     void * allocNoTrack(size_t size, size_t alignment)
     {
         void * buf;
 
-        if (size >= mmap_threshold)
+        if (size >= MMAP_THRESHOLD)
         {
             if (alignment > MMAP_MIN_ALIGNMENT)
                 throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
                     + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
-            buf = mmap(Hint::mmap_hint(), size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
+                       mmap_flags, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
@@ -235,7 +228,7 @@ private:
 
     void freeNoTrack(void * buf, size_t size)
     {
-        if (size >= mmap_threshold)
+        if (size >= MMAP_THRESHOLD)
         {
             if (0 != munmap(buf, size))
                 DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
@@ -245,15 +238,22 @@ private:
             ::free(buf);
         }
     }
-};
 
-#if ALLOCATOR_ASLR
-template <bool clear_memory>
-using Allocator = AllocatorWithHint<clear_memory, AllocatorHints::RandomHint, MMAP_THRESHOLD>;
+#ifndef NDEBUG
+    /// In debug builds, request mmap() at random addresses (a kind of ASLR), to
+    /// reproduce more memory stomping bugs. Note that Linux doesn't do it by
+    /// default. This may lead to worse TLB performance.
+    void * getMmapHint()
+    {
+        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
+    }
 #else
-template <bool clear_memory>
-using Allocator = AllocatorWithHint<clear_memory, AllocatorHints::DefaultHint, MMAP_THRESHOLD>;
+    void * getMmapHint()
+    {
+        return nullptr;
+    }
 #endif
+};
 
 /** When using AllocatorWithStackMemory, located on the stack,
   *  GCC 4.9 mistakenly assumes that we can call `free` from a pointer to the stack.
