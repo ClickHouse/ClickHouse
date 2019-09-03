@@ -315,13 +315,23 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 #### Functions Support
 
+ClickHouse can use index to perform query if there's a `WHERE` condition involving the supported subset of functions calls over columns that are part of index.
 
-Comparison and search functions can use different indexes instead of the full scan of the table during the query processing. All the functions can use primary key index. Some of the functions can use data skipping indexes.
-
- Index | Functions
--------|-----------
-`ngrambf_v1` | [equals](../../query_language/functions/comparison_functions.md#function-equals), [notEquals](../../query_language/functions/comparison_functions.md#function-notequals), [like](../../query_language/functions/string_search_functions.md#function-like), [notLike](../../query_language/functions/string_search_functions.md#function-notlike), [startsWith](../../query_language/functions/string_functions.md#function-startswith), [endsWith](../../query_language/functions/string_functions.md#function-endswith), [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany), [in](../../query_language/functions/in_functions.md#in-functions), [notIn](../../query_language/functions/in_functions.md#in-functions)
-`set` | [equals](../../query_language/functions/comparison_functions.md#function-equals), [notEquals](../../query_language/functions/comparison_functions.md#function-notequals), [like](../../query_language/functions/string_search_functions.md#function-like), [startsWith](../../query_language/functions/string_functions.md#function-startswith), [endsWith](../../query_language/functions/string_functions.md#function-endswith), [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany), [in](../../query_language/functions/in_functions.md#in-functions), [notIn](../../query_language/functions/in_functions.md#in-functions), [less](../../query_language/functions/comparison_functions.md#function-less), [greater](../../query_language/functions/comparison_functions.md#function-greater), [lessOrEquals](../../query_language/functions/comparison_functions.md#function-lessorequals), [greaterOrEquals](../../query_language/functions/comparison_functions.md#function-greaterorequals)
+ Function/Index | primary key | ngrambf_v1 | set | minmax | tokenbf_v1 | bloom_filter
+----------------|-------------|------------|-----|--------|------------|--------------
+ [equals](../../query_language/functions/comparison_functions.md#function-equals) | | ✔ | ✔ | | |
+ [notEquals](../../query_language/functions/comparison_functions.md#function-notequals) | | ✔ | ✔ | |
+ [like](../../query_language/functions/string_search_functions.md#function-like) | | ✔ | ✔ | |
+ [notLike](../../query_language/functions/string_search_functions.md#function-notlike) | | ✔ | ✗ | |
+ [startsWith](../../query_language/functions/string_functions.md#function-startswith) | | ✔ | ✔ | |
+ [endsWith](../../query_language/functions/string_functions.md#function-endswith) | | ✔ | ✔ | |
+ [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | | ✔ | ✔ | |
+ [in](../../query_language/functions/in_functions.md#in-functions) | | ✔ | ✔ | |
+ [notIn](../../query_language/functions/in_functions.md#in-functions) | | ✔ | ✔ | |
+ [less](../../query_language/functions/comparison_functions.md#function-less) | | ✗ | ✔ | |
+ [greater](../../query_language/functions/comparison_functions.md#function-greater) | | ✗ | ✔ | |
+ [lessOrEquals](../../query_language/functions/comparison_functions.md#function-lessorequals) | | ✗ | ✔ | |
+ [greaterOrEquals](../../query_language/functions/comparison_functions.md#function-greaterorequals) | | ✗ | ✔ | |
 
 
 ## Concurrent Data Access
