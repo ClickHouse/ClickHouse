@@ -633,7 +633,7 @@ void TCPHandler::processTablesStatusRequest()
     response.write(*out, client_revision);
 }
 
-void TCPHandler::receiveUnexpectedTablesStatus()
+void TCPHandler::receiveUnexpectedTablesStatusRequest()
 {
     TablesStatusRequest skip_request;
     skip_request.read(*in, client_revision);
@@ -796,7 +796,7 @@ bool TCPHandler::receivePacket()
 
         case Protocol::Client::TablesStatusRequest:
             if (!state.empty())
-                receiveUnexpectedTablesStatus();
+                receiveUnexpectedTablesStatusRequest();
             processTablesStatusRequest();
             out->next();
             return false;
