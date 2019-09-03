@@ -32,12 +32,14 @@ protected:
     {
         if (put_delimiter)
         {
+            if (!buffer->next())
+                return false;
             BufferBase::set(&delimiter, 1, 0);
             put_delimiter = false;
         }
         else
         {
-            if (!buffer->next())
+            if (buffer->eof())
                 return false;
 
             BufferBase::set(buffer->position(), buffer->available(), 0);

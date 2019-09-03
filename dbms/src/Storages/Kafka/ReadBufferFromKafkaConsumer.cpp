@@ -164,7 +164,8 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             stalled = true;
             return false;
         }
-        last_message = messages.back();
+        if (!messages.empty())
+            last_message = std::move(messages.back());
         messages = std::move(new_messages);
         current = messages.begin();
 
