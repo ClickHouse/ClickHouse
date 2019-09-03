@@ -11,7 +11,7 @@ file(path, format, structure)
 
 - `path` — The relative path to the file from [user_files_path](../../operations/server_settings/settings.md#server_settings-user_files_path).
 - `format` —  The [format](../../interfaces/formats.md#formats) of the file.
-- `structure` — Structure of the table. Format `'colunmn1_name column1_ype, column2_name column2_type, ...'`.
+- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Returned value**
 
