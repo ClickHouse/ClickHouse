@@ -652,6 +652,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
     {
         std::lock_guard lock(task_queue_mutex);
+        size_t cur_thread = 0;
 
         while (!stack.empty())
         {
@@ -661,7 +662,11 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             if (prepareProcessor(proc, stack, stack, 0, false))
             {
                 auto cur_state = graph[proc].execution_state.get();
-                task_queue.push(cur_state);
+                executor_contexts[cur_thread]->task_queue.push(cur_state);
+
+                ++cur_thread;
+                if (cur_thread == num_threads)
+                    cur_thread = 0;
             }
         }
     }
