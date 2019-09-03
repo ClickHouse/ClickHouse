@@ -48,7 +48,7 @@ struct MovingPartsTagger
             throw Exception("Cannot tag moving parts without background lock.", ErrorCodes::LOGICAL_ERROR);
 
         for (const auto & moving_part : parts_to_move)
-            if(!all_moving_parts.emplace(moving_part.part).second)
+            if (!all_moving_parts.emplace(moving_part.part).second)
                 throw Exception("Cannot move part '" + moving_part.part->name + "'. It's already moving.", ErrorCodes::LOGICAL_ERROR);
 
         background_lock.unlock();

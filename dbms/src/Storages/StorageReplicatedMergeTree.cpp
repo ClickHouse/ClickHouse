@@ -3004,7 +3004,7 @@ void StorageReplicatedMergeTree::startup()
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, global_context.getInterserverIOHandler());
 
     queue_task_handle = global_context.getBackgroundPool().addTask([this] { return queueTask(); });
-    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return movingPartsTask(); } );
+    move_parts_task_handle = global_context.getBackgroundPool().addTask([this] { return movingPartsTask(); });
 
     /// In this thread replica will be activated.
     restarting_thread.start();
