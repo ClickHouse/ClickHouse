@@ -105,11 +105,12 @@ It is not possible to set default values for elements in nested data structures.
 
 ### Constraints {#constraints}
 
-WARNING: This feature is experimental. Correct work is not guaranteed on non-MergeTree family engines.
+!!!warning "Warning"
+    This feature is experimental. Correct work is not guaranteed on non-MergeTree family engines.
 
 Along with columns descriptions constraints could be defined:
 
-``sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
@@ -127,7 +128,7 @@ Adding large amount of constraints can negatively affect performance of big `INS
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-## Column Compression Codecs
+### Column Compression Codecs
 
 By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
@@ -151,14 +152,14 @@ If a codec is specified, the default codec doesn't apply. Codecs can be combined
 
 Compression is supported for the following table engines:
 
-- [MergeTree](../operations/table_engines/mergetree.md) family
-- [Log](../operations/table_engines/log_family.md) family
+- [MergeTree family](../operations/table_engines/mergetree.md)
+- [Log family](../operations/table_engines/log_family.md)
 - [Set](../operations/table_engines/set.md)
 - [Join](../operations/table_engines/join.md)
 
 ClickHouse supports common purpose codecs and specialized codecs.
 
-### Specialized Codecs {#create-query-specialized-codecs}
+#### Specialized Codecs {#create-query-specialized-codecs}
 
 These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don't compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 
@@ -180,7 +181,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-### Common purpose codecs {#create-query-common-purpose-codecs}
+#### Common purpose codecs {#create-query-common-purpose-codecs}
 
 Codecs:
 
