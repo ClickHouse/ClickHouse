@@ -38,49 +38,50 @@ namespace ErrorCodes
 class ClusteringData
 {
 public:
-    ClusteringData()
-    {}
+    ClusteringData() = delete;
 
-    ClusteringData(UInt32 clusters_num, UInt32 dimensions)
-    : clusters_num(clusters_num), dimensions(dimensions)
+    ClusteringData(UInt32 clusters_num_, UInt32 dimensions_) : num_clusters(clusters_num_), num_dimensions(dimensions_)
     {
-        if (clusters_num == 0)
+        if (num_clusters == 0)
             throw Exception("Number of cluster must be greater than zero", ErrorCodes::LOGICAL_ERROR);
 
-        clusters.reserve(multiplication_factor * clusters_num);
-        predicted_clusters.reserve(clusters_num);
+        clusters.reserve(multiplication_factor * num_clusters);
+        predicted_clusters.reserve(num_clusters);
     }
 
-    void add(const IColumn ** columns, size_t row_num) {
+    void add(const IColumn ** columns, size_t row_num)
+    {
         predicted_clusters.clear();
-        if (clusters.size() < multiplication_factor * clusters_num)
+
+        /// Add point as new cluster if there is not enough clusters.
+        if (clusters.size() < multiplication_factor * num_clusters)
         {
-            clusters.emplace_back(columns, row_num, dimensions);
+            clusters.emplace_back(columns, row_num, num_dimensions);
             return;
         }
 
-        size_t closest_cluster = find_closest_cluster_for_point_with_penalty(columns, row_num, clusters);
-        clusters[closest_cluster].append_point(columns, row_num);
+        size_t closest_cluster = findNearestClusterForPointWithPenalty(columns, row_num, clusters);
+        clusters[closest_cluster].appendPoint(columns, row_num);
     }
 
     void add_from_vector(const std::vector<Float64> & coordinates)
     {
         predicted_clusters.clear();
-        if (clusters.size() < multiplication_factor * clusters_num)
+        if (clusters.size() < multiplication_factor * num_clusters)
         {
             clusters.emplace_back(coordinates);
             return;
         }
 
-        size_t closest_cluster = find_closest_cluster_with_penalty(coordinates, clusters);
-        clusters[closest_cluster].append_point_from_vector(coordinates);
+        size_t closest_cluster = findNearestClusterForPointWithPenalty(coordinates, clusters);
+        clusters[closest_cluster].appendPointFromVector(coordinates);
     }
 
     void merge(const ClusteringData & rhs)
     {
         predicted_clusters.clear();
         /// If one of cluster sets are not filled in, put its points to another cluster set
-        if (rhs.clusters.size() < rhs.multiplication_factor * rhs.clusters_num)
+        if (rhs.clusters.size() < rhs.multiplication_factor * rhs.num_clusters)
         {
             for (size_t i = 0; i != rhs.clusters.size(); ++i)
             {
@@ -88,7 +89,7 @@ public:
             }
             return;
         }
-        if (clusters.size() < multiplication_factor * clusters_num)
+        if (clusters.size() < multiplication_factor * num_clusters)
         {
             std::vector<Cluster> old_clusters = std::move(clusters);
             clusters = rhs.clusters;
@@ -102,16 +103,16 @@ public:
         /// Merge closest pairs of clusters greedily
         for (size_t i = 0; i != rhs.clusters.size(); ++i)
         {
-            size_t closest_cluster = find_closest_cluster(rhs.clusters[i].center(), clusters, i);
+            size_t closest_cluster = findNearestCluster(rhs.clusters[i].center(), clusters, i);
             std::swap(clusters[closest_cluster], clusters[i]);
-            clusters[i].merge_cluster(rhs.clusters[i]);
+            clusters[i].mergeCluster(rhs.clusters[i]);
         }
     }
 
     void write(WriteBuffer & buf) const
     {
-        writeBinary(clusters_num, buf);
-        writeBinary(dimensions, buf);
+        writeBinary(num_clusters, buf);
+        writeBinary(num_dimensions, buf);
         writeBinary(clusters.size(), buf);
         for (auto & cluster : clusters)
         {
@@ -121,8 +122,8 @@ public:
 
     void read(ReadBuffer & buf)
     {
-        readBinary(clusters_num, buf);
-        readBinary(dimensions, buf);
+        readBinary(num_clusters, buf);
+        readBinary(num_dimensions, buf);
         decltype(clusters.size()) clusters_size;
         readBinary(clusters_size, buf);
         clusters.resize(clusters_size);
@@ -139,7 +140,7 @@ public:
                  size_t limit,
                  const ColumnNumbers & arguments) const
     {
-        if (dimensions + 1 != arguments.size())
+        if (num_dimensions + 1 != arguments.size())
             throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
 
         size_t rows_num = block.rows();
@@ -155,7 +156,7 @@ public:
             std::vector<Float64>(predicted_clusters.size(), 0.0)
         );
 
-        for (size_t i = 0; i != dimensions; ++i)
+        for (size_t i = 0; i != num_dimensions; ++i)
         {
             const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i + 1]);
             if (!isNativeNumber(cur_col.type))
@@ -194,7 +195,7 @@ public:
     {
         make_prediction();
 
-        size_t size = clusters_num * dimensions;
+        size_t size = num_clusters * num_dimensions;
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -206,8 +207,8 @@ public:
                 = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
         val_to.reserve(old_size + size);
-        for (size_t cluster_idx = 0; cluster_idx != clusters_num; ++cluster_idx)
-            for (size_t i = 0; i != dimensions; ++i)
+        for (size_t cluster_idx = 0; cluster_idx != num_clusters; ++cluster_idx)
+            for (size_t i = 0; i != num_dimensions; ++i)
                 val_to.push_back(predicted_clusters[cluster_idx][i]);
     }
 
@@ -245,12 +246,12 @@ private:
             }
         }
 
-        void append_point(const IColumn ** columns, size_t row_num)
+        void appendPoint(const IColumn ** columns, size_t row_num)
         {
             if (points_num == 0)
                 throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
 
-            Float64 point_weight = append_point_weight(++points_num);
+            Float64 point_weight = appendPointWeight(++points_num);
             Float64 cluster_weight = 1 - point_weight;
             for (size_t i = 0; i != coordinates.size(); ++i)
             {
@@ -258,14 +259,14 @@ private:
             }
         }
 
-        void append_point_from_vector(const std::vector<Float64> & new_coordinates)
+        void appendPointFromVector(const std::vector<Float64> & new_coordinates)
         {
             if (points_num == 0)
                 throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
             if (coordinates.size() != new_coordinates.size())
                 throw Exception("Cannot append point of other size", ErrorCodes::LOGICAL_ERROR);
 
-            Float64 point_weight = append_point_weight(++points_num);
+            Float64 point_weight = appendPointWeight(++points_num);
             Float64 cluster_weight = 1 - point_weight;
             for (size_t i = 0; i != coordinates.size(); ++i)
             {
@@ -273,12 +274,12 @@ private:
             }
         }
 
-        void merge_cluster(const Cluster & other)
+        void mergeCluster(const Cluster & other)
         {
             if (size() == 0 || other.size() == 0)
                 throw Exception("Merge empty cluster", ErrorCodes::LOGICAL_ERROR);
 
-            Float64 this_weight = merge_weight(size(), other.size());
+            Float64 this_weight = mergeWeight(size(), other.size());
             Float64 other_weight = 1 - this_weight;
             for (size_t i = 0; i != coordinates.size(); ++i)
             {
@@ -310,12 +311,12 @@ private:
         }
 
     private:
-        static Float64 append_point_weight(UInt32 size)
+        static Float64 appendPointWeight(UInt32 size)
         {
             return Float64{1.0} / size;
         }
 
-        static Float64 merge_weight(UInt32 size1, UInt32 size2)
+        static Float64 mergeWeight(UInt32 size1, UInt32 size2)
         {
             return static_cast<Float64>(size1) / (size1 + size2);
         }
@@ -324,9 +325,9 @@ private:
         UInt32 points_num = 0;
     };
 
-    static Float64 compute_distance(const std::vector<Float64> & point1, const std::vector<Float64> & point2)
+    static Float64 computeDistanceBetweenPoints(const std::vector<Float64> & point1, const std::vector<Float64> & point2)
     {
-        Float64 distance = 0.0;
+        Float64 distance = 0;
         for (size_t i = 0; i != point1.size(); ++i)
         {
             Float64 coordinate_diff = point1[i] - point2[i];
@@ -335,7 +336,7 @@ private:
         return std::sqrt(distance);
     }
 
-    static Float64 compute_distance_for_point(const std::vector<Float64> & point, const IColumn ** columns, size_t row_num)
+    static Float64 computeDistanceBetweenPoints(const std::vector<Float64> & point, const IColumn ** columns, size_t row_num)
     {
         Float64 distance = 0;
         for (size_t i = 0; i != point.size(); ++i)
@@ -346,114 +347,123 @@ private:
         return std::sqrt(distance);
     }
 
-    static size_t find_closest_cluster_for_point_with_penalty(const IColumn ** columns, size_t row_num, const std::vector<Cluster> & clusters)
+    static size_t findNearestClusterForPointWithPenalty(
+        const IColumn ** columns, size_t row_num, const std::vector<Cluster> & clusters)
     {
-        Float64 min_dist = cluster_penalty(clusters[0].size()) * compute_distance_for_point(clusters[0].center(), columns, row_num);
-        UInt32 closest = 0;
-        for (size_t i = 1; i != clusters.size(); ++i)
+        Float64 min_distance = 0;
+        UInt32 closest_point = 0;
+
+        for (size_t i = 0; i < clusters.size(); ++i)
         {
-            Float64 dist = cluster_penalty(clusters[i].size()) * compute_distance_for_point(clusters[i].center(), columns, row_num);
-            if (dist < min_dist)
+            Float64 distance = getClusterPenalty(clusters[i].size()) *
+                               computeDistanceBetweenPoints(clusters[i].center(), columns, row_num);
+
+            if (i == 0 || distance < min_distance)
             {
-                min_dist = dist;
-                closest = i;
+                min_distance = distance;
+                closest_point = i;
             }
         }
-        return closest;
+
+        return closest_point;
     }
 
-    static size_t find_closest_cluster_with_penalty(const std::vector<Float64> & point, const std::vector<Cluster> & clusters)
+    static size_t findNearestClusterForPointWithPenalty(const std::vector<Float64> & point, const std::vector<Cluster> & clusters)
     {
-        Float64 min_dist = cluster_penalty(clusters[0].size()) * compute_distance(clusters[0].center(), point);
-        UInt32 closest = 0;
-        for (size_t i = 1; i != clusters.size(); ++i)
+        Float64 min_distance = 0;
+        UInt32 closest_point = 0;
+
+        for (size_t i = 0; i < clusters.size(); ++i)
         {
-            Float64 dist = cluster_penalty(clusters[i].size()) * compute_distance(clusters[i].center(), point);
-            if (dist < min_dist)
+            Float64 distance = getClusterPenalty(clusters[i].size()) *
+                               computeDistanceBetweenPoints(clusters[i].center(), point);
+
+            if (i == 0 || distance < min_distance)
             {
-                min_dist = dist;
-                closest = i;
+                min_distance = distance;
+                closest_point = i;
             }
         }
-        return closest;
+        return closest_point;
     }
 
-
-    static size_t find_closest_cluster(const std::vector<Float64> & point, const std::vector<std::vector<Float64>> & clusters)
+    static size_t findNearestCluster(const std::vector<Float64> & point, const std::vector<std::vector<Float64>> & clusters)
     {
-        Float64 min_dist = compute_distance(point, clusters[0]);
-        UInt32 closest = 0;
-        for (size_t i = 1; i != clusters.size(); ++i)
+        Float64 min_distance = 0;
+        UInt32 closest_point = 0;
+
+        for (size_t i = 0; i < clusters.size(); ++i)
         {
-            Float64 dist = compute_distance(point, clusters[i]);
-            if (dist < min_dist)
+            Float64 distance = computeDistanceBetweenPoints(point, clusters[i]);
+            if (distance < min_distance)
             {
-                min_dist = dist;
-                closest = i;
+                min_distance = distance;
+                closest_point = i;
             }
         }
-        return closest;
+        return closest_point;
     }
 
-    static size_t find_closest_cluster(const std::vector<Float64> & point, const std::vector<Cluster> & clusters, size_t from = 0)
+    static size_t findNearestCluster(const std::vector<Float64> & point, const std::vector<Cluster> & clusters, size_t from = 0)
     {
-        Float64 min_dist = compute_distance(point, clusters[from].center());
-        UInt32 closest = from;
-        for (size_t i = from + 1; i != clusters.size(); ++i)
+        Float64 min_distance = 0;
+        UInt32 closest_point = 0;
+
+        for (size_t i = from ; i < clusters.size(); ++i)
         {
-            Float64 dist = compute_distance(point, clusters[i].center());
-            if (dist < min_dist)
+            Float64 distance = computeDistanceBetweenPoints(point, clusters[i].center());
+            if (i == from || distance < min_distance)
             {
-                min_dist = dist;
-                closest = i;
+                min_distance = distance;
+                closest_point = i;
             }
         }
-        return closest;
+        return closest_point;
     }
 
-    static Float64 cluster_penalty(UInt32 cluster_size)
+    static Float64 getClusterPenalty(UInt32 cluster_size)
     {
         return std::sqrt(cluster_size);
     }
 
-    static Float64 min_squared_distance(const std::vector<Float64> & point, const std::vector<std::vector<Float64>> & clusters)
+    static Float64 minSquaredDistance(const std::vector<Float64> & point, const std::vector<std::vector<Float64>> & clusters)
     {
-        Float64 min_squared_dist = 0.0;
-        for (size_t i = 0; i != point.size(); ++i)
+        Float64 min_squared_dist = 0;
+
+        for (size_t cluster_idx = 0; cluster_idx < clusters.size(); ++cluster_idx)
         {
-            Float64 d = point[i] - clusters[0][i];
-            min_squared_dist += d * d;
-        }
-        for (size_t cluster_idx = 1; cluster_idx != clusters.size(); ++cluster_idx)
-        {
-            Float64 squared_dist = 0.0;
-            for (size_t i = 0; i != point.size(); ++i)
+            Float64 squared_dist = 0;
+            for (size_t i = 0; i < point.size(); ++i)
             {
-                Float64 d = point[i] - clusters[cluster_idx][i];
-                squared_dist += d * d;
+                Float64 distance = point[i] - clusters[cluster_idx][i];
+                squared_dist += distance * distance;
             }
-            min_squared_dist = std::min(min_squared_dist, squared_dist);
+
+            if (cluster_idx == 0)
+                min_squared_dist = squared_dist;
+            else
+                min_squared_dist = std::min(min_squared_dist, squared_dist);
         }
 
         return min_squared_dist;
     }
 
-    void k_means_initialize_clusters() const
+    void kMeansInitializeClusters() const
     {
-        std::uniform_int_distribution<int> distribution(0, clusters.size() - 1);
-        size_t first_cluster = distribution(random_generator_);
-
-        predicted_clusters.reserve(clusters_num);
+        /// Pick first cluster from the first point.
+        size_t first_cluster = 0;
+        predicted_clusters.reserve(num_clusters);
         predicted_clusters.emplace_back(clusters[first_cluster].center());
-        for (size_t i = 1; i != clusters_num; ++i)
+
+        for (size_t i = 1; i < num_clusters; ++i)
         {
             /// Simply pick the point that has the maximum squared distance from it's nearest cluster
-            Float64 max_min_squared_dist = -1.0;
+            Float64 max_min_squared_dist = 0;
             size_t farthest_point = 0;
-            for (size_t point_idx = 0; point_idx != clusters.size(); ++point_idx)
+            for (size_t point_idx = 0; point_idx < clusters.size(); ++point_idx)
             {
-                Float64 min_squared_dist = min_squared_distance(clusters[point_idx].center(), predicted_clusters);
-                if (min_squared_dist > max_min_squared_dist)
+                Float64 min_squared_dist = minSquaredDistance(clusters[point_idx].center(), predicted_clusters);
+                if (min_squared_dist >= max_min_squared_dist)
                 {
                     max_min_squared_dist = min_squared_dist;
                     farthest_point = point_idx;
@@ -464,24 +474,24 @@ private:
     }
 
     /// Returns pairwise squared distance between new and old clusters
-    Float64 k_means_update_clusters(const std::vector<size_t> & closest_cluster) const
+    Float64 kMeansUpdateClusters(const std::vector<size_t> & closest_cluster) const
     {
-        Float64 diff = 0.0;
+        Float64 diff = 0;
         std::vector<std::vector<Float64>> new_clusters(
             predicted_clusters.size(),
-            std::vector<Float64>(predicted_clusters[0].size(), 0.0)
+            std::vector<Float64>(predicted_clusters[0].size(), 0)
         );
         std::vector<UInt64> cluster_weights(predicted_clusters.size());
-        for (size_t point_idx = 0; point_idx != clusters.size(); ++point_idx)
+        for (size_t point_idx = 0; point_idx < clusters.size(); ++point_idx)
         {
             size_t cluster_idx = closest_cluster[point_idx];
             ++cluster_weights[cluster_idx];
-            for (size_t i = 0; i != new_clusters[cluster_idx].size(); ++i)
+            for (size_t i = 0; i < new_clusters[cluster_idx].size(); ++i)
                 new_clusters[cluster_idx][i] += clusters[point_idx].center()[i];
         }
-        for (size_t cluster_idx = 0; cluster_idx != new_clusters.size(); ++cluster_idx)
+        for (size_t cluster_idx = 0; cluster_idx < new_clusters.size(); ++cluster_idx)
         {
-            for (size_t i = 0; i != new_clusters[cluster_idx].size(); ++i)
+            for (size_t i = 0; i < new_clusters[cluster_idx].size(); ++i)
             {
                 new_clusters[cluster_idx][i] /= cluster_weights[cluster_idx];
                 Float64 d = new_clusters[cluster_idx][i] - predicted_clusters[cluster_idx][i];
@@ -493,21 +503,21 @@ private:
         return diff;
     }
 
-    Float64 k_means() const
+    Float64 kMeans() const
     {
         predicted_clusters.clear();
 
-        k_means_initialize_clusters();
+        kMeansInitializeClusters();
         std::vector<size_t> closest_cluster(clusters.size());
         for (size_t iter = 0; iter != kmeans_max_iter; ++iter)
         {
             /// For each point find the cluster with closest center
             for (size_t point_idx = 0; point_idx != clusters.size(); ++point_idx)
             {
-                closest_cluster[point_idx] = find_closest_cluster(clusters[point_idx].center(), predicted_clusters);
+                closest_cluster[point_idx] = findNearestCluster(clusters[point_idx].center(), predicted_clusters);
             }
             /// Change predicted cluster centers
-            Float64 diff = k_means_update_clusters(closest_cluster);
+            Float64 diff = kMeansUpdateClusters(closest_cluster);
             /// Stop if diff is too small
             if (diff < eps_diff_)
                 break;
@@ -515,7 +525,8 @@ private:
 
         Float64 mean_distance{0.0};
         for (size_t point_idx = 0; point_idx != clusters.size(); ++point_idx)
-            mean_distance += compute_distance(predicted_clusters[closest_cluster[point_idx]], clusters[point_idx].center());
+            mean_distance += computeDistanceBetweenPoints(predicted_clusters[closest_cluster[point_idx]],
+                                                          clusters[point_idx].center());
         if (!clusters.empty())
             mean_distance /= clusters.size();
 
@@ -528,11 +539,11 @@ private:
         {
             /// Searching for the best result over max_tries_to_predict tries
             /// and save it into predict_clusters
-            Float64 min_mean_distance = k_means();
+            Float64 min_mean_distance = kMeans();
             auto best_prediction = predicted_clusters;
             for (size_t i = 1; i != max_tries_to_predict + 1; ++i)
             {
-                Float64 cur_mean_distance = k_means();
+                Float64 cur_mean_distance = kMeans();
                 if (cur_mean_distance < min_mean_distance)
                 {
                     min_mean_distance = cur_mean_distance;
@@ -545,16 +556,15 @@ private:
     }
 
     // TODO consider letting user change some of those parameters
-    /// Factor on how larger the number of stored clusters should be compared to user-defined number of clusters. Big enough factor is essential for good prediction
+    /// Factor on how larger the number of stored clusters should be compared to user-defined number of clusters.
+    /// Big enough factor is essential for good prediction.
     static const UInt32 multiplication_factor = 30;
     static const UInt32 kmeans_max_iter = 1000;         /// Number of kmeans iteration steps
     static const UInt32 max_tries_to_predict = 1;       /// Number of tries to find the best kmeans prediction
     static constexpr Float64 eps_diff_ = 0.00001;       /// Kmeans stops if difference between clusters is smaller than this value
 
-    mutable std::mt19937 random_generator_;
-
-    UInt32 clusters_num;
-    UInt32 dimensions;
+    UInt32 num_clusters = 0;
+    UInt32 num_dimensions = 0;
 
     std::vector<Cluster> clusters;
     mutable std::vector<std::vector<Float64>> predicted_clusters;

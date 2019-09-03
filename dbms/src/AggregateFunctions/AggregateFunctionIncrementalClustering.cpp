@@ -11,10 +11,11 @@ namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionIncrementalClustering(
-        const std::string & name, const DataTypes & argument_types, const Array & parameters)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     if (parameters.size() != 1)
-        throw Exception("Aggregate function " + name + " requires exactly one parameter - number of clusters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("Aggregate function " + name + " requires exactly one parameter - number of clusters",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
@@ -26,10 +27,12 @@ AggregateFunctionPtr createAggregateFunctionIncrementalClustering(
 
     UInt32 clusters_num = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[0]);
 
-    if (argument_types.size() < 1)
-        throw Exception("Aggregate function " + name + " requires at least one arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (argument_types.empty())
+        throw Exception("Aggregate function " + name + " requires at least one arguments",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<AggregateFunctionIncrementalClustering>(clusters_num, argument_types.size(), argument_types, parameters);
+    return std::make_shared<AggregateFunctionIncrementalClustering>(
+            clusters_num, argument_types.size(), argument_types, parameters);
 }
 
 }
