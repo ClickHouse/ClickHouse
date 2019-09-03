@@ -103,13 +103,13 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-### TTL expression
+### TTL Expression
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
 ## Column Compression Codecs
 
-By default, ClickHouse applies to columns the compression method, defined in [server settings](../operations/server_settings/settings.md#compression). Also, you can define compression method for each individual column in the `CREATE TABLE` query.
+By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
 ```
 CREATE TABLE codec_example
@@ -124,12 +124,12 @@ ENGINE = <Engine>
 ...
 ```
 
-If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codecs combination for you project, pass benchmarks, similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
+If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codec combination for you project, pass the benchmarks as described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
 
 !!!warning
-    You cannot decompress ClickHouse database files with external utilities, for example, `lz4`. Use the special utility, [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
+    You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor) utility.
 
-Compression is supported for the table engines:
+Compression is supported for the following table engines:
 
 - [*MergeTree](../operations/table_engines/mergetree.md) family
 - [*Log](../operations/table_engines/log_family.md) family
@@ -138,27 +138,27 @@ Compression is supported for the table engines:
 
 ClickHouse supports common purpose codecs and specialized codecs.
 
-### Specialized codecs {#create-query-specialized-codecs}
+### Specialized Codecs {#create-query-specialized-codecs}
 
-These codecs are designed to make compression more effective using specifities of the data. Some of this codecs don't compress data by itself, but they prepare data to be compressed better by common purpose codecs.
+These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don't compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better.
 
 Specialized codecs:
 
-- `Delta(delta_bytes)` — Compression approach, when raw values are replaced with the difference of two neighbor values. Up to `delta_bytes` are used for storing delta value, so `delta_bytes` is a maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. Default value for `delta_bytes` is `sizeof(type)`, if it is equals to 1, 2, 4, 8. Otherwise it equals 1.
-- `DoubleDelta` — Compresses values down to 1 bit (in the best case), using deltas calculation. Best compression rates are achieved on monotonic sequences with constant stride, for example, time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. Uses 1 extra bit for 32 byte deltas: 5 bit prefix instead of 4 bit prefix. For additional information, see the "Compressing time stamps" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
-- `Gorilla` — Compresses values down to 1 bit (in the best case). The codec is efficient when storing series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64 bit types. For additional information, see the "Compressing values" section of the [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) document.
-- `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` and `DateTime`). At each step of its algorithm, codec takes a block of 64 values, puts them into 64x64 bit matrix, transposes it, crops the unused bits of values and returns the rest as a sequence. Unused bits are the bits, that don't differ between maximum and minimum values in the whole data part for which the compression is used.
+- `Delta(delta_bytes)` — A compression approach in which raw values are replaced by the difference of two neighboring values. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1.
+- `DoubleDelta` — Compresses values down to 1 bit (at most) using delta calculations. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+- `Gorilla` — Compresses values down to 1 bit (at most). Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+- `T64` — A compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date`, and `DateTime`). At each step of its algorithm, the codec takes a block of 64 values, puts them into a 64x64-bit matrix, transposes it, crops the unused bits, and returns the rest as a sequence. Unused bits are those that don't differ between maximum and minimum values in the whole data part that compression is used for.
 
-### Common purpose codecs {#create-query-common-purpose-codecs}
+### Common Purpose Codecs {#create-query-common-purpose-codecs}
 
 Codecs:
 
 - `NONE` — No compression.
 - `LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
-- `LZ4HC[(level)]` — LZ4 CH (high compression) algorithm with configurable level. Default level: 9. If you set `level <= 0`, the default level is applied. Possible levels: [1, 12]. Recommended levels are in range: [4, 9].
+- `LZ4HC[(level)]` — LZ4 CH (high compression) algorithm with configurable level. Default level: 9. If set to `level <= 0`, the default level is applied. Possible levels: [1, 12]. Recommended levels fall in the range of [4, 9].
 - `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: [1, 22]. Default level: 1.
 
-High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times. Greater levels stands for better compression and higher CPU usage.
+High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
 ## Temporary Tables
 
