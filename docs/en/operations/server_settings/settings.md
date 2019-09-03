@@ -556,8 +556,8 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 
 ## query_masking_rules
 
-Regexp-based rules, which will be applied to queries before storing them in server logs,
-`system.query_log` table, `system.processes` table. That allows preventing
+Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
+`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to client. That allows preventing
 sensitive data leakage from SQL queries (like names / emails / personal
 identifiers / credit card numbers etc) to logs.
 
