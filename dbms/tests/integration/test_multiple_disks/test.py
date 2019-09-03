@@ -239,7 +239,16 @@ def test_alter_move(start_cluster, name, engine):
 def produce_alter_move(node, name):
     move_type = random.choice(["PART", "PARTITION"])
     if move_type == "PART":
-        parts = node1.query("SELECT name from system.parts where table = '{}'".format(name)).strip().split('\n')
+        for _ in range(10):
+            try:
+                parts = node1.query("SELECT name from system.parts where table = '{}'".format(name)).strip().split('\n')
+                break
+            except QueryRuntimeException:
+                pass
+        else:
+            raise Exception("Cannot select from system.parts")
+
+
         move_part = random.choice(["'" + part + "'" for part in parts])
     else:
         move_part = random.choice([201903, 201904])
