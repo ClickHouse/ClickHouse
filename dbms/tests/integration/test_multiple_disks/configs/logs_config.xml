@@ -9,4 +9,9 @@
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
     </logger>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <flush_interval_milliseconds>500</flush_interval_milliseconds>
+    </part_log>
 </yandex>

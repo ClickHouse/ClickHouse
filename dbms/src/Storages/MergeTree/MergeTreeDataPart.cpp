@@ -246,7 +246,7 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 String MergeTreeDataPart::getFullPath() const
 {
     if (relative_path.empty())
-        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
     return storage.getFullPathOnDisk(disk) + relative_path + "/";
 }

@@ -941,64 +941,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     return true;
 }
 
-
-void StorageReplicatedMergeTree::writePartLog(
-    PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
-    const String & new_part_name,
-    const DataPartPtr & result_part,
-    const DataPartsVector & source_parts,
-    const MergeListEntry * merge_entry)
-{
-    try
-    {
-        auto part_log = global_context.getPartLog(database_name);
-        if (!part_log)
-            return;
-
-        PartLogElement part_log_elem;
-
-        part_log_elem.event_type = type;
-
-        part_log_elem.error = static_cast<UInt16>(execution_status.code);
-        part_log_elem.exception = execution_status.message;
-
-        part_log_elem.event_time = time(nullptr);
-        /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-        part_log_elem.duration_ms = elapsed_ns / 10000000;
-
-        part_log_elem.database_name = database_name;
-        part_log_elem.table_name = table_name;
-        part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
-        part_log_elem.part_name = new_part_name;
-
-        if (result_part)
-        {
-            part_log_elem.bytes_compressed_on_disk = result_part->bytes_on_disk;
-            part_log_elem.rows = result_part->rows_count;
-        }
-
-        part_log_elem.source_part_names.reserve(source_parts.size());
-        for (const auto & source_part : source_parts)
-            part_log_elem.source_part_names.push_back(source_part->name);
-
-        if (merge_entry)
-        {
-            part_log_elem.rows_read = (*merge_entry)->rows_read;
-            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
-
-            part_log_elem.rows = (*merge_entry)->rows_written;
-            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
-        }
-
-        part_log->add(part_log_elem);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-    }
-}
-
-
 bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 {
     // Log source part names just in case
@@ -2238,13 +2180,37 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movingPartsTask()
             moving_tagger.emplace(std::move(parts_to_move), std::move(moving_parts_lock), currently_moving_parts);
         }
 
-        auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
 
-        std::string reason;
-        if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+        for (const auto & moving_part : moving_tagger->parts_to_move)
         {
-            LOG_INFO(log, "Move failed. " << reason);
-            return BackgroundProcessingPoolTaskResult::ERROR;
+            Stopwatch stopwatch;
+            DataPartPtr cloned_part;
+
+            auto write_part_log = [&](const ExecutionStatus & execution_status) {
+                writePartLog(
+                    PartLogElement::Type::MOVE_PART,
+                    execution_status,
+                    stopwatch.elapsed(),
+                    moving_part.part->name,
+                    cloned_part,
+                    {moving_part.part},
+                    nullptr);
+            };
+
+            try
+            {
+                cloned_part = parts_mover.clonePart(moving_part);
+                parts_mover.swapClonedPart(cloned_part);
+                write_part_log({});
+            }
+            catch (...)
+            {
+                write_part_log(ExecutionStatus::fromCurrentException());
+                if (cloned_part)
+                    cloned_part->remove();
+
+                return BackgroundProcessingPoolTaskResult::ERROR;
+            }
         }
 
         return BackgroundProcessingPoolTaskResult::SUCCESS;
@@ -2265,7 +2231,6 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movingPartsTask()
 void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & parts, DiskSpace::SpacePtr space)
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
-
 
     std::optional<MovingPartsTagger> moving_tagger;
     {
@@ -2295,11 +2260,38 @@ void StorageReplicatedMergeTree::movePartsToSpace(const MergeTreeData::DataParts
         moving_tagger.emplace(std::move(parts_to_move), std::move(moving_parts_lock), currently_moving_parts);
     }
 
-    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
+    for (const auto & moving_part : moving_tagger->parts_to_move)
+    {
+        Stopwatch stopwatch;
+        DataPartPtr cloned_part;
 
-    std::string reason;
-    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
-        throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
+        auto write_part_log = [&](const ExecutionStatus & execution_status) {
+            writePartLog(
+                PartLogElement::Type::MOVE_PART,
+                execution_status,
+                stopwatch.elapsed(),
+                moving_part.part->name,
+                cloned_part,
+                {moving_part.part},
+                nullptr);
+        };
+
+        try
+        {
+            cloned_part = parts_mover.clonePart(moving_part);
+            parts_mover.swapClonedPart(cloned_part);
+            write_part_log({});
+        }
+        catch (...)
+        {
+            write_part_log(ExecutionStatus::fromCurrentException());
+            if (cloned_part)
+                cloned_part->remove();
+
+            throw;
+        }
+    }
+
 }
 
 void StorageReplicatedMergeTree::mergeSelectingTask()

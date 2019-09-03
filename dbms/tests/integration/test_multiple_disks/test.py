@@ -185,8 +185,25 @@ def test_background_move(start_cluster, name, engine):
         # first (oldest) part was moved to external
         assert used_disks[0] == 'external'
 
+        path = node1.query("SELECT path_on_disk FROM system.part_log WHERE table = '{}' AND event_type='MovePart' ORDER BY event_time LIMIT 1".format(name))
+
+        # first (oldest) part was moved to external
+        assert path.startswith("/external")
+        print node1.query("SELECT * FROM system.part_log WHERE table = '{}' AND event_type='MovePart' ORDER BY event_time".format(name))
+
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+def get_path_for_part_from_part_log(node, table, part_name):
+    node.query("SYSTEM FLUSH LOGS")
+    path = node.query("SELECT path_on_disk FROM system.part_log WHERE table = '{}' and part_name = '{}' ORDER BY event_time DESC LIMIT 1".format(table, part_name))
+    return path.strip()
+
+def get_paths_for_partition_from_part_log(node, table, partition_id):
+    node.query("SYSTEM FLUSH LOGS")
+    paths = node.query("SELECT path_on_disk FROM system.part_log WHERE table = '{}' and partition_id = '{}' ORDER BY event_time DESC".format(table, partition_id))
+    return paths.strip().split('\n')
 
 @pytest.mark.parametrize("name,engine", [
     ("altering_mt","MergeTree()"),
@@ -213,23 +230,33 @@ def test_alter_move(start_cluster, name, engine):
 
         first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' ORDER BY modification_time LIMIT 1".format(name)).strip()
 
+        time.sleep(0.7)
         node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, first_part))
         disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
         assert disk == 'external'
+        assert get_path_for_part_from_part_log(node1, name, first_part).startswith("/external")
 
+
+        time.sleep(0.7)
         node1.query("ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part))
         disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
         assert disk == 'jbod1'
+        assert get_path_for_part_from_part_log(node1, name, first_part).startswith("/jbod1")
 
+        time.sleep(0.7)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name))
         disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
         assert len(disks) == 2
         assert all(d == "external" for d in disks)
+        assert all(path.startswith("/external") for path in get_paths_for_partition_from_part_log(node1, name, '201904')[:2])
 
+
+        time.sleep(0.7)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
         disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
         assert len(disks) == 2
         assert all(d == "jbod2" for d in disks)
+        assert all(path.startswith("/jbod2") for path in get_paths_for_partition_from_part_log(node1, name, '201904')[:2])
 
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "4\n"
 

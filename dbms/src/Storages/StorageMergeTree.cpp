@@ -572,45 +572,14 @@ bool StorageMergeTree::merge(
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        try
-        {
-            auto part_log = global_context.getPartLog(database_name);
-            if (!part_log)
-                return;
-
-            PartLogElement part_log_elem;
-
-            part_log_elem.event_type = PartLogElement::MERGE_PARTS;
-            part_log_elem.event_time = time(nullptr);
-            part_log_elem.duration_ms = stopwatch.elapsed() / 1000000;
-
-            part_log_elem.database_name = database_name;
-            part_log_elem.table_name = table_name;
-            part_log_elem.partition_id = future_part.part_info.partition_id;
-            part_log_elem.part_name = future_part.name;
-
-            if (new_part)
-                part_log_elem.bytes_compressed_on_disk = new_part->bytes_on_disk;
-
-            part_log_elem.source_part_names.reserve(future_part.parts.size());
-            for (const auto & source_part : future_part.parts)
-                part_log_elem.source_part_names.push_back(source_part->name);
-
-            part_log_elem.rows_read = (*merge_entry)->rows_read;
-            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
-
-            part_log_elem.rows = (*merge_entry)->rows_written;
-            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
-
-            part_log_elem.error = static_cast<UInt16>(execution_status.code);
-            part_log_elem.exception = execution_status.message;
-
-            part_log->add(part_log_elem);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
+        writePartLog(
+            PartLogElement::MERGE_PARTS,
+            execution_status,
+            stopwatch.elapsed(),
+            future_part.name,
+            new_part,
+            future_part.parts,
+            merge_entry.get());
     };
 
     try
@@ -670,12 +639,38 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
         moving_tagger.emplace(std::move(parts_to_move), std::move(background_processing_lock), currently_moving_parts);
     }
 
-    std::string reason;
-    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
+    for (const auto & moving_part : moving_tagger->parts_to_move)
+    {
+        Stopwatch stopwatch;
+        DataPartPtr cloned_part;
 
-    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
-        throw Exception("Move failed. " + reason, ErrorCodes::LOGICAL_ERROR);
+        auto write_part_log = [&](const ExecutionStatus & execution_status) {
+            writePartLog(
+                PartLogElement::Type::MOVE_PART,
+                execution_status,
+                stopwatch.elapsed(),
+                moving_part.part->name,
+                cloned_part,
+                {moving_part.part},
+                nullptr);
+        };
+
+        try
+        {
+            cloned_part = parts_mover.clonePart(moving_part);
+            parts_mover.swapClonedPart(cloned_part);
+            write_part_log({});
+        }
+        catch (...)
+        {
+            write_part_log(ExecutionStatus::fromCurrentException());
+            if (cloned_part)
+                cloned_part->remove();
+            throw;
+        }
+    }
 }
+
 
 bool StorageMergeTree::moveParts()
 {
@@ -711,13 +706,36 @@ bool StorageMergeTree::moveParts()
         moving_tagger.emplace(std::move(parts_to_move), std::move(background_processing_lock), currently_moving_parts);
     }
 
-    auto cloned_parts = parts_mover.cloneParts(moving_tagger->parts_to_move);
-
-    std::string reason;
-    if (!parts_mover.swapClonedParts(cloned_parts, &reason))
+    for (const auto & moving_part : moving_tagger->parts_to_move)
     {
-        LOG_WARNING(log, "Move failed: " << reason);
-        return false;
+        Stopwatch stopwatch;
+        DataPartPtr cloned_part;
+
+        auto write_part_log = [&](const ExecutionStatus & execution_status)
+        {
+            writePartLog(
+                PartLogElement::Type::MOVE_PART,
+                execution_status,
+                stopwatch.elapsed(),
+                moving_part.part->name,
+                cloned_part,
+                {moving_part.part},
+                nullptr);
+        };
+
+        try
+        {
+            cloned_part = parts_mover.clonePart(moving_part);
+            parts_mover.swapClonedPart(cloned_part);
+            write_part_log({});
+        }
+        catch (...)
+        {
+            write_part_log(ExecutionStatus::fromCurrentException());
+            if (cloned_part)
+                cloned_part->remove();
+            return false;
+        }
     }
 
     return true;
@@ -779,46 +797,14 @@ bool StorageMergeTree::tryMutatePart()
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        try
-        {
-            auto part_log = global_context.getPartLog(database_name);
-            if (!part_log)
-                return;
-
-            PartLogElement part_log_elem;
-
-            part_log_elem.event_type = PartLogElement::MUTATE_PART;
-
-            part_log_elem.error = static_cast<UInt16>(execution_status.code);
-            part_log_elem.exception = execution_status.message;
-
-            part_log_elem.event_time = time(nullptr);
-            part_log_elem.duration_ms = stopwatch.elapsed() / 1000000;
-
-            part_log_elem.database_name = database_name;
-            part_log_elem.table_name = table_name;
-            part_log_elem.partition_id = future_part.part_info.partition_id;
-            part_log_elem.part_name = future_part.name;
-
-            part_log_elem.rows_read = (*merge_entry)->rows_read;
-            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
-
-            part_log_elem.rows = (*merge_entry)->rows_written;
-            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
-
-            if (new_part)
-                part_log_elem.bytes_compressed_on_disk = new_part->bytes_on_disk;
-
-            part_log_elem.source_part_names.reserve(future_part.parts.size());
-            for (const auto & source_part : future_part.parts)
-                part_log_elem.source_part_names.push_back(source_part->name);
-
-            part_log->add(part_log_elem);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
+        writePartLog(
+            PartLogElement::MUTATE_PART,
+            execution_status,
+            stopwatch.elapsed(),
+            future_part.name,
+            new_part,
+            future_part.parts,
+            merge_entry.get());
     };
 
     try

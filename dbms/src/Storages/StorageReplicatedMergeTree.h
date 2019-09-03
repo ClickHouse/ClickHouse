@@ -371,12 +371,6 @@ private:
       */
     bool executeLogEntry(LogEntry & entry);
 
-    void writePartLog(
-        PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
-        const String & new_part_name,
-        const DataPartPtr & result_part,
-        const DataPartsVector & source_parts,
-        const MergeListEntry * merge_entry);
 
     void executeDropRange(const LogEntry & entry);
 
