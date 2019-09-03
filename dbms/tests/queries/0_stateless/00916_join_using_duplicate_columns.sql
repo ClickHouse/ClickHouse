@@ -1,4 +1,5 @@
 SET any_join_distinct_right_table_keys = 1;
+SET joined_subquery_requires_alias = 0;
 
 SELECT * FROM (SELECT 1 AS x) ALL LEFT JOIN (SELECT 1 AS x) USING x;
 SELECT * FROM (SELECT 1 AS x) ALL LEFT JOIN (SELECT 2 AS x) USING x;

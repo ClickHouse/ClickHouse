@@ -34,9 +34,9 @@ select 'max(key) from tab_00612 where (key, left array join n.x) in ((1, 1), (2,
 select max(key) from tab_00612 left array join `n.x` as val where (key, val) in ((1, 1), (2, 2));
 select max(key) from tab_00612 left array join n as val where (key, val.x) in ((1, 1), (2, 2));
 select 'max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) using key where (key, val) in (1, 1)';
-select max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) using key where (key, val) in (1, 1);
+select max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) js2 using key where (key, val) in (1, 1);
 select 'max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) using key where (key, val) in ((1, 1), (2, 2))';
-select max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) using key where (key, val) in ((1, 1), (2, 2));
+select max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) js2 using key where (key, val) in ((1, 1), (2, 2));
 
 drop  table if exists tab_00612;
 CREATE TABLE tab_00612 (key1 Int32, id1  Int64, c1 Int64) ENGINE = MergeTree  PARTITION BY id1 ORDER BY (key1) ;
