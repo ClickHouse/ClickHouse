@@ -1,5 +1,4 @@
 #include <Interpreters/SubqueryForSet.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <DataStreams/LazyBlockInputStream.h>
 
