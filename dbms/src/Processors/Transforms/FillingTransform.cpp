@@ -53,8 +53,9 @@ FillingTransform::FillingTransform(
     {
         if (is_fill_column[i])
         {
+            size_t pos = fill_column_positions.size();
+            auto & descr = filling_row.getFillDescription(pos);
             auto type = header_.getByPosition(i).type;
-            auto & descr = filling_row.getFillDescription(i);
             if (!try_convert_fields(descr, type))
                 throw Exception("Incompatible types of WITH FILL expression values with column type "
                     + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
