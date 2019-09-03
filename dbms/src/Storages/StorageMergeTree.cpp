@@ -837,6 +837,9 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
     bool merges_mutations_blocked = merger_mutator.merges_blocker.isCancelled();
     bool moves_blocked = parts_mover.moves_blocker.isCancelled();
 
+    if (merges_mutations_blocked && moves_blocked)
+        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+
     try
     {
         /// Clear old parts. It is unnecessary to do it more than once a second.
@@ -858,10 +861,11 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (!moves_blocked && moveParts())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
+
         if (!merges_mutations_blocked && tryMutatePart())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
-        else
-            return BackgroundProcessingPoolTaskResult::ERROR;
+
+        return BackgroundProcessingPoolTaskResult::ERROR;
     }
     catch (const Exception & e)
     {

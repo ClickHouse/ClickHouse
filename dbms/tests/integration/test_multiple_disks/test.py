@@ -309,20 +309,20 @@ def test_alter_move(start_cluster, name, engine):
 
         first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' ORDER BY modification_time LIMIT 1".format(name)).strip()
 
-        time.sleep(0.7)
+        time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, first_part))
         disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
         assert disk == 'external'
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith("/external")
 
 
-        time.sleep(0.7)
+        time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part))
         disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
         assert disk == 'jbod1'
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith("/jbod1")
 
-        time.sleep(0.7)
+        time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name))
         disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
         assert len(disks) == 2
@@ -330,7 +330,7 @@ def test_alter_move(start_cluster, name, engine):
         assert all(path.startswith("/external") for path in get_paths_for_partition_from_part_log(node1, name, '201904')[:2])
 
 
-        time.sleep(0.7)
+        time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
         disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
         assert len(disks) == 2
