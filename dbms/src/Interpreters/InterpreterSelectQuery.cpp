@@ -1038,20 +1038,18 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
                 }
 
-                const auto & join = query.join()->table_join->as<ASTTableJoin &>();
-                if (isRightOrFull(join.kind))
+                if (auto join = expressions.before_join->getTableJoin())
                 {
-                    auto stream = expressions.before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
-                            header_before_join, settings.max_block_size);
-
-                    if constexpr (pipeline_with_processors)
+                    if (auto stream = join->createStreamWithNonJoinedDataIfFullOrRightJoin(header_before_join, settings.max_block_size))
                     {
-                        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                        pipeline.addDelayedStream(source);
+                        if constexpr (pipeline_with_processors)
+                        {
+                            auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+                            pipeline.addDelayedStream(source);
+                        }
+                        else
+                            pipeline.stream_with_non_joined_data = std::move(stream);
                     }
-                    else
-                        pipeline.stream_with_non_joined_data = std::move(stream);
-
                 }
             }
 
