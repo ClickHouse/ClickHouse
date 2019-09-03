@@ -1,4 +1,4 @@
-#include "FillingBlockInputStream.h"
+#include <DataStreams/FillingBlockInputStream.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypesNumber.h>
 
