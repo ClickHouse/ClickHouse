@@ -120,56 +120,26 @@ private:
 
     struct TaskQueue
     {
+        bool pop(ExecutionState *& state)
+        {
+            if (stack.pop(state))
+            {
+                num_popped.fetch_add(1);
+                return true;
+            }
+
+            return false;
+        }
+
         void push(ExecutionState * state)
         {
-            auto stream = state->processor->getStream();
-            if (stream >= queues.size())
-                stream = queues.size() - 1;
-
-            std::lock_guard lg(*mutexes[stream]);
-            queues[stream].push(state);
+            stack.push(state);
+            num_pushed.fetch_add(1);
         }
 
-        ExecutionState * pop(size_t stream)
-        {
-            {
-                std::lock_guard lg(*mutexes[stream]);
-
-                if (!queues[stream].empty())
-                {
-                    auto res = queues[stream].front();
-                    queues[stream].pop();
-                    return res;
-                }
-            }
-
-            stream = queues.size() - 1;
-            if (!queues[stream].empty())
-            {
-                auto res = queues[stream].front();
-                queues[stream].pop();
-                return res;
-            }
-
-            return nullptr;
-        }
-
-        bool empty(size_t stream)
-        {
-            std::lock_guard lg(*mutexes[stream]);
-            return queues[stream].empty();
-        }
-
-        void init(size_t num_streams)
-        {
-            queues.resize(num_streams + 1);
-
-            for (size_t i = 0; i <= num_streams; ++i)
-                mutexes.emplace_back(std::make_unique<std::mutex>());
-        }
-
-        std::vector<std::queue<ExecutionState *>> queues;
-        std::vector<std::unique_ptr<std::mutex>> mutexes;
+        lfs::LFStack<ExecutionState> stack;
+        std::atomic<UInt64> num_pushed {0};
+        std::atomic<UInt64> num_popped {0};
     };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
