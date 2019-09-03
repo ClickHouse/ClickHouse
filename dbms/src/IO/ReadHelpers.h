@@ -39,7 +39,8 @@
 #endif
 
 
-#define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
+/// 1 GiB
+#define DEFAULT_MAX_STRING_SIZE (1ULL << 30)
 
 
 namespace DB
@@ -424,6 +425,9 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 /// Read and append result to array of characters.
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readNullTerminated(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);

@@ -2,7 +2,9 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Parsers/IAST.h>
+#include <Core/SettingsCommon.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 #include <utility>
 #include <memory>
@@ -13,33 +15,13 @@ namespace DB
 class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
+class Block;
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+class Join;
+using JoinPtr = std::shared_ptr<Join>;
 
-struct JoinedColumn
+class AnalyzedJoin
 {
-    /// Column will be joined to block.
-    NameAndTypePair name_and_type;
-    /// original column name from joined source.
-    String original_name;
-
-    JoinedColumn(NameAndTypePair name_and_type_, String original_name_)
-            : name_and_type(std::move(name_and_type_)), original_name(std::move(original_name_)) {}
-
-    bool operator==(const JoinedColumn & o) const
-    {
-        return name_and_type == o.name_and_type && original_name == o.original_name;
-    }
-};
-
-using JoinedColumnsList = std::list<JoinedColumn>;
-
-struct AnalyzedJoin
-{
-
-    /// NOTE: So far, only one JOIN per query is supported.
-
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
       * The join is made by column k.
       * During the JOIN,
@@ -51,31 +33,62 @@ struct AnalyzedJoin
       *     to the subquery will be added expression `expr(t2 columns)`.
       * It's possible to use name `expr(t2 columns)`.
       */
+
+    friend class SyntaxAnalyzer;
+
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
     ASTs key_asts_left;
     ASTs key_asts_right;
-    bool with_using = true;
+    ASTTableJoin table_join;
+    bool join_use_nulls = false;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
-    JoinedColumnsList columns_from_joined_table;
-    /// Columns from joined table which may be added to block.
-    /// It's columns_from_joined_table without duplicate columns and possibly modified types.
-    JoinedColumnsList available_joined_columns;
+    NamesAndTypesList columns_from_joined_table;
+    /// Columns will be added to block by JOIN. It's a subset of columns_from_joined_table with corrected Nullability
+    NamesAndTypesList columns_added_by_join;
 
+    /// Name -> original name. Names are the same as in columns_from_joined_table list.
+    std::unordered_map<String, String> original_names;
+    /// Original name -> name. Only ranamed columns.
+    std::unordered_map<String, String> renames;
+
+    JoinPtr hash_join;
+
+public:
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
-    ExpressionActionsPtr createJoinedBlockActions(
-        const JoinedColumnsList & columns_added_by_join, /// Subset of available_joined_columns.
-        const ASTSelectQuery * select_query_with_join,
-        const Context & context) const;
+    bool hasUsing() const { return table_join.using_expression_list != nullptr; }
+    bool hasOn() const { return !hasUsing(); }
 
-    Names getOriginalColumnNames(const NameSet & required_columns) const;
+    NameSet getQualifiedColumnsSet() const;
+    NameSet getOriginalColumnsSet() const;
+    std::unordered_map<String, String> getOriginalColumnsMap(const NameSet & required_columns) const;
 
-    void calculateColumnsFromJoinedTable(const NamesAndTypesList & columns, const Names & original_names);
-    void calculateAvailableJoinedColumns(bool make_nullable);
+    void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
     size_t rightKeyInclusion(const String & name) const;
+
+    void appendRequiredColumns(const Block & sample, NameSet & required_columns) const;
+    void addJoinedColumn(const NameAndTypePair & joined_column);
+    void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
+
+    ASTPtr leftKeysList() const;
+    ASTPtr rightKeysList() const; /// For ON syntax only
+
+    Names requiredJoinedNames() const;
+    const Names & keyNamesLeft() const { return key_names_left; }
+    const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
+    const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
+
+    void setHashJoin(JoinPtr join) { hash_join = join; }
+    JoinPtr makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const;
+    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
+    void joinBlock(Block & block) const;
+    void joinTotals(Block & block) const;
+    bool hasTotals() const;
+
+    static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
 };
 
 struct ASTTableExpression;

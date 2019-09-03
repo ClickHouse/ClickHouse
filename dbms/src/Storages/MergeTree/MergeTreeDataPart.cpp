@@ -364,6 +364,8 @@ void MergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
+    // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
+
     String from = storage.full_path + relative_path;
     String to = storage.full_path + "delete_tmp_" + name;
 
@@ -406,11 +408,14 @@ void MergeTreeDataPart::remove() const
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
+        std::shared_lock<std::shared_mutex> lock(columns_lock);
+
         for (const auto & [file, _] : checksums.files)
         {
             String path_to_remove = to + "/" + file;
             if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
+                throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove,
+                                       ErrorCodes::CANNOT_UNLINK);
         }
 #if !__clang__
 #pragma GCC diagnostic pop
@@ -420,11 +425,12 @@ void MergeTreeDataPart::remove() const
         {
             String path_to_remove = to + "/" + file;
             if (0 != unlink(path_to_remove.c_str()))
-                throwFromErrno("Cannot unlink file " + path_to_remove, ErrorCodes::CANNOT_UNLINK);
+                throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove,
+                                       ErrorCodes::CANNOT_UNLINK);
         }
 
         if (0 != rmdir(to.c_str()))
-            throwFromErrno("Cannot rmdir file " + to, ErrorCodes::CANNOT_UNLINK);
+            throwFromErrnoWithPath("Cannot rmdir file " + to, to, ErrorCodes::CANNOT_UNLINK);
     }
     catch (...)
     {

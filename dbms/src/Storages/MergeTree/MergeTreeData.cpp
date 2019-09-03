@@ -12,12 +12,13 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MarkInCompressedFile.h>
-#include <Formats/ValuesRowInputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -87,6 +88,10 @@ namespace ErrorCodes
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
     extern const int BAD_TTL_EXPRESSION;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int BAD_DATA_PART_NAME;
+    extern const int UNKNOWN_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 
@@ -94,6 +99,7 @@ MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
     const String & full_path_, const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
+    const ConstraintsDescription & constraints_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
@@ -102,13 +108,12 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & sample_by_ast_,
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    const MergeTreeSettings & settings_,
+    std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : global_context(context_),
     merging_params(merging_params_),
-    settings(settings_),
     partition_by_ast(partition_by_ast_),
     sample_by_ast(sample_by_ast_),
     ttl_table_ast(ttl_table_ast_),
@@ -117,10 +122,12 @@ MergeTreeData::MergeTreeData(
     full_path(full_path_),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name)),
+    storage_settings(std::move(storage_settings_)),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    setPrimaryKeyIndicesAndColumns(order_by_ast_, primary_key_ast_, columns_, indices_);
+    const auto settings = getSettings();
+    setProperties(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -130,12 +137,11 @@ MergeTreeData::MergeTreeData(
         sampling_expr_column_name = sample_by_ast->getColumnName();
 
         if (!primary_key_sample.has(sampling_expr_column_name)
-            && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
+            && !attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
         auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
-        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
-            .getRequiredSourceColumns();
+        columns_required_for_sampling = syntax->requiredSourceColumns();
     }
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -230,9 +236,10 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setPrimaryKeyIndicesAndColumns(
+void MergeTreeData::setProperties(
     const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
-    const ColumnsDescription & new_columns, const IndicesDescription & indices_description, bool only_check)
+    const ColumnsDescription & new_columns, const IndicesDescription & indices_description,
+    const ConstraintsDescription & constraints_description, bool only_check)
 {
     if (!new_order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -295,8 +302,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
         if (!added_key_column_expr_list->children.empty())
         {
             auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
-            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, global_context)
-                .getRequiredSourceColumns();
+            Names used_columns = syntax->requiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
             NamesAndTypesList added_columns;
@@ -353,10 +359,10 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
             const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
             new_indices.push_back(
-                    MergeTreeIndexFactory::instance().get(
-                            all_columns,
-                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                            global_context));
+                 MergeTreeIndexFactory::instance().get(
+                        all_columns,
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
+                        global_context));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
@@ -401,6 +407,8 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
         setIndices(indices_description);
         skip_indices = std::move(new_indices);
+
+        setConstraints(constraints_description);
 
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
         sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
@@ -725,6 +733,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
     LOG_DEBUG(log, "Loading data parts");
 
+    const auto settings = getSettings();
     Strings part_file_names;
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
@@ -736,117 +745,141 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         part_file_names.push_back(it.name());
     }
 
+    auto part_lock = lockParts();
+    data_parts_indexes.clear();
+
+    if (part_file_names.empty())
+    {
+        LOG_DEBUG(log, "There is no data parts");
+        return;
+    }
+
+    /// Parallel loading of data parts.
+    size_t num_threads = std::min(size_t(settings->max_part_loading_threads), part_file_names.size());
+
+    std::mutex mutex;
+
     DataPartsVector broken_parts_to_remove;
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
-    auto lock = lockParts();
-    data_parts_indexes.clear();
+    std::atomic<bool> has_adaptive_parts = false;
+    std::atomic<bool> has_non_adaptive_parts = false;
 
-    bool has_adaptive_parts = false, has_non_adaptive_parts = false;
+    ThreadPool pool(num_threads);
+
     for (const String & file_name : part_file_names)
     {
-        MergeTreePartInfo part_info;
-        if (!MergeTreePartInfo::tryParsePartName(file_name, &part_info, format_version))
-            continue;
-
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info);
-        part->relative_path = file_name;
-        bool broken = false;
-
-        try
+        pool.schedule([&]
         {
-            part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-        }
-        catch (const Exception & e)
-        {
-            /// Don't count the part as broken if there is not enough memory to load it.
-            /// In fact, there can be many similar situations.
-            /// But it is OK, because there is a safety guard against deleting too many parts.
-            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-                || e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
-                || e.code() == ErrorCodes::CANNOT_MUNMAP
-                || e.code() == ErrorCodes::CANNOT_MREMAP)
-                throw;
+            MergeTreePartInfo part_info;
+            if (!MergeTreePartInfo::tryParsePartName(file_name, &part_info, format_version))
+                return;
 
-            broken = true;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        catch (...)
-        {
-            broken = true;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+            MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info);
+            part->relative_path = file_name;
+            bool broken = false;
 
-        /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
-        if (broken)
-        {
-            if (part->info.level == 0)
+            try
             {
-                /// It is impossible to restore level 0 parts.
-                LOG_ERROR(log, "Considering to remove broken part " << full_path + file_name << " because it's impossible to repair.");
-                broken_parts_to_remove.push_back(part);
+                part->loadColumnsChecksumsIndexes(require_part_metadata, true);
             }
-            else
+            catch (const Exception & e)
             {
-                /// Count the number of parts covered by the broken part. If it is at least two, assume that
-                /// the broken part was created as a result of merging them and we won't lose data if we
-                /// delete it.
-                size_t contained_parts = 0;
+                /// Don't count the part as broken if there is not enough memory to load it.
+                /// In fact, there can be many similar situations.
+                /// But it is OK, because there is a safety guard against deleting too many parts.
+                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+                    || e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                    || e.code() == ErrorCodes::CANNOT_MUNMAP
+                    || e.code() == ErrorCodes::CANNOT_MREMAP)
+                    throw;
 
-                LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
+                broken = true;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+            catch (...)
+            {
+                broken = true;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
 
-                for (const String & contained_name : part_file_names)
+            /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
+            if (broken)
+            {
+                if (part->info.level == 0)
                 {
-                    if (contained_name == file_name)
-                        continue;
-
-                    MergeTreePartInfo contained_part_info;
-                    if (!MergeTreePartInfo::tryParsePartName(contained_name, &contained_part_info, format_version))
-                        continue;
-
-                    if (part->info.contains(contained_part_info))
-                    {
-                        LOG_ERROR(log, "Found part " << full_path + contained_name);
-                        ++contained_parts;
-                    }
-                }
-
-                if (contained_parts >= 2)
-                {
-                    LOG_ERROR(log, "Considering to remove broken part " << full_path + file_name << " because it covers at least 2 other parts");
+                    /// It is impossible to restore level 0 parts.
+                    LOG_ERROR(log, "Considering to remove broken part " << full_path << file_name << " because it's impossible to repair.");
+                    std::lock_guard loading_lock(mutex);
                     broken_parts_to_remove.push_back(part);
                 }
                 else
                 {
-                    LOG_ERROR(log, "Detaching broken part " << full_path + file_name
-                        << " because it covers less than 2 parts. You need to resolve this manually");
-                    broken_parts_to_detach.push_back(part);
-                    ++suspicious_broken_parts;
+                    /// Count the number of parts covered by the broken part. If it is at least two, assume that
+                    /// the broken part was created as a result of merging them and we won't lose data if we
+                    /// delete it.
+                    size_t contained_parts = 0;
+
+                    LOG_ERROR(log, "Part " << full_path << file_name << " is broken. Looking for parts to replace it.");
+
+                    for (const String & contained_name : part_file_names)
+                    {
+                        if (contained_name == file_name)
+                            continue;
+
+                        MergeTreePartInfo contained_part_info;
+                        if (!MergeTreePartInfo::tryParsePartName(contained_name, &contained_part_info, format_version))
+                            continue;
+
+                        if (part->info.contains(contained_part_info))
+                        {
+                            LOG_ERROR(log, "Found part " << full_path << contained_name);
+                            ++contained_parts;
+                        }
+                    }
+
+                    if (contained_parts >= 2)
+                    {
+                        LOG_ERROR(log, "Considering to remove broken part " << full_path << file_name << " because it covers at least 2 other parts");
+                        std::lock_guard loading_lock(mutex);
+                        broken_parts_to_remove.push_back(part);
+                    }
+                    else
+                    {
+                        LOG_ERROR(log, "Detaching broken part " << full_path << file_name
+                            << " because it covers less than 2 parts. You need to resolve this manually");
+                        std::lock_guard loading_lock(mutex);
+                        broken_parts_to_detach.push_back(part);
+                        ++suspicious_broken_parts;
+                    }
                 }
+
+                return;
             }
+            if (!part->index_granularity_info.is_adaptive)
+                has_non_adaptive_parts.store(true, std::memory_order_relaxed);
+            else
+                has_adaptive_parts.store(true, std::memory_order_relaxed);
 
-            continue;
-        }
-        if (!part->index_granularity_info.is_adaptive)
-            has_non_adaptive_parts = true;
-        else
-            has_adaptive_parts = true;
+            part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
+            /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
+            part->state = DataPartState::Committed;
 
-        part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
-        /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
-        part->state = DataPartState::Committed;
-
-        if (!data_parts_indexes.insert(part).second)
-            throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+            std::lock_guard loading_lock(mutex);
+            if (!data_parts_indexes.insert(part).second)
+                throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+        });
     }
 
-    if (has_non_adaptive_parts && has_adaptive_parts && !settings.enable_mixed_granularity_parts)
+    pool.wait();
+
+    if (has_non_adaptive_parts && has_adaptive_parts && !settings->enable_mixed_granularity_parts)
         throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
 
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
 
-    if (suspicious_broken_parts > settings.max_suspicious_broken_parts && !skip_sanity_checks)
+    if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
             ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
@@ -933,10 +966,11 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     if (!lock.try_lock())
         return;
 
+    const auto settings = getSettings();
     time_t current_time = time(nullptr);
     ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
         ? current_time - custom_directories_lifetime_seconds
-        : current_time - settings.temporary_directories_lifetime.totalSeconds();
+        : current_time - settings->temporary_directories_lifetime.totalSeconds();
 
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
@@ -987,7 +1021,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
             if (part.unique() && /// Grab only parts that are not used by anyone (SELECTs for example).
                 part_remove_time < now &&
-                now - part_remove_time > settings.old_parts_lifetime.totalSeconds())
+                now - part_remove_time > getSettings()->old_parts_lifetime.totalSeconds())
             {
                 parts_to_delete.emplace_back(it);
             }
@@ -1064,15 +1098,41 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
 void MergeTreeData::clearOldPartsFromFilesystem()
 {
-    auto parts_to_remove = grabOldParts();
-
-    for (const DataPartPtr & part : parts_to_remove)
-    {
-        LOG_DEBUG(log, "Removing part from filesystem " << part->name);
-        part->remove();
-    }
-
+    DataPartsVector parts_to_remove = grabOldParts();
+    clearPartsFromFilesystem(parts_to_remove);
     removePartsFinally(parts_to_remove);
+}
+
+void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
+{
+    const auto settings = getSettings();
+    if (parts_to_remove.size() > 1 && settings->max_part_removal_threads > 1 && parts_to_remove.size() > settings->concurrent_part_removal_threshold)
+    {
+        /// Parallel parts removal.
+
+        size_t num_threads = std::min(size_t(settings->max_part_removal_threads), parts_to_remove.size());
+        ThreadPool pool(num_threads);
+
+        /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
+        for (const DataPartPtr & part : parts_to_remove)
+        {
+            pool.schedule([&]
+            {
+                LOG_DEBUG(log, "Removing part from filesystem " << part->name);
+                part->remove();
+            });
+        }
+
+        pool.wait();
+    }
+    else
+    {
+        for (const DataPartPtr & part : parts_to_remove)
+        {
+            LOG_DEBUG(log, "Removing part from filesystem " << part->name);
+            part->remove();
+        }
+    }
 }
 
 void MergeTreeData::setPath(const String & new_full_path)
@@ -1094,6 +1154,8 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from memory.");
 
+    DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
+
     data_parts_indexes.clear();
     column_sizes.clear();
 
@@ -1102,8 +1164,7 @@ void MergeTreeData::dropAllData()
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
-    for (DataPartPtr part : data_parts_by_info) /// a copy intended
-        part->remove();
+    clearPartsFromFilesystem(all_parts);
 
     Poco::File(full_path).remove(true);
 
@@ -1171,11 +1232,12 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
-    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
-
+    SettingsChanges new_changes;
+    commands.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
     if (getIndices().empty() && !new_indices.empty() &&
             !context.getSettingsRef().allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
@@ -1232,7 +1294,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
 
         if (columns_alter_forbidden.count(command.column_name))
-            throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 
         if (columns_alter_metadata_only.count(command.column_name))
         {
@@ -1257,10 +1319,13 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
     }
 
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
-            new_columns, new_indices, /* only_check = */ true);
+    setProperties(new_order_by_ast, new_primary_key_ast,
+            new_columns, new_indices, new_constraints, /* only_check = */ true);
 
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
+
+    for (const auto & setting : new_changes)
+        checkSettingCanBeChanged(setting.name);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -1274,6 +1339,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
     NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
+    const auto settings = getSettings();
     out_expression = nullptr;
     out_rename_map = {};
     out_force_update_metadata = false;
@@ -1281,7 +1347,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     if (part)
         part_mrk_file_extension = part->index_granularity_info.marks_file_extension;
     else
-        part_mrk_file_extension = settings.index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension();
+        part_mrk_file_extension = settings->index_granularity_bytes == 0 ? getNonAdaptiveMrkExtension() : getAdaptiveMrkExtension();
 
     using NameToType = std::map<String, const IDataType *>;
     NameToType new_types;
@@ -1439,6 +1505,7 @@ void MergeTreeData::alterDataPart(
     bool skip_sanity_checks,
     AlterDataPartTransactionPtr & transaction)
 {
+    const auto settings = getSettings();
     ExpressionActionsPtr expression;
     const auto & part = transaction->getDataPart();
     bool force_update_metadata;
@@ -1454,12 +1521,12 @@ void MergeTreeData::alterDataPart(
             ++num_files_to_remove;
 
     if (!skip_sanity_checks
-        && (num_files_to_modify > settings.max_files_to_modify_in_alter_columns
-            || num_files_to_remove > settings.max_files_to_remove_in_alter_columns))
+        && (num_files_to_modify > settings->max_files_to_modify_in_alter_columns
+            || num_files_to_remove > settings->max_files_to_remove_in_alter_columns))
     {
         transaction->clear();
 
-        const bool forbidden_because_of_modify = num_files_to_modify > settings.max_files_to_modify_in_alter_columns;
+        const bool forbidden_because_of_modify = num_files_to_modify > settings->max_files_to_modify_in_alter_columns;
 
         std::stringstream exception_message;
         exception_message
@@ -1491,7 +1558,7 @@ void MergeTreeData::alterDataPart(
             << " If it is not an error, you could increase merge_tree/"
             << (forbidden_because_of_modify ? "max_files_to_modify_in_alter_columns" : "max_files_to_remove_in_alter_columns")
             << " parameter in configuration file (current value: "
-            << (forbidden_because_of_modify ? settings.max_files_to_modify_in_alter_columns : settings.max_files_to_remove_in_alter_columns)
+            << (forbidden_because_of_modify ? settings->max_files_to_modify_in_alter_columns : settings->max_files_to_remove_in_alter_columns)
             << ")";
 
         throw Exception(exception_message.str(), ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
@@ -1509,7 +1576,8 @@ void MergeTreeData::alterDataPart(
     if (expression)
     {
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
-            *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+                *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+
 
         auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
@@ -1531,8 +1599,11 @@ void MergeTreeData::alterDataPart(
             true /* sync */,
             compression_codec,
             true /* skip_offsets */,
+            /// Don't recalc indices because indices alter is restricted
+            std::vector<MergeTreeIndexPtr>{},
             unused_written_offsets,
-            part->index_granularity);
+            part->index_granularity,
+            &part->index_granularity_info);
 
         in.readPrefix();
         out.writePrefix();
@@ -1574,6 +1645,27 @@ void MergeTreeData::alterDataPart(
     return;
 }
 
+void MergeTreeData::changeSettings(
+        const SettingsChanges & new_changes,
+        TableStructureWriteLockHolder & /* table_lock_holder */)
+{
+    if (!new_changes.empty())
+    {
+        MergeTreeSettings copy = *getSettings();
+        copy.applyChanges(new_changes);
+        storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+    }
+}
+
+void MergeTreeData::checkSettingCanBeChanged(const String & setting_name) const
+{
+    if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
+        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
+    if (MergeTreeSettings::isReadonlySetting(setting_name))
+        throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
+
+}
+
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
 {
     auto & empty_columns = data_part->empty_columns;
@@ -1602,7 +1694,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     empty_columns.clear();
 }
 
-void MergeTreeData::freezeAll(const String & with_name, const Context & context)
+void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
@@ -1713,6 +1805,52 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
+{
+    old_and_new_names.push_back({old_name, new_name});
+}
+
+void MergeTreeData::PartsTemporaryRename::tryRenameAll()
+{
+    renamed = true;
+    for (size_t i = 0; i < old_and_new_names.size(); ++i)
+    {
+        try
+        {
+            const auto & names = old_and_new_names[i];
+            if (names.first.empty() || names.second.empty())
+                throw DB::Exception("Empty part name. Most likely it's a bug.", ErrorCodes::INCORRECT_FILE_NAME);
+            Poco::File(base_dir + names.first).renameTo(base_dir + names.second);
+        }
+        catch (...)
+        {
+            old_and_new_names.resize(i);
+            LOG_WARNING(storage.log, "Cannot rename parts to perform operation on them: " << getCurrentExceptionMessage(false));
+            throw;
+        }
+    }
+}
+
+MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
+{
+    // TODO what if server had crashed before this destructor was called?
+    if (!renamed)
+        return;
+    for (const auto & names : old_and_new_names)
+    {
+        if (names.first.empty())
+            continue;
+        try
+        {
+            Poco::File(base_dir + names.second).renameTo(base_dir + names.first);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 }
 
@@ -2204,28 +2342,29 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 {
+    const auto settings = getSettings();
     const size_t parts_count_in_total = getPartsCount();
-    if (parts_count_in_total >= settings.max_parts_in_total)
+    if (parts_count_in_total >= settings->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
     }
 
     const size_t parts_count_in_partition = getMaxPartsCountForPartition();
-    if (parts_count_in_partition < settings.parts_to_delay_insert)
+    if (parts_count_in_partition < settings->parts_to_delay_insert)
         return;
 
-    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    if (parts_count_in_partition >= settings->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
 
-    const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
-    const size_t k = 1 + parts_count_in_partition - settings.parts_to_delay_insert; /// from 1 to max_k
-    const double delay_milliseconds = ::pow(settings.max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
+    const size_t max_k = settings->parts_to_throw_insert - settings->parts_to_delay_insert; /// always > 0
+    const size_t k = 1 + parts_count_in_partition - settings->parts_to_delay_insert; /// from 1 to max_k
+    const double delay_milliseconds = ::pow(settings->max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
     ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
@@ -2243,8 +2382,9 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 
 void MergeTreeData::throwInsertIfNeeded() const
 {
+    const auto settings = getSettings();
     const size_t parts_count_in_total = getPartsCount();
-    if (parts_count_in_total >= settings.max_parts_in_total)
+    if (parts_count_in_total >= settings->max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
@@ -2252,7 +2392,7 @@ void MergeTreeData::throwInsertIfNeeded() const
 
     const size_t parts_count_in_partition = getMaxPartsCountForPartition();
 
-    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    if (parts_count_in_partition >= settings->parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
@@ -2336,6 +2476,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 {
     MutableDataPartPtr part = std::make_shared<DataPart>(*this, Poco::Path(relative_path).getFileName());
     part->relative_path = relative_path;
+    loadPartAndFixMetadata(part);
+    return part;
+}
+
+void MergeTreeData::loadPartAndFixMetadata(MutableDataPartPtr part)
+{
     String full_part_path = part->getFullPath();
 
     /// Earlier the list of columns was written incorrectly. Delete it and re-create.
@@ -2357,8 +2503,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 
         Poco::File(full_part_path + "checksums.txt.tmp").renameTo(full_part_path + "checksums.txt");
     }
-
-    return part;
 }
 
 
@@ -2410,7 +2554,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
+void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     std::optional<String> prefix;
     String partition_id;
@@ -2484,21 +2628,20 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     if (fields_count)
     {
         ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data, partition_ast.fields_str.size);
+        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
-        MutableColumns columns = partition_key_sample.cloneEmptyColumns();
+        auto input_stream = FormatFactory::instance().getInput("Values", buf, partition_key_sample, context, context.getSettingsRef().max_block_size);
 
-        RowReadExtension unused;
-        if (!input_stream.read(columns, unused))
+        auto block = input_stream->read();
+        if (!block || !block.rows())
             throw Exception(
-                "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
+                "Could not parse partition value: `" + partition_ast.fields_str + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
-            columns[i]->get(0, partition_row[i]);
+            block.getByPosition(i).column->get(0, partition_row[i]);
     }
 
     MergeTreePartition partition(std::move(partition_row));
@@ -2579,24 +2722,122 @@ MergeTreeData::getDetachedParts() const
         res.emplace_back();
         auto & part = res.back();
 
-        /// First, try to parse as <part_name>.
-        if (MergeTreePartInfo::tryParsePartName(dir_name, &part, format_version))
-            continue;
-
-        /// Next, as <prefix>_<partname>. Use entire name as prefix if it fails.
-        part.prefix = dir_name;
-        const auto first_separator = dir_name.find_first_of('_');
-        if (first_separator == String::npos)
-            continue;
-
-        const auto part_name = dir_name.substr(first_separator + 1,
-            dir_name.size() - first_separator - 1);
-        if (!MergeTreePartInfo::tryParsePartName(part_name, &part, format_version))
-           continue;
-
-        part.prefix = dir_name.substr(0, first_separator);
+        DetachedPartInfo::tryParseDetachedPartName(dir_name, part, format_version);
     }
     return res;
+}
+
+void MergeTreeData::validateDetachedPartName(const String & name) const
+{
+    if (name.find('/') != std::string::npos || name == "." || name == "..")
+        throw DB::Exception("Invalid part name", ErrorCodes::INCORRECT_FILE_NAME);
+
+    Poco::File detached_part_dir(full_path + "detached/" + name);
+    if (!detached_part_dir.exists())
+        throw DB::Exception("Detached part \"" + name + "\" not found" , ErrorCodes::BAD_DATA_PART_NAME);
+
+    if (startsWith(name, "attaching_") || startsWith(name, "deleting_"))
+        throw DB::Exception("Cannot drop part " + name + ": "
+                            "most likely it is used by another DROP or ATTACH query.",
+                            ErrorCodes::BAD_DATA_PART_NAME);
+}
+
+void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Context & context)
+{
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
+
+    if (part)
+    {
+        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        validateDetachedPartName(part_name);
+        renamed_parts.addPart(part_name, "deleting_" + part_name);
+    }
+    else
+    {
+        String partition_id = getPartitionIDFromQuery(partition, context);
+        DetachedPartsInfo detached_parts = getDetachedParts();
+        for (const auto & part_info : detached_parts)
+            if (part_info.valid_name && part_info.partition_id == partition_id
+                && part_info.prefix != "attaching" && part_info.prefix != "deleting")
+                renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name);
+    }
+
+    LOG_DEBUG(log, "Will drop " << renamed_parts.old_and_new_names.size() << " detached parts.");
+
+    renamed_parts.tryRenameAll();
+
+    for (auto & names : renamed_parts.old_and_new_names)
+    {
+        Poco::File(renamed_parts.base_dir + names.second).remove(true);
+        LOG_DEBUG(log, "Dropped detached part " << names.first);
+        names.first.clear();
+    }
+}
+
+MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
+        const Context & context, PartsTemporaryRename & renamed_parts)
+{
+    String source_dir = "detached/";
+
+    /// Let's compose a list of parts that should be added.
+    if (attach_part)
+    {
+        String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+        validateDetachedPartName(part_id);
+        renamed_parts.addPart(part_id, "attaching_" + part_id);
+    }
+    else
+    {
+        String partition_id = getPartitionIDFromQuery(partition, context);
+        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
+        ActiveDataPartSet active_parts(format_version);
+
+        std::set<String> part_names;
+        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
+        {
+            String name = it.name();
+            MergeTreePartInfo part_info;
+            // TODO what if name contains "_tryN" suffix?
+            /// Parts with prefix in name (e.g. attaching_1_3_3_0, deleting_1_3_3_0) will be ignored
+            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version))
+                continue;
+            if (part_info.partition_id != partition_id)
+                continue;
+            LOG_DEBUG(log, "Found part " << name);
+            active_parts.add(name);
+            part_names.insert(name);
+        }
+        LOG_DEBUG(log, active_parts.size() << " of them are active");
+
+        /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
+        for (const auto & name : part_names)
+        {
+            String containing_part = active_parts.getContainingPart(name);
+            if (!containing_part.empty() && containing_part != name)
+                // TODO maybe use PartsTemporaryRename here?
+                Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
+            else
+                renamed_parts.addPart(name, "attaching_" + name);
+        }
+    }
+
+    /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
+    renamed_parts.tryRenameAll();
+
+    /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
+    LOG_DEBUG(log, "Checking parts");
+    MutableDataPartsVector loaded_parts;
+    loaded_parts.reserve(renamed_parts.old_and_new_names.size());
+    for (const auto & part_names : renamed_parts.old_and_new_names)
+    {
+        LOG_DEBUG(log, "Checking part " << part_names.second);
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_names.first);
+        part->relative_path = source_dir + part_names.second;
+        loadPartAndFixMetadata(part);
+        loaded_parts.push_back(part);
+    }
+
+    return loaded_parts;
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -2827,7 +3068,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         String backup_part_absolute_path = part_absolute_path;
         backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
         localBackup(part_absolute_path, backup_part_absolute_path);
-        part->is_frozen = true;
+        part->is_frozen.store(true, std::memory_order_relaxed);
         ++parts_processed;
     }
 
@@ -2836,7 +3077,9 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 {
-    if (!settings.enable_mixed_granularity_parts || settings.index_granularity_bytes == 0)
+    const auto settings = getSettings();
+
+    if (!settings->enable_mixed_granularity_parts || settings->index_granularity_bytes == 0)
     {
         if (!canUseAdaptiveGranularity() && src_part->index_granularity_info.is_adaptive)
             return false;

@@ -80,7 +80,7 @@ FROM
 
 # Check per-thread and per-query ProfileEvents consistency
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT $settings --any_join_distinct_right_table_keys=1 -q "
 SELECT PN, PVq, PVt FROM
 (
     SELECT PN, sum(PV) AS PVt

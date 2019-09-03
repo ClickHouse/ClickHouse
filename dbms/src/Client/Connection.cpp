@@ -589,7 +589,7 @@ Connection::Packet Connection::receivePacket()
         }
 
         //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
-
+        //std::cerr << "Client got packet: " << Protocol::Server::toString(res.type) << "\n";
         switch (res.type)
         {
             case Protocol::Server::Data: [[fallthrough]];

@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library(common
+add_library (common
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
@@ -21,11 +21,12 @@ add_library(common
     src/demangle.cpp
     src/setTerminalEcho.cpp
     src/getThreadNumber.cpp
+    src/sleep.cpp
     src/argsToConfig.cpp
-    src/StackTrace.cpp
+    src/Pipe.cpp
+    src/phdr_cache.cpp
 
     include/common/SimpleCache.h
-    include/common/StackTrace.h
     include/common/Types.h
     include/common/DayNum.h
     include/common/DateLUT.h
@@ -45,7 +46,11 @@ add_library(common
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
+    include/common/Pipe.h
     include/common/getThreadNumber.h
+    include/common/sleep.h
+    include/common/SimpleCache.h
+    include/common/phdr_cache.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -59,16 +64,7 @@ add_library(common
     include/ext/unlock_guard.h
     include/ext/singleton.h
 
-    ${CONFIG_COMMON}
-)
-
-if (USE_UNWIND)
-    target_compile_definitions (common PRIVATE USE_UNWIND=1)
-    target_include_directories (common BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
-    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-        target_link_libraries (common PRIVATE ${UNWIND_LIBRARY})
-    endif ()
-endif ()
+    ${CONFIG_COMMON})
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 
@@ -123,12 +119,11 @@ target_link_libraries (common
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
         PRIVATE
-    ${Boost_FILESYSTEM_LIBRARY}
+    stdc++fs
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
     ${MALLOC_LIBRARIES}
-    Threads::Threads
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)

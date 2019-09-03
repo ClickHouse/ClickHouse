@@ -24,7 +24,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors);
+    explicit PipelineExecutor(Processors & processors_);
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -35,14 +35,11 @@ public:
     const Processors & getProcessors() const { return processors; }
 
     /// Cancel execution. May be called from another thread.
-    void cancel()
-    {
-        cancelled = true;
-        finish();
-    }
+    void cancel();
 
 private:
     Processors & processors;
+    std::mutex processors_mutex;
 
     struct Edge
     {
@@ -75,8 +72,8 @@ private:
         std::exception_ptr exception;
         std::function<void()> job;
 
-        IProcessor * processor;
-        UInt64 processors_id;
+        IProcessor * processor = nullptr;
+        UInt64 processors_id = 0;
 
         /// Counters for profiling.
         size_t num_executed_jobs = 0;
@@ -180,7 +177,7 @@ private:
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(size_t pid, Stack & children, Stack & parents, size_t thread_number, bool async);
+    bool prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async);
     void doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);

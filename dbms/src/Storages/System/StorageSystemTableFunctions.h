@@ -9,6 +9,7 @@ namespace DB
 class StorageSystemTableFunctions : public ext::shared_ptr_helper<StorageSystemTableFunctions>,
                                     public IStorageSystemOneBlock<StorageSystemTableFunctions>
 {
+    friend struct ext::shared_ptr_helper<StorageSystemTableFunctions>;
 protected:
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

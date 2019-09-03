@@ -49,7 +49,6 @@ TotalsHavingTransform::TotalsHavingTransform(
     , totals_mode(totals_mode_)
     , auto_include_threshold(auto_include_threshold_)
     , final(final_)
-    , arena(std::make_shared<Arena>())
 {
     if (!filter_column_name.empty())
         filter_column_pos = outputs.front().getHeader().getPositionByName(filter_column_name);
@@ -71,25 +70,9 @@ TotalsHavingTransform::TotalsHavingTransform(
     current_totals.reserve(header.columns());
     for (const auto & elem : header)
     {
-        if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
-        {
-            /// Create ColumnAggregateFunction with initial aggregate function state.
-
-            IAggregateFunction * function = column->getAggregateFunction().get();
-            auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
-            AggregateDataPtr data = arena->alignedAlloc(function->sizeOfData(), function->alignOfData());
-            function->create(data);
-            target->getData().push_back(data);
-            current_totals.emplace_back(std::move(target));
-        }
-        else
-        {
-            /// Not an aggregate function state. Just create a column with default value.
-
-            MutableColumnPtr new_column = elem.type->createColumn();
-            elem.type->insertDefaultInto(*new_column);
-            current_totals.emplace_back(std::move(new_column));
-        }
+        MutableColumnPtr new_column = elem.type->createColumn();
+        elem.type->insertDefaultInto(*new_column);
+        current_totals.emplace_back(std::move(new_column));
     }
 }
 
@@ -178,6 +161,8 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         if (const_filter_description.always_true)
         {
             addToTotals(chunk, nullptr);
+            auto num_rows = columns.front()->size();
+            chunk.setColumns(std::move(columns), num_rows);
             return;
         }
 
@@ -225,12 +210,11 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
 
         if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(current.get()))
         {
-            auto & target = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
-            IAggregateFunction * function = target.getAggregateFunction().get();
-            AggregateDataPtr data = target.getData()[0];
+            auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
+            assert(totals_column.size() == 1);
 
-            /// Accumulate all aggregate states into that value.
-
+            /// Accumulate all aggregate states from a column of a source chunk into
+            /// the corresponding totals column.
             const ColumnAggregateFunction::Container & vec = column->getData();
             size_t size = vec.size();
 
@@ -238,12 +222,12 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
             {
                 for (size_t row = 0; row < size; ++row)
                     if ((*filter)[row])
-                        function->merge(data, vec[row], arena.get());
+                        totals_column.insertMergeFrom(vec[row]);
             }
             else
             {
                 for (size_t row = 0; row < size; ++row)
-                    function->merge(data, vec[row], arena.get());
+                    totals_column.insertMergeFrom(vec[row]);
             }
         }
     }

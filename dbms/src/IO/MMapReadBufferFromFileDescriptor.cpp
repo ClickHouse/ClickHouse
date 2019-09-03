@@ -57,17 +57,17 @@ void MMapReadBufferFromFileDescriptor::init(int fd_, size_t offset)
 }
 
 
-MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd, size_t offset, size_t length)
+MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd_, size_t offset_, size_t length_)
     : MMapReadBufferFromFileDescriptor()
 {
-    init(fd, offset, length);
+    init(fd_, offset_, length_);
 }
 
 
-MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd, size_t offset)
+MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd_, size_t offset_)
     : MMapReadBufferFromFileDescriptor()
 {
-    init(fd, offset);
+    init(fd_, offset_);
 }
 
 

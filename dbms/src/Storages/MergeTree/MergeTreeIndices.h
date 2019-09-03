@@ -77,18 +77,18 @@ class IMergeTreeIndex
 {
 public:
     IMergeTreeIndex(
-        String name,
-        ExpressionActionsPtr expr,
-        const Names & columns,
-        const DataTypes & data_types,
-        const Block & header,
-        size_t granularity)
-        : name(name)
-        , expr(expr)
-        , columns(columns)
-        , data_types(data_types)
-        , header(header)
-        , granularity(granularity) {}
+        String name_,
+        ExpressionActionsPtr expr_,
+        const Names & columns_,
+        const DataTypes & data_types_,
+        const Block & header_,
+        size_t granularity_)
+        : name(name_)
+        , expr(expr_)
+        , columns(columns_)
+        , data_types(data_types_)
+        , header(header_)
+        , granularity(granularity_) {}
 
     virtual ~IMergeTreeIndex() = default;
 
@@ -104,11 +104,25 @@ public:
     virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
+    Names getColumnsRequiredForIndexCalc() const { return expr->getRequiredColumns(); }
+
+    /// Index name
     String name;
+
+    /// Index expression (x * y)
+    /// with columns arguments
     ExpressionActionsPtr expr;
+
+    /// Names of columns for index
     Names columns;
+
+    /// Data types of columns
     DataTypes data_types;
+
+    /// Block with columns and data_types
     Block header;
+
+    /// Skip index granularity
     size_t granularity;
 };
 

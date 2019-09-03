@@ -65,6 +65,31 @@ You can cancel a long query by pressing Ctrl+C. However, you will still need to 
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
+### Queries with Parameters {#cli-queries-with-parameters}
+
+You can create a query with parameters and pass values to them from client application. This allows to avoid formatting query with specific dynamic values on client side. For example:
+
+```bash
+clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+```
+
+#### Query Syntax {#cli-queries-with-parameters-syntax}
+
+Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
+
+```
+{<name>:<data type>}
+```
+
+- `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
+- `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+
+#### Example
+
+```bash
+clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+```
+
 ## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
@@ -93,6 +118,8 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
 - `--secure` – If specified, will connect to server over secure connection.
+- `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+
 
 ### Configuration Files
 

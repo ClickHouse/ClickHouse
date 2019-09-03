@@ -16,18 +16,18 @@ namespace ErrorCodes
 
 
 HashedDictionary::HashedDictionary(
-    const std::string & name,
-    const DictionaryStructure & dict_struct,
-    DictionarySourcePtr source_ptr,
-    const DictionaryLifetime dict_lifetime,
-    bool require_nonempty,
-    BlockPtr saved_block)
-    : name{name}
-    , dict_struct(dict_struct)
-    , source_ptr{std::move(source_ptr)}
-    , dict_lifetime(dict_lifetime)
-    , require_nonempty(require_nonempty)
-    , saved_block{std::move(saved_block)}
+    const std::string & name_,
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_,
+    bool require_nonempty_,
+    BlockPtr saved_block_)
+    : name{name_}
+    , dict_struct(dict_struct_)
+    , source_ptr{std::move(source_ptr_)}
+    , dict_lifetime(dict_lifetime_)
+    , require_nonempty(require_nonempty_)
+    , saved_block{std::move(saved_block_)}
 {
     createAttributes();
     loadData();
@@ -106,7 +106,7 @@ void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
         const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -132,7 +132,7 @@ DECLARE(Decimal128)
 void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -151,7 +151,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
         ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -176,7 +176,7 @@ void HashedDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -190,7 +190,7 @@ void HashedDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -215,7 +215,7 @@ void HashedDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -230,50 +230,50 @@ void HashedDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             has<UInt8>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             has<UInt16>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             has<UInt32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             has<UInt64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             has<UInt128>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             has<Int8>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             has<Int16>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             has<Int32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             has<Int64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             has<Float32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             has<Float64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
             has<StringRef>(attribute, ids, out);
             break;
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             has<Decimal32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             has<Decimal64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             has<Decimal128>(attribute, ids, out);
             break;
     }
@@ -293,7 +293,7 @@ void HashedDictionary::createAttributes()
         {
             hierarchical_attribute = &attributes.back();
 
-            if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
+            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
                 throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
@@ -420,51 +420,51 @@ void HashedDictionary::calculateBytesAllocated()
     {
         switch (attribute.type)
         {
-            case AttributeUnderlyingType::UInt8:
+            case AttributeUnderlyingType::utUInt8:
                 addAttributeSize<UInt8>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt16:
+            case AttributeUnderlyingType::utUInt16:
                 addAttributeSize<UInt16>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt32:
+            case AttributeUnderlyingType::utUInt32:
                 addAttributeSize<UInt32>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt64:
+            case AttributeUnderlyingType::utUInt64:
                 addAttributeSize<UInt64>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt128:
+            case AttributeUnderlyingType::utUInt128:
                 addAttributeSize<UInt128>(attribute);
                 break;
-            case AttributeUnderlyingType::Int8:
+            case AttributeUnderlyingType::utInt8:
                 addAttributeSize<Int8>(attribute);
                 break;
-            case AttributeUnderlyingType::Int16:
+            case AttributeUnderlyingType::utInt16:
                 addAttributeSize<Int16>(attribute);
                 break;
-            case AttributeUnderlyingType::Int32:
+            case AttributeUnderlyingType::utInt32:
                 addAttributeSize<Int32>(attribute);
                 break;
-            case AttributeUnderlyingType::Int64:
+            case AttributeUnderlyingType::utInt64:
                 addAttributeSize<Int64>(attribute);
                 break;
-            case AttributeUnderlyingType::Float32:
+            case AttributeUnderlyingType::utFloat32:
                 addAttributeSize<Float32>(attribute);
                 break;
-            case AttributeUnderlyingType::Float64:
+            case AttributeUnderlyingType::utFloat64:
                 addAttributeSize<Float64>(attribute);
                 break;
 
-            case AttributeUnderlyingType::Decimal32:
+            case AttributeUnderlyingType::utDecimal32:
                 addAttributeSize<Decimal32>(attribute);
                 break;
-            case AttributeUnderlyingType::Decimal64:
+            case AttributeUnderlyingType::utDecimal64:
                 addAttributeSize<Decimal64>(attribute);
                 break;
-            case AttributeUnderlyingType::Decimal128:
+            case AttributeUnderlyingType::utDecimal128:
                 addAttributeSize<Decimal128>(attribute);
                 break;
 
-            case AttributeUnderlyingType::String:
+            case AttributeUnderlyingType::utString:
             {
                 addAttributeSize<StringRef>(attribute);
                 bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
@@ -488,51 +488,51 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
 
     switch (type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             createAttributeImpl<UInt8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             createAttributeImpl<UInt16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             createAttributeImpl<UInt32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             createAttributeImpl<UInt64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             createAttributeImpl<UInt128>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             createAttributeImpl<Int8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             createAttributeImpl<Int16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             createAttributeImpl<Int32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             createAttributeImpl<Int64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             createAttributeImpl<Float32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             createAttributeImpl<Float64>(attr, null_value);
             break;
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             createAttributeImpl<Decimal32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             createAttributeImpl<Decimal64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             createAttributeImpl<Decimal128>(attr, null_value);
             break;
 
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
         {
             attr.null_values = null_value.get<String>();
             attr.maps = std::make_unique<CollectionType<StringRef>>();
@@ -573,37 +573,37 @@ bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             return setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             return setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             return setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             return setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             return setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             return setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             return setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             return setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             return setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             return setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             return setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             return setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             return setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             return setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
 
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
         {
             auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
@@ -655,36 +655,36 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             return getIds<UInt8>(attribute);
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             return getIds<UInt16>(attribute);
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             return getIds<UInt32>(attribute);
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             return getIds<UInt64>(attribute);
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             return getIds<UInt128>(attribute);
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             return getIds<Int8>(attribute);
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             return getIds<Int16>(attribute);
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             return getIds<Int32>(attribute);
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             return getIds<Int64>(attribute);
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             return getIds<Float32>(attribute);
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             return getIds<Float64>(attribute);
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
             return getIds<StringRef>(attribute);
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             return getIds<Decimal32>(attribute);
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             return getIds<Decimal64>(attribute);
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             return getIds<Decimal128>(attribute);
     }
     return PaddedPODArray<Key>();

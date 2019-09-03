@@ -5,12 +5,12 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-#include <pcg_random.hpp>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -35,12 +35,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/Compiler.h>
 #include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
@@ -49,10 +45,11 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
+#include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 
 
@@ -143,7 +140,6 @@ struct ContextShared
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::optional<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
@@ -155,6 +151,8 @@ struct ContextShared
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
+
+    std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -203,8 +201,6 @@ struct ContextShared
     Stopwatch uptime_watch;
 
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
-
-    pcg64 rng{randomSeed()};
 
     /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
     std::vector<std::unique_ptr<ShellCommand>> bridge_commands;
@@ -288,7 +284,24 @@ struct ContextShared
         background_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
+
+        /// Stop trace collector if any
+        trace_collector.reset();
+
         sensitive_data_masker.reset();
+    }
+
+    bool hasTraceCollector()
+    {
+        return trace_collector != nullptr;
+    }
+
+    void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
+    {
+        if (trace_log == nullptr)
+            return;
+
+        trace_collector = std::make_unique<TraceCollector>(trace_log);
     }
 
 private:
@@ -501,7 +514,6 @@ DatabasePtr Context::tryGetDatabase(const String & database_name)
     return it->second;
 }
 
-
 String Context::getPath() const
 {
     auto lock = getLock();
@@ -663,6 +675,10 @@ void Context::setProfile(const String & profile)
     settings_constraints = std::move(new_constraints);
 }
 
+std::shared_ptr<const User> Context::getUser(const String & user_name)
+{
+    return shared->users_manager->getUser(user_name);
+}
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
@@ -984,10 +1000,25 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression->as<ASTFunction>()->name, *this);
 
         /// Run it and remember the result
-        res = table_function_ptr->execute(table_expression, *this);
+        res = table_function_ptr->execute(table_expression, *this, table_function_ptr->getName());
     }
 
     return res;
+}
+
+
+void Context::addViewSource(const StoragePtr & storage)
+{
+    if (view_source)
+        throw Exception(
+            "Temporary view source storage " + backQuoteIfNeed(view_source->getName()) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    view_source = storage;
+}
+
+
+StoragePtr Context::getViewSource()
+{
+    return view_source;
 }
 
 
@@ -1115,6 +1146,17 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
         applySettingChange(change);
 }
 
+void Context::updateSettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+    {
+        if (change.name == "profile")
+            setProfile(change.value.safeGet<String>());
+        else
+            settings.applyChange(change);
+    }
+}
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
@@ -1139,6 +1181,12 @@ String Context::getCurrentDatabase() const
 String Context::getCurrentQueryId() const
 {
     return client_info.current_query_id;
+}
+
+
+String Context::getInitialQueryId() const
+{
+    return client_info.initial_query_id;
 }
 
 
@@ -1174,21 +1222,17 @@ void Context::setCurrentQueryId(const String & query_id)
             } words;
         } random;
 
-        {
-            auto lock = getLock();
-
-            random.words.a = shared->rng();
-            random.words.b = shared->rng();
-        }
+        random.words.a = thread_local_rng();
+        random.words.b = thread_local_rng();
 
         /// Use protected constructor.
-        struct UUID : Poco::UUID
+        struct qUUID : Poco::UUID
         {
-            UUID(const char * bytes, Poco::UUID::Version version)
+            qUUID(const char * bytes, Poco::UUID::Version version)
                 : Poco::UUID(bytes, version) {}
         };
 
-        query_id_to_set = UUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
+        query_id_to_set = qUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
     }
 
     client_info.current_query_id = query_id_to_set;
@@ -1627,21 +1671,20 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 }
 
 
-Compiler & Context::getCompiler()
-{
-    auto lock = getLock();
-
-    if (!shared->compiler)
-        shared->compiler.emplace(shared->path + "build/", 1);
-
-    return *shared->compiler;
-}
-
-
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
     shared->system_logs.emplace(*global_context, getConfigRef());
+}
+
+bool Context::hasTraceCollector()
+{
+    return shared->hasTraceCollector();
+}
+
+void Context::initializeTraceCollector()
+{
+    shared->initializeTraceCollector(getTraceLog());
 }
 
 
@@ -1685,6 +1728,39 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
 }
 
 
+std::shared_ptr<TraceLog> Context::getTraceLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->trace_log)
+        return {};
+
+    return shared->system_logs->trace_log;
+}
+
+
+std::shared_ptr<TextLog> Context::getTextLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->text_log)
+        return {};
+
+    return shared->system_logs->text_log;
+}
+
+
+std::shared_ptr<MetricLog> Context::getMetricLog()
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs || !shared->system_logs->metric_log)
+        return {};
+
+    return shared->system_logs->metric_log;
+}
+
+
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
@@ -1711,8 +1787,9 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     if (!shared->merge_tree_settings)
     {
         auto & config = getConfigRef();
-        shared->merge_tree_settings.emplace();
-        shared->merge_tree_settings->loadFromConfig("merge_tree", config);
+        MergeTreeSettings mt_settings;
+        mt_settings.loadFromConfig("merge_tree", config);
+        shared->merge_tree_settings.emplace(mt_settings);
     }
 
     return *shared->merge_tree_settings;

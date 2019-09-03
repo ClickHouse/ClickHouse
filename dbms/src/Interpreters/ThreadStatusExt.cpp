@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/QueryProfiler.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
@@ -42,11 +43,6 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     }
 }
 
-StringRef ThreadStatus::getQueryId() const
-{
-    return query_id;
-}
-
 void CurrentThread::defaultThreadDeleter()
 {
     if (unlikely(!current_thread))
@@ -65,6 +61,7 @@ void ThreadStatus::initializeQuery()
     thread_group->memory_tracker.setDescription("(for query)");
 
     thread_group->thread_numbers.emplace_back(thread_number);
+    thread_group->os_thread_ids.emplace_back(os_thread_id);
     thread_group->master_thread_number = thread_number;
     thread_group->master_thread_os_id = os_thread_id;
 
@@ -103,6 +100,7 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 
         /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
         thread_group->thread_numbers.emplace_back(thread_number);
+        thread_group->os_thread_ids.emplace_back(os_thread_id);
     }
 
     if (query_context)
@@ -126,6 +124,8 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 #endif
 
     initPerformanceCounters();
+    initQueryProfiler();
+
     thread_state = ThreadState::AttachedToQuery;
 }
 
@@ -153,6 +153,31 @@ void ThreadStatus::finalizePerformanceCounters()
     }
 }
 
+void ThreadStatus::initQueryProfiler()
+{
+    /// query profilers are useless without trace collector
+    if (!global_context || !global_context->hasTraceCollector())
+        return;
+
+    const auto & settings = query_context->getSettingsRef();
+
+    if (settings.query_profiler_real_time_period_ns > 0)
+        query_profiler_real = std::make_unique<QueryProfilerReal>(
+            /* thread_id */ os_thread_id,
+            /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+
+    if (settings.query_profiler_cpu_time_period_ns > 0)
+        query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
+            /* thread_id */ os_thread_id,
+            /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+}
+
+void ThreadStatus::finalizeQueryProfiler()
+{
+    query_profiler_real.reset();
+    query_profiler_cpu.reset();
+}
+
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
@@ -162,6 +187,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     }
 
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
+
+    finalizeQueryProfiler();
     finalizePerformanceCounters();
 
     /// Detach from thread group
@@ -226,7 +253,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     {
         elem.client_info = query_context->getClientInfo();
 
-        if (query_context->getSettingsRef().log_profile_events.value != 0)
+        if (query_context->getSettingsRef().log_profile_events != 0)
         {
             /// NOTE: Here we are in the same thread, so we can make memcpy()
             elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
@@ -258,13 +285,6 @@ void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group
         return;
     current_thread->attachQuery(thread_group, false);
     current_thread->deleter = CurrentThread::defaultThreadDeleter;
-}
-
-StringRef CurrentThread::getQueryId()
-{
-    if (unlikely(!current_thread))
-        return {};
-    return current_thread->getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)

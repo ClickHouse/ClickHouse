@@ -14,6 +14,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsSend = 3;
     extern const StorageActionBlockType ReplicationQueue = 4;
     extern const StorageActionBlockType DistributedSend = 5;
+    extern const StorageActionBlockType PartsTTLMerge = 6;
 }
 
 

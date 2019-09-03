@@ -21,7 +21,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     auto query = std::make_shared<ASTUseQuery>();
-    getIdentifierName(database, query->database);
+    tryGetIdentifierNameInto(database, query->database);
     node = query;
 
     return true;

@@ -11,25 +11,25 @@
 namespace DB
 {
 
-MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row, size_t hash_functions, size_t index_columns)
-    : bits_per_row(bits_per_row), hash_functions(hash_functions)
+MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
+    : bits_per_row(bits_per_row_), hash_functions(hash_functions_)
 {
     total_rows = 0;
-    bloom_filters.resize(index_columns);
+    bloom_filters.resize(index_columns_);
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
-    size_t bits_per_row, size_t hash_functions, size_t total_rows, const Blocks & granule_index_blocks)
-        : total_rows(total_rows), bits_per_row(bits_per_row), hash_functions(hash_functions)
+    size_t bits_per_row_, size_t hash_functions_, size_t total_rows_, const Blocks & granule_index_blocks_)
+        : total_rows(total_rows_), bits_per_row(bits_per_row_), hash_functions(hash_functions_)
 {
-    if (granule_index_blocks.empty() || !total_rows)
+    if (granule_index_blocks_.empty() || !total_rows)
         throw Exception("LOGICAL ERROR: granule_index_blocks empty or total_rows is zero.", ErrorCodes::LOGICAL_ERROR);
 
-    assertGranuleBlocksStructure(granule_index_blocks);
+    assertGranuleBlocksStructure(granule_index_blocks_);
 
-    for (size_t index = 0; index < granule_index_blocks.size(); ++index)
+    for (size_t index = 0; index < granule_index_blocks_.size(); ++index)
     {
-        Block granule_index_block = granule_index_blocks[index];
+        Block granule_index_block = granule_index_blocks_[index];
 
         if (unlikely(!granule_index_block || !granule_index_block.rows()))
             throw Exception("LOGICAL ERROR: granule_index_block is empty.", ErrorCodes::LOGICAL_ERROR);

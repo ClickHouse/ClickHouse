@@ -18,7 +18,6 @@ DatabaseMemory::DatabaseMemory(String name_)
 
 void DatabaseMemory::loadTables(
     Context & /*context*/,
-    ThreadPool * /*thread_pool*/,
     bool /*has_force_restore_data_flag*/)
 {
     /// Nothing to load.
@@ -38,25 +37,6 @@ void DatabaseMemory::removeTable(
     const String & table_name)
 {
     detachTable(table_name);
-}
-
-void DatabaseMemory::renameTable(
-    const Context &,
-    const String &,
-    IDatabase &,
-    const String &)
-{
-    throw Exception("DatabaseMemory: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DatabaseMemory::alterTable(
-    const Context &,
-    const String &,
-    const ColumnsDescription &,
-    const IndicesDescription &,
-    const ASTModifier &)
-{
-    throw Exception("DatabaseMemory: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 time_t DatabaseMemory::getTableMetadataModificationTime(

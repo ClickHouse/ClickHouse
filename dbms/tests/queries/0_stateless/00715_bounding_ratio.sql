@@ -23,4 +23,4 @@ SELECT number % 10 AS k, boundingRatio(1000 + number, number * 1.5 - 111) FROM n
 SELECT boundingRatio(1000 + number, number * 1.5 - 111) FROM numbers(2);
 SELECT boundingRatio(1000 + number, number * 1.5 - 111) FROM numbers(1);
 SELECT boundingRatio(1000 + number, number * 1.5 - 111) FROM numbers(1) WHERE 0;
-SELECT boundingRatio(number, exp(number)) = e() - 1 FROM numbers(2);
+SELECT boundingRatio(number, exp(number)) = exp(1) - 1 FROM numbers(2);

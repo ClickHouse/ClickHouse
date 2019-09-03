@@ -27,7 +27,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_)
 {
 }
 
-void DatabaseDictionary::loadTables(Context &, ThreadPool *, bool)
+void DatabaseDictionary::loadTables(Context &, bool)
 {
 }
 
@@ -113,25 +113,6 @@ void DatabaseDictionary::removeTable(
     const String &)
 {
     throw Exception("DatabaseDictionary: removeTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DatabaseDictionary::renameTable(
-    const Context &,
-    const String &,
-    IDatabase &,
-    const String &)
-{
-    throw Exception("DatabaseDictionary: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DatabaseDictionary::alterTable(
-    const Context &,
-    const String &,
-    const ColumnsDescription &,
-    const IndicesDescription &,
-    const ASTModifier &)
-{
-    throw Exception("DatabaseDictionary: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 time_t DatabaseDictionary::getTableMetadataModificationTime(

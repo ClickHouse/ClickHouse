@@ -23,6 +23,7 @@
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -549,18 +550,17 @@ class FunctionBinaryArithmetic : public IFunction
         const IColumn & agg_state_column = *block.getByPosition(new_arguments[0]).column;
         bool agg_state_is_const = isColumnConst(agg_state_column);
         const ColumnAggregateFunction & column = typeid_cast<const ColumnAggregateFunction &>(
-            agg_state_is_const ? static_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
+            agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
         AggregateFunctionPtr function = column.getAggregateFunction();
 
-        auto arena = std::make_shared<Arena>();
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function, Arenas(1, arena));
+        auto column_to = ColumnAggregateFunction::create(function);
         column_to->reserve(size);
 
-        auto column_from = ColumnAggregateFunction::create(function, Arenas(1, arena));
+        auto column_from = ColumnAggregateFunction::create(function);
         column_from->reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -573,6 +573,12 @@ class FunctionBinaryArithmetic : public IFunction
         auto & vec_from = column_from->getData();
 
         UInt64 m = typeid_cast<const ColumnConst *>(block.getByPosition(new_arguments[1]).column.get())->getValue<UInt64>();
+
+        // Since we merge the function states by ourselves, we have to have an
+        // Arena for this. Pass it to the resulting column so that the arena
+        // has a proper lifetime.
+        auto arena = std::make_shared<Arena>();
+        column_to->addArena(arena);
 
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
@@ -608,9 +614,9 @@ class FunctionBinaryArithmetic : public IFunction
         bool rhs_is_const = isColumnConst(rhs_column);
 
         const ColumnAggregateFunction & lhs = typeid_cast<const ColumnAggregateFunction &>(
-            lhs_is_const ? static_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
+            lhs_is_const ? assert_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
         const ColumnAggregateFunction & rhs = typeid_cast<const ColumnAggregateFunction &>(
-            rhs_is_const ? static_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
+            rhs_is_const ? assert_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
 
         AggregateFunctionPtr function = lhs.getAggregateFunction();
 

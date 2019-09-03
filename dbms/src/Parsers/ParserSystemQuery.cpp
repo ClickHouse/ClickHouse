@@ -56,6 +56,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::STOP_MERGES:
         case Type::START_MERGES:
+        case Type::STOP_TTL_MERGES:
+        case Type::START_TTL_MERGES:
         case Type::STOP_FETCHES:
         case Type::START_FETCHES:
         case Type::STOP_REPLICATED_SENDS:

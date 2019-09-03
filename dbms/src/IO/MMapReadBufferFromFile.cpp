@@ -29,14 +29,15 @@ void MMapReadBufferFromFile::open(const std::string & file_name)
     fd = ::open(file_name.c_str(), O_RDONLY);
 
     if (-1 == fd)
-        throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
+                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 }
 
 
-MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name, size_t offset, size_t length)
+MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name, size_t offset, size_t length_)
 {
     open(file_name);
-    init(fd, offset, length);
+    init(fd, offset, length_);
 }
 
 

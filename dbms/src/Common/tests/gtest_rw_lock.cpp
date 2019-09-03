@@ -13,6 +13,14 @@
 
 using namespace DB;
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int DEADLOCK_AVOIDED;
+    }
+}
+
 
 TEST(Common, RWLock_1)
 {
@@ -94,7 +102,7 @@ TEST(Common, RWLock_Recursive)
     {
         for (int i = 0; i < 2 * cycles; ++i)
         {
-            auto lock = fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
+            auto lock = fifo_lock->getLock(RWLockImpl::Write, "q1");
 
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
             std::this_thread::sleep_for(sleep_for);
@@ -105,21 +113,89 @@ TEST(Common, RWLock_Recursive)
     {
         for (int i = 0; i < cycles; ++i)
         {
-            auto lock1 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            auto lock1 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
             std::this_thread::sleep_for(sleep_for);
 
-            auto lock2 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            auto lock2 = fifo_lock->getLock(RWLockImpl::Read, "q2");
 
-            EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);});
+            EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, "q2");});
         }
 
-        fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
+        fifo_lock->getLock(RWLockImpl::Write, "q2");
     });
 
     t1.join();
     t2.join();
+}
+
+
+TEST(Common, RWLock_Deadlock)
+{
+    static auto lock1 = RWLockImpl::create();
+    static auto lock2 = RWLockImpl::create();
+
+    /**
+      * q1: r1          r2
+      * q2:    w1
+      * q3:       r2       r1
+      * q4:          w2
+      */
+
+    std::thread t1([&] ()
+    {
+        auto holder1 = lock1->getLock(RWLockImpl::Read, "q1");
+        usleep(100000);
+        usleep(100000);
+        usleep(100000);
+        try
+        {
+            auto holder2 = lock2->getLock(RWLockImpl::Read, "q1");
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
+                throw;
+        }
+    });
+
+    std::thread t2([&] ()
+    {
+        usleep(100000);
+        auto holder1 = lock1->getLock(RWLockImpl::Write, "q2");
+    });
+
+    std::thread t3([&] ()
+    {
+        usleep(100000);
+        usleep(100000);
+        auto holder2 = lock2->getLock(RWLockImpl::Read, "q3");
+        usleep(100000);
+        usleep(100000);
+        try
+        {
+            auto holder1 = lock1->getLock(RWLockImpl::Read, "q3");
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
+                throw;
+        }
+    });
+
+    std::thread t4([&] ()
+    {
+        usleep(100000);
+        usleep(100000);
+        usleep(100000);
+        auto holder2 = lock2->getLock(RWLockImpl::Write, "q4");
+    });
+
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
 }
 
 
