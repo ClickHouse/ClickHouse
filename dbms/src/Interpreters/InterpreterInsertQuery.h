@@ -35,6 +35,10 @@ private:
     const Context & context;
     const bool allow_materialized;
     const bool no_squash;
+
+
+    BlockInputStreamPtr tryCreateSourceInputStream(const ASTInsertQuery & query, const StoragePtr & table, const Block & sample_block);
+    BlockOutputStreamPtr createOutputStream(const ASTInsertQuery &query, const StoragePtr &table, const Block &sample_block);
 };
 
 

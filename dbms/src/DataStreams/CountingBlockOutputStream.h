@@ -12,8 +12,8 @@ namespace DB
 class CountingBlockOutputStream : public IBlockOutputStream
 {
 public:
-    CountingBlockOutputStream(const BlockOutputStreamPtr & stream_)
-        : stream(stream_) {}
+    CountingBlockOutputStream(const BlockOutputStreamPtr & stream_, QueryStatus * elem_)
+        : stream(stream_), process_elem(elem_) {}
 
     void setProgressCallback(const ProgressCallback & callback)
     {
