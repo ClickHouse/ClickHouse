@@ -1,9 +1,69 @@
 
 # Type conversion functions
 
-## toUInt8, toUInt16, toUInt32, toUInt64
+## toInt(8|16|32|64)
 
-## toInt8, toInt16, toInt32, toInt64
+Converts an input value to the [Int](../../data_types/int_uint.md) data type. This functions family includes:
+
+* `toInt8(expr)` — Results in `Int8` data type.
+* `toInt16(expr)` — Results in `Int16` data type.
+* `toInt32(expr)` — Results in `Int32` data type.
+* `toInt64(expr)` — Results in `Int64` data type.
+
+**Parameters**
+
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string.
+
+**Returned value**
+
+Integer value in `Int8`, `Int16`, `Int32` or `Int64` data type.
+
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncates fraction digits of numbers with floating point.
+
+The behaviour of functions for the [NaN](../../data_types/float.md#data_type-float-nan-inf) argument is undefined.
+
+**Example**
+
+```sql
+SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
+```
+```text
+┌─────────toInt64(nan)─┬─toInt32(32)─┬─toInt16('16')─┬─toInt8(8.8)─┐
+│ -9223372036854775808 │          32 │            16 │           8 │
+└──────────────────────┴─────────────┴───────────────┴─────────────┘
+```
+
+## toUInt(8|16|32|64)
+
+Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This functions family includes:
+
+* `toUInt8(expr)` — Results in `UInt8` data type.
+* `toUInt16(expr)` — Results in `UInt16` data type.
+* `toUInt32(expr)` — Results in `UInt32` data type.
+* `toUInt64(expr)` — Results in `UInt64` data type.
+
+**Parameters**
+
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string.
+
+**Returned value**
+
+Integer value in `UInt8`, `UInt16`, `UInt32` or `UInt64` data type.
+
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncates fraction digits of numbers with floating poUInt.
+
+The behaviour of functions for negative agruments and for the [NaN](../../data_types/float.md#data_type-float-nan-inf) argument is undefined.
+
+**Example**
+
+```sql
+SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
+```
+```text
+┌───────toUInt64(nan)─┬─toUInt32(-32)─┬─toUInt16('16')─┬─toUInt8(8.8)─┐
+│ 9223372036854775808 │    4294967264 │             16 │            8 │
+└─────────────────────┴───────────────┴────────────────┴──────────────┘
+```
 
 ## toFloat32, toFloat64
 
