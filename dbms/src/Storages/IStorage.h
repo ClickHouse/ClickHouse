@@ -358,17 +358,17 @@ private:
     /// If you hold this lock exclusively, you can be sure that no other structure modifying queries
     /// (e.g. ALTER, DROP) are concurrently executing. But queries that only read table structure
     /// (e.g. SELECT, INSERT) can continue to execute.
-    mutable RWLock alter_intention_lock = RWLockImpl::create();
+    mutable RWLockImpl alter_intention_lock;
 
     /// It is taken for share for the entire INSERT query and the entire merge of the parts (for MergeTree).
     /// ALTER COLUMN queries acquire an exclusive lock to ensure that no new parts with the old structure
     /// are added to the table and thus the set of parts to modify doesn't change.
-    mutable RWLock new_data_structure_lock = RWLockImpl::create();
+    mutable RWLockImpl new_data_structure_lock;
 
     /// Lock for the table column structure (names, types, etc.) and data path.
     /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)
     /// and in share mode by other queries.
-    mutable RWLock structure_lock = RWLockImpl::create();
+    mutable RWLockImpl structure_lock;
 };
 
 }

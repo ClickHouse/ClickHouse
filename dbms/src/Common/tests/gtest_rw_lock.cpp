@@ -18,7 +18,7 @@ namespace
 class Barrier
 {
 public:
-    explicit Barrier(const size_t num_threads) : num_threads{num_threads} {}
+    explicit Barrier(const size_t _num_threads) : num_threads{_num_threads} {}
     Barrier(const Barrier&) = delete;
     Barrier& operator=(const Barrier&) = delete;
 
@@ -41,25 +41,27 @@ TEST(Common, RWLock_1)
     constexpr int cycles = 1000;
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};
 
-    static std::atomic<int> readers{0};
-    static std::atomic<int> writers{0};
+    std::atomic<int> readers{0};
+    std::atomic<int> writers{0};
 
-    static auto fifo_lock = RWLockImpl::create();
+    RWLockImpl fifo_rwlock;
 
     static thread_local std::random_device rd;
     static thread_local pcg64 gen(rd());
 
     auto func = [&] (size_t threads, int round)
     {
+        std::uniform_int_distribution<> distr9(0, 9);
+        std::uniform_int_distribution<> distr100(1, 100);
+
         for (int i = 0; i < cycles; ++i)
         {
-            auto type = (std::uniform_int_distribution<>(0, 9)(gen) >= round) ? RWLockImpl::Read : RWLockImpl::Write;
-            auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
+            auto sleep_for = std::chrono::duration<int, std::micro>(distr100(gen));
 
-            auto lock = fifo_lock->getLock(type, RWLockImpl::NO_QUERY);
-
-            if (type == RWLockImpl::Write)
+            if (distr9(gen) <= round)
             {
+                ExclusiveLockHolder wlock(fifo_rwlock);
+
                 ++writers;
 
                 ASSERT_EQ(writers, 1);
@@ -71,6 +73,8 @@ TEST(Common, RWLock_1)
             }
             else
             {
+                SharedLockHolder rlock(fifo_rwlock);
+
                 ++readers;
 
                 ASSERT_EQ(writers, 0);
@@ -92,7 +96,7 @@ TEST(Common, RWLock_1)
 
             std::list<std::thread> threads;
             for (size_t thread = 0; thread < pool_size; ++thread)
-                threads.emplace_back([=] () { func(pool_size, round); });
+                threads.emplace_back(func, pool_size, round);
 
             for (auto & thread : threads)
                 thread.join();
@@ -107,37 +111,41 @@ TEST(Common, RWLock_Recursive)
 {
     constexpr auto cycles = 10000;
 
-    static auto fifo_lock = RWLockImpl::create();
+    RWLockImpl fifo_rwlock;
 
     static thread_local std::random_device rd;
     static thread_local pcg64 gen(rd());
 
     std::thread t1([&] ()
     {
+        std::uniform_int_distribution<> distribution{1, 100};
+
         for (int i = 0; i < 2 * cycles; ++i)
         {
-            auto lock = fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
+            ExclusiveLockHolder lock(fifo_rwlock);
 
-            auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
+            auto sleep_for = std::chrono::duration<int, std::micro>(distribution(gen));
             std::this_thread::sleep_for(sleep_for);
         }
     });
 
     std::thread t2([&] ()
     {
+        std::uniform_int_distribution<> distribution{1, 100};
+
         for (int i = 0; i < cycles; ++i)
         {
-            auto lock1 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            SharedLockHolder lock1(fifo_rwlock);
 
-            auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
+            auto sleep_for = std::chrono::duration<int, std::micro>(distribution(gen));
             std::this_thread::sleep_for(sleep_for);
 
-            auto lock2 = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            SharedLockHolder lock2(fifo_rwlock);
 
-            EXPECT_ANY_THROW({fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);});
+            EXPECT_ANY_THROW(ExclusiveLockHolder wlock{fifo_rwlock});
         }
 
-        fifo_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY);
+        ExclusiveLockHolder lock3(fifo_rwlock);
     });
 
     t1.join();
@@ -177,7 +185,7 @@ TEST(Common, RWLock_Recursive_WithQueryContext)
     static const String query_id_1 = "query-id-1";
     static const String query_id_2 = "query-id-2";
 
-    auto fifo_lock = RWLockImpl::create();
+    RWLockImpl fifo_rwlock;
 
     std::atomic_int readers = 0;
     std::atomic_int writers = 0;
@@ -186,13 +194,13 @@ TEST(Common, RWLock_Recursive_WithQueryContext)
 
     std::thread t1([&] ()
     {
-        for (int i = 0; i < bursts_count; ++i)
+        for (size_t i = bursts_count; i > 0; --i)
         {
             barrier.arrive_and_wait();
 
-            for (int j = 0; j < burst_size; ++j)
+            for (size_t j = burst_size; j > 0; --j)
             {
-                auto lock = fifo_lock->getLock(RWLockImpl::Read, query_id_1);
+                SharedLockHolder lock(fifo_rwlock, query_id_1);
 
                 EXPECT_EQ(writers.load(), 0);
                 EXPECT_LE(readers.fetch_add(1), 1);
@@ -206,20 +214,20 @@ TEST(Common, RWLock_Recursive_WithQueryContext)
 
     std::thread t2([&] ()
     {
-        for (int i = 0; i < bursts_count; ++i)
+        for (size_t i = bursts_count; i > 0; --i)
         {
             barrier.arrive_and_wait();
 
-            for (int j = 0; j < burst_size; ++j)
+            for (size_t j = burst_size; j > 0; --j)
             {
-                auto lock1 = fifo_lock->getLock(RWLockImpl::Read, query_id_1);
+                SharedLockHolder lock1(fifo_rwlock, query_id_1);
 
                 EXPECT_EQ(writers.load(), 0);
                 EXPECT_LE(readers.fetch_add(1), 1);
 
                 std::this_thread::yield();
 
-                auto lock2 = fifo_lock->getLock(RWLockImpl::Read, query_id_1);
+                SharedLockHolder lock2(fifo_rwlock, query_id_1);
 
                 EXPECT_LE(readers.fetch_sub(1), 2);
             }
@@ -228,13 +236,13 @@ TEST(Common, RWLock_Recursive_WithQueryContext)
 
     std::thread t3([&] ()
     {
-        for (int i = 0; i < bursts_count; ++i)
+        for (size_t i = bursts_count; i > 0; --i)
         {
             barrier.arrive_and_wait();
 
-            for (int j = 0; j < burst_size; ++j)
+            for (size_t j = burst_size; j > 0; --j)
             {
-                auto lock1 = fifo_lock->getLock(RWLockImpl::Write, query_id_2);
+                ExclusiveLockHolder lock1(fifo_rwlock, query_id_2);
 
                 EXPECT_EQ(readers.load(), 0);
                 EXPECT_EQ(writers.fetch_add(1), 0);
@@ -253,12 +261,64 @@ TEST(Common, RWLock_Recursive_WithQueryContext)
 }
 
 
+TEST(Common, DISABLED_RWLock_Deadlock)
+{
+    RWLockImpl rwlock_A;
+    RWLockImpl rwlock_B;
+
+    /**
+      * q1: rA          rB
+      * q2:    wA
+      * q3:       rB       rA
+      * q4:          wB
+      */
+
+    std::thread t1([&] ()
+    {
+        SharedLockHolder rlockA(rwlock_A, "q1");
+        usleep(100000);
+        usleep(100000);
+        usleep(100000);
+        SharedLockHolder rlockB(rwlock_B, "q1");
+    });
+
+    std::thread t2([&] ()
+    {
+        usleep(100000);
+        ExclusiveLockHolder wlockA(rwlock_A, "q2");
+    });
+
+    std::thread t3([&] ()
+    {
+        usleep(100000);
+        usleep(100000);
+        SharedLockHolder rlockB(rwlock_B, "q3");
+        usleep(100000);
+        usleep(100000);
+        SharedLockHolder rlockA(rwlock_A, "q3");
+    });
+
+    std::thread t4([&] ()
+    {
+        usleep(100000);
+        usleep(100000);
+        usleep(100000);
+        ExclusiveLockHolder wlockB(rwlock_B, "q4");
+    });
+
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+}
+
+
 TEST(Common, RWLock_PerfTest_Readers)
 {
     constexpr int cycles = 100000; // 100k
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};
 
-    static auto fifo_lock = RWLockImpl::create();
+    RWLockImpl fifo_rwlock;
 
     for (auto pool_size : pool_sizes)
     {
@@ -268,7 +328,7 @@ TEST(Common, RWLock_PerfTest_Readers)
             {
                 for (auto i = 0; i < cycles; ++i)
                 {
-                    auto lock = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+                    SharedLockHolder rlock(fifo_rwlock);
                 }
             };
 

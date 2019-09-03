@@ -19,9 +19,9 @@ private:
     friend class IStorage;
 
     /// Order is important.
-    RWLockImpl::LockHolder alter_intention_lock;
-    RWLockImpl::LockHolder new_data_structure_lock;
-    RWLockImpl::LockHolder structure_lock;
+    ExclusiveLockHolderPtr alter_intention_lock;
+    ExclusiveLockHolderPtr new_data_structure_lock;
+    ExclusiveLockHolderPtr structure_lock;
 };
 
 struct TableStructureReadLockHolder
@@ -30,8 +30,8 @@ private:
     friend class IStorage;
 
     /// Order is important.
-    RWLockImpl::LockHolder new_data_structure_lock;
-    RWLockImpl::LockHolder structure_lock;
+    SharedLockHolderPtr new_data_structure_lock;
+    SharedLockHolderPtr structure_lock;
 };
 
 }

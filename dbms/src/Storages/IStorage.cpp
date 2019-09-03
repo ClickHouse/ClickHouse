@@ -296,8 +296,8 @@ TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_d
 {
     TableStructureReadLockHolder result;
     if (will_add_new_data)
-        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
+        result.new_data_structure_lock = std::make_shared<ExclusiveLockHolder>(new_data_structure_lock, query_id);
+    result.structure_lock = std::make_shared<ExclusiveLockHolder>(structure_lock, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
@@ -307,7 +307,7 @@ TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_d
 TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_intention_lock = std::make_shared<ExclusiveLockHolder>(alter_intention_lock, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
@@ -319,7 +319,7 @@ void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & l
     if (!lock_holder.alter_intention_lock)
         throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
+    lock_holder.new_data_structure_lock = std::make_shared<ExclusiveLockHolder>(new_data_structure_lock, query_id);
 }
 
 void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
@@ -328,20 +328,20 @@ void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_hol
         throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (!lock_holder.new_data_structure_lock)
-        lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-    lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+        lock_holder.new_data_structure_lock = std::make_shared<ExclusiveLockHolder>(new_data_structure_lock, query_id);
+    lock_holder.structure_lock = std::make_shared<ExclusiveLockHolder>(structure_lock, query_id);
 }
 
 TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_intention_lock = std::make_shared<ExclusiveLockHolder>(alter_intention_lock, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+    result.new_data_structure_lock = std::make_shared<ExclusiveLockHolder>(new_data_structure_lock, query_id);
+    result.structure_lock = std::make_shared<ExclusiveLockHolder>(structure_lock, query_id);
 
     return result;
 }
