@@ -81,6 +81,7 @@ struct QueryState
     }
 };
 
+
 struct LastBlockInputParameters
 {
     Protocol::Compression compression = Protocol::Compression::Disable;
@@ -151,7 +152,7 @@ private:
     [[noreturn]] void receiveUnexpectedData();
     [[noreturn]] void receiveUnexpectedQuery();
     [[noreturn]] void receiveUnexpectedHello();
-    [[noreturn]] void receiveUnexpectedTablesStatus();
+    [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
     void processInsertQuery(const Settings & global_settings);
