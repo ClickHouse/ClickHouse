@@ -118,33 +118,10 @@ private:
 
     using Stack = std::stack<UInt64>;
 
-    struct TaskQueue
-    {
-        bool pop(ExecutionState *& state)
-        {
-            if (stack.pop(state))
-            {
-                num_popped.fetch_add(1);
-                return true;
-            }
-
-            return false;
-        }
-
-        void push(ExecutionState * state)
-        {
-            stack.push(state);
-            num_pushed.fetch_add(1);
-        }
-
-        lfs::LFStack<ExecutionState> stack;
-        std::atomic<UInt64> num_pushed {0};
-        std::atomic<UInt64> num_popped {0};
-    };
-
+    using TaskQueue = std::queue<ExecutionState *>;
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
-    TaskQueue task_queue;
+    /// TaskQueue task_queue;
     std::mutex task_queue_mutex;
     std::condition_variable task_queue_condvar;
 
@@ -178,6 +155,9 @@ private:
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
+
+        std::atomic<ExecutionState *> state_to_steal { nullptr };
+        std::queue<ExecutionState *> task_queue;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
