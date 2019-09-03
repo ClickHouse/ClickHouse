@@ -644,7 +644,8 @@ void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & p
         Stopwatch stopwatch;
         DataPartPtr cloned_part;
 
-        auto write_part_log = [&](const ExecutionStatus & execution_status) {
+        auto write_part_log = [&](const ExecutionStatus & execution_status)
+        {
             writePartLog(
                 PartLogElement::Type::MOVE_PART,
                 execution_status,
