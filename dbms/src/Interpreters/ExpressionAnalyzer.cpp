@@ -29,6 +29,7 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/AnalyzedJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
