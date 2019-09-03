@@ -38,7 +38,7 @@ def get_random_string(length):
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
 
 def get_used_disks_for_table(node, table_name):
-    return node.query("select disk_name from system.parts where table == '{}' order by modification_time".format(table_name)).strip().split('\n')
+    return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
 
 @pytest.mark.parametrize("name,engine", [
     ("mt_on_jbod","MergeTree()"),
@@ -167,7 +167,7 @@ def test_background_move(start_cluster, name, engine):
             data = [] # 5MB in total
             for i in range(5):
                 data.append(get_random_string(1024 * 1024)) # 1MB row
-            # small jbod size is 40MB, so lets insert 5MB batch 2 times (less than 70%)
+            # small jbod size is 40MB, so lets insert 5MB batch 6 times
             node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
 
@@ -193,6 +193,86 @@ def test_background_move(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+@pytest.mark.parametrize("name,engine", [
+    ("stopped_moving_mt","MergeTree()"),
+    ("stopped_moving_replicated_mt","ReplicatedMergeTree('/clickhouse/stopped_moving_replicated_mt', '1')",),
+])
+def test_start_stop_moves(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            SETTINGS storage_policy_name='moving_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        node1.query("INSERT INTO {} VALUES ('HELLO')".format(name))
+        node1.query("INSERT INTO {} VALUES ('WORLD')".format(name))
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert all(d == "jbod1" for d in used_disks), "All writes shoud go to jbods"
+
+        first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' ORDER BY modification_time LIMIT 1".format(name)).strip()
+
+        node1.query("SYSTEM STOP MOVES")
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, first_part))
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert all(d == "jbod1" for d in used_disks), "Blocked moves doesn't actually move something"
+
+        node1.query("SYSTEM START MOVES")
+
+        node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, first_part))
+
+        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
+
+        assert disk == "external"
+
+        node1.query("TRUNCATE TABLE {}".format(name))
+
+        node1.query("SYSTEM STOP MOVES {}".format(name))
+        node1.query("SYSTEM STOP MERGES {}".format(name))
+
+        for i in range(5):
+            data = [] # 5MB in total
+            for i in range(5):
+                data.append(get_random_string(1024 * 1024)) # 1MB row
+            # jbod size is 40MB, so lets insert 5MB batch 7 times
+            node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+
+        used_disks = get_used_disks_for_table(node1, name)
+
+        retry = 5
+        i = 0
+        while not sum(1 for x in used_disks if x == 'jbod1') <= 2 and i < retry:
+            time.sleep(0.1)
+            used_disks = get_used_disks_for_table(node1, name)
+            i += 1
+
+        # first (oldest) part doesn't move anywhere
+        assert used_disks[0] == 'jbod1'
+
+        node1.query("SYSTEM START MOVES {}".format(name))
+        node1.query("SYSTEM START MERGES {}".format(name))
+
+        # wait sometime until background backoff finishes
+        retry = 30
+        i = 0
+        while not sum(1 for x in used_disks if x == 'jbod1') <= 2 and i < retry:
+            time.sleep(1)
+            used_disks = get_used_disks_for_table(node1, name)
+            i += 1
+
+        assert sum(1 for x in used_disks if x == 'jbod1') <= 2
+
+        # first (oldest) part moved to external
+        assert used_disks[0] == 'external'
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
 def get_path_for_part_from_part_log(node, table, part_name):
     node.query("SYSTEM FLUSH LOGS")
