@@ -142,7 +142,7 @@ def test_jbod_overflow(start_cluster, name, engine):
         node1.query("OPTIMIZE TABLE {} FINAL".format(name))
         time.sleep(2)
 
-        disks_for_merges = node1.query("SELECT disk_name FROM system.parts WHERE table == '{}' AND level >= 1 ORDER BY modification_time".format(name)).strip().split('\n')
+        disks_for_merges = node1.query("SELECT disk_name FROM system.parts WHERE table == '{}' AND level >= 1 and active = 1 ORDER BY modification_time".format(name)).strip().split('\n')
 
         assert all(disk == 'external' for disk in disks_for_merges)
 
@@ -213,7 +213,7 @@ def test_start_stop_moves(start_cluster, name, engine):
         used_disks = get_used_disks_for_table(node1, name)
         assert all(d == "jbod1" for d in used_disks), "All writes shoud go to jbods"
 
-        first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' ORDER BY modification_time LIMIT 1".format(name)).strip()
+        first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' and active = 1 ORDER BY modification_time LIMIT 1".format(name)).strip()
 
         node1.query("SYSTEM STOP MOVES")
 
@@ -227,7 +227,7 @@ def test_start_stop_moves(start_cluster, name, engine):
 
         node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, first_part))
 
-        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
+        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(name, first_part)).strip()
 
         assert disk == "external"
 
@@ -307,24 +307,24 @@ def test_alter_move(start_cluster, name, engine):
         used_disks = get_used_disks_for_table(node1, name)
         assert all(d.startswith("jbod") for d in used_disks), "All writes shoud go to jbods"
 
-        first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' ORDER BY modification_time LIMIT 1".format(name)).strip()
+        first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' and active = 1 ORDER BY modification_time LIMIT 1".format(name)).strip()
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, first_part))
-        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
+        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(name, first_part)).strip()
         assert disk == 'external'
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith("/external")
 
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part))
-        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}'".format(name, first_part)).strip()
+        disk = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(name, first_part)).strip()
         assert disk == 'jbod1'
         assert get_path_for_part_from_part_log(node1, name, first_part).startswith("/jbod1")
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name))
-        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(name)).strip().split('\n')
         assert len(disks) == 2
         assert all(d == "external" for d in disks)
         assert all(path.startswith("/external") for path in get_paths_for_partition_from_part_log(node1, name, '201904')[:2])
@@ -332,7 +332,7 @@ def test_alter_move(start_cluster, name, engine):
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
-        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904'".format(name)).strip().split('\n')
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(name)).strip().split('\n')
         assert len(disks) == 2
         assert all(d == "jbod2" for d in disks)
         assert all(path.startswith("/jbod2") for path in get_paths_for_partition_from_part_log(node1, name, '201904')[:2])
@@ -347,7 +347,7 @@ def produce_alter_move(node, name):
     if move_type == "PART":
         for _ in range(10):
             try:
-                parts = node1.query("SELECT name from system.parts where table = '{}'".format(name)).strip().split('\n')
+                parts = node1.query("SELECT name from system.parts where table = '{}' and active = 1".format(name)).strip().split('\n')
                 break
             except QueryRuntimeException:
                 pass
