@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <vector>
+#include <cstdint>
+
 
 namespace Poco
 {
@@ -22,14 +24,18 @@ private:
 public:
     SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     ~SensitiveDataMasker();
+
+    /// Returns the number of matched rules.
+    size_t wipeSensitiveData(std::string & data) const;
+
+    /// Used in tests.
     void addMaskingRule(const std::string & name, const std::string & regexp_string, const std::string & replacement_string);
-    int wipeSensitiveData(std::string & data) const;
 
 #ifndef NDEBUG
     void printStats();
 #endif
 
-    unsigned long rulesCount() const;
+    size_t rulesCount() const;
 };
 
 };

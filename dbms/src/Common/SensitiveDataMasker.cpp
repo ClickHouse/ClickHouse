@@ -18,6 +18,7 @@
 #    include <iostream>
 #endif
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -57,7 +58,7 @@ public:
                 DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }
 
-    int apply(std::string & data) const
+    uint64_t apply(std::string & data) const
     {
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
         matches_count += m;
@@ -68,6 +69,7 @@ public:
     const std::string & getReplacementString() const { return replacement_string; }
     uint64_t getMatchesCount() const { return matches_count; }
 };
+
 
 SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
@@ -85,23 +87,19 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 
             auto rule_name = config.getString(rule_config_prefix + ".name", rule_config_prefix);
 
-            if (used_names.count(rule_name) == 0)
-            {
-                used_names.insert(rule_name);
-            }
-            else
+            if (!used_names.insert(rule_name).second)
             {
                 throw Exception(
-                    "query_masking_rules configuration contains more than one rule named '" + rule_name + "'.",
+                    "Query_masking_rules configuration contains more than one rule named '" + rule_name + "'.",
                     ErrorCodes::INVALID_CONFIG_PARAMETER);
             }
 
             auto regexp = config.getString(rule_config_prefix + ".regexp", "");
 
-            if (regexp == "")
+            if (regexp.empty())
             {
                 throw Exception(
-                    "query_masking_rules configuration, rule '" + rule_name + "' has no <regexp> node or <regexp> is empty.",
+                    "Query_masking_rules configuration, rule '" + rule_name + "' has no <regexp> node or <regexp> is empty.",
                     ErrorCodes::NO_ELEMENTS_IN_CONFIG);
             }
 
@@ -122,7 +120,8 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             LOG_WARNING(logger, "Unused param " << config_prefix << '.' << rule);
         }
     }
-    auto rules_count = this->rulesCount();
+
+    auto rules_count = rulesCount();
     if (rules_count > 0)
     {
         LOG_INFO(logger, rules_count << " query masking rules loaded.");
@@ -138,13 +137,11 @@ void SensitiveDataMasker::addMaskingRule(
 }
 
 
-int SensitiveDataMasker::wipeSensitiveData(std::string & data) const
+size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const
 {
-    int matches = 0;
+    size_t matches = 0;
     for (auto & rule : all_masking_rules)
-    {
         matches += rule->apply(data);
-    }
     return matches;
 }
 
@@ -159,7 +156,7 @@ void SensitiveDataMasker::printStats()
 }
 #endif
 
-unsigned long SensitiveDataMasker::rulesCount() const
+size_t SensitiveDataMasker::rulesCount() const
 {
     return all_masking_rules.size();
 }
