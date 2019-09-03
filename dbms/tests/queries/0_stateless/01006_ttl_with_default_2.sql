@@ -5,7 +5,7 @@ INSERT INTO ttl_with_default VALUES (now() - 1000, 1) (now() - 1000, 2) (now() +
 SELECT sleep(0.7) FORMAT Null; -- wait if very fast merge happen
 OPTIMIZE TABLE ttl_with_default FINAL;
 
--- check that after second merge users there are still user defaults
+-- check that after second merge there are still user defaults in column
 SELECT sleep(0.7) FORMAT Null;
 OPTIMIZE TABLE ttl_with_default FINAL;
 
