@@ -11,10 +11,10 @@ class DistinctTransform : public ISimpleTransform
 {
 public:
     DistinctTransform(
-        const Block & header,
-        const SizeLimits & set_size_limits,
-        UInt64 limit_hint,
-        const Names & columns);
+        const Block & header_,
+        const SizeLimits & set_size_limits_,
+        UInt64 limit_hint_,
+        const Names & columns_);
 
     String getName() const override { return "DistinctTransform"; }
 

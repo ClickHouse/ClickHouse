@@ -29,6 +29,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/getExecutablePath.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
@@ -156,19 +157,19 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
-void Server::defineOptions(Poco::Util::OptionSet & _options)
+void Server::defineOptions(Poco::Util::OptionSet & options)
 {
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("help", "h", "show help and exit")
             .required(false)
             .repeatable(false)
             .binding("help"));
-    _options.addOption(
+    options.addOption(
         Poco::Util::Option("version", "V", "show version and exit")
             .required(false)
             .repeatable(false)
             .binding("version"));
-    BaseDaemon::defineOptions(_options);
+    BaseDaemon::defineOptions(options);
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
@@ -212,6 +213,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     const auto memory_amount = getMemoryAmount();
 
 #if defined(__linux__)
+    std::string executable_path = getExecutablePath();
+    if (executable_path.empty())
+        executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
+
     /// After full config loaded
     {
         if (config().getBool("mlock_executable", false))
@@ -228,7 +233,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
                     " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep " << executable_path << "'."
                     " Note that it will not work on 'nosuid' mounted filesystems.");
             }
         }
@@ -515,7 +520,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_INTERNAL_UNWIND_LIBRARY && !WITH_COVERAGE
+    ///
+    /// It also cannot work with sanitizers.
+    /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
+    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    ///  and query profiler decide to unwind stack with libunwind at this moment.
+    ///
+    /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
+    ///
+    /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
+    ///
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
         global_context->initializeTraceCollector();
@@ -547,7 +563,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -556,7 +572,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep /usr/bin/clickhouse'."
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <common/Types.h>
-#include <common/DayNum.h>
-#include <common/likely.h>
+#include "Types.h"
+#include "DayNum.h"
+#include "likely.h"
 #include <ctime>
 #include <string>
 
@@ -28,7 +28,7 @@ enum class WeekModeFlag : UInt8
     FIRST_WEEKDAY = 4,
     NEWYEAR_DAY = 8
 };
-typedef std::pair<UInt16, UInt8> YearWeek;
+using YearWeek = std::pair<UInt16, UInt8>;
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.

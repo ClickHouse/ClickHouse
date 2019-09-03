@@ -400,6 +400,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 elem.thread_numbers = std::move(info.thread_numbers);
+                elem.os_thread_ids = std::move(info.os_thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
 
                 if (log_queries)
@@ -437,6 +438,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
                     elem.thread_numbers = std::move(info.thread_numbers);
+                    elem.os_thread_ids = std::move(info.os_thread_ids);
                     elem.profile_counters = std::move(info.profile_counters);
                 }
 
@@ -565,7 +567,7 @@ void executeQuery(
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? *getIdentifierName(ast_query_with_output->format)
+                ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
             if (ast_query_with_output && ast_query_with_output->settings_ast)
@@ -610,7 +612,7 @@ void executeQuery(
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                 ? *getIdentifierName(ast_query_with_output->format)
+                                 ? getIdentifierName(ast_query_with_output->format)
                                  : context.getDefaultFormat();
 
             if (ast_query_with_output && ast_query_with_output->settings_ast)

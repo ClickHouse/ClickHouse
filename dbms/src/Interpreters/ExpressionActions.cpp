@@ -44,7 +44,8 @@ Names ExpressionAction::getNeededColumns() const
 
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
-    res.insert(res.end(), join_key_names_left.begin(), join_key_names_left.end());
+    if (join_params)
+        res.insert(res.end(), join_params->keyNamesLeft().begin(), join_params->keyNamesLeft().end());
 
     for (const auto & column : projection)
         res.push_back(column.first);
@@ -158,21 +159,17 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(
-    std::shared_ptr<const Join> join_,
-    const Names & join_key_names_left,
-    const NamesAndTypesList & columns_added_by_join_)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> join_params, std::shared_ptr<const Join> hash_join)
 {
     ExpressionAction a;
     a.type = JOIN;
-    a.join = std::move(join_);
-    a.join_key_names_left = join_key_names_left;
-    a.columns_added_by_join = columns_added_by_join_;
+    a.join_params = join_params;
+    a.join = hash_join;
     return a;
 }
 
 
-void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
+void ExpressionAction::prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding)
 {
     // std::cerr << "preparing: " << toString() << std::endl;
 
@@ -187,6 +184,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
             bool all_const = true;
+            bool all_suitable_for_constant_folding = true;
 
             ColumnNumbers arguments(argument_names.size());
             for (size_t i = 0; i < argument_names.size(); ++i)
@@ -195,6 +193,9 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
                 if (!col || !isColumnConst(*col))
                     all_const = false;
+
+                if (names_not_for_constant_folding.count(argument_names[i]))
+                    all_suitable_for_constant_folding = false;
             }
 
             size_t result_position = sample_block.columns();
@@ -229,6 +230,22 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
                     if (col.column->empty())
                         col.column = col.column->cloneResized(1);
+
+                    if (!all_suitable_for_constant_folding)
+                        names_not_for_constant_folding.insert(result_name);
+                }
+            }
+
+            /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+            /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
+            /// unnecessary materialization.
+            auto & res = sample_block.getByPosition(result_position);
+            if (!res.column && function_base->isSuitableForConstantFolding())
+            {
+                if (auto col = function_base->getResultIfAlwaysReturnsConstantAndHasArguments(sample_block, arguments))
+                {
+                    res.column = std::move(col);
+                    names_not_for_constant_folding.insert(result_name);
                 }
             }
 
@@ -252,11 +269,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
         case JOIN:
         {
-            /// TODO join_use_nulls setting
-
-            for (const auto & col : columns_added_by_join)
-                sample_block.insert(ColumnWithTypeAndName(nullptr, col.type, col.name));
-
+            join_params->addJoinedColumnsAndCorrectNullability(sample_block);
             break;
         }
 
@@ -462,7 +475,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            join->joinBlock(block, join_key_names_left, columns_added_by_join);
+            join->joinBlock(block, *join_params);
             break;
         }
 
@@ -580,9 +593,10 @@ std::string ExpressionAction::toString() const
 
         case JOIN:
             ss << "JOIN ";
-            for (NamesAndTypesList::const_iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
+            for (NamesAndTypesList::const_iterator it = join_params->columnsAddedByJoin().begin();
+                 it != join_params->columnsAddedByJoin().end(); ++it)
             {
-                if (it != columns_added_by_join.begin())
+                if (it != join_params->columnsAddedByJoin().begin())
                     ss << ", ";
                 ss << it->name;
             }
@@ -661,7 +675,7 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
-    /// Compiled functions are custom functions and them don't need building
+    /// Compiled functions are custom functions and they don't need building
     if (action.type == ExpressionAction::APPLY_FUNCTION && !action.is_function_compiled)
     {
         if (sample_block.has(action.result_name))
@@ -683,7 +697,7 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         for (const auto & name_with_alias : action.projection)
             new_names.emplace_back(name_with_alias.second);
 
-    action.prepare(sample_block, settings);
+    action.prepare(sample_block, settings, names_not_for_constant_folding);
     actions.push_back(action);
 }
 
@@ -915,7 +929,7 @@ void ExpressionActions::finalize(const Names & output_columns)
                 if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
                 {
                     auto & result = sample_block.getByName(out);
-                    if (result.column)
+                    if (result.column && names_not_for_constant_folding.count(result.name) == 0)
                     {
                         action.type = ExpressionAction::ADD_COLUMN;
                         action.result_type = result.type;
@@ -1155,7 +1169,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
     for (const auto & action : actions)
         if (action.join && isRightOrFull(action.join->getKind()))
             return action.join->createStreamWithNonJoinedRows(
-                source_header, action.join_key_names_left, action.columns_added_by_join, max_block_size);
+                source_header, *action.join_params, max_block_size);
 
     return {};
 }
@@ -1202,7 +1216,7 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
                 hash.update(col);
             break;
         case JOIN:
-            for (const auto & col : action.columns_added_by_join)
+            for (const auto & col : action.join_params->columnsAddedByJoin())
                 hash.update(col.name);
             break;
         case PROJECT:
@@ -1261,8 +1275,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && array_joined_columns == other.array_joined_columns
         && array_join_is_left == other.array_join_is_left
         && join == other.join
-        && join_key_names_left == other.join_key_names_left
-        && columns_added_by_join == other.columns_added_by_join
+        && AnalyzedJoin::sameJoin(join_params.get(), other.join_params.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
 }

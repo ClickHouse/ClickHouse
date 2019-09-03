@@ -7,10 +7,10 @@
 namespace DB
 {
 
-StorageValues::StorageValues(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns, const Block & res_block_)
+StorageValues::StorageValues(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns_, const Block & res_block_)
     : database_name(database_name_), table_name(table_name_), res_block(res_block_)
 {
-    setColumns(columns);
+    setColumns(columns_);
 }
 
 BlockInputStreams StorageValues::read(
@@ -21,7 +21,7 @@ BlockInputStreams StorageValues::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    check(column_names);
+    check(column_names, true);
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res_block));
 }

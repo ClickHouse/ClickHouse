@@ -28,9 +28,9 @@ namespace ErrorCodes
     extern const int CANNOT_FCNTL;
 }
 
-TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log)
+TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log_)
     : log(&Poco::Logger::get("TraceCollector"))
-    , trace_log(trace_log)
+    , trace_log(trace_log_)
 {
     if (trace_log == nullptr)
         throw Exception("Invalid trace log pointer passed", ErrorCodes::NULL_POINTER_DEREFERENCE);

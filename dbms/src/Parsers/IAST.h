@@ -93,6 +93,10 @@ public:
         return checkDepthImpl(max_depth, 0);
     }
 
+    /** Get total number of tree elements
+     */
+    size_t size() const;
+
     /** Same for the total number of tree elements.
       */
     size_t checkSize(size_t max_size) const;

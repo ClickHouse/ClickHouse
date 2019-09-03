@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/Join.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/NullableUtils.h>
 
@@ -18,6 +19,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
@@ -49,7 +51,7 @@ static std::unordered_map<String, DataTypePtr> requiredRightKeys(const Names & k
 
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    if (column.type->isNullable())
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
     column.type = makeNullable(column.type);
@@ -70,10 +72,10 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     if (nullable)
     {
         convertColumnToNullable(column);
-        if (negative_null_map.size())
+        if (column.type->isNullable() && negative_null_map.size())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
-            static_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
+            assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
             column.column = std::move(mutable_column);
         }
     }
@@ -81,14 +83,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 
-Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
     ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_)
     : kind(kind_), strictness(strictness_),
     key_names_right(key_names_right_),
     use_nulls(use_nulls_),
     any_take_last_row(any_take_last_row_),
     log(&Logger::get("Join")),
-    limits(limits)
+    limits(limits_)
 {
 }
 
@@ -140,7 +142,7 @@ Join::Type Join::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_siz
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1
         && (typeid_cast<const ColumnString *>(key_columns[0])
-            || (isColumnConst(*key_columns[0]) && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
+            || (isColumnConst(*key_columns[0]) && typeid_cast<const ColumnString *>(&assert_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
@@ -872,7 +874,7 @@ void Join::joinBlockImpl(
     {
         /// Some trash to represent IColumn::Filter as ColumnUInt8 needed for ColumnNullable::applyNullMap()
         auto null_map_filter_ptr = ColumnUInt8::create();
-        ColumnUInt8 & null_map_filter = static_cast<ColumnUInt8 &>(*null_map_filter_ptr);
+        ColumnUInt8 & null_map_filter = assert_cast<ColumnUInt8 &>(*null_map_filter_ptr);
         null_map_filter.getData().swap(row_filter);
         const IColumn::Filter & filter = null_map_filter.getData();
 
@@ -1047,8 +1049,11 @@ void Join::joinGet(Block & block, const String & column_name) const
 }
 
 
-void Join::joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const
+void Join::joinBlock(Block & block, const AnalyzedJoin & join_params) const
 {
+    const Names & key_names_left = join_params.keyNamesLeft();
+    const NamesAndTypesList & columns_added_by_join = join_params.columnsAddedByJoin();
+
     std::shared_lock lock(rwlock);
 
     checkTypesOfKeys(block, key_names_left, sample_block_with_keys);
@@ -1399,7 +1404,7 @@ private:
         for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
             const Block * block = it->first;
-            const NullMap & nullmap = static_cast<const ColumnUInt8 &>(*it->second).getData();
+            const NullMap & nullmap = assert_cast<const ColumnUInt8 &>(*it->second).getData();
 
             for (size_t row = 0; row < nullmap.size(); ++row)
             {
@@ -1456,10 +1461,11 @@ private:
 };
 
 
-BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                        const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const
+BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const AnalyzedJoin & join_params,
+                                                        UInt64 max_block_size) const
 {
-    return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, key_names_left, columns_added_by_join, max_block_size);
+    return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block,
+                                                       join_params.keyNamesLeft(), join_params.columnsAddedByJoin(), max_block_size);
 }
 
 

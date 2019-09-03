@@ -217,6 +217,7 @@
 
          See https://clickhouse.yandex/docs/en/table_engines/replication/
       -->
+
     <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
@@ -329,6 +330,16 @@
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </text_log>
+    -->
+
+    <!-- Uncomment to write metric log into table.
+         Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
     -->
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.

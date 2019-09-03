@@ -46,6 +46,7 @@ StoragePtr StorageFactory::get(
     Context & local_context,
     Context & context,
     const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
     bool attach,
     bool has_force_restore_data_flag) const
 {
@@ -59,6 +60,14 @@ StoragePtr StorageFactory::get(
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
         name = "View";
+    }
+    else if (query.is_live_view)
+    {
+
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
+
+        name = "LiveView";
     }
     else
     {
@@ -115,6 +124,12 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
+            else if (name == "LiveView")
+            {
+                throw Exception(
+                    "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
+                    ErrorCodes::INCORRECT_QUERY);
+            }
         }
     }
 
@@ -140,6 +155,7 @@ StoragePtr StorageFactory::get(
         .local_context = local_context,
         .context = context,
         .columns = columns,
+        .constraints = constraints,
         .attach = attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };

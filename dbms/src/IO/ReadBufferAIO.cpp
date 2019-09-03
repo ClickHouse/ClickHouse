@@ -54,7 +54,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
     if (fd == -1)
     {
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-        throwFromErrno("Cannot open file " + filename, error_code);
+        throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
     }
 }
 

@@ -19,7 +19,7 @@ class Context;
 class MySQLOutputFormat: public IOutputFormat
 {
 public:
-    MySQLOutputFormat(WriteBuffer & out_, const Block & header, const Context & context, const FormatSettings & settings);
+    MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const Context & context_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
@@ -40,4 +40,3 @@ private:
 };
 
 }
-

@@ -17,7 +17,6 @@ class Field;
 class ReadBuffer;
 class WriteBuffer;
 
-
 /** One setting for any type.
   * Stores a value within itself, as well as a flag - whether the value was changed.
   * This is done so that you can send to the remote servers only changed settings (or explicitly specified in the config) values.
@@ -304,6 +303,7 @@ private:
     Derived & castToDerived() { return *static_cast<Derived *>(this); }
     const Derived & castToDerived() const { return *static_cast<const Derived *>(this); }
 
+    using IsChangedFunction = bool (*)(const Derived &);
     using GetStringFunction = String (*)(const Derived &);
     using GetFieldFunction = Field (*)(const Derived &);
     using SetStringFunction = void (*)(Derived &, const String &);
@@ -312,9 +312,10 @@ private:
     using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf);
     using CastValueWithoutApplyingFunction = Field (*)(const Field &);
 
+
     struct MemberInfo
     {
-        size_t offset_of_changed;
+        IsChangedFunction is_changed;
         StringRef name;
         StringRef description;
         GetStringFunction get_string;
@@ -325,7 +326,7 @@ private:
         DeserializeFunction deserialize;
         CastValueWithoutApplyingFunction cast_value_without_applying;
 
-        bool isChanged(const Derived & collection) const { return *reinterpret_cast<const bool*>(reinterpret_cast<const UInt8*>(&collection) + offset_of_changed); }
+        bool isChanged(const Derived & collection) const { return is_changed(collection); }
     };
 
     class MemberInfos
@@ -555,17 +556,18 @@ public:
         for (const auto & member : members())
         {
             if (member.isChanged(castToDerived()))
-                found_changes.emplace_back(member.name.toString(), member.get_field(castToDerived()));
+                found_changes.push_back({member.name.toString(), member.get_field(castToDerived())});
         }
         return found_changes;
     }
 
-    /// Applies changes to the settings.
+    /// Applies change to concrete setting.
     void applyChange(const SettingChange & change)
     {
         set(change.name, change.value);
     }
 
+    /// Applies changes to the settings.
     void applyChanges(const SettingsChanges & changes)
     {
         for (const SettingChange & change : changes)
@@ -642,16 +644,14 @@ public:
     static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
     static void NAME##_serialize(const Derived & collection, WriteBuffer & buf) { collection.NAME.serialize(buf); } \
     static void NAME##_deserialize(Derived & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); } \
-    static Field NAME##_castValueWithoutApplying(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); }
+    static Field NAME##_castValueWithoutApplying(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    static_assert(std::is_same_v<decltype(std::declval<Derived>().NAME.changed), bool>); \
-    add({offsetof(Derived, NAME.changed), \
-         StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), \
+    add({[](const Derived & d) { return d.NAME.changed; },          \
+         StringRef(#NAME, strlen(#NAME)), StringRef(DESCRIPTION, strlen(DESCRIPTION)), \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
          &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
          &Functions::NAME##_castValueWithoutApplying });
-
 }

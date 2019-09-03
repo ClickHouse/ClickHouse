@@ -11,6 +11,7 @@
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 
 #include <common/unaligned.h>
@@ -140,8 +141,8 @@ private:
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder.get()); }
-    const ColumnType * getRawColumnPtr() const { return static_cast<const ColumnType *>(column_holder.get()); }
+    ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
+    const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
@@ -186,10 +187,10 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
 }
 
 template <typename ColumnType>
-ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable)
+ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable_)
     : column_holder(std::move(holder))
-    , is_nullable(is_nullable)
-    , index(numSpecialValues(is_nullable), 0)
+    , is_nullable(is_nullable_)
+    , index(numSpecialValues(is_nullable_), 0)
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
@@ -232,7 +233,7 @@ void ColumnUnique<ColumnType>::updateNullMask()
         size_t size = getRawColumnPtr()->size();
 
         if (nested_null_mask->size() != size)
-            static_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
+            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
     }
 }
 

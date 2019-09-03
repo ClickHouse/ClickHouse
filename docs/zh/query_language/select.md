@@ -612,7 +612,7 @@ WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚
 如果不存在聚合，则不能使用HAVING。
 
 
-### ORDER BY 子句
+### ORDER BY 子句 {#select-order-by}
 
 如果存在ORDER BY 子句，则该子句中必须存在一个表达式列表，表达式列表中每一个表达式都可以分配一个DESC或ASC（排序的方向）。如果没有指明排序的方向，将假定以ASC的方式进行排序。其中ASC表示按照升序排序，DESC按照降序排序。示例：`ORDER BY Visits DESC, SearchPhrase`
 
