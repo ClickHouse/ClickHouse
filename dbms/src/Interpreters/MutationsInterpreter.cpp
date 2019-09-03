@@ -276,10 +276,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages_copy.back().output_columns = stage.output_columns;
                 stages_copy.back().filters = stage.filters;
             }
-            
+
             const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
             InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
-            
+
             auto first_stage_header = interpreter.getSampleBlock();
             auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
             updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
@@ -497,6 +497,10 @@ ASTPtr MutationsInterpreter::prepareQueryAffectedAST() const
 
 size_t MutationsInterpreter::evaluateCommandsSize()
 {
+    for (const MutationCommand & command : commands)
+        if (unlikely(!command.predicate)) /// The command touches all rows.
+            return prepare(/* dry_run = */ true)->size();
+
     return std::max(prepareQueryAffectedAST()->size(), prepare(/* dry_run = */ true)->size());
 }
 
