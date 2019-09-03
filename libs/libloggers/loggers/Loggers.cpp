@@ -155,7 +155,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
 void Loggers::setLoggerSensitiveDataMasker(Poco::Logger & logger, DB::SensitiveDataMasker * sensitive_data_masker)
 {
-    if (auto split = dynamic_cast<DB::OwnSplitChannel *>(logger.getChannel())) {
+    if (auto split = dynamic_cast<DB::OwnSplitChannel *>(logger.getChannel()))
+    {
         split->setMasker(sensitive_data_masker);
     }
 }
