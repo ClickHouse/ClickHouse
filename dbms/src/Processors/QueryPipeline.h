@@ -58,7 +58,7 @@ public:
     /// Check if resize transform was used. (In that case another distinct transform will be added).
     bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
 
-    void resize(size_t num_streams);
+    void resize(size_t num_streams, bool force = false);
 
     void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
 
