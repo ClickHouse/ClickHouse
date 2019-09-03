@@ -2150,7 +2150,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movingPartsTask()
 {
     if (parts_mover.moves_blocker.isCancelled())
-        return BackgroundProcessingPoolTaskResult::ERROR;
+        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
