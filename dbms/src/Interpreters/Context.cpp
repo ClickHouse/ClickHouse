@@ -89,6 +89,7 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -527,6 +528,9 @@ String Context::getUserFilesPath() const
 
 void Context::setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker)
 {
+    if (!sensitive_data_masker)
+        throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
+    
     if (sensitive_data_masker->rulesCount() > 0)
     {
         auto lock = getLock();
