@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Common/SipHash.h>
 #include "config_core.h"
 #include <unordered_map>
@@ -104,11 +105,8 @@ public:
     bool unaligned_array_join = false;
 
     /// For JOIN
+    std::shared_ptr<AnalyzedJoin> join_params = nullptr;
     std::shared_ptr<const Join> join;
-    ASTTableJoin::Kind join_kind;
-    Names join_key_names_left;
-    Names join_key_names_right;
-    NamesAndTypesList columns_added_by_join;
 
     /// For PROJECT.
     NamesWithAliases projection;
@@ -124,9 +122,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(const ASTTableJoin & join_params, std::shared_ptr<const Join> join_,
-                                         const Names & join_key_names_left, const Names & join_key_names_right,
-                                         const NamesAndTypesList & columns_added_by_join_);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> join_params, std::shared_ptr<const Join> hash_join);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
