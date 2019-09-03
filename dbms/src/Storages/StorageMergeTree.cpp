@@ -45,6 +45,7 @@ namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
     extern const StorageActionBlockType PartsTTLMerge;
+    extern const StorageActionBlockType PartsMove;
 }
 
 
@@ -1254,7 +1255,9 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
     if (action_type == ActionLocks::PartsMerge)
         return merger_mutator.merges_blocker.cancel();
     else if (action_type == ActionLocks::PartsTTLMerge)
-        return  merger_mutator.ttl_merges_blocker.cancel();
+        return merger_mutator.ttl_merges_blocker.cancel();
+    else if (action_type == ActionLocks::PartsMove)
+        return parts_mover.moves_blocker.cancel();
 
     return {};
 }

@@ -96,6 +96,7 @@ bool MergeTreePartsMover::selectPartsToMove(
             auto space_information = disk->getSpaceInformation();
 
             UInt64 total_space_with_factor = space_information.getTotalSpace() * policy->getMoveFactor();
+
             /// Do not take into account reserved space
             if (total_space_with_factor > space_information.getAvailableSpace())
                 need_to_move.emplace(disk, total_space_with_factor - space_information.getAvailableSpace());

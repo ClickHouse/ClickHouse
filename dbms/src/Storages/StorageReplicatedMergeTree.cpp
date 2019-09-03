@@ -120,6 +120,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsSend;
     extern const StorageActionBlockType ReplicationQueue;
     extern const StorageActionBlockType PartsTTLMerge;
+    extern const StorageActionBlockType PartsMove;
 }
 
 
@@ -2148,6 +2149,9 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
 
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movingPartsTask()
 {
+    if (parts_mover.moves_blocker.isCancelled())
+        return BackgroundProcessingPoolTaskResult::ERROR;
+
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     try
@@ -5230,6 +5234,9 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
 
     if (action_type == ActionLocks::ReplicationQueue)
         return queue.actions_blocker.cancel();
+
+    if (action_type == ActionLocks::PartsMove)
+        return parts_mover.moves_blocker.cancel();
 
     return {};
 }
