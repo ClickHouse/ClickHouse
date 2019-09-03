@@ -2965,7 +2965,6 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts(format_version);
 
-        std::set<String> part_names;
         const auto disks = storage_policy->getDisks();
         for (const DiskSpace::DiskPtr & disk : disks)
         {
@@ -2988,12 +2987,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
-        for (const auto & name : part_names)
+        for (const auto & [name, disk] : name_to_disk)
         {
             String containing_part = active_parts.getContainingPart(name);
             if (!containing_part.empty() && containing_part != name)
             {
-                auto full_path = getFullPathOnDisk(name_to_disk[name]);
+                auto full_path = getFullPathOnDisk(disk);
                 // TODO maybe use PartsTemporaryRename here?
                 Poco::File(full_path + source_dir + name)
                     .renameTo(full_path + source_dir + "inactive_" + name);
