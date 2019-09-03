@@ -3,12 +3,16 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
-#include <Common/SensitiveDataMasker.h>
 #include "OwnFormattingChannel.h"
 
 namespace Poco::Util
 {
-class AbstractConfiguration;
+    class AbstractConfiguration;
+}
+
+namespace DB
+{
+    class SensitiveDataMasker;
 }
 
 
