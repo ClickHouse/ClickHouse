@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeList.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -16,6 +17,7 @@
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
+#include <Interpreters/PartLog.h>
 #include <Common/DiskSpaceMonitor.h>
 
 #include <boost/multi_index_container.hpp>
@@ -27,6 +29,7 @@
 namespace DB
 {
 
+class MergeListEntry;
 class AlterCommands;
 
 namespace ErrorCodes
@@ -893,6 +896,15 @@ protected:
     void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
 
     bool canReplacePartition(const DataPartPtr & data_part) const;
+
+    void writePartLog(
+        PartLogElement::Type type,
+        const ExecutionStatus & execution_status,
+        UInt64 elapsed_ns,
+        const String & new_part_name,
+        const DataPartPtr & result_part,
+        const DataPartsVector & source_parts,
+        const MergeListEntry * merge_entry);
 };
 
 }

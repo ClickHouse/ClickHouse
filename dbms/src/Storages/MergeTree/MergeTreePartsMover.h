@@ -16,19 +16,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct MargeTreeMoveEntry
+struct MergeTreeMoveEntry
 {
     MergeTreeData::DataPartPtr part;
     DiskSpace::ReservationPtr reserved_space;
 
-    MargeTreeMoveEntry(const MergeTreeData::DataPartPtr & part_, DiskSpace::ReservationPtr reservation_)
+    MergeTreeMoveEntry(const MergeTreeData::DataPartPtr & part_, DiskSpace::ReservationPtr reservation_)
         : part(part_),
           reserved_space(std::move(reservation_))
     {
     }
 };
 
-using MergeTreeMovingParts = std::vector<MargeTreeMoveEntry>;
+using MergeTreeMovingParts = std::vector<MergeTreeMoveEntry>;
 
 struct MovingPartsTagger
 {
@@ -82,9 +82,9 @@ public:
         MergeTreeMovingParts & parts_to_move,
         const AllowedMovingPredicate & can_move);
 
-    MergeTreeData::DataPartsVector cloneParts(const MergeTreeMovingParts & parts);
+    MergeTreeData::DataPartPtr clonePart(const MergeTreeMoveEntry & moving_part) const;
 
-    bool swapClonedParts(const MergeTreeData::DataPartsVector & cloned_parts, String * out_reason);
+    void swapClonedPart(const MergeTreeData::DataPartPtr & cloned_parts) const;
 
 public:
     ActionBlocker moves_blocker;
@@ -94,5 +94,6 @@ private:
     MergeTreeData & data;
     Logger * log;
 };
+
 
 }

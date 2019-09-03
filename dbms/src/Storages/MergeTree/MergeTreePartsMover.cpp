@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int NO_SUCH_DATA_PART;
 }
 
 namespace
@@ -135,77 +136,40 @@ bool MergeTreePartsMover::selectPartsToMove(
     return !parts_to_move.empty();
 }
 
-MergeTreeData::DataPartsVector MergeTreePartsMover::cloneParts(const MergeTreeMovingParts & parts)
+MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part) const
 {
-    MergeTreeData::DataPartsVector res;
-    for (auto && move : parts)
-    {
-        if (moves_blocker.isCancelled())
-        {
-            /// Removing all copied parts from disk
-            for (auto & part : res)
-                part->remove();
+    if (moves_blocker.isCancelled())
+        throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
-            throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
-        }
+    LOG_TRACE(log, "Cloning part " << moving_part.part->name);
+    moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
-        LOG_TRACE(log, "Cloning part " << move.part->name);
-        move.part->makeCloneOnDiskDetached(move.reserved_space);
+    MergeTreeData::MutableDataPartPtr cloned_part =
+        std::make_shared<MergeTreeData::DataPart>(data, moving_part.reserved_space->getDisk(), moving_part.part->name);
+    cloned_part->relative_path = "detached/" + moving_part.part->name;
+    LOG_TRACE(log, "Part " << moving_part.part->name << " was cloned to " << cloned_part->getFullPath());
 
-        MergeTreeData::MutableDataPartPtr cloned_part =
-            std::make_shared<MergeTreeData::DataPart>(data, move.reserved_space->getDisk(), move.part->name);
-        cloned_part->relative_path = "detached/" + move.part->name;
-        LOG_TRACE(log, "Part " << move.part->name << " was cloned to " << cloned_part->getFullPath());
+    cloned_part->loadColumnsChecksumsIndexes(true, true);
+    return cloned_part;
 
-        cloned_part->loadColumnsChecksumsIndexes(true, true);
-
-        res.push_back(cloned_part);
-    }
-    return res;
 }
 
 
-bool MergeTreePartsMover::swapClonedParts(const MergeTreeData::DataPartsVector & cloned_parts, String * out_reason)
+void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & cloned_part) const
 {
-    std::vector<String> failed_parts;
-    for (size_t i = 0; i < cloned_parts.size(); ++i)
-    {
-        if (moves_blocker.isCancelled())
-        {
-            /// Removing all copied parts from disk
-            for (size_t j = i; j < cloned_parts.size(); ++j)
-                cloned_parts[j]->remove();
+    if (moves_blocker.isCancelled())
+        throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
-            throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
-        }
+    auto active_part = data.getActiveContainingPart(cloned_part->name);
 
-        auto part = data.getActiveContainingPart(cloned_parts[i]->name);
-        if (!part || part->name != cloned_parts[i]->name)
-        {
-            LOG_INFO(log, "Failed to swap " << cloned_parts[i]->name << ". Active part doesn't exist."
-                << " It can be removed by merge or deleted by hand. Will remove copy on path '"
-                << cloned_parts[i]->getFullPath() << "'.");
-            failed_parts.push_back(cloned_parts[i]->name);
-            cloned_parts[i]->remove();
-            continue;
-        }
+    if (!active_part || active_part->name != cloned_part->name)
+        throw Exception("Failed to swap " + cloned_part->name + ". Active part doesn't exist."
+            + " It can be removed by merge or deleted by hand. Will remove copy on path '"
+            + cloned_part->getFullPath() + "'.", ErrorCodes::NO_SUCH_DATA_PART);
 
-        cloned_parts[i]->renameTo(part->name);
+    cloned_part->renameTo(active_part->name);
 
-        data.swapActivePart(cloned_parts[i]);
-    }
-
-    if (!failed_parts.empty())
-    {
-        std::ostringstream oss;
-        oss << "Failed to swap parts: ";
-        oss << boost::algorithm::join(failed_parts, ", ");
-        oss << ". Their active parts doesn't exist.";
-        *out_reason = oss.str();
-        return false;
-    }
-
-    return true;
+    data.swapActivePart(cloned_part);
 }
 
 }
