@@ -1669,7 +1669,7 @@ private:
             }
         };
     }
-    
+
     WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const
     {
         /// Conversion from String through parsing.
