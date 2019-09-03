@@ -1027,13 +1027,17 @@ private:
         while (true)
         {
             Block block = async_block_input->read();
-            connection->sendData(block);
-            processed_rows += block.rows();
 
             /// Check if server send Log packet
+            receiveLogs();
+
+            /// Check if server send Exception packet
             auto packet_type = connection->checkPacket();
-            if (packet_type && *packet_type == Protocol::Server::Log)
-                receiveAndProcessPacket();
+            if (packet_type && *packet_type == Protocol::Server::Exception)
+                return;
+
+            connection->sendData(block);
+            processed_rows += block.rows();
 
             if (!block)
                 break;
@@ -1250,6 +1254,17 @@ private:
         }
     }
 
+    /// Process Log packets, used when inserting data by blocks
+    void receiveLogs()
+    {
+        auto packet_type = connection->checkPacket();
+
+        while (packet_type && *packet_type == Protocol::Server::Log)
+        {
+            receiveAndProcessPacket();
+            packet_type = connection->checkPacket();
+        }
+    }
 
     void initBlockOutputStream(const Block & block)
     {
