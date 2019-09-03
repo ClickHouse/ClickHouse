@@ -1,7 +1,6 @@
 #include "Loggers.h"
 
 #include <iostream>
-#include <Common/SensitiveDataMasker.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
@@ -12,6 +11,12 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/Path.h>
+
+namespace DB
+{
+    class SensitiveDataMasker;
+}
+
 
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
