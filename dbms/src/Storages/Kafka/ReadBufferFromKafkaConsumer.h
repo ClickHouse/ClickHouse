@@ -53,10 +53,6 @@ private:
     Messages messages;
     Messages::const_iterator current;
 
-    // Since some internals may call nextImpl() and ignore it's result, leaving new messages unread,
-    // we have to store the last message from a previous batch - for a proper commit offset.
-    cppkafka::Message last_message;
-
     bool nextImpl() override;
 };
 
