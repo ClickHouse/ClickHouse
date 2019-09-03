@@ -798,6 +798,7 @@ bool TCPHandler::receivePacket()
             if (!state.empty())
                 receiveUnexpectedTablesStatus();
             processTablesStatusRequest();
+            out->next();
             return false;
 
         default:
