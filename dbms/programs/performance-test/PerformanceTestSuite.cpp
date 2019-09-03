@@ -29,7 +29,7 @@
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
 #include <Common/TerminalSize.h>
-#include <Common/T_test.h>
+#include <Common/StudentTTest.h>
 
 #include "TestStopConditions.h"
 #include "TestStats.h"
@@ -134,7 +134,7 @@ private:
 
     InterruptListener interrupt_listener;
 
-    T_test t_test;
+    StudentTTest t_test;
 
     using XMLConfiguration = Poco::Util::XMLConfiguration;
     using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;

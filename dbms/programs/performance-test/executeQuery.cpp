@@ -13,7 +13,7 @@ namespace
 void checkFulfilledConditionsAndUpdate(
     const Progress & progress, RemoteBlockInputStream & stream,
     TestStatsPtr & statistics, TestStopConditions & stop_conditions,
-    InterruptListener & interrupt_listener, T_test & t_test, Poco::Logger * log)
+    InterruptListener & interrupt_listener, StudentTTest & t_test, Poco::Logger * log)
 {
     statistics->add(progress.read_rows, progress.read_bytes);
 
@@ -23,7 +23,7 @@ void checkFulfilledConditionsAndUpdate(
     stop_conditions.reportMinTimeNotChangingFor(statistics->min_time_watch.elapsed() / (1000 * 1000));
     stop_conditions.reportMaxSpeedNotChangingFor(statistics->max_rows_speed_watch.elapsed() / (1000 * 1000));
     stop_conditions.reportAverageSpeedNotChangingFor(statistics->avg_rows_speed_watch.elapsed() / (1000 * 1000));
-    stop_conditions.reportTtest(t_test, log);
+    stop_conditions.reportTTest(t_test, log);
 
     if (stop_conditions.areFulfilled())
     {
@@ -45,7 +45,7 @@ void executeQuery(
     Connections & connections,
     const std::string & query,
     TestStatsPtrs & statistics,
-    T_test & t_test,
+    StudentTTest & t_test,
     TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener,
     Context & context,

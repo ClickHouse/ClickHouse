@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Logger.h>
-#include <Common/T_test.h>
+#include <Common/StudentTTest.h>
 #include <common/logger_useful.h>
 
 namespace DB
@@ -27,7 +27,7 @@ struct StopConditionsSet
 
     void report(UInt64 value, StopCondition & condition);
 
-    void reportTtestSingle(T_test & t_test, StopCondition & condition, Poco::Logger * log);
+    void reportTTestSingle(StudentTTest & t_test, StopCondition & condition, Poco::Logger * log);
 
     StopCondition total_time_ms;
     StopCondition rows_read;

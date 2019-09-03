@@ -47,13 +47,22 @@ private:
         }
     };
 
+    double mean_difference = 0;
+    double mean_confidence_interval = 0;
+
     std::array<DistributionData, 2> data {};
+
+    /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
+    void updateResults(size_t confidence_level_index = 5);
 
 public:
     void clear();
 
     void add(size_t distribution, double value);
 
-    /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above. TODO: Trash - no separation of concepts in code.
-    std::pair<bool, std::string> compareAndReport(size_t confidence_level_index = 5) const;
+    bool empty() const;
+
+    bool distributionsDiffer(size_t confidence_level_index = 5);
+
+    std::string reportResults(size_t confidence_level_index = 5);
 };

@@ -60,11 +60,11 @@ void StopConditionsSet::report(UInt64 value, StopConditionsSet::StopCondition & 
     }
 }
 
-void StopConditionsSet::reportTtestSingle(T_test & t_test, StopConditionsSet::StopCondition & condition, Poco::Logger * log)
+void StopConditionsSet::reportTTestSingle(StudentTTest & t_test, StopConditionsSet::StopCondition & condition, Poco::Logger * log)
 {
-    if (condition.value && !condition.fulfilled && !t_test.compareAndReport(condition.value).first)
+    if (condition.value && !condition.fulfilled && t_test.distributionsDiffer(condition.value))
     {
-        LOG_INFO(log, t_test.compareAndReport(condition.value).second);
+        LOG_INFO(log, t_test.reportResults(condition.value));
         condition.fulfilled = true;
         ++fulfilled_count;
     }

@@ -422,7 +422,7 @@ private:
         print_percentile(99.9);
         print_percentile(99.99);
 
-        std::cerr << "\n" << t_test.compareAndReport(confidence).second << "\n";
+        std::cerr << "\n" << t_test.reportResults(confidence) << "\n";
 
         if (!cumulative)
         {

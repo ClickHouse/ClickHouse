@@ -61,7 +61,7 @@ PerformanceTest::PerformanceTest(
     const PerformanceTestInfo & test_info_,
     Context & context_,
     const std::vector<size_t> & queries_to_run_,
-    T_test & t_test_)
+    StudentTTest & t_test_)
     : config(config_)
     , connections(connections_)
     , timeouts(timeouts_)

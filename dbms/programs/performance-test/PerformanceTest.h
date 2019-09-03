@@ -2,7 +2,7 @@
 
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
-#include <Common/T_test.h>
+#include <Common/StudentTTest.h>
 #include <common/logger_useful.h>
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -27,7 +27,7 @@ public:
         const PerformanceTestInfo & test_info_,
         Context & context_,
         const std::vector<size_t> & queries_to_run_,
-        T_test & t_test_);
+        StudentTTest & t_test_);
 
     bool checkPreconditions() const;
     void prepare() const;
@@ -56,7 +56,7 @@ private:
     Context & context;
 
     std::vector<size_t> queries_to_run;
-    T_test & t_test;
+    StudentTTest & t_test;
     Poco::Logger * log;
 
     bool got_SIGINT = false;

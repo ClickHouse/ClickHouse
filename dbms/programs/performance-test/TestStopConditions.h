@@ -38,10 +38,10 @@ public:
 
 #undef REPORT
 
-    void reportTtest(T_test & t_test, Poco::Logger * log)
+    void reportTTest(StudentTTest & t_test, Poco::Logger * log)
     {
-        conditions_all_of.reportTtestSingle(t_test, conditions_all_of.t_test_with_confidence_level, log);
-        conditions_any_of.reportTtestSingle(t_test, conditions_any_of.t_test_with_confidence_level, log);
+        conditions_all_of.reportTTestSingle(t_test, conditions_all_of.t_test_with_confidence_level, log);
+        conditions_any_of.reportTTestSingle(t_test, conditions_any_of.t_test_with_confidence_level, log);
     }
 
     bool areFulfilled() const;
