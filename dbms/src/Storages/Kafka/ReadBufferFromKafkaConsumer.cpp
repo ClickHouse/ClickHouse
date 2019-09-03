@@ -68,19 +68,18 @@ void ReadBufferFromKafkaConsumer::commit()
 
     PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
 
-    if (current != messages.end())
+    /// Since we can poll more messages than we already processed - commit only processed messages.
+    if (!messages.empty())
     {
-        /// Since we can poll more messages than we already processed,
-        /// commit only processed messages.
-        consumer->async_commit(*std::prev(current));
-    }
-    else
-    {
-        /// Commit everything we polled so far because either:
-        /// - read all polled messages (current == messages.end()),
-        /// - read nothing at all (messages.empty()),
-        /// - stalled.
-        consumer->async_commit();
+        if (available() == 0)
+            consumer->async_commit(*std::prev(current));
+        else
+        {
+            if (std::prev(current) == messages.begin())
+                consumer->async_commit(last_message);
+            else
+                consumer->async_commit(*std::prev(current, 2));
+        }
     }
 
     PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
@@ -165,6 +164,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             stalled = true;
             return false;
         }
+        last_message = messages.back();
         messages = std::move(new_messages);
         current = messages.begin();
 
