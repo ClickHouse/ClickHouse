@@ -205,7 +205,7 @@ For information about other parameters, see the section "SET".
 
 Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
-You have the option to receive information about the progress of query execution in `X-ClickHouse-Progress` response headers. To do this, enable the setting [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
+You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
 
 ```
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
@@ -213,13 +213,13 @@ X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_ro
 X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
 ```
 
-Possible fields in the header:
+Possible header fields:
 
-- `read_rows` — Number of read rows.
-- `read_bytes` — Volume of read data in bytes.
+- `read_rows` — Number of rows read.
+- `read_bytes` — Volume of data read in bytes.
 - `total_rows_to_read` — Total number of rows to be read.
-- `written_rows` — Number of written rows.
-- `written_bytes` — Volume of written data in bytes.
+- `written_rows` — Number of rows written.
+- `written_bytes` — Volume of data written in bytes.
 
 Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
 The optional 'query_id' parameter can be passed as the query ID (any string). For more information, see the section "Settings, replace_running_query".
@@ -244,5 +244,14 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
 
+### Queries with Parameters {#cli-queries-with-parameters}
+
+You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](cli.md#cli-queries-with-parameters).
+
+### Example
+
+```bash
+curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+```
 
 [Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->

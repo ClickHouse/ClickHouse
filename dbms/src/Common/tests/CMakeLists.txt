@@ -36,7 +36,7 @@ target_include_directories (simple_cache PRIVATE ${DBMS_INCLUDE_DIR})
 target_link_libraries (simple_cache PRIVATE common)
 
 add_executable (compact_array compact_array.cpp)
-target_link_libraries (compact_array PRIVATE clickhouse_common_io ${Boost_FILESYSTEM_LIBRARY})
+target_link_libraries (compact_array PRIVATE clickhouse_common_io stdc++fs)
 
 add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
@@ -76,5 +76,5 @@ target_link_libraries (cow_compositions PRIVATE clickhouse_common_io)
 add_executable (stopwatch stopwatch.cpp)
 target_link_libraries (stopwatch PRIVATE clickhouse_common_io)
 
-add_executable (mi_malloc_test mi_malloc_test.cpp)
-target_link_libraries (mi_malloc_test PRIVATE clickhouse_common_io)
+add_executable (symbol_index symbol_index.cpp)
+target_link_libraries (symbol_index PRIVATE clickhouse_common_io)

@@ -90,9 +90,13 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const String & path_,
     const String & database_name_,
     const String & table_name_,
-    const ColumnsDescription & columns_)
-    : IStorage{columns_}, table_name(table_name_), database_name(database_name_)
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_)
+    : table_name(table_name_), database_name(database_name_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (path_.empty())
         throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
@@ -105,8 +109,9 @@ StorageSet::StorageSet(
     const String & path_,
     const String & database_name_,
     const String & table_name_,
-    const ColumnsDescription & columns_)
-    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_},
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_)
+    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_, constraints_},
     set(std::make_shared<Set>(SizeLimits(), false))
 {
     Block header = getSampleBlock();
@@ -121,7 +126,7 @@ void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block);
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
-void StorageSet::truncate(const ASTPtr &, const Context &)
+void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
@@ -188,7 +193,8 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 }
 
 
-void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageSetOrJoinBase::rename(
+    const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     /// Rename directory with data.
     String new_path = new_path_to_db + escapeForFileName(new_table_name);
@@ -209,7 +215,7 @@ void registerStorageSet(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageSet::create(args.data_path, args.database_name, args.table_name, args.columns);
+        return StorageSet::create(args.data_path, args.database_name, args.table_name, args.columns, args.constraints);
     });
 }
 

@@ -6,7 +6,7 @@
 
 #include <Poco/Exception.h>
 
-#include <common/StackTrace.h>
+#include <Common/StackTrace.h>
 
 namespace Poco { class Logger; }
 
@@ -52,16 +52,18 @@ private:
 class ErrnoException : public Exception
 {
 public:
-    ErrnoException(const std::string & msg, int code, int saved_errno_)
-        : Exception(msg, code), saved_errno(saved_errno_) {}
+    ErrnoException(const std::string & msg, int code, int saved_errno_, const std::optional<std::string> & path_ = {})
+        : Exception(msg, code), saved_errno(saved_errno_), path(path_) {}
 
     ErrnoException * clone() const override { return new ErrnoException(*this); }
     void rethrow() const override { throw *this; }
 
     int getErrno() const { return saved_errno; }
+    const std::optional<std::string> getPath() const { return path; }
 
 private:
     int saved_errno;
+    std::optional<std::string> path;
 
     const char * name() const throw() override { return "DB::ErrnoException"; }
     const char * className() const throw() override { return "DB::ErrnoException"; }
@@ -73,6 +75,8 @@ using Exceptions = std::vector<std::exception_ptr>;
 
 std::string errnoToString(int code, int the_errno = errno);
 [[noreturn]] void throwFromErrno(const std::string & s, int code, int the_errno = errno);
+[[noreturn]] void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code,
+                                         int the_errno = errno);
 
 
 /** Try to write an exception to the log (and forget about it).
@@ -87,7 +91,8 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
   * check_embedded_stacktrace - if DB::Exception has embedded stacktrace then
   *  only this stack trace will be printed.
   */
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false);
+std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false,
+                                       bool with_extra_info = true);
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();

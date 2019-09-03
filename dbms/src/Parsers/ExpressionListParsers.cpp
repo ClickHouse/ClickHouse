@@ -139,6 +139,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 {
     bool first = true;
 
+    auto current_depth = pos.depth;
     while (1)
     {
         if (first)
@@ -190,10 +191,14 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 ++pos;
             }
 
+            /// Left associative operator chain is parsed as a tree: ((((1 + 1) + 1) + 1) + 1)...
+            /// We must account it's depth - otherwise we may end up with stack overflow later - on destruction of AST.
+            pos.increaseDepth();
             node = function;
         }
     }
 
+    pos.depth = current_depth;
     return true;
 }
 
@@ -522,9 +527,9 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 }
 
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool prefer_alias_to_column_name)
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
     : impl(std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                     allow_alias_without_as_keyword, prefer_alias_to_column_name))
+                                                     allow_alias_without_as_keyword))
 {
 }
 
@@ -532,7 +537,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, prefer_alias_to_column_name),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }

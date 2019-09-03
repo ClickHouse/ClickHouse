@@ -6,6 +6,7 @@
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Users.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
@@ -63,6 +64,9 @@ class Clusters;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
+class TextLog;
+class TraceLog;
+class MetricLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -133,6 +137,7 @@ private:
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TableAndCreateASTs external_tables;     /// Temporary tables.
+    StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
@@ -200,6 +205,10 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+
+    /// Used by MySQL Secure Password Authentication plugin.
+    std::shared_ptr<const User> getUser(const String & user_name);
+
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
@@ -248,6 +257,9 @@ public:
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
+    void addViewSource(const StoragePtr & storage);
+    StoragePtr getViewSource();
+
     void addDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name);
 
@@ -256,6 +268,10 @@ public:
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
+
+    /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
+    String getInitialQueryId() const;
+
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
@@ -278,6 +294,9 @@ public:
     void setSetting(const String & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
+
+    /// Update checking that each setting is updatable
+    void updateSettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change);
@@ -424,9 +443,15 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    void initializeTraceCollector();
+    bool hasTraceCollector();
+
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog();
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
+    std::shared_ptr<TraceLog> getTraceLog();
+    std::shared_ptr<TextLog> getTextLog();
+    std::shared_ptr<MetricLog> getMetricLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
@@ -497,10 +522,14 @@ public:
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
 
-    /// MySQL wire protocol state.
-    size_t sequence_id = 0;
-    uint32_t client_capabilities = 0;
-    size_t max_packet_size = 0;
+    struct MySQLWireContext
+    {
+        uint8_t sequence_id = 0;
+        uint32_t client_capabilities = 0;
+        size_t max_packet_size = 0;
+    };
+
+    MySQLWireContext mysql;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.

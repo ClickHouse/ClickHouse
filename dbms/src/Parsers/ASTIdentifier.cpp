@@ -1,5 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/queryToString.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -7,6 +8,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_AST_STRUCTURE;
+}
+
 
 ASTPtr ASTIdentifier::clone() const
 {
@@ -41,6 +48,15 @@ void ASTIdentifier::setShortName(const String & new_name)
     bool special = semantic->special;
     *semantic = IdentifierSemanticImpl();
     semantic->special = special;
+}
+
+void ASTIdentifier::restoreCompoundName()
+{
+    if (name_parts.empty())
+        return;
+    name = name_parts[0];
+    for (size_t i = 1; i < name_parts.size(); ++i)
+        name += '.' + name_parts[i];
 }
 
 void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
@@ -83,22 +99,32 @@ ASTPtr createTableIdentifier(const String & database_name, const String & table_
     return database_and_table;
 }
 
-std::optional<String> getIdentifierName(const IAST * const ast)
+String getIdentifierName(const IAST * ast)
 {
-    if (ast)
-        if (const auto * node = ast->as<ASTIdentifier>())
-            return node->name;
+    String res;
+    if (tryGetIdentifierNameInto(ast, res))
+        return res;
+    throw Exception(ast ? queryToString(*ast) + " is not an identifier" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+}
+
+std::optional<String> tryGetIdentifierName(const IAST * ast)
+{
+    String res;
+    if (tryGetIdentifierNameInto(ast, res))
+        return res;
     return {};
 }
 
-bool getIdentifierName(const ASTPtr & ast, String & name)
+bool tryGetIdentifierNameInto(const IAST * ast, String & name)
 {
     if (ast)
+    {
         if (const auto * node = ast->as<ASTIdentifier>())
         {
             name = node->name;
             return true;
         }
+    }
     return false;
 }
 

@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/Kafka/StorageKafka.h>
+#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+
 
 namespace DB
 {
@@ -27,7 +29,7 @@ private:
     Names column_names;
     UInt64 max_block_size;
 
-    BufferPtr buffer;
+    ConsumerBufferPtr buffer;
     MutableColumns virtual_columns;
     bool broken = true, claimed = false;
 };

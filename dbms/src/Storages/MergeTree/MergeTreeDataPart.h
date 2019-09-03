@@ -94,8 +94,8 @@ struct MergeTreeDataPart
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 
-    /// Frozen by ALTER TABLE ... FREEZE ...
-    mutable bool is_frozen = false;
+    /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
+    mutable std::atomic<bool> is_frozen {false};
 
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
@@ -153,7 +153,7 @@ struct MergeTreeDataPart
     struct StatesFilter
     {
         std::initializer_list<State> affordable_states;
-        StatesFilter(const std::initializer_list<State> & affordable_states) : affordable_states(affordable_states) {}
+        StatesFilter(const std::initializer_list<State> & affordable_states_) : affordable_states(affordable_states_) {}
 
         bool operator() (const std::shared_ptr<const MergeTreeDataPart> & part) const
         {

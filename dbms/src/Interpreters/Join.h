@@ -26,6 +26,8 @@
 namespace DB
 {
 
+class AnalyzedJoin;
+
 namespace JoinStuff
 {
 
@@ -121,10 +123,12 @@ using MappedAsof =      WithFlags<AsofRowRefs, false>;
 class Join
 {
 public:
-    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
          ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_ = false);
 
     bool empty() { return type == Type::EMPTY; }
+
+    bool isNullUsedAsDefault() const { return use_nulls; }
 
     /** Set information about structure of right hand of JOIN (joined data).
       * You must call this method before subsequent calls to insertFromBlock.
@@ -139,7 +143,7 @@ public:
     /** Join data from the map (that was previously built by calls to insertFromBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const;
+    void joinBlock(Block & block, const AnalyzedJoin & join_params) const;
 
     /// Infer the return type for joinGet function
     DataTypePtr joinGetReturnType(const String & column_name) const;
@@ -159,8 +163,8 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                      const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const AnalyzedJoin & join_params,
+                                                      UInt64 max_block_size) const;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const;
@@ -168,6 +172,7 @@ public:
     size_t getTotalByteCount() const;
 
     ASTTableJoin::Kind getKind() const { return kind; }
+    ASTTableJoin::Strictness getStrictness() const { return strictness; }
     AsofRowRefs::Type getAsofType() const { return *asof_type; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 

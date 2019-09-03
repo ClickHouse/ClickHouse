@@ -59,7 +59,8 @@ class TinyLogBlockInputStream final : public IBlockInputStream
 public:
     TinyLogBlockInputStream(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
         : block_size(block_size_), columns(columns_),
-        storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
+        storage(storage_), lock(storage_.rwlock),
+        max_read_buffer_size(max_read_buffer_size_) {}
 
     String getName() const override { return "TinyLog"; }
 
@@ -79,13 +80,14 @@ private:
     size_t block_size;
     NamesAndTypesList columns;
     StorageTinyLog & storage;
+    std::shared_lock<std::shared_mutex> lock;
     bool finished = false;
     size_t max_read_buffer_size;
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t max_read_buffer_size)
-            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(data_path).getSize())),
+        Stream(const std::string & data_path, size_t max_read_buffer_size_)
+            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size_), Poco::File(data_path).getSize())),
             compressed(plain)
         {
         }
@@ -109,7 +111,7 @@ class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
     explicit TinyLogBlockOutputStream(StorageTinyLog & storage_)
-        : storage(storage_)
+        : storage(storage_), lock(storage_.rwlock)
     {
     }
 
@@ -132,6 +134,7 @@ public:
 
 private:
     StorageTinyLog & storage;
+    std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
     struct Stream
@@ -324,14 +327,17 @@ StorageTinyLog::StorageTinyLog(
     const std::string & database_name_,
     const std::string & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{columns_},
-    path(path_), table_name(table_name_), database_name(database_name_),
+    : path(path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
@@ -340,7 +346,8 @@ StorageTinyLog::StorageTinyLog(
     {
         /// create files if they do not exist
         if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-            throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
+            throwFromErrnoWithPath("Cannot create directory " + full_path, full_path,
+                                   ErrorCodes::CANNOT_CREATE_DIRECTORY);
     }
 
     for (const auto & col : getColumns().getAllPhysical())
@@ -371,8 +378,10 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
+    std::unique_lock<std::shared_mutex> lock(rwlock);
+
     /// Rename directory with data.
     Poco::File(path + escapeForFileName(table_name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
@@ -395,6 +404,8 @@ BlockInputStreams StorageTinyLog::read(
     const unsigned /*num_streams*/)
 {
     check(column_names);
+	// When reading, we lock the entire storage, because we only have one file
+	// per column and can't modify it concurrently.
     return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
         max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 }
@@ -409,13 +420,16 @@ BlockOutputStreamPtr StorageTinyLog::write(
 
 CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
+    std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr &, const Context &)
+void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     if (table_name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
+
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     auto file = Poco::File(path + escapeForFileName(table_name));
     file.remove(true);
@@ -439,7 +453,7 @@ void registerStorageTinyLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageTinyLog::create(
-            args.data_path, args.database_name, args.table_name, args.columns,
+            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

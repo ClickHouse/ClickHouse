@@ -102,6 +102,9 @@ Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-p
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
+## currentUser()
+Returns the login of authorized user (initiator of query execution).
+
 ## isFinite(x)
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
@@ -120,7 +123,7 @@ Accepts constant strings: database name, table name, and column name. Returns a 
 The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
-## bar
+## bar {#function-bar}
 
 Allows building a unicode-art diagram.
 
@@ -311,6 +314,49 @@ Returns the ordinal number of the row in the data block. Different data blocks a
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
+## neighbor(column, offset\[, default_value\])
+
+Returns value for `column`, in `offset` distance from current row.
+This function is a partial implementation of [window functions](https://en.wikipedia.org/wiki/SQL_window_function) LEAD() and LAG().
+
+The result of the function depends on the affected data blocks and the order of data in the block.
+If you make a subquery with ORDER BY and call the function from outside the subquery, you can get the expected result.
+
+If `offset` value is outside block bounds, a default value for `column` returned. If `default_value` is given, then it will be used.
+This function can be used to compute year-over-year metric value:
+
+``` sql
+WITH toDate('2018-01-01') AS start_date
+SELECT
+    toStartOfMonth(start_date + (number * 32)) AS month,
+    toInt32(month) % 100 AS money,
+    neighbor(money, -12) AS prev_year,
+    round(prev_year / money, 2) AS year_over_year
+FROM numbers(16)
+```
+
+```
+┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
+│ 2018-01-01 │    32 │         0 │              0 │
+│ 2018-02-01 │    63 │         0 │              0 │
+│ 2018-03-01 │    91 │         0 │              0 │
+│ 2018-04-01 │    22 │         0 │              0 │
+│ 2018-05-01 │    52 │         0 │              0 │
+│ 2018-06-01 │    83 │         0 │              0 │
+│ 2018-07-01 │    13 │         0 │              0 │
+│ 2018-08-01 │    44 │         0 │              0 │
+│ 2018-09-01 │    75 │         0 │              0 │
+│ 2018-10-01 │     5 │         0 │              0 │
+│ 2018-11-01 │    36 │         0 │              0 │
+│ 2018-12-01 │    66 │         0 │              0 │
+│ 2019-01-01 │    97 │        32 │           0.33 │
+│ 2019-02-01 │    28 │        63 │           2.25 │
+│ 2019-03-01 │    56 │        91 │           1.62 │
+│ 2019-04-01 │    87 │        22 │           0.25 │
+└────────────┴───────┴───────────┴────────────────┘
+```
+
+
 ## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
@@ -346,6 +392,33 @@ FROM
 │    1109 │ 2016-11-24 00:00:09 │     4 │
 │    1110 │ 2016-11-24 00:00:10 │     1 │
 └─────────┴─────────────────────┴───────┘
+```
+
+Please note - block size affects the result. With each new block, the `runningDifference` state is reset.
+
+``` sql
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+┌─number─┬─diff─┐
+│  65536 │    0 │
+└────────┴──────┘
+
+set max_block_size=100000 -- default value is 65536! 
+
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
 ```
 
 ## runningDifferenceStartingWithFirstValue
@@ -668,16 +741,37 @@ So, result of function depends on partition of data to blocks and on order of da
 
 ## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
 
-Gets data from the [Join](../../operations/table_engines/join.md) table using the specified join key.
+Gets data from [Join](../../operations/table_engines/join.md) tables using the specified join key.
 
-Supports only tables created with `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
 ## modelEvaluate(model_name, ...)
-Evaluate external model.
+Evaluate model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x)
+## throwIf(x\[, custom_message\])
 
 Throw an exception if the argument is non zero.
+custom_message - is an optional parameter: a constant string, provides an error message
+
+```sql
+SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
+
+↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
+Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
+```
+
+## identity()
+
+Returns the same value that was used as its argument. 
+
+```sql
+SELECT identity(42)
+
+┌─identity(42)─┐
+│           42 │
+└──────────────┘
+```
+Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->

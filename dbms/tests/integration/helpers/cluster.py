@@ -562,7 +562,7 @@ class ClickHouseInstance:
         with open(local_path, 'r') as fdata:
             data = fdata.read()
             encoded_data = base64.b64encode(data)
-            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)])
+            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)], user='root')
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(process_name)])
@@ -723,7 +723,8 @@ class ClickHouseInstance:
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
-        shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
+        # The file is named with 0_ prefix to be processed before other configuration overloads.
+        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), config_d_dir)
 
         # Generate and write macros file
         macros = self.macros.copy()

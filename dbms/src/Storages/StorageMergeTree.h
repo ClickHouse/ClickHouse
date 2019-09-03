@@ -3,6 +3,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Core/Names.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -22,6 +23,7 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
 {
+    friend struct ext::shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -53,14 +55,12 @@ public:
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
-    void drop() override;
-    void truncate(const ASTPtr &, const Context &) override;
+    void drop(TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
-    void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 
@@ -116,11 +116,11 @@ private:
         const DataPartPtr & part,
         std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
 
-    void clearOldMutations();
+    void clearOldMutations(bool truncate = false);
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
+    void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
 
@@ -129,6 +129,7 @@ private:
     friend struct CurrentlyMergingPartsTagger;
 
 protected:
+
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
@@ -141,6 +142,7 @@ protected:
         const String & table_name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
+        const ConstraintsDescription & constraints_,
         bool attach,
         Context & context_,
         const String & date_column_name,
@@ -150,7 +152,7 @@ protected:
         const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
         const ASTPtr & ttl_table_ast_,
         const MergingParams & merging_params_,
-        const MergeTreeSettings & settings_,
+        std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 };
 

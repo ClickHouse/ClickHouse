@@ -5,6 +5,8 @@
 
 #include <mysqlxx/Pool.h>
 #include <Databases/DatabasesCommon.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -46,7 +48,7 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void loadTables(Context &, ThreadPool *, bool) override
+    void loadTables(Context &, bool) override
     {
         /// do nothing
     }
@@ -61,19 +63,9 @@ public:
         throw Exception("MySQL database engine does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void renameTable(const Context &, const String &, IDatabase &, const String &) override
-    {
-        throw Exception("MySQL database engine does not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     void createTable(const Context &, const String &, const StoragePtr &, const ASTPtr &) override
     {
         throw Exception("MySQL database engine does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void alterTable(const Context &, const String &, const ColumnsDescription &, const IndicesDescription &, const ASTModifier &) override
-    {
-        throw Exception("MySQL database engine does not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 private:

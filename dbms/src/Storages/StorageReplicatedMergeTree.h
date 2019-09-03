@@ -74,6 +74,7 @@ namespace DB
 
 class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
 {
+    friend struct ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -98,9 +99,7 @@ public:
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
@@ -110,11 +109,11 @@ public:
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -171,6 +170,9 @@ public:
     String getDataPath() const override { return full_path; }
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
+
+    /// Checks ability to use granularity
+    bool canUseAdaptiveGranularity() const override;
 
 private:
     /// Delete old parts from disk and from ZooKeeper.
@@ -285,6 +287,9 @@ private:
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
+    /// True if replica was created for existing table with fixed granularity
+    bool other_replicas_fixed_granularity = false;
+
     /** Creates the minimum set of nodes in ZooKeeper.
       */
     void createTableIfNotExists();
@@ -376,7 +381,7 @@ private:
 
     bool executeFetch(LogEntry & entry);
 
-    void executeClearColumnInPartition(const LogEntry & entry);
+    void executeClearColumnOrIndexInPartition(const LogEntry & entry);
 
     bool executeReplaceRange(const LogEntry & entry);
 
@@ -424,6 +429,7 @@ private:
         const DataPartsVector & parts,
         const String & merged_name,
         bool deduplicate,
+        bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
     bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
@@ -463,10 +469,15 @@ private:
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
+      *
+      * NOTE: This method must be called without table lock held.
+      * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
+      * TODO: There are wrong usages of this method that are not fixed yet.
       */
     void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry);
 
     /** Wait until the specified replica executes the specified action from the log.
+      * NOTE: See comment about locks above.
       */
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
@@ -499,11 +510,15 @@ private:
     std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
 
     // Partition helpers
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & query_context);
+    void clearColumnOrIndexInPartition(const ASTPtr & partition, LogEntry && entry, const Context & query_context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
+
+    /// Check granularity of already existing replicated table in zookeeper if it exists
+    /// return true if it's fixed
+    bool checkFixedGranualrityInZookeeper();
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
@@ -515,6 +530,7 @@ protected:
         const String & path_, const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
+        const ConstraintsDescription & constraints_,
         Context & context_,
         const String & date_column_name,
         const ASTPtr & partition_by_ast_,
@@ -523,7 +539,7 @@ protected:
         const ASTPtr & sample_by_ast_,
         const ASTPtr & table_ttl_ast_,
         const MergingParams & merging_params_,
-        const MergeTreeSettings & settings_,
+        std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 };
 

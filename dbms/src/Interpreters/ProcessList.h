@@ -66,6 +66,7 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by request
     std::vector<UInt32> thread_numbers;
+    std::vector<UInt32> os_thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 };
@@ -315,6 +316,8 @@ public:
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
+
+    void killAllQueries();
 };
 
 }
