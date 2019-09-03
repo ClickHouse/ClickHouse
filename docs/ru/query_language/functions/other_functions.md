@@ -721,4 +721,17 @@ SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) 
 
 Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
 
+## identity()
+
+Возвращает то же значение, которое использовалось в качестве аргумента.
+
+```sql
+SELECT identity(42)
+
+┌─identity(42)─┐
+│           42 │
+└──────────────┘
+```
+Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
