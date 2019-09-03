@@ -2,7 +2,8 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Parsers/IAST.h>
+#include <Core/SettingsCommon.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <utility>
 #include <memory>
@@ -13,6 +14,10 @@ namespace DB
 class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
+class Block;
+
+class Join;
+using JoinPtr = std::shared_ptr<Join>;
 
 struct AnalyzedJoin
 {
@@ -30,18 +35,19 @@ struct AnalyzedJoin
 
 private:
     friend class SyntaxAnalyzer;
-    friend struct SyntaxAnalyzerResult;
-    friend class ExpressionAnalyzer;
-    friend class SelectQueryExpressionAnalyzer;
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
     ASTs key_asts_left;
     ASTs key_asts_right;
-    bool with_using = true;
+    ASTTableJoin table_join;
+    bool join_use_nulls = false;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
+    /// Columns will be added to block by JOIN. It's a subset of columns_from_joined_table with corrected Nullability
+    NamesAndTypesList columns_added_by_join;
+
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only ranamed columns.
@@ -51,8 +57,8 @@ public:
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
-    bool hasUsing() const { return with_using; }
-    bool hasOn() const { return !with_using; }
+    bool hasUsing() const { return table_join.using_expression_list != nullptr; }
+    bool hasOn() const { return !hasUsing(); }
 
     NameSet getQualifiedColumnsSet() const;
     NameSet getOriginalColumnsSet() const;
@@ -60,6 +66,22 @@ public:
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
     size_t rightKeyInclusion(const String & name) const;
+
+    void appendRequiredColumns(const Block & sample, NameSet & required_columns) const;
+    void addJoinedColumn(const NameAndTypePair & joined_column);
+    void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
+
+    ASTPtr leftKeysList() const;
+    ASTPtr rightKeysList() const; /// For ON syntax only
+
+    Names requiredJoinedNames() const;
+    const Names & keyNamesLeft() const { return key_names_left; }
+    const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
+    const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
+
+    JoinPtr makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const;
+
+    static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
 };
 
 struct ASTTableExpression;
