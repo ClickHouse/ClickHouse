@@ -437,6 +437,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
     Stopwatch total_time_watch;
     ExecutionState * state = nullptr;
+    auto & context = executor_contexts[thread_num];
 
     auto prepare_processor = [&](UInt64 pid, Stack & children, Stack & parents)
     {
@@ -474,32 +475,24 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         /// Just travers graph and prepare any processor.
         while (!finished)
         {
-            auto pushed = task_queue.num_pushed.load();
-            bool found = false;
-
-            while (pushed > task_queue.num_popped.load())
+            if (!context->task_queue.empty())
             {
-                /// Fast branch.
-                if (task_queue.pop(state))
+                state = context->task_queue.front();
+                context->task_queue.pop();
+                break;
+            }
+
+            {
+                auto expected_state = context->state_to_steal.load();
+                if (expected_state
+                    && context->state_to_steal.compare_exchange_strong(expected_state, nullptr))
                 {
-                    found = true;
+                    state = expected_state;
                     break;
                 }
             }
 
-            if (found)
-                break;
-
             std::unique_lock lock(task_queue_mutex);
-
-            auto popped = task_queue.num_popped.load();
-
-//            if (!task_queue.empty())
-//            {
-//                state = task_queue.front();
-//                task_queue.pop();
-//                break;
-//            }
 
             ++num_waiting_threads;
 
@@ -511,10 +504,30 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 break;
             }
 
-            task_queue_condvar.wait(lock, [&]()
+            while (!finished)
             {
-                return finished || popped < task_queue.num_pushed.load();
-            });
+                bool found = false;
+
+                for (auto & exec_context : executor_contexts)
+                {
+                    auto expected_state = exec_context->state_to_steal.load();
+                    if (expected_state
+                        && exec_context->state_to_steal.compare_exchange_strong(expected_state, nullptr))
+                    {
+                        state = expected_state;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found)
+                    break;
+
+                task_queue_condvar.wait_for(lock, std::chrono::milliseconds(1), [&]()
+                {
+                    return finished.load();
+                });
+            }
 
             --num_waiting_threads;
         }
@@ -547,7 +560,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             {
                 Stack children;
                 Stack parents;
-                Queue queue;
+                auto & queue = context->task_queue;
 
                 ++num_processing_executors;
                 while (auto task = expand_pipeline_task.load())
@@ -570,16 +583,25 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 if (!queue.empty())
                 {
-                    /// std::lock_guard lock(task_queue_mutex);
+                    auto task_to_still = queue.front();
+                    ExecutionState * expected = nullptr;
 
-                    while (!queue.empty() && !finished)
-                    {
-                        task_queue.push(queue.front());
+                    if (context->state_to_steal.compare_exchange_strong(expected, task_to_still))
                         queue.pop();
-                    }
-
-                    task_queue_condvar.notify_all();
                 }
+
+//                if (!queue.empty())
+//                {
+//                    /// std::lock_guard lock(task_queue_mutex);
+//
+//                    while (!queue.empty() && !finished)
+//                    {
+//                        local_queue.push(queue.front());
+//                        queue.pop();
+//                    }
+//
+//                    /// task_queue_condvar.notify_all();
+//                }
 
                 --num_processing_executors;
                 while (auto task = expand_pipeline_task.load())
