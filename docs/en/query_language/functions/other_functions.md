@@ -753,4 +753,17 @@ Accepts a model name and model arguments. Returns Float64.
 
 Throw an exception if the argument is non zero.
 
+## identity()
+
+Returns the same value that was used as its argument. 
+
+```sql
+SELECT identity(42)
+
+┌─identity(42)─┐
+│           42 │
+└──────────────┘
+```
+Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
