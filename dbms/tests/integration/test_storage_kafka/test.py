@@ -30,6 +30,7 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
+                                config_dir='configs',
                                 main_configs=['configs/kafka.xml'],
                                 with_kafka=True,
                                 clickhouse_path_dir='clickhouse_path')

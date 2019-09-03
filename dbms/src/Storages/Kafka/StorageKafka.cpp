@@ -400,7 +400,7 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub;
+    std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
 
     // Check whether the limits were applied during query execution
