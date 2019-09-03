@@ -721,6 +721,15 @@ SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) 
 
 Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
 
+## modelEvaluate(model_name, ...)
+
+Оценить внешнюю модель.
+Принимает имя модели и аргументы модели. Возвращает Float64.
+
+## throwIf(x)
+
+Бросает исключение, если аргумент не равен нулю.
+
 ## identity()
 
 Возвращает то же значение, которое использовалось в качестве аргумента.
