@@ -2940,7 +2940,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
 
     for (auto & names : renamed_parts.old_and_new_names)
     {
-        Poco::File(getFullPathOnDisk(renamed_parts.name_to_disk[names.first]) + names.second).remove(true);
+        Poco::File(getFullPathOnDisk(renamed_parts.name_to_disk[names.first]) + "detached/" + names.second).remove(true);
         LOG_DEBUG(log, "Dropped detached part " << names.first);
         names.first.clear();
     }
@@ -3267,7 +3267,7 @@ String MergeTreeData::getFullPathForPart(const String & part_name, const String 
 {
     auto disk = getDiskForPart(part_name, relative_path);
     if (disk)
-        return getFullPathOnDisk(disk);
+        return getFullPathOnDisk(disk) + relative_path;
     return "";
 }
 
