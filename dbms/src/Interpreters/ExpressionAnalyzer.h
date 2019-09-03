@@ -121,9 +121,8 @@ protected:
     SyntaxAnalyzerResultPtr syntax;
 
     const StoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
-    const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
+    const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
-    const NamesAndTypesList & columnsAddedByJoin() const { return syntax->columns_added_by_join; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
@@ -131,7 +130,7 @@ protected:
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void addJoinAction(const ASTTableJoin & join_params, ExpressionActionsPtr & actions, JoinPtr join = {}) const;
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr join = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 

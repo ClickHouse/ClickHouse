@@ -394,6 +394,33 @@ FROM
 └─────────┴─────────────────────┴───────┘
 ```
 
+Please note - block size affects the result. With each new block, the `runningDifference` state is reset.
+
+``` sql
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+┌─number─┬─diff─┐
+│  65536 │    0 │
+└────────┴──────┘
+
+set max_block_size=100000 // default value is 65536!
+
+SELECT
+    number,
+    runningDifference(number + 1) AS diff
+FROM numbers(100000)
+WHERE diff != 1
+┌─number─┬─diff─┐
+│      0 │    0 │
+└────────┴──────┘
+```
+
 ## runningDifferenceStartingWithFirstValue
 
 Same as for [runningDifference](./other_functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.

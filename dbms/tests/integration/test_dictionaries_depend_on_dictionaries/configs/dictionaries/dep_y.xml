@@ -8,7 +8,7 @@
                <user>default</user>
                <password></password>
                <db>test</db>
-               <table>small_dict_source</table>
+               <table>elements</table>
            </clickhouse>
        </source>
        <lifetime>5</lifetime>
