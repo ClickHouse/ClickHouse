@@ -386,7 +386,7 @@ WHERE diff != 1
 └────────┴──────┘
 
 
-set max_block_size=100000 // по умолчанию 65536!
+set max_block_size=100000 -- по умолчанию 65536!
 
 SELECT
     number,
@@ -720,5 +720,35 @@ SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) 
 Получает данные из таблиц [Join](../../operations/table_engines/join.md) по ключу.
 
 Поддержаны только таблицы, созданные запросом с `ENGINE = Join(ANY, LEFT, <join_keys>)`.
+
+## modelEvaluate(model_name, ...)
+
+Вычислить модель.
+Принимает имя модели и аргументы модели. Возвращает Float64.
+
+## throwIf(x\[, custom_message\])
+
+Бросает исключение, если аргумент не равен нулю.
+custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+
+```sql
+SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
+
+↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
+Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
+```
+
+## identity()
+
+Возвращает то же значение, которое использовалось в качестве аргумента.
+
+```sql
+SELECT identity(42)
+
+┌─identity(42)─┐
+│           42 │
+└──────────────┘
+```
+Используется для отладки и тестирования, позволяет "сломать" доступ по индексу, и получить результат и производительность запроса для полного сканирования.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->
