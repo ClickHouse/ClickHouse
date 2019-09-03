@@ -138,38 +138,6 @@ std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
     return {query.database, query.table};
 }
 
-/*
-<<<<<<< HEAD
-    /// We create a pipeline of several streams, into which we will write data.
-    BlockOutputStreamPtr out;
-
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
-
-    /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
-    /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
-    {
-        out = std::make_shared<SquashingBlockOutputStream>(
-            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-    }
-    auto query_sample_block = getSampleBlock(query, table);
-
-    /// Actually we don't know structure of input blocks from query/table,
-    /// because some clients break insertion protocol (columns != header)
-    out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
-
-    if (const auto & constraints = table->getConstraints(); !constraints.empty())
-        out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table,
-            out, query_sample_block, table->getConstraints(), context);
-
-    auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
-    out_wrapper->setProcessListElement(context.getProcessListElement());
-    out = std::move(out_wrapper);
-
-=======
->>>>>>> ff54f3a10b3d1d89c099cff3c3b5eb6ebcf27972
-*/
 
 BlockOutputStreamPtr InterpreterInsertQuery::createOutputStream(const ASTInsertQuery & query, const StoragePtr & table, const Block & sample_block)
 {
