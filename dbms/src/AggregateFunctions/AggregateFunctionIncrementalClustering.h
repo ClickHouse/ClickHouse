@@ -64,7 +64,7 @@ public:
         clusters[closest_cluster].appendPoint(columns, row_num);
     }
 
-    void add_from_vector(const std::vector<Float64> & coordinates)
+    void addFromVector(const std::vector<Float64> & coordinates)
     {
         predicted_clusters.clear();
         if (clusters.size() < multiplication_factor * num_clusters)
@@ -83,25 +83,25 @@ public:
         /// If one of cluster sets are not filled in, put its points to another cluster set
         if (rhs.clusters.size() < rhs.multiplication_factor * rhs.num_clusters)
         {
-            for (size_t i = 0; i != rhs.clusters.size(); ++i)
-            {
-                add_from_vector(rhs.clusters[i].center());
-            }
+            for (auto & cluster : rhs.clusters)
+                addFromVector(cluster.center());
+
             return;
         }
+
         if (clusters.size() < multiplication_factor * num_clusters)
         {
             std::vector<Cluster> old_clusters = std::move(clusters);
             clusters = rhs.clusters;
-            for (size_t i = 0; i != old_clusters.size(); ++i)
-            {
-                add_from_vector(old_clusters[i].center());
-            }
+
+            for (auto & old_cluster : old_clusters)
+                addFromVector(old_cluster.center());
+
             return;
         }
 
         /// Merge closest pairs of clusters greedily
-        for (size_t i = 0; i != rhs.clusters.size(); ++i)
+        for (size_t i = 0; i < rhs.clusters.size(); ++i)
         {
             size_t closest_cluster = findNearestCluster(rhs.clusters[i].center(), clusters, i);
             std::swap(clusters[closest_cluster], clusters[i]);
@@ -113,24 +113,25 @@ public:
     {
         writeBinary(num_clusters, buf);
         writeBinary(num_dimensions, buf);
-        writeBinary(clusters.size(), buf);
+
+        UInt64 clusters_size = clusters.size();
+        writeBinary(clusters_size, buf);
+
         for (auto & cluster : clusters)
-        {
             cluster.write(buf);
-        }
     }
 
     void read(ReadBuffer & buf)
     {
         readBinary(num_clusters, buf);
         readBinary(num_dimensions, buf);
-        decltype(clusters.size()) clusters_size;
+
+        UInt64 clusters_size;
         readBinary(clusters_size, buf);
         clusters.resize(clusters_size);
+
         for (auto & cluster : clusters)
-        {
             cluster.read(buf);
-        }
     }
 
     // TODO consider adding new points (from prediction) into clusters
@@ -141,22 +142,24 @@ public:
                  const ColumnNumbers & arguments) const
     {
         if (num_dimensions + 1 != arguments.size())
-            throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("In predict function number of arguments differs from the size of weights vector",
+                            ErrorCodes::LOGICAL_ERROR);
 
-        size_t rows_num = block.rows();
+        size_t num_rows = block.rows();
 
-        if (offset > rows_num || offset + limit > rows_num)
+        if (offset > num_rows || offset + limit > num_rows)
             throw Exception("Invalid offset and limit for incrementalClustering::predict. "
-                            "Block has " + toString(rows_num) + " rows, but offset is " + toString(offset) +
+                            "Block has " + toString(num_rows) + " rows, but offset is " + toString(offset) +
                             " and limit is " + toString(limit), ErrorCodes::LOGICAL_ERROR);
 
-        make_prediction();
+        makePrediction();
+
         std::vector<std::vector<Float64>> distances(
             limit,
-            std::vector<Float64>(predicted_clusters.size(), 0.0)
+            std::vector<Float64>(predicted_clusters.size(), 0)
         );
 
-        for (size_t i = 0; i != num_dimensions; ++i)
+        for (size_t i = 0; i < num_dimensions; ++i)
         {
             const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i + 1]);
             if (!isNativeNumber(cur_col.type))
@@ -167,10 +170,10 @@ public:
                 throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i),
                                 ErrorCodes::LOGICAL_ERROR);
 
-            for (size_t row = 0; row != limit; ++row)
+            for (size_t row = 0; row < limit; ++row)
             {
                 Float64 value = features_column->getFloat64(offset + row);
-                for (size_t cluster_idx = 0; cluster_idx != predicted_clusters.size(); ++cluster_idx)
+                for (size_t cluster_idx = 0; cluster_idx < predicted_clusters.size(); ++cluster_idx)
                 {
                     Float64 diff = predicted_clusters[cluster_idx][i] - value;
                     distances[row][cluster_idx] += diff * diff;
@@ -179,21 +182,21 @@ public:
         }
 
         container.reserve(container.size() + limit);
-        for (size_t row = 0; row != limit; ++row)
+        for (size_t row = 0; row < limit; ++row)
         {
-            size_t closest = 0;
-            for (size_t cluster_idx = 1; cluster_idx != distances[row].size(); ++cluster_idx)
-            {
-                if (distances[row][cluster_idx] < distances[row][closest])
-                    closest = cluster_idx;
-            }
-            container.emplace_back(closest);
+            size_t closest_cluster = 0;
+
+            for (size_t cluster_idx = 1; cluster_idx < distances[row].size(); ++cluster_idx)
+                if (distances[row][cluster_idx] < distances[row][closest_cluster])
+                    closest_cluster = cluster_idx;
+
+            container.emplace_back(closest_cluster);
         }
     }
 
     void returnClusters(IColumn & to) const
     {
-        make_prediction();
+        makePrediction();
 
         size_t size = num_clusters * num_dimensions;
 
@@ -217,61 +220,50 @@ private:
     class Cluster
     {
     public:
-        Cluster() : coordinates(), points_num(0)
-        {}
+        Cluster() = default;
+        Cluster(const Cluster& other) = default;
 
-        explicit Cluster(std::vector<Float64> coordinates)
-            : coordinates(std::move(coordinates)),
-              points_num(1)
-        {}
-
-        Cluster(const Cluster& other)
-            : coordinates(other.coordinates),
-              points_num(other.points_num)
-        {}
+        explicit Cluster(std::vector<Float64> coordinates_) : coordinates(std::move(coordinates_)), num_points(1) {}
 
         void swap(Cluster& other)
         {
             std::swap(coordinates, other.coordinates);
-            std::swap(points_num, other.points_num);
+            std::swap(num_points, other.num_points);
         }
 
-        Cluster(const IColumn ** columns, size_t row_num, size_t dimensions)
-                : points_num(1)
+        Cluster(const IColumn ** columns, size_t row_num, size_t dimensions) : num_points(1)
         {
             coordinates.resize(dimensions);
-            for (size_t i = 0; i != dimensions; ++i)
-            {
+
+            for (size_t i = 0; i < dimensions; ++i)
                 coordinates[i] = columns[i]->getFloat64(row_num);
-            }
         }
 
         void appendPoint(const IColumn ** columns, size_t row_num)
         {
-            if (points_num == 0)
+            if (num_points == 0)
                 throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
 
-            Float64 point_weight = appendPointWeight(++points_num);
+            Float64 point_weight = appendPointWeight(++num_points);
             Float64 cluster_weight = 1 - point_weight;
-            for (size_t i = 0; i != coordinates.size(); ++i)
-            {
+
+            for (size_t i = 0; i < coordinates.size(); ++i)
                 coordinates[i] = cluster_weight * coordinates[i] + point_weight * columns[i]->getFloat64(row_num);
-            }
         }
 
         void appendPointFromVector(const std::vector<Float64> & new_coordinates)
         {
-            if (points_num == 0)
+            if (num_points == 0)
                 throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
+
             if (coordinates.size() != new_coordinates.size())
                 throw Exception("Cannot append point of other size", ErrorCodes::LOGICAL_ERROR);
 
-            Float64 point_weight = appendPointWeight(++points_num);
+            Float64 point_weight = appendPointWeight(++num_points);
             Float64 cluster_weight = 1 - point_weight;
-            for (size_t i = 0; i != coordinates.size(); ++i)
-            {
+
+            for (size_t i = 0; i < coordinates.size(); ++i)
                 coordinates[i] = cluster_weight * coordinates[i] + point_weight * new_coordinates[i];
-            }
         }
 
         void mergeCluster(const Cluster & other)
@@ -281,28 +273,28 @@ private:
 
             Float64 this_weight = mergeWeight(size(), other.size());
             Float64 other_weight = 1 - this_weight;
-            for (size_t i = 0; i != coordinates.size(); ++i)
-            {
+
+            for (size_t i = 0; i < coordinates.size(); ++i)
                 coordinates[i] = this_weight * coordinates[i] + other_weight * other.coordinates[i];
-            }
-            points_num += other.points_num;
+
+            num_points += other.num_points;
         }
 
         void write(WriteBuffer & buf) const
         {
             writeBinary(coordinates, buf);
-            writeBinary(points_num, buf);
+            writeBinary(num_points, buf);
         }
 
         void read(ReadBuffer & buf)
         {
             readBinary(coordinates, buf);
-            readBinary(points_num, buf);
+            readBinary(num_points, buf);
         }
 
         UInt32 size() const
         {
-            return points_num;
+            return num_points;
         }
 
         const std::vector<Float64> & center() const
@@ -322,7 +314,7 @@ private:
         }
 
         std::vector<Float64> coordinates;
-        UInt32 points_num = 0;
+        UInt32 num_points = 0;
     };
 
     static Float64 computeDistanceBetweenPoints(const std::vector<Float64> & point1, const std::vector<Float64> & point2)
@@ -508,14 +500,14 @@ private:
         predicted_clusters.clear();
 
         kMeansInitializeClusters();
+
         std::vector<size_t> closest_cluster(clusters.size());
-        for (size_t iter = 0; iter != kmeans_max_iter; ++iter)
+        for (size_t iter = 0; iter < kmeans_max_iter; ++iter)
         {
             /// For each point find the cluster with closest center
-            for (size_t point_idx = 0; point_idx != clusters.size(); ++point_idx)
-            {
+            for (size_t point_idx = 0; point_idx < clusters.size(); ++point_idx)
                 closest_cluster[point_idx] = findNearestCluster(clusters[point_idx].center(), predicted_clusters);
-            }
+
             /// Change predicted cluster centers
             Float64 diff = kMeansUpdateClusters(closest_cluster);
             /// Stop if diff is too small
@@ -523,8 +515,8 @@ private:
                 break;
         }
 
-        Float64 mean_distance{0.0};
-        for (size_t point_idx = 0; point_idx != clusters.size(); ++point_idx)
+        Float64 mean_distance = 0;
+        for (size_t point_idx = 0; point_idx < clusters.size(); ++point_idx)
             mean_distance += computeDistanceBetweenPoints(predicted_clusters[closest_cluster[point_idx]],
                                                           clusters[point_idx].center());
         if (!clusters.empty())
@@ -533,26 +525,10 @@ private:
         return mean_distance;
     }
 
-    void make_prediction() const
+    void makePrediction() const
     {
         if (predicted_clusters.empty())
-        {
-            /// Searching for the best result over max_tries_to_predict tries
-            /// and save it into predict_clusters
-            Float64 min_mean_distance = kMeans();
-            auto best_prediction = predicted_clusters;
-            for (size_t i = 1; i != max_tries_to_predict + 1; ++i)
-            {
-                Float64 cur_mean_distance = kMeans();
-                if (cur_mean_distance < min_mean_distance)
-                {
-                    min_mean_distance = cur_mean_distance;
-                    best_prediction = predicted_clusters;
-                }
-            }
-
-            predicted_clusters = std::move(best_prediction);
-        }
+            kMeans();
     }
 
     // TODO consider letting user change some of those parameters
@@ -560,7 +536,6 @@ private:
     /// Big enough factor is essential for good prediction.
     static const UInt32 multiplication_factor = 30;
     static const UInt32 kmeans_max_iter = 1000;         /// Number of kmeans iteration steps
-    static const UInt32 max_tries_to_predict = 1;       /// Number of tries to find the best kmeans prediction
     static constexpr Float64 eps_diff_ = 0.00001;       /// Kmeans stops if difference between clusters is smaller than this value
 
     UInt32 num_clusters = 0;
@@ -576,12 +551,12 @@ class AggregateFunctionIncrementalClustering final : public IAggregateFunctionDa
 public:
     String getName() const override { return "incrementalClustering"; }
 
-    explicit AggregateFunctionIncrementalClustering(UInt32 clusters_num,
-                                                    UInt32 dimensions,
-                                                    const DataTypes & argument_types,
-                                                    const Array & params)
-    : IAggregateFunctionDataHelper<ClusteringData, AggregateFunctionIncrementalClustering>(argument_types, params),
-    clusters_num(clusters_num), dimensions(dimensions)
+    explicit AggregateFunctionIncrementalClustering(UInt32 clusters_num_,
+                                                    UInt32 dimensions_,
+                                                    const DataTypes & argument_types_,
+                                                    const Array & params_)
+        : IAggregateFunctionDataHelper<ClusteringData, AggregateFunctionIncrementalClustering>(argument_types_, params_)
+        , clusters_num(clusters_num_), dimensions(dimensions_)
     {}
 
     /// This function is called when SELECT incrementalClustering(...) is called
