@@ -39,7 +39,8 @@ Returns 1, if at least one string needle<sub>i</sub> matches the string `haystac
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
-**Note: in all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.**
+!!! note "Note"
+    In all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.
 
 ## match(haystack, pattern)
 
@@ -56,7 +57,8 @@ For patterns to search for substrings in a string, it is better to use LIKE or '
 
 The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) library. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
 
-**Note: the length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.**
+!!! note "Note"
+    The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.
 
 ## multiMatchAnyIndex(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
@@ -70,9 +72,11 @@ The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack w
 
 The same as `multiFuzzyMatchAny`, but returns any index that matches the haystack within a constant edit distance.
 
-**Note: `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.**
+!!! note "Note"
+    `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.
 
-**Note: to turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.**
+!!! note "Note"
+    To turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.
 
 ## extract(haystack, pattern)
 
