@@ -11,7 +11,7 @@ The supported formats are:
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
 | [TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
-| [Template](#template) | ✔ | ✔ |
+| [Template](#format-template) | ✔ | ✔ |
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
@@ -121,7 +121,7 @@ During parsing, the first and second rows are completely ignored.
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
-## Template {#template}
+## Template {#format-template}
 
 This format allows to specify a custom format string with placeholders for values with specified escaping rule.
 

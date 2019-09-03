@@ -10,7 +10,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
 | [TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
-| [Template](#template) | ✔ | ✔ |
+| [Template](#format-template) | ✔ | ✔ |
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
@@ -120,7 +120,7 @@ world
 
 Этот формат также доступен под именем `TSVWithNamesAndTypes`.
 
-## Template {#template}
+## Template {#format-template}
 
 Этот формат позволяет указать произвольную форматную строку, в которую подставляются значения, сериализованные выбранным способом.
 
