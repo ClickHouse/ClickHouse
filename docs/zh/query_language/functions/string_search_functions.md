@@ -39,7 +39,8 @@
 
 对于不区分大小写的搜索或/和UTF-8格式，使用函数`multiSearchAnyCaseInsensitive，multiSearchAnyUTF8，multiSearchAnyCaseInsensitiveUTF8`。
 
-**注意：在所有`multiSearch*`函数中，由于实现规范，needles的数量应小于2<sup>8</sup>。**
+!!! note "注意"
+    在所有`multiSearch*`函数中，由于实现规范，needles的数量应小于2<sup>8</sup>。
 
 ## match(haystack, pattern)
 
@@ -56,7 +57,8 @@
 
 与`match`相同，但如果所有正则表达式都不匹配，则返回0；如果任何模式匹配，则返回1。它使用[hyperscan](https://github.com/intel/hyperscan)库。对于在字符串中搜索子字符串的模式，最好使用“multisearchany”，因为它更高效。
 
-**注意：任何`haystack`字符串的长度必须小于2<sup>32</ sup>字节，否则抛出异常。这种限制是因为hyperscan API而产生的。**
+!!! note "注意"
+    任何`haystack`字符串的长度必须小于2<sup>32</ sup>字节，否则抛出异常。这种限制是因为hyperscan API而产生的。
 
 ## multiMatchAnyIndex(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
@@ -70,9 +72,11 @@
 
 与`multiFuzzyMatchAny`相同，但返回匹配项的匹配能容的索引位置。
 
-**注意：`multiFuzzyMatch*`函数不支持UTF-8正则表达式，由于hyperscan限制，这些表达式被按字节解析。**
+!!! note "注意"
+    `multiFuzzyMatch*`函数不支持UTF-8正则表达式，由于hyperscan限制，这些表达式被按字节解析。
 
-**注意：如要关闭所有hyperscan函数的使用，请设置`SET allow_hyperscan = 0;`。**
+!!! note "注意"
+    如要关闭所有hyperscan函数的使用，请设置`SET allow_hyperscan = 0;`。
 
 ## extract(haystack, pattern)
 
