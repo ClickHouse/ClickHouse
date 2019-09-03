@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsCommon.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 #include <utility>
 #include <memory>
@@ -19,7 +20,7 @@ class Block;
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
-struct AnalyzedJoin
+class AnalyzedJoin
 {
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
       * The join is made by column k.
@@ -33,7 +34,6 @@ struct AnalyzedJoin
       * It's possible to use name `expr(t2 columns)`.
       */
 
-private:
     friend class SyntaxAnalyzer;
 
     Names key_names_left;
@@ -52,6 +52,8 @@ private:
     std::unordered_map<String, String> original_names;
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
+
+    JoinPtr hash_join;
 
 public:
     void addUsingKey(const ASTPtr & ast);
@@ -79,7 +81,12 @@ public:
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
+    void setHashJoin(JoinPtr join) { hash_join = join; }
     JoinPtr makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const;
+    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
+    void joinBlock(Block & block) const;
+    void joinTotals(Block & block) const;
+    bool hasTotals() const;
 
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
 };
