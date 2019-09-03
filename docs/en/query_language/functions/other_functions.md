@@ -746,12 +746,20 @@ Gets data from [Join](../../operations/table_engines/join.md) tables using the s
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
 ## modelEvaluate(model_name, ...)
-Evaluate external model.
+Evaluate model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x)
+## throwIf(x\[, custom_message\])
 
 Throw an exception if the argument is non zero.
+custom_message - is an optional parameter: a constant string, provides an error message
+
+```sql
+SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
+
+↙ Progress: 0.00 rows, 0.00 B (0.00 rows/s., 0.00 B/s.) Received exception from server (version 19.14.1):
+Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
+```
 
 ## identity()
 
