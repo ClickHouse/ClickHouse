@@ -475,6 +475,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         /// Just travers graph and prepare any processor.
         while (!finished)
         {
+            /// Fast way. Get task from local queue.
             if (!context->task_queue.empty())
             {
                 state = context->task_queue.front();
@@ -482,6 +483,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 break;
             }
 
+            /// Steal from current thread if can.
             {
                 auto expected_state = context->state_to_steal.load();
                 if (expected_state
@@ -492,19 +494,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 }
             }
 
-            std::unique_lock lock(task_queue_mutex);
-
-            ++num_waiting_threads;
-
-            if (num_waiting_threads == num_threads)
-            {
-                finished = true;
-                lock.unlock();
-                task_queue_condvar.notify_all();
-                break;
-            }
-
-            while (!finished)
+            /// Steal from any other thread.
             {
                 bool found = false;
 
@@ -522,12 +512,24 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 if (found)
                     break;
-
-                task_queue_condvar.wait_for(lock, std::chrono::milliseconds(1), [&]()
-                {
-                    return finished.load();
-                });
             }
+
+            std::unique_lock lock(task_queue_mutex);
+
+            ++num_waiting_threads;
+
+            if (num_waiting_threads == num_threads)
+            {
+                finished = true;
+                lock.unlock();
+                task_queue_condvar.notify_all();
+                break;
+            }
+
+            task_queue_condvar.wait_for(lock, std::chrono::milliseconds(1), [&]()
+            {
+                return finished.load();
+            });
 
             --num_waiting_threads;
         }
