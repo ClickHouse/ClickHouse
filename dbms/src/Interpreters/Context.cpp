@@ -542,7 +542,7 @@ void Context::setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensit
 {
     if (!sensitive_data_masker)
         throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
-    
+
     if (sensitive_data_masker->rulesCount() > 0)
     {
         auto lock = getLock();
