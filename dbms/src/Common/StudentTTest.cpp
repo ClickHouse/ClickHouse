@@ -173,7 +173,7 @@ std::string StudentTTest::reportResults(size_t confidence_level_index)
     std::stringstream ss;
     if (distributionsDiffer(confidence_level_index))
     {
-        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";
+        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence: ";
         ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
         return ss.str();
     }

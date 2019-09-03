@@ -11,7 +11,7 @@
  *
  * Usage:
  * It's it used to assume with some level of confidence that two distributions don't differ.
- * Values can be added with t_test.add(0/1, value) and after compared and reported with compareAndReport().
+ * Values can be added with t_test.add(0/1, value) and after compared and reported.
  */
 class StudentTTest
 {
@@ -52,7 +52,6 @@ private:
 
     std::array<DistributionData, 2> data {};
 
-    /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
     void updateResults(size_t confidence_level_index = 5);
 
 public:

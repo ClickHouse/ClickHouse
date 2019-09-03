@@ -82,7 +82,8 @@ void executeQuery(
         statistic->updateQueryInfo();
 
     statistic->total_time += seconds;
-    t_test.add(connection_index, seconds);
+    if (connections.size() == 2)
+        t_test.add(connection_index, seconds);
 
 }
 
