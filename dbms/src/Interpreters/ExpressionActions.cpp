@@ -12,7 +12,6 @@
 #include <Functions/IFunction.h>
 #include <set>
 #include <optional>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace ProfileEvents
@@ -45,7 +44,8 @@ Names ExpressionAction::getNeededColumns() const
 
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
-    res.insert(res.end(), join_key_names_left.begin(), join_key_names_left.end());
+    if (join_params)
+        res.insert(res.end(), join_params->keyNamesLeft().begin(), join_params->keyNamesLeft().end());
 
     for (const auto & column : projection)
         res.push_back(column.first);
@@ -159,20 +159,12 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(
-    const ASTTableJoin & join_params,
-    std::shared_ptr<const Join> join_,
-    const Names & join_key_names_left,
-    const Names & join_key_names_right,
-    const NamesAndTypesList & columns_added_by_join_)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> join_params, std::shared_ptr<const Join> hash_join)
 {
     ExpressionAction a;
     a.type = JOIN;
-    a.join = std::move(join_);
-    a.join_kind = join_params.kind;
-    a.join_key_names_left = join_key_names_left;
-    a.join_key_names_right = join_key_names_right;
-    a.columns_added_by_join = columns_added_by_join_;
+    a.join_params = join_params;
+    a.join = hash_join;
     return a;
 }
 
@@ -277,51 +269,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
         case JOIN:
         {
-            bool is_null_used_as_default = settings.join_use_nulls;
-            bool right_or_full_join = isRightOrFull(join_kind);
-            bool left_or_full_join = isLeftOrFull(join_kind);
-
-            for (auto & col : sample_block)
-            {
-                /// Materialize column.
-                /// Column is not empty if it is constant, but after Join all constants will be materialized.
-                /// So, we need remove constants from header.
-                if (col.column)
-                    col.column = nullptr;
-
-                bool make_nullable = is_null_used_as_default && right_or_full_join;
-
-                if (make_nullable && col.type->canBeInsideNullable())
-                    col.type = makeNullable(col.type);
-            }
-
-            for (const auto & col : columns_added_by_join)
-            {
-                auto res_type = col.type;
-
-                bool make_nullable = is_null_used_as_default && left_or_full_join;
-
-                if (!make_nullable)
-                {
-                    /// Keys from right table are usually not stored in Join, but copied from the left one.
-                    /// So, if left key is nullable, let's make right key nullable too.
-                    /// Note: for some join types it's not needed and, probably, may be removed.
-                    /// Note: changing this code, take into account the implementation in Join.cpp.
-                    auto it = std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name);
-                    if (it != join_key_names_right.end())
-                    {
-                        auto pos = it - join_key_names_right.begin();
-                        const auto & left_key_name = join_key_names_left[pos];
-                        make_nullable = sample_block.getByName(left_key_name).type->isNullable();
-                    }
-                }
-
-                if (make_nullable && res_type->canBeInsideNullable())
-                    res_type = makeNullable(res_type);
-
-                sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
-            }
-
+            join_params->addJoinedColumnsAndCorrectNullability(sample_block);
             break;
         }
 
@@ -527,7 +475,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            join->joinBlock(block, join_key_names_left, columns_added_by_join);
+            join->joinBlock(block, *join_params);
             break;
         }
 
@@ -645,9 +593,10 @@ std::string ExpressionAction::toString() const
 
         case JOIN:
             ss << "JOIN ";
-            for (NamesAndTypesList::const_iterator it = columns_added_by_join.begin(); it != columns_added_by_join.end(); ++it)
+            for (NamesAndTypesList::const_iterator it = join_params->columnsAddedByJoin().begin();
+                 it != join_params->columnsAddedByJoin().end(); ++it)
             {
-                if (it != columns_added_by_join.begin())
+                if (it != join_params->columnsAddedByJoin().begin())
                     ss << ", ";
                 ss << it->name;
             }
@@ -1220,7 +1169,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
     for (const auto & action : actions)
         if (action.join && isRightOrFull(action.join->getKind()))
             return action.join->createStreamWithNonJoinedRows(
-                source_header, action.join_key_names_left, action.columns_added_by_join, max_block_size);
+                source_header, *action.join_params, max_block_size);
 
     return {};
 }
@@ -1267,7 +1216,7 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
                 hash.update(col);
             break;
         case JOIN:
-            for (const auto & col : action.columns_added_by_join)
+            for (const auto & col : action.join_params->columnsAddedByJoin())
                 hash.update(col.name);
             break;
         case PROJECT:
@@ -1326,9 +1275,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && array_joined_columns == other.array_joined_columns
         && array_join_is_left == other.array_join_is_left
         && join == other.join
-        && join_key_names_left == other.join_key_names_left
-        && join_key_names_right == other.join_key_names_right
-        && columns_added_by_join == other.columns_added_by_join
+        && AnalyzedJoin::sameJoin(join_params.get(), other.join_params.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
 }

@@ -220,5 +220,65 @@ SELECT * FROM UAct FINAL
 
 Такой способ выбора данных очень неэффективен. Не используйте его для больших таблиц.
 
+## Пример другого подхода
+
+Исходные данные:
+
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+│ 4324182021466249494 │        -5 │     -146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+Идея состоит в том, что слияния при сворачивании учитывают только ключевые поля, поэтому в отменяющей строке можно указать отрицательные значения, которые нивелируют предыдущую версию записи при суммировании без учета поля Sign.
+Для этого подхода необходимо изменить тип данных `PageViews`, `Duration` для хранения отрицательных значений UInt8 -> Int16.
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews Int16,
+    Duration Int16,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+```
+
+Тестируем подход:
+```sql
+insert into UAct values(4324182021466249494,  5,  146,  1);
+insert into UAct values(4324182021466249494, -5, -146, -1);
+insert into UAct values(4324182021466249494,  6,  185,  1);
+
+select * from UAct final; // старайтесь не использовать final (он подходит только для тестов и маленьких таблиц)
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+
+SELECT
+    UserID,
+    sum(PageViews) AS PageViews,
+    sum(Duration) AS Duration
+FROM UAct
+GROUP BY UserID
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+
+select count() FROM UAct
+┌─count()─┐
+│       3 │
+└─────────┘
+
+optimize table UAct final;
+
+select * FROM UAct
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/collapsingmergetree/) <!--hide-->
 
