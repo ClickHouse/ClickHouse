@@ -82,6 +82,7 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
 
@@ -2077,10 +2078,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
     }
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr /* sorting_info */)
+void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info)
 {
-    /// TODO: Implement optimization using sorting_info
-
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query);
     UInt64 limit = getLimitForSorting(query, context);
@@ -2092,6 +2091,50 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 //    limits.mode = IBlockInputStream::LIMITS_TOTAL;
 //    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
+    if (sorting_info)
+    {
+        /* Case of sorting with optimization using sorting key.
+         * We have several threads, each of them reads batch of parts in direct
+         *  or reverse order of sorting key using one input stream per part
+         *  and then merge them into one sorted stream.
+         * At this stage we merge per-thread streams into one.
+         */
+
+        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+
+        if (need_finish_sorting)
+        {
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+            {
+                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
+                return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
+            });
+        }
+
+        if (pipeline.getNumStreams() > 1)
+        {
+            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
+            auto transform = std::make_shared<MergingSortedTransform>(
+                pipeline.getHeader(),
+                pipeline.getNumStreams(),
+                sorting_info->prefix_order_descr,
+                settings.max_block_size, limit_for_merging);
+
+            pipeline.addPipe({ std::move(transform) });
+        }
+
+        if (need_finish_sorting)
+        {
+            pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+            {
+                return std::make_shared<FinishSortingTransform>(
+                    header, sorting_info->prefix_order_descr,
+                    order_descr, settings.max_block_size, limit);
+            });
+        }
+
+        return;
+    }
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
