@@ -138,10 +138,9 @@ void LinearModelData::predict(
     Block & block,
     size_t offset,
     size_t limit,
-    const ColumnNumbers & arguments,
-    const Context & context) const
+    const ColumnNumbers & arguments) const
 {
-    gradient_computer->predict(container, block, offset, limit, arguments, weights, bias, context);
+    gradient_computer->predict(container, block, offset, limit, arguments, weights, bias);
 }
 
 void LinearModelData::returnWeights(IColumn & to) const
@@ -442,8 +441,7 @@ void LogisticRegression::predict(
     size_t limit,
     const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
-    Float64 bias,
-    const Context & /*context*/) const
+    Float64 bias) const
 {
     size_t rows_num = block.rows();
 
@@ -484,7 +482,7 @@ void LogisticRegression::compute(
     Float64 derivative = bias;
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         derivative += weights[i] * value;
     }
     derivative *= target;
@@ -493,7 +491,7 @@ void LogisticRegression::compute(
     batch_gradient[weights.size()] += target / (derivative + 1);
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         batch_gradient[i] += target * value / (derivative + 1) - 2 * l2_reg_coef * weights[i];
     }
 }
@@ -505,8 +503,7 @@ void LinearRegression::predict(
     size_t limit,
     const ColumnNumbers & arguments,
     const std::vector<Float64> & weights,
-    Float64 bias,
-    const Context & /*context*/) const
+    Float64 bias) const
 {
     if (weights.size() + 1 != arguments.size())
     {
@@ -555,7 +552,7 @@ void LinearRegression::compute(
     Float64 derivative = (target - bias);
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         derivative -= weights[i] * value;
     }
     derivative *= 2;
@@ -563,7 +560,7 @@ void LinearRegression::compute(
     batch_gradient[weights.size()] += derivative;
     for (size_t i = 0; i < weights.size(); ++i)
     {
-        auto value = (*columns[i]).getFloat64(row_num);
+        auto value = columns[i]->getFloat64(row_num);
         batch_gradient[i] += derivative * value - 2 * l2_reg_coef * weights[i];
     }
 }
