@@ -124,7 +124,7 @@ ENGINE = <Engine>
 ...
 ```
 
-If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codec combination for you project, pass the benchmarks as described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
+If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
 
 !!!warning
     You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor) utility.
@@ -140,14 +140,14 @@ ClickHouse supports common purpose codecs and specialized codecs.
 
 ### Specialized Codecs {#create-query-specialized-codecs}
 
-These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don't compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better.
+These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don't compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 
 Specialized codecs:
 
-- `Delta(delta_bytes)` — A compression approach in which raw values are replaced by the difference of two neighboring values. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1.
+- `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1.
 - `DoubleDelta` — Compresses values down to 1 bit (at most) using delta calculations. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 - `Gorilla` — Compresses values down to 1 bit (at most). Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
-- `T64` — A compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date`, and `DateTime`). At each step of its algorithm, the codec takes a block of 64 values, puts them into a 64x64-bit matrix, transposes it, crops the unused bits, and returns the rest as a sequence. Unused bits are those that don't differ between maximum and minimum values in the whole data part that compression is used for.
+- `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date`, and `DateTime`). At each step of its algorithm, the codec takes a block of 64 values, puts them into a 64x64-bit matrix, transposes it, crops the unused bits, and returns the rest as a sequence. Unused bits are those that don't differ between maximum and minimum values in the whole data part that compression is used for.
 
 ### Common Purpose Codecs {#create-query-common-purpose-codecs}
 
