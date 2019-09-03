@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Core/SortDescription.h>
-#include <Common/FillingRow.h>
+#include <Interpreters/FillingRow.h>
 
 namespace DB
 {
