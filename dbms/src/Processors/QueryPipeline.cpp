@@ -251,12 +251,12 @@ void QueryPipeline::concatDelayedStream()
     delayed_stream_port = nullptr;
 }
 
-void QueryPipeline::resize(size_t num_streams)
+void QueryPipeline::resize(size_t num_streams, bool force)
 {
     checkInitialized();
     concatDelayedStream();
 
-    if (num_streams == getNumStreams())
+    if (!force && num_streams == getNumStreams())
         return;
 
     has_resize = true;

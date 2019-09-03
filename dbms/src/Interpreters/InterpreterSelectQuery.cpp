@@ -1736,7 +1736,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumMainStreams() > 1)
     {
-        pipeline.resize(max_streams);
+        pipeline.resize(max_streams, true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(max_streams);
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
