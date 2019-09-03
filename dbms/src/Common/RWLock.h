@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Core/Types.h>
 
 #include <condition_variable>
 #include <list>
@@ -15,7 +16,7 @@ namespace DB
 {
 
 /// Implements shared lock with FIFO service
-/// Can be acquired recursively (several calls for the same query or the same OS thread) in Read mode
+/// Can be acquired recursively (several calls for the same query) in Read mode
 ///
 /// NOTE: it is important to allow acquiring the same lock in Read mode without waiting if it is already
 /// acquired by another thread of the same query. Otherwise the following deadlock is possible:
@@ -24,9 +25,10 @@ namespace DB
 /// - SELECT thread 2 tries to lock in the Read mode (waits for ALTER)
 
 /**
-  *  Lock object's invariants ("query_id-wise" fairness):
+  *  Lock object's invariants ("query-wise" fairness):
   *   - If query_id is not specified for locking request, use thread_id for lock aggregation
-  *   - Lock is reenterable (a thread requests a lock while it is already holding the lock) if the request is compatible (R -> R)
+  *   - Lock is reenterable, if the request is compatible (R -> R) (thread is already holding the lock
+  *     and such thread is acquiring the lock on behalf of the same query_id)
   *   - Incompatible locking requests from thread raise EDEADLOCK (R -> W, W -> R, W -> W)
   *   - Any given query_id can be present inside of only one group in the locking queue
   *   - Every request in the locking queue comes from a different thread
@@ -71,12 +73,6 @@ private:
         Exclusive,
     };
 
-    struct ClientInfo
-    {
-        String query_id;
-        std::thread::id thread_id;
-    };
-
     // Locking requests in read mode can be collected into one group depending on locking modes compatibility
     struct RequestGroup
     {
@@ -88,7 +84,7 @@ private:
         explicit RequestGroup(const Mode mode) : locking_mode{mode}, waiters{0} {}
     };
 
-    using LockInfo = std::unordered_map<LockId, ClientInfo>;
+    using LockInfo = std::unordered_map<LockId, String>;
     using RequestsQueue = std::list<RequestGroup>;
 
     /// LockId generator for issuing lock identifiers to successful locking requests
@@ -96,11 +92,11 @@ private:
     State lock_state = State::Idle;
 
     LockInfo active_locks;
-    std::unordered_map<std::thread::id, size_t> lock_owner_threads;
     std::unordered_map<String, size_t> lock_owner_queries;
 
     /// A queue - for fairness guarantees
     RequestsQueue pending_requests_queue;
+
     /// Queries that are enqueued for locking - for aggregating locking requests in Shared mode
     std::unordered_map<String, RequestsQueue::iterator> enqueued_queries;
 

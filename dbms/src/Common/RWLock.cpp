@@ -54,10 +54,7 @@ namespace ErrorCodes
  */
 RWLockImpl::LockId RWLockImpl::lock_impl(State target_state, const String & query_id)
 {
-    /// TODO(akazz): IMPORTANT! Exception safety: If lock* throws the lock must not change its state!!!
-    const std::thread::id this_thread_id = std::this_thread::get_id();
-
-    // TODO: Make use of type optional here?
+    /// TODO(akazz): VERY IMPORTANT! Exception safety: If lock* throws the lock must not change its state!!!
     const bool request_with_query_id = (query_id != NO_QUERY);
 
     std::unique_lock<std::mutex> lock(mutex);
@@ -65,8 +62,8 @@ RWLockImpl::LockId RWLockImpl::lock_impl(State target_state, const String & quer
     switch (target_state)
     {
     case State::Exclusive:
-        if (lock_owner_threads.find(this_thread_id) != lock_owner_threads.cend())
-            throw Exception("Acquiring RWLock in Exclusive mode: the thread already owns this lock in Exclusive mode, "
+        if (request_with_query_id && lock_owner_queries.find(query_id) != lock_owner_queries.cend())
+            throw Exception("Acquiring RWLock in Exclusive mode: query_id {" + query_id + "} already owns this lock in Exclusive mode, "
                             "it would deadlock on itself", ErrorCodes::LOGICAL_ERROR);
 
         if (lock_state != State::Idle)
@@ -82,7 +79,6 @@ RWLockImpl::LockId RWLockImpl::lock_impl(State target_state, const String & quer
     case State::Shared:
         if (lock_state == State::Exclusive ||
             (lock_state == State::Shared &&
-             lock_owner_threads.find(this_thread_id) == lock_owner_threads.cend() &&
              (!request_with_query_id || lock_owner_queries.find(query_id) == lock_owner_queries.cend())))
         {
             RequestsQueue::iterator my_request_group_it;
@@ -122,10 +118,9 @@ RWLockImpl::LockId RWLockImpl::lock_impl(State target_state, const String & quer
         throw Exception("Illegal locking mode", ErrorCodes::LOGICAL_ERROR);
     }
 
-    ++lock_owner_threads[this_thread_id];
     if (request_with_query_id)
         ++lock_owner_queries[query_id];
-    active_locks.emplace(id_generator, ClientInfo{query_id, this_thread_id});
+    active_locks.emplace(id_generator, query_id);
 
     lock_state = target_state;
 
@@ -137,25 +132,18 @@ void RWLockImpl::unlock_impl(LockId lock_id)
 {
     std::lock_guard lock(mutex);
 
-    const auto client_info_it = active_locks.find(lock_id);
-    if (client_info_it == active_locks.cend())
+    const auto query_id_it = active_locks.find(lock_id);
+    if (query_id_it == active_locks.cend())
         throw Exception(
                 "RWLockImpl::unlock_impl(): the specified lock_id cannot be found (lock has already been released?)",
                 ErrorCodes::LOGICAL_ERROR);
 
-    const auto & client_info = client_info_it->second;
-
-    if (client_info.thread_id != std::this_thread::get_id())
-        throw Exception("RWLockImpl::unlock_impl(): attempting to unlock by a different thread", ErrorCodes::LOGICAL_ERROR);
-
-    if (client_info.query_id != NO_QUERY)
+    const auto & query_id = query_id_it->second;
+    if (query_id != NO_QUERY)
     {
-        if (--lock_owner_queries.at(client_info.query_id) == 0)
-            lock_owner_queries.erase(client_info.query_id);
+        if (--lock_owner_queries.at(query_id) == 0)
+            lock_owner_queries.erase(query_id);
     }
-    --lock_owner_threads.at(client_info.thread_id);
-    if (lock_owner_threads.at(client_info.thread_id) == 0)
-        lock_owner_threads.erase(client_info.thread_id);
     active_locks.erase(lock_id);
 
     if (active_locks.empty())

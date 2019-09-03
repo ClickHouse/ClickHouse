@@ -296,8 +296,8 @@ TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_d
 {
     TableStructureReadLockHolder result;
     if (will_add_new_data)
-        result.new_data_structure_lock = std::make_shared<ExclusiveLockHolder>(new_data_structure_lock, query_id);
-    result.structure_lock = std::make_shared<ExclusiveLockHolder>(structure_lock, query_id);
+        result.new_data_structure_lock = std::make_shared<SharedLockHolder>(new_data_structure_lock, query_id);
+    result.structure_lock = std::make_shared<SharedLockHolder>(structure_lock, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);

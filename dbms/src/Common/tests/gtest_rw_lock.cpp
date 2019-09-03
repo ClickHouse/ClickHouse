@@ -107,7 +107,7 @@ TEST(Common, RWLock_1)
     }
 }
 
-TEST(Common, RWLock_Recursive)
+TEST(Common, DISABLED_RWLock_Recursive)
 {
     constexpr auto cycles = 10000;
 
