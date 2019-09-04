@@ -1072,7 +1072,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         for (const auto & index : indices_to_recalc)
         {
             files_to_skip.insert(index->getFileName() + ".idx");
-            files_to_skip.insert(index->getFileName() + ".mrk");
+            files_to_skip.insert(index->getFileName() + mrk_extension);
         }
 
         Poco::DirectoryIterator dir_end;
