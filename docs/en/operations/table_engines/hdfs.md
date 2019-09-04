@@ -34,7 +34,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Details of Implementation
+## Implementation Details
 
 - Reads and writes can be parallel
 - Not supported:
