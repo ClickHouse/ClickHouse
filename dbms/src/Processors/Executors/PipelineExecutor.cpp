@@ -394,7 +394,15 @@ void PipelineExecutor::finish()
         finished = true;
     }
 
-    task_queue_condvar.notify_all();
+    for (auto & context : executor_contexts)
+    {
+        {
+            std::lock_guard lock(context->mutex);
+            context->wake_flag = true;
+        }
+
+        context->condvar.notify_one();
+    }
 }
 
 void PipelineExecutor::execute(size_t num_threads)
@@ -469,21 +477,35 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
     while (!finished)
     {
+        bool first = true;
 
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
+        while (!finished)
         {
-            std::unique_lock lock(task_queue_mutex);
-
-            while (!finished)
             {
+                std::unique_lock lock(task_queue_mutex);
+
+                if (!first)
+                    --num_waiting_threads;
+
+                first = false;
+
                 if (!task_queue.empty())
                 {
                     state = task_queue.front();
                     task_queue.pop();
 
                     if (!task_queue.empty())
-                        task_queue_condvar.notify_one();
+                    {
+                        auto thread_to_wake = threads_queue.front();
+                        threads_queue.pop();
+                        lock.unlock();
+
+                        std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
+                        executor_contexts[thread_to_wake]->wake_flag = true;
+                        executor_contexts[thread_to_wake]->condvar.notify_one();
+                    }
 
                     break;
                 }
@@ -492,18 +514,23 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 if (num_waiting_threads == num_threads)
                 {
-                    finished = true;
                     lock.unlock();
-                    task_queue_condvar.notify_all();
+                    finish();
                     break;
                 }
 
-                task_queue_condvar.wait(lock, [&]()
+                threads_queue.push(thread_num);
+            }
+
+            {
+                std::unique_lock lock(executor_contexts[thread_num]->mutex);
+
+                executor_contexts[thread_num]->condvar.wait(lock, [&]
                 {
-                    return finished || !task_queue.empty();
+                    return finished || executor_contexts[thread_num]->wake_flag;
                 });
 
-                --num_waiting_threads;
+                executor_contexts[thread_num]->wake_flag = false;
             }
         }
 
@@ -558,7 +585,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 if (!queue.empty())
                 {
-                    std::lock_guard lock(task_queue_mutex);
+                    std::unique_lock lock(task_queue_mutex);
 
                     while (!queue.empty() && !finished)
                     {
@@ -566,7 +593,16 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    task_queue_condvar.notify_one();
+                    if (!threads_queue.empty())
+                    {
+                        auto thread_to_wake = threads_queue.front();
+                        threads_queue.pop();
+                        lock.unlock();
+
+                        std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
+                        executor_contexts[thread_to_wake]->wake_flag = true;
+                        executor_contexts[thread_to_wake]->condvar.notify_one();
+                    }
                 }
 
                 --num_processing_executors;
