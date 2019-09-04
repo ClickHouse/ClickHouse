@@ -418,8 +418,7 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     if (!ast_join)
         return false;
 
-    SubqueryForSet & subquery_for_set = getSubqueryForJoin(*ast_join);
-    syntax->analyzed_join->setHashJoin(subquery_for_set.join);
+    makeTableJoin(*ast_join);
 
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
@@ -457,7 +456,7 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
     return {};
 }
 
-SubqueryForSet & SelectQueryExpressionAnalyzer::getSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element)
+void SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -470,55 +469,45 @@ SubqueryForSet & SelectQueryExpressionAnalyzer::getSubqueryForJoin(const ASTTabl
         subquery_for_set.join = tryGetStorageJoin(join_element, context);
 
     if (!subquery_for_set.join)
-        makeHashJoin(join_element, subquery_for_set);
+    {
+        /// Actions which need to be calculated on joined block.
+        ExpressionActionsPtr joined_block_actions = createJoinedBlockActions();
 
-    return subquery_for_set;
+        if (!subquery_for_set.source)
+            makeSubqueryForJoin(join_element, joined_block_actions, subquery_for_set);
+
+        /// Test actions on sample block (early error detection)
+        Block sample_block = subquery_for_set.renamedSampleBlock();
+        joined_block_actions->execute(sample_block);
+
+        /// TODO You do not need to set this up when JOIN is only needed on remote servers.
+        subquery_for_set.join = analyzedJoin().makeHashJoin(sample_block, settings.size_limits_for_join);
+        subquery_for_set.joined_block_actions = joined_block_actions;
+    }
+
+    syntax->analyzed_join->setHashJoin(subquery_for_set.join);
 }
 
-void SelectQueryExpressionAnalyzer::makeHashJoin(const ASTTablesInSelectQueryElement & join_element,
-                                                 SubqueryForSet & subquery_for_set) const
+void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element,
+                                                        const ExpressionActionsPtr & joined_block_actions,
+                                                        SubqueryForSet & subquery_for_set) const
 {
-    /// Actions which need to be calculated on joined block.
-    ExpressionActionsPtr joined_block_actions = createJoinedBlockActions();
-
     /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
         * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
         *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
         * - this function shows the expression JOIN _data1.
         */
-    if (!subquery_for_set.source)
-    {
-        ASTPtr table;
 
-        auto & table_to_join = join_element.table_expression->as<ASTTableExpression &>();
-        if (table_to_join.subquery)
-            table = table_to_join.subquery;
-        else if (table_to_join.table_function)
-            table = table_to_join.table_function;
-        else if (table_to_join.database_and_table_name)
-            table = table_to_join.database_and_table_name;
+    NamesWithAliases required_columns_with_aliases =
+        analyzedJoin().getRequiredColumns(joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
 
-        Names action_columns = joined_block_actions->getRequiredColumns();
-        NameSet required_columns(action_columns.begin(), action_columns.end());
+    Names original_columns;
+    for (auto & pr : required_columns_with_aliases)
+        original_columns.push_back(pr.first);
 
-        analyzedJoin().appendRequiredColumns(joined_block_actions->getSampleBlock(), required_columns);
+    auto interpreter = interpretSubquery(join_element.table_expression, context, subquery_depth, original_columns);
 
-        auto original_map = analyzedJoin().getOriginalColumnsMap(required_columns);
-        Names original_columns;
-        for (auto & pr : original_map)
-            original_columns.push_back(pr.second);
-
-        auto interpreter = interpretSubquery(table, context, subquery_depth, original_columns);
-
-        subquery_for_set.makeSource(interpreter, original_map);
-    }
-
-    Block sample_block = subquery_for_set.renamedSampleBlock();
-    joined_block_actions->execute(sample_block);
-
-    /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-    subquery_for_set.join = analyzedJoin().makeHashJoin(sample_block, settings.size_limits_for_join);
-    subquery_for_set.joined_block_actions = joined_block_actions;
+    subquery_for_set.makeSource(interpreter, std::move(required_columns_with_aliases));
 }
 
 ExpressionActionsPtr SelectQueryExpressionAnalyzer::createJoinedBlockActions() const

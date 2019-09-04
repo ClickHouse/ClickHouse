@@ -64,12 +64,12 @@ public:
 
     NameSet getQualifiedColumnsSet() const;
     NameSet getOriginalColumnsSet() const;
-    std::unordered_map<String, String> getOriginalColumnsMap(const NameSet & required_columns) const;
+    NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
+    NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_columns) const;
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
     size_t rightKeyInclusion(const String & name) const;
 
-    void appendRequiredColumns(const Block & sample, NameSet & required_columns) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
     void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
 
