@@ -16,7 +16,7 @@ The `format` parameter specifies one of the available file formats. To perform
 
 **Example:**
 
-**1.** Set up the `HDFS_engine_table` table:
+**1.** Set up the `hdfs_engine_table` table:
 
 ``` sql
 CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
