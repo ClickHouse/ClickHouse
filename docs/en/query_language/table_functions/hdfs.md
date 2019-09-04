@@ -1,7 +1,7 @@
 
 # hdfs
 
-Creates a table from a file in hdfs.
+Creates a table from a file in HDFS.
 
 ```
 hdfs(URI, format, structure)
@@ -9,7 +9,7 @@ hdfs(URI, format, structure)
 
 **Input parameters**
 
-- `URI` — The relative URI to the file in HDFS.
+- `URI` — The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, ``'abc', 'def'` — strings.
 - `format` —  The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -33,5 +33,17 @@ LIMIT 2
 │       3 │       2 │       1 │
 └─────────┴─────────┴─────────┘
 ```
+
+**Globs in path**
+
+- `*` — Matches any number of any characters including none.
+- `?` — Matches any single character.
+- `{some_string,another_string,yet_another_one}` — Matches any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{N..M}` — Matches any number in range from N to M including both borders.
+
+!!! warning
+    If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
+
+Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/hdfs/) <!--hide-->
