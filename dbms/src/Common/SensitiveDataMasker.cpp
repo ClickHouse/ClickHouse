@@ -90,7 +90,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             if (!used_names.insert(rule_name).second)
             {
                 throw Exception(
-                    "Query_masking_rules configuration contains more than one rule named '" + rule_name + "'.",
+                    "query_masking_rules configuration contains more than one rule named '" + rule_name + "'.",
                     ErrorCodes::INVALID_CONFIG_PARAMETER);
             }
 
@@ -99,7 +99,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             if (regexp.empty())
             {
                 throw Exception(
-                    "Query_masking_rules configuration, rule '" + rule_name + "' has no <regexp> node or <regexp> is empty.",
+                    "query_masking_rules configuration, rule '" + rule_name + "' has no <regexp> node or <regexp> is empty.",
                     ErrorCodes::NO_ELEMENTS_IN_CONFIG);
             }
 
