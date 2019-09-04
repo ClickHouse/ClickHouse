@@ -209,7 +209,15 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->table_join.strictness == y->table_join.strictness
         && x->key_names_left == y->key_names_left
         && x->key_names_right == y->key_names_right
-        && x->columns_added_by_join == y->columns_added_by_join;
+        && x->columns_added_by_join == y->columns_added_by_join
+        && x->hash_join == y->hash_join;
+}
+
+BlockInputStreamPtr AnalyzedJoin::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
+{
+    if (isRightOrFull(table_join.kind))
+        return hash_join->createStreamWithNonJoinedRows(source_header, *this, max_block_size);
+    return {};
 }
 
 JoinPtr AnalyzedJoin::makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const
@@ -217,6 +225,21 @@ JoinPtr AnalyzedJoin::makeHashJoin(const Block & sample_block, const SizeLimits 
     auto join = std::make_shared<Join>(key_names_right, join_use_nulls, size_limits_for_join, table_join.kind, table_join.strictness);
     join->setSampleBlock(sample_block);
     return join;
+}
+
+void AnalyzedJoin::joinBlock(Block & block) const
+{
+    hash_join->joinBlock(block, *this);
+}
+
+void AnalyzedJoin::joinTotals(Block & block) const
+{
+    hash_join->joinTotals(block);
+}
+
+bool AnalyzedJoin::hasTotals() const
+{
+    return hash_join->hasTotals();
 }
 
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
