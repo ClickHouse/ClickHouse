@@ -88,21 +88,12 @@ public:
     }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */
-    size_t count() const
-    {
-        return bytes + offset();
-    }
+    size_t count() const { return bytes + offset(); }
 
     /** Check that there is more bytes in buffer after cursor. */
-    bool ALWAYS_INLINE hasPendingData() const
-    {
-        return pos != working_buffer.end();
-    }
+    bool ALWAYS_INLINE hasPendingData() const { return available() > 0; }
 
-    bool isPadded() const
-    {
-        return padded;
-    }
+    bool isPadded() const { return padded; }
 
 protected:
     /// Read/write position.

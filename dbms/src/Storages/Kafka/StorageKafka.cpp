@@ -201,8 +201,7 @@ BufferPtr StorageKafka::createBuffer()
         batch_size = settings.max_block_size.value;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
-    return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled), row_delimiter);
+    return std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, row_delimiter, stream_cancelled);
 }
 
 BufferPtr StorageKafka::claimBuffer()
@@ -377,7 +376,7 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub;
+    std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
 
     // Check whether the limits were applied during query execution
