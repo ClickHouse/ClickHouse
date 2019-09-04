@@ -1055,7 +1055,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
 
-        auto mrk_extension = data_settings->index_granularity_bytes ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
+        /// Don't change granularity type while mutating subset of columns
+        auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension();
         for (const auto & entry : updated_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
