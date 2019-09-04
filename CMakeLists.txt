@@ -198,7 +198,7 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
 endif ()
 
 # Make this extra-checks for correct library dependencies.
-if (NOT SANITIZE)
+if (OS_LINUX AND NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
