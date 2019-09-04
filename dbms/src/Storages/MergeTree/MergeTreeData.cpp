@@ -2512,9 +2512,10 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
         {
             auto active_part_it = data_parts_by_info.find(original_active_part->info);
             if (active_part_it == data_parts_by_info.end())
-                throw Exception("No such active part by info. It's a bug.", ErrorCodes::NO_SUCH_DATA_PART);
+                throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            original_active_part->deleteOnDestroy();
+
+            modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
             (*active_part_it)->remove_time.store((*active_part_it)->modification_time, std::memory_order_relaxed);
             data_parts_indexes.erase(active_part_it);
 
@@ -2523,7 +2524,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             return;
         }
     }
-    throw Exception("No such active part. It's a bug.", ErrorCodes::NO_SUCH_DATA_PART);
+    throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 }
 
 
