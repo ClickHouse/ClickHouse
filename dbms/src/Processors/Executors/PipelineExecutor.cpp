@@ -134,11 +134,11 @@ void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
     }
 }
 
-static void executeJob(IProcessor * processor)
+static void executeJob(IProcessor * processor, size_t thread_num)
 {
     try
     {
-        processor->work();
+        processor->work(thread_num);
     }
     catch (Exception & exception)
     {
@@ -151,12 +151,12 @@ static void executeJob(IProcessor * processor)
 
 void PipelineExecutor::addJob(ExecutionState * execution_state)
 {
-    auto job = [execution_state]()
+    auto job = [execution_state](size_t thread_num)
     {
         try
         {
             // Stopwatch watch;
-            executeJob(execution_state->processor);
+            executeJob(execution_state->processor, thread_num);
             // execution_state->execution_time_ns += watch.elapsed();
 
             ++execution_state->num_executed_jobs;
@@ -545,7 +545,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
             {
                 // Stopwatch execution_time_watch;
-                state->job();
+                state->job(thread_num);
                 // execution_time_ns += execution_time_watch.elapsed();
             }
 
