@@ -153,22 +153,24 @@ bool ValuesBlockInputFormat::parseExpressionUsingTemplate(MutableColumnPtr & col
 
 void ValuesBlockInputFormat::readValueOrParseSeparateExpression(IColumn & column, size_t column_idx)
 {
-    bool rollback_on_exception = false;
+    //bool rollback_on_exception = false;
     try
     {
-        const Block & header = getPort().getHeader();
-        header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
-        rollback_on_exception = true;
+        /// TODO remove before merge
+        throw Exception("always use templates", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+        //const Block & header = getPort().getHeader();
+        //header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
+        //rollback_on_exception = true;
 
-        skipWhitespaceIfAny(buf);
+        //skipWhitespaceIfAny(buf);
 
-        assertDelimiterAfterValue(column_idx);
+        //assertDelimiterAfterValue(column_idx);
     }
     catch (const Exception & e)
     {
-        bool deduce_template = shouldDeduceNewTemplate(column_idx);
-        if (!format_settings.values.interpret_expressions && !(format_settings.values.deduce_templates_of_expressions && deduce_template))
-            throw;
+        //bool deduce_template = shouldDeduceNewTemplate(column_idx);
+        //if (!format_settings.values.interpret_expressions && !(format_settings.values.deduce_templates_of_expressions && deduce_template))
+        //    throw;
 
         /** The normal streaming parser could not parse the value.
           * Let's try to parse it with a SQL parser as a constant expression.
@@ -176,11 +178,11 @@ void ValuesBlockInputFormat::readValueOrParseSeparateExpression(IColumn & column
           */
         if (isParseError(e.code()))
         {
-            if (rollback_on_exception)
-                column.popBack(1);
+            //if (rollback_on_exception)
+            //    column.popBack(1);
 
             buf.rollbackToCheckpoint();
-            parseExpression(column, column_idx, deduce_template);
+            parseExpression(column, column_idx, true);// deduce_template);
         }
         else
             throw;
