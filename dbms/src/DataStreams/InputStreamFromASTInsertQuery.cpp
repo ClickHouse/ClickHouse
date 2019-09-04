@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 
 InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
-    const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, const Context & context)
+    const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, const Context & context, const ASTPtr & input_function)
 {
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
@@ -29,7 +29,11 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     String format = ast_insert_query->format;
     if (format.empty())
+    {
+        if (input_function)
+            throw Exception("FORMAT must be specified for function input()", ErrorCodes::LOGICAL_ERROR);
         format = "Values";
+    }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
 
@@ -51,7 +55,7 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, header, context.getSettings().max_insert_block_size);
 
-    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && !ast_insert_query->table.empty())
+    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && !ast_insert_query->table.empty() && !input_function)
     {
         StoragePtr storage = context.getTable(ast_insert_query->database, ast_insert_query->table);
         auto column_defaults = storage->getColumns().getDefaults();
