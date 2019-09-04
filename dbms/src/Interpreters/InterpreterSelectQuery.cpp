@@ -926,6 +926,21 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
                     pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
+
+            // To remove additional columns in dry run
+            // For example, sample column which can be removed in this stage
+            if (expressions.prewhere_info->remove_columns_actions)
+            {
+                if constexpr (pipeline_with_processors)
+                {
+                    pipeline.addSimpleTransform([&](const Block & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(header, expressions.prewhere_info->remove_columns_actions);
+                    });
+                }
+                else
+                    pipeline.streams.back() = std::make_shared<ExpressionBlockInputStream>(pipeline.streams.back(), expressions.prewhere_info->remove_columns_actions);
+            }
         }
     }
     else
@@ -1495,12 +1510,23 @@ void InterpreterSelectQuery::executeFetchColumns(
             streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
             if (query_info.prewhere_info)
+            {
                 streams.back() = std::make_shared<FilterBlockInputStream>(
                     streams.back(),
                     prewhere_info->prewhere_actions,
                     prewhere_info->prewhere_column_name,
                     prewhere_info->remove_prewhere_column);
 
+                // To remove additional columns
+                // In some cases, we did not read any marks so that the pipeline.streams is empty
+                // Thus, some columns in prewhere are not removed as expected
+                // This leads to mismatched header in distributed table
+                if (query_info.prewhere_info->remove_columns_actions)
+                {
+                    streams.back() = std::make_shared<ExpressionBlockInputStream>(streams.back(), query_info.prewhere_info->remove_columns_actions);
+                }
+            }
+                
         }
 
         for (auto & stream : streams)
