@@ -122,8 +122,8 @@ private:
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
+    std::queue<size_t> threads_queue;
     std::mutex task_queue_mutex;
-    std::condition_variable task_queue_condvar;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
@@ -155,6 +155,10 @@ private:
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
+
+        std::condition_variable condvar;
+        std::mutex mutex;
+        bool wake_flag = false;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
