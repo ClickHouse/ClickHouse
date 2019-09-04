@@ -33,7 +33,7 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
                                                const Context & context_, const FormatSettings & format_settings_)
         : IInputFormat(header_, buf), buf(in_), params(params_), context(std::make_unique<Context>(context_)),
           format_settings(format_settings_), num_columns(header_.columns()),
-          attempts_to_generate_template(num_columns), rows_parsed_using_template(num_columns), templates(num_columns)
+          attempts_to_deduce_template(num_columns), rows_parsed_using_template(num_columns), templates(num_columns)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(buf);
@@ -66,13 +66,11 @@ Chunk ValuesBlockInputFormat::generate()
                 skipWhitespaceIfAny(buf);
                 PeekableReadBufferCheckpoint checkpoint{buf};
 
-                bool parse_separate_value = !parseExpressionUsingTemplate(columns[column_idx], column_idx);
-
                 /// Parse value using fast streaming parser for literals and slow SQL parser for expressions.
-                /// If there is SQL expression in the first row, template of this expression will be generated,
+                /// If there is SQL expression in the first row, template of this expression will be deduced,
                 /// so it makes possible to parse next rows much faster if expressions in next rows have the same structure
-                if (parse_separate_value)
-                    readValue(*columns[column_idx], column_idx, shouldGenerateNewTemplate(column_idx));
+                if (!parseExpressionUsingTemplate(columns[column_idx], column_idx))
+                    readValueOrParseSeparateExpression(*columns[column_idx], column_idx);
             }
 
             skipWhitespaceIfAny(buf);
@@ -83,10 +81,15 @@ Chunk ValuesBlockInputFormat::generate()
         }
         catch (Exception & e)
         {
-            if (isParseError(e.code()))
+            if (isParseError(e.code()) || e.code() == ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
                 e.addMessage(" at row " + std::to_string(total_rows));
             throw;
         }
+    }
+    if (!buf.eof())
+    {
+        assertChar(';', buf);
+        skipWhitespaceIfAny(buf);
     }
 
     /// Evaluate expressions, which were parsed using templates, if any
@@ -117,7 +120,7 @@ bool ValuesBlockInputFormat::parseExpressionUsingTemplate(MutableColumnPtr & col
 {
     if (templates[column_idx])
     {
-        /// Try to parse expression using template if one was successfully generated while parsing the first row
+        /// Try to parse expression using template if one was successfully deduced while parsing the first row
         try
         {
             templates[column_idx].value().parseExpression(buf, format_settings);
@@ -127,9 +130,10 @@ bool ValuesBlockInputFormat::parseExpressionUsingTemplate(MutableColumnPtr & col
         }
         catch (DB::Exception & e)
         {
-            if (e.code() != ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
+            if (e.code() != ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE &&
+                e.code() != ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
                 throw;
-            /// Expression in the current row is not match generated on the first row template.
+            /// Expression in the current row is not match template deduced on the first row.
             /// Evaluate expressions, which were parsed using this template.
             if (column->empty())
                 column = std::move(*templates[column_idx].value().evaluateAll()).mutate();
@@ -138,16 +142,16 @@ bool ValuesBlockInputFormat::parseExpressionUsingTemplate(MutableColumnPtr & col
                 ColumnPtr evaluated = templates[column_idx].value().evaluateAll();
                 column->insertRangeFrom(*evaluated, 0, evaluated->size());
             }
-            /// Do not use the template anymore and fallback to slow SQL parser
+            /// Do not use this template anymore (will try to deduce the new one or fallback to slow SQL parser)
             templates[column_idx].reset();
-            ++attempts_to_generate_template[column_idx];
+            ++attempts_to_deduce_template[column_idx];
             buf.rollbackToCheckpoint();
         }
     }
     return false;
 }
 
-void ValuesBlockInputFormat::readValue(IColumn & column, size_t column_idx, bool generate_template)
+void ValuesBlockInputFormat::readValueOrParseSeparateExpression(IColumn & column, size_t column_idx)
 {
     bool rollback_on_exception = false;
     try
@@ -162,25 +166,21 @@ void ValuesBlockInputFormat::readValue(IColumn & column, size_t column_idx, bool
     }
     catch (const Exception & e)
     {
-        if (!format_settings.values.interpret_expressions && !(format_settings.values.deduce_templates_of_expressions && generate_template))
+        bool deduce_template = shouldDeduceNewTemplate(column_idx);
+        if (!format_settings.values.interpret_expressions && !(format_settings.values.deduce_templates_of_expressions && deduce_template))
             throw;
 
         /** The normal streaming parser could not parse the value.
           * Let's try to parse it with a SQL parser as a constant expression.
           * This is an exceptional case.
           */
-        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
-            || e.code() == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
-            || e.code() == ErrorCodes::CANNOT_PARSE_NUMBER
-            || e.code() == ErrorCodes::CANNOT_PARSE_DATE
-            || e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-            || e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
+        if (isParseError(e.code()))
         {
             if (rollback_on_exception)
                 column.popBack(1);
 
             buf.rollbackToCheckpoint();
-            parseExpression(column, column_idx, generate_template);
+            parseExpression(column, column_idx, deduce_template);
         }
         else
             throw;
@@ -188,24 +188,62 @@ void ValuesBlockInputFormat::readValue(IColumn & column, size_t column_idx, bool
 }
 
 void
-ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, bool generate_template)
+ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, bool deduce_template)
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
 
     Expected expected;
-
-    // TODO make tokenizer to work with buffers, not only with continuous memory
-    Tokens tokens(buf.position(), buf.buffer().end());
-    IParser::Pos token_iterator(tokens);
-
+    auto tokens = std::make_unique<Tokens>(buf.position(), buf.buffer().end());
+    IParser::Pos token_iterator(*tokens);
     ASTPtr ast;
-    if (!parser.parse(token_iterator, ast, expected))
+
+    bool near_the_end_of_buffer = true;
+    bool can_peek = true;
+    while (near_the_end_of_buffer)
     {
-        buf.rollbackToCheckpoint();
-        throw Exception("Cannot parse expression of type " + type.getName() + " here: "
-                        + String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
-                        ErrorCodes::SYNTAX_ERROR);
+        bool parsed = parser.parse(token_iterator, ast, expected);
+        buf.position() = const_cast<char *>(token_iterator->begin);
+        parsed &= checkDelimiterAfterValue(column_idx);
+
+        near_the_end_of_buffer = buf.available() < 256 && can_peek;
+        if (near_the_end_of_buffer)
+        {
+            /// Rare case: possibly only some prefix of expression was parsed. Peek more data and try again
+            can_peek = buf.peekNext();
+            buf.rollbackToCheckpoint();
+            tokens = std::make_unique<Tokens>(buf.position(), buf.buffer().end());
+            token_iterator = IParser::Pos{*tokens};
+        }
+        else if (!parsed)
+        {
+            buf.rollbackToCheckpoint();
+            throw Exception("Cannot parse expression of type " + type.getName() + " here: "
+                            + String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
+                            ErrorCodes::SYNTAX_ERROR);
+        }
+    }
+
+    if (format_settings.values.deduce_templates_of_expressions && deduce_template)
+    {
+        if (templates[column_idx])
+            throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
+                                ErrorCodes::LOGICAL_ERROR);
+        try
+        {
+            templates[column_idx] = ConstantExpressionTemplate(header.getByPosition(column_idx).type, TokenIterator(*tokens), token_iterator, ast, *context);
+            buf.rollbackToCheckpoint();
+            templates[column_idx].value().parseExpression(buf, format_settings);
+            assertDelimiterAfterValue(column_idx);
+            return;
+        }
+        catch (...)
+        {
+            if (!format_settings.values.interpret_expressions)
+                throw;
+            /// Continue parsing without template
+            templates[column_idx].reset();
+        }
     }
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
@@ -222,31 +260,6 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
                         ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
     }
 
-    buf.position() = const_cast<char *>(token_iterator->begin);
-
-    if (format_settings.values.deduce_templates_of_expressions && generate_template)
-    {
-        if (templates[column_idx])
-            throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
-                                ErrorCodes::LOGICAL_ERROR);
-        try
-        {
-            templates[column_idx] = ConstantExpressionTemplate(header.getByPosition(column_idx).type, TokenIterator(tokens), token_iterator, ast, *context);
-            buf.rollbackToCheckpoint();
-            templates[column_idx].value().parseExpression(buf, format_settings);
-            assertDelimiterAfterValue(column_idx);
-            return;
-        }
-        catch (...)
-        {
-            if (!format_settings.values.interpret_expressions)
-                throw;
-            /// Continue parsing without template
-            templates[column_idx].reset();
-            buf.position() = const_cast<char *>(token_iterator->begin);
-        }
-    }
-
     assertDelimiterAfterValue(column_idx);
     column.insert(value);
 }
@@ -261,17 +274,27 @@ void ValuesBlockInputFormat::assertDelimiterAfterValue(size_t column_idx)
         assertChar(')', buf);
 }
 
-bool ValuesBlockInputFormat::shouldGenerateNewTemplate(size_t column_idx)
+bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
 {
-    // TODO better heuristic
+    skipWhitespaceIfAny(buf);
+
+    if (column_idx + 1 != num_columns)
+        return checkChar(',', buf);
+    else
+        return checkChar(')', buf);
+}
+
+bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
+{
+    /// TODO better heuristic
     constexpr size_t max_attempts = 3;
     constexpr size_t rows_per_attempt = 10;
-    if (attempts_to_generate_template[column_idx] < max_attempts)
+    if (attempts_to_deduce_template[column_idx] < max_attempts)
         return true;
-    if (rows_parsed_using_template[column_idx] / attempts_to_generate_template[column_idx] > rows_per_attempt)
+    if (rows_parsed_using_template[column_idx] / attempts_to_deduce_template[column_idx] > rows_per_attempt)
     {
         /// Try again
-        attempts_to_generate_template[column_idx] = 0;
+        attempts_to_deduce_template[column_idx] = 0;
         rows_parsed_using_template[column_idx] = 0;
         return true;
     }

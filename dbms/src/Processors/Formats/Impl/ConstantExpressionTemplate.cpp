@@ -175,7 +175,7 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(DataTypePtr result_column
 bool ConstantExpressionTemplate::getDataType(const LiteralInfo & info, DataTypePtr & type) const
 {
     /// Type (Field::Types:Which) of literal in AST can be: String, UInt64, Int64, Float64, Null or Array of simple literals (not of Arrays).
-    /// Null and empty Array literals are considered as tokens, because template with Nullable<Nothing> or Array<Nothing> is useless.
+    /// Null and empty Array literals are considered as tokens, because template with Nullable(Nothing) or Array(Nothing) is useless.
 
     Field::Types::Which field_type = info.literal->value.getType();
 
@@ -200,7 +200,7 @@ bool ConstantExpressionTemplate::getDataType(const LiteralInfo & info, DataTypeP
         type = applyVisitor(FieldToDataType(), info.literal->value);
         auto nested_type = dynamic_cast<const DataTypeArray &>(*type).getNestedType();
 
-        /// It can be Array<Nullable<nested_type>>
+        /// It can be Array(Nullable(nested_type))
         bool array_of_nullable = false;
         if (auto nullable = dynamic_cast<const DataTypeNullable *>(type.get()))
         {
@@ -211,6 +211,7 @@ bool ConstantExpressionTemplate::getDataType(const LiteralInfo & info, DataTypeP
         WhichDataType type_info{nested_type};
         /// Promote integers to 64 bit types
         if (type_info.isNativeUInt())
+            /// TODO maybe it's better to always use Int64 instead of UInt64 if settings.values.accurate_types_of_literals is false
             nested_type = std::make_shared<DataTypeUInt64>();
         else if (type_info.isNativeInt())
             nested_type = std::make_shared<DataTypeInt64>();
@@ -257,7 +258,7 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
             skipWhitespaceIfAny(istr);
 
             const IDataType & type = *literals.getByPosition(cur_column).type;
-            if (use_special_parser[cur_column])
+            if (settings.values.accurate_types_of_literals && use_special_parser[cur_column])
                 parseLiteralAndAssertType(istr, type, cur_column);
             else
                 type.deserializeAsTextQuoted(*columns[cur_column], istr, settings);
