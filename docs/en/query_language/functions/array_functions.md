@@ -1,12 +1,12 @@
 # Functions for working with arrays
 
-## empty
+## empty {#function-empty}
 
 Returns 1 for an empty array, or 0 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-## notEmpty
+## notEmpty {#function-notempty}
 
 Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
