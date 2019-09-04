@@ -222,7 +222,6 @@ private:
     void makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
     void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, const ExpressionActionsPtr & joined_block_actions,
                              SubqueryForSet & subquery_for_set) const;
-    ExpressionActionsPtr createJoinedBlockActions() const;
 
     const ASTSelectQuery * getAggregatingQuery() const;
 };

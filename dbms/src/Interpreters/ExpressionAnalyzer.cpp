@@ -456,6 +456,14 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
     return {};
 }
 
+static ExpressionActionsPtr createJoinedBlockActions(const Context & context, const AnalyzedJoin & analyzed_join)
+{
+    ASTPtr expression_list = analyzed_join.rightKeysList();
+    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list,
+                                                         analyzed_join.columnsFromJoinedTable(), analyzed_join.requiredJoinedNames());
+    return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
+}
+
 void SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
@@ -471,7 +479,7 @@ void SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryEl
     if (!subquery_for_set.join)
     {
         /// Actions which need to be calculated on joined block.
-        ExpressionActionsPtr joined_block_actions = createJoinedBlockActions();
+        ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(context, analyzedJoin());
 
         if (!subquery_for_set.source)
             makeSubqueryForJoin(join_element, joined_block_actions, subquery_for_set);
@@ -508,15 +516,6 @@ void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQ
     auto interpreter = interpretSubquery(join_element.table_expression, context, subquery_depth, original_columns);
 
     subquery_for_set.makeSource(interpreter, std::move(required_columns_with_aliases));
-}
-
-ExpressionActionsPtr SelectQueryExpressionAnalyzer::createJoinedBlockActions() const
-{
-    ASTPtr expression_list = analyzedJoin().rightKeysList();
-    Names required_columns = analyzedJoin().requiredJoinedNames();
-
-    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_list, analyzedJoin().columnsFromJoinedTable(), required_columns);
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
 bool SelectQueryExpressionAnalyzer::appendPrewhere(
