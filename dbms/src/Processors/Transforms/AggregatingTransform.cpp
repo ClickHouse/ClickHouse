@@ -217,7 +217,7 @@ void AggregatingTransform::consume(Chunk chunk, size_t thread_num)
 
     auto & cur_variants = many_data->variants[thread_num];
 
-    std::lock_guard lg(many_data->mutexes[thread_num]);
+    std::lock_guard lg(*many_data->mutexes[thread_num]);
 
     if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, *cur_variants, key_columns, aggregate_columns, no_more_keys))
         is_consume_finished = true;
