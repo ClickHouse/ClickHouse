@@ -70,7 +70,7 @@ private:
     struct ExecutionState
     {
         std::exception_ptr exception;
-        std::function<void()> job;
+        std::function<void(size_t)> job;
 
         IProcessor * processor = nullptr;
         UInt64 processors_id = 0;

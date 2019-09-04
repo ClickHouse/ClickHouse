@@ -183,6 +183,11 @@ public:
         throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual void work(size_t /*thread_num*/)
+    {
+        work();
+    }
+
     /** You may call this method if 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *

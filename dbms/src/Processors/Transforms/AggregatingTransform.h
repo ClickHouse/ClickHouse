@@ -33,12 +33,16 @@ struct AggregatingTransformParams
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
+    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
+
+        for (auto & mut : mutexes)
+            mut = std::make_unique<std::mutex>();
     }
 };
 
@@ -58,11 +62,11 @@ public:
 
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
-    void work() override;
+    void work(size_t thread_num) override;
     Processors expandPipeline() override;
 
 protected:
-    void consume(Chunk chunk);
+    void consume(Chunk chunk, size_t thread_num);
 
 private:
     /// To read the data that was flushed into the temporary data file.
@@ -77,6 +81,7 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
+    std::mutex & mutex;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
 
