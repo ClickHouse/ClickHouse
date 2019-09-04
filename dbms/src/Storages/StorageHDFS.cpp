@@ -188,24 +188,14 @@ BlockInputStreams StorageHDFS::read(
     unsigned /*num_streams*/)
 {
     Strings path_parts;
-    size_t first_glob = uri.find_first_of("*?{");
-
-    if (first_glob == std::string::npos)
-        return {std::make_shared<HDFSBlockInputStream>(
-                uri,
-                format_name,
-                getSampleBlock(),
-                context_,
-                max_block_size)};
-
-    size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-    String path_from_uri = uri.substr(begin_of_path);
-    String uri_without_path = uri.substr(0, begin_of_path);
+    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    const String path_from_uri = uri.substr(begin_of_path);
+    const String uri_without_path = uri.substr(0, begin_of_path);
 
     HDFSBuilderPtr builder = createHDFSBuilder(Poco::URI(uri_without_path + "/"));
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
-    Strings res_paths = LSWithRegexpMatching("/", fs, path_from_uri);
+    const Strings res_paths = LSWithRegexpMatching("/", fs, path_from_uri);
     BlockInputStreams result;
     for (const auto & res_path : res_paths)
     {

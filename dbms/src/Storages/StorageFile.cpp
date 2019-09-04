@@ -53,7 +53,6 @@ namespace
  */
 std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
-
     const size_t first_glob = for_match.find_first_of("*?{");
 
     const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
@@ -138,22 +137,14 @@ StorageFile::StorageFile(
 
         if (!table_path_.empty()) /// Is user's file
         {
-            /// rwlock is common because path with globs and many files in this case is readonly now
             Poco::Path poco_path = Poco::Path(table_path_);
             if (poco_path.isRelative())
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
-            path = poco_path.absolute().toString();
-            size_t first_glob = path.find_first_of("*?{");
-            if (first_glob != std::string::npos)
-            {
-                path_with_globs = true;
-                matched_paths = LSWithRegexpMatching("/", path);
-                for (const auto & cur_path : matched_paths)
-                    checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
-            }
-            else
-                checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+            const std::string path = poco_path.absolute().toString();
+            paths = LSWithRegexpMatching("/", path);
+            for (const auto & cur_path : paths)
+                checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
             is_db_table = false;
         }
         else /// Is DB's file
@@ -161,14 +152,14 @@ StorageFile::StorageFile(
             if (db_dir_path.empty())
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-            path = getTablePath(db_dir_path, table_name, format_name);
+            paths[0] = getTablePath(db_dir_path, table_name, format_name);
             is_db_table = true;
-            Poco::File(Poco::Path(path).parent()).createDirectories();
+            Poco::File(Poco::Path(paths[0]).parent()).createDirectories();
         }
     }
     else /// Will use FD
     {
-        checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+        checkCreationIsAllowed(context_global, db_dir_path, paths[0], table_fd);
 
         is_db_table = false;
         use_table_fd = true;
@@ -258,16 +249,9 @@ BlockInputStreams StorageFile::read(
 {
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
-    if (!path_with_globs)
-    {
-        BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, path);
-        if (column_defaults.empty())
-            return {block_input};
-        return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
-    }
     BlockInputStreams blocks_input;
-    blocks_input.reserve(matched_paths.size());
-    for (const auto & file_path : matched_paths)
+    blocks_input.reserve(paths.size());
+    for (const auto & file_path : paths)
     {
         BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, file_path);
         blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
@@ -293,7 +277,8 @@ public:
         }
         else
         {
-            write_buf = std::make_unique<WriteBufferFromFile>(storage.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            if (storage.paths.size() != 1)  throw Exception("Table '" + storage.table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+            write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
@@ -347,13 +332,16 @@ void StorageFile::rename(const String & new_path_to_db, const String & new_datab
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
+    if (paths.size() != 1)
+        throw Exception("Can't rename table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     std::string path_new = getTablePath(new_path_to_db, new_table_name, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
-    Poco::File(path).renameTo(path_new);
+    Poco::File(paths[0]).renameTo(path_new);
 
-    path = std::move(path_new);
+    paths[0] = std::move(path_new);
     table_name = new_table_name;
     database_name = new_database_name;
 }

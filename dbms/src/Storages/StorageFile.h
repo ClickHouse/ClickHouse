@@ -41,7 +41,7 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    String getDataPath() const override { return path; }
+    String getDataPath() const override { return paths[0]; }
 
 protected:
     friend class StorageFileBlockInputStream;
@@ -68,11 +68,9 @@ private:
     std::string format_name;
     Context & context_global;
 
-    std::string path;
     int table_fd = -1;
 
-    bool path_with_globs = false;
-    std::vector<std::string> matched_paths;
+    std::vector<std::string> paths{""};
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
     bool use_table_fd = false;                    /// Use table_fd insted of path
