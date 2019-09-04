@@ -1,5 +1,5 @@
 
-# Type conversion functions
+# Type Conversion Functions
 
 ## toInt(8|16|32|64)
 
@@ -12,7 +12,7 @@ Converts an input value to the [Int](../../data_types/int_uint.md) data type. Th
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
@@ -20,7 +20,7 @@ Integer value in `Int8`, `Int16`, `Int32` or `Int64` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncates fraction digits of numbers with floating point.
 
-The behaviour of functions for the [NaN](../../data_types/float.md#data_type-float-nan-inf) argument is undefined.
+The behaviour of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
 
 **Example**
 
@@ -33,6 +33,10 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 └──────────────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
+## toInt(8|16|32|64)OrZero
+
+## toInt(8|16|32|64)OrNull
+
 ## toUInt(8|16|32|64)
 
 Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This functions family includes:
@@ -44,7 +48,7 @@ Converts an input value to the [UInt](../../data_types/int_uint.md) data type. T
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
@@ -52,7 +56,7 @@ Integer value in `UInt8`, `UInt16`, `UInt32` or `UInt64` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncates fraction digits of numbers with floating point.
 
-The behaviour of functions for negative agruments and for the [NaN](../../data_types/float.md#data_type-float-nan-inf) argument is undefined.
+The behaviour of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
 
 **Example**
 
@@ -65,17 +69,35 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 └─────────────────────┴───────────────┴────────────────┴──────────────┘
 ```
 
-## toFloat32, toFloat64
+## toUInt(8|16|32|64)OrZero
 
-## toDate, toDateTime
+## toUInt(8|16|32|64)OrNull
 
-## toUInt8OrZero, toUInt16OrZero, toUInt32OrZero, toUInt64OrZero, toInt8OrZero, toInt16OrZero, toInt32OrZero, toInt64OrZero, toFloat32OrZero, toFloat64OrZero, toDateOrZero, toDateTimeOrZero
+## toFloat(32|64)
 
-## toUInt8OrNull, toUInt16OrNull, toUInt32OrNull, toUInt64OrNull, toInt8OrNull, toInt16OrNull, toInt32OrNull, toInt64OrNull, toFloat32OrNull, toFloat64OrNull, toDateOrNull, toDateTimeOrNull
+## toFloat(32|64)OrZero
 
-## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
+## toFloat(32|64)OrNull
+
+## toDate
+
+## toDateOrZero
+
+## toDateOrNull
+
+## toDateTime
+
+## toDateTimeOrZero
+
+## toDateTimeOrNull
+
+## toDecimal(32|64|128)
 
 Converts `value` to the [Decimal](../../data_types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
+
+- `toDecimal32(value, S)`
+- `toDecimal64(value, S)`
+- `toDecimal128(value, S)`
 
 ## toDecimal(32|64|128)OrNull
 
@@ -230,13 +252,15 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-## reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64
+## reinterpretAsUInt(8|16|32|64)
 
-## reinterpretAsInt8, reinterpretAsInt16, reinterpretAsInt32, reinterpretAsInt64
+## reinterpretAsInt(8|16|32|64)
 
-## reinterpretAsFloat32, reinterpretAsFloat64
+## reinterpretAsFloat(32|64)
 
-## reinterpretAsDate, reinterpretAsDateTime
+## reinterpretAsDate
+
+## reinterpretAsDateTime
 
 These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
 
@@ -289,7 +313,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
-## toIntervalYear, toIntervalQuarter, toIntervalMonth, toIntervalWeek, toIntervalDay, toIntervalHour, toIntervalMinute, toIntervalSecond
+## toInterval(Year|Quarter|Month|Week|Day|Hour|Minute|Second)
 
 Converts a Number type argument to a Interval type (duration).
 The interval type is actually very useful, you can use this type of data to perform arithmetic operations directly with Date or DateTime. At the same time, ClickHouse provides a more convenient syntax for declaring Interval type data. For example:
