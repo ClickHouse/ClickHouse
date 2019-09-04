@@ -472,33 +472,39 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
-        while (!finished)
         {
             std::unique_lock lock(task_queue_mutex);
 
-            if (!task_queue.empty())
+            while (!finished)
             {
-                state = task_queue.front();
-                task_queue.pop();
-                break;
+                if (!task_queue.empty())
+                {
+                    state = task_queue.front();
+                    task_queue.pop();
+
+                    if (!task_queue.empty())
+                        task_queue_condvar.notify_one();
+
+                    break;
+                }
+
+                ++num_waiting_threads;
+
+                if (num_waiting_threads == num_threads)
+                {
+                    finished = true;
+                    lock.unlock();
+                    task_queue_condvar.notify_all();
+                    break;
+                }
+
+                task_queue_condvar.wait(lock, [&]()
+                {
+                    return finished || !task_queue.empty();
+                });
+
+                --num_waiting_threads;
             }
-
-            ++num_waiting_threads;
-
-            if (num_waiting_threads == num_threads)
-            {
-                finished = true;
-                lock.unlock();
-                task_queue_condvar.notify_all();
-                break;
-            }
-
-            task_queue_condvar.wait(lock, [&]()
-            {
-                return finished || !task_queue.empty();
-            });
-
-            --num_waiting_threads;
         }
 
         if (finished)
@@ -560,7 +566,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
                     }
 
-                    task_queue_condvar.notify_all();
+                    task_queue_condvar.notify_one();
                 }
 
                 --num_processing_executors;
