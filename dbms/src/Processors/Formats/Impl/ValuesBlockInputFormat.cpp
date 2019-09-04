@@ -25,9 +25,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int SYNTAX_ERROR;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int CANNOT_CREATE_EXPRESSION_TEMPLATE;
     extern const int CANNOT_PARSE_EXPRESSION_USING_TEMPLATE;
-    extern const int CANNOT_EVALUATE_EXPRESSION_TEMPLATE;
 }
 
 
@@ -233,7 +231,7 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
                                 ErrorCodes::LOGICAL_ERROR);
         try
         {
-            templates[column_idx] = ConstantExpressionTemplate(type, TokenIterator(tokens), token_iterator, ast, *context);
+            templates[column_idx] = ConstantExpressionTemplate(header.getByPosition(column_idx).type, TokenIterator(tokens), token_iterator, ast, *context);
             buf.rollbackToCheckpoint();
             templates[column_idx].value().parseExpression(buf, format_settings);
             assertDelimiterAfterValue(column_idx);
