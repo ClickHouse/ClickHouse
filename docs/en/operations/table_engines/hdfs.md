@@ -1,7 +1,7 @@
 # HDFS {#table_engines-hdfs}
 
-Manages data on HDFS. This engine is similar
-to the [File](file.md) and [URL](url.md) engine.
+This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.htmll)via ClickHouse. This engine is similar
+to the [File](file.md) and [URL](url.md) engines, but provides Hadoop-specific features.
 
 ## Usage
 
@@ -16,7 +16,7 @@ The `format` parameter specifies one of the available file formats. To perform
 
 **Example:**
 
-**1.** Set up the `HDFS_engine_table` table:
+**1.** Set up the `hdfs_engine_table` table:
 
 ``` sql
 CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
@@ -40,7 +40,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Details of Implementation
+## Implementation Details
 
 - Reads and writes can be parallel
 - Not supported:
