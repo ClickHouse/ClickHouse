@@ -35,6 +35,116 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+using Point = std::vector<Float64>;
+using Points = std::vector<Point>;
+
+class KMeansCluster
+{
+public:
+    KMeansCluster() = default;
+    KMeansCluster(const KMeansCluster& other) = default;
+
+    explicit KMeansCluster(Point coordinates_) : coordinates(std::move(coordinates_)), num_points(1) {}
+
+    void swap(KMeansCluster& other)
+    {
+        std::swap(coordinates, other.coordinates);
+        std::swap(num_points, other.num_points);
+    }
+
+    KMeansCluster(const IColumn ** columns, size_t row_num, size_t dimensions) : num_points(1)
+    {
+        coordinates.resize(dimensions);
+
+        for (size_t i = 0; i < dimensions; ++i)
+            coordinates[i] = columns[i]->getFloat64(row_num);
+    }
+
+    void appendPoint(const IColumn ** columns, size_t row_num)
+    {
+        if (num_points == 0)
+            throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
+
+        Float64 point_weight = appendPointWeight(++num_points);
+        Float64 cluster_weight = 1 - point_weight;
+
+        for (size_t i = 0; i < coordinates.size(); ++i)
+            coordinates[i] = cluster_weight * coordinates[i] + point_weight * columns[i]->getFloat64(row_num);
+    }
+
+    void appendPointFromVector(const Point & new_coordinates)
+    {
+        if (num_points == 0)
+            throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
+
+        if (coordinates.size() != new_coordinates.size())
+            throw Exception("Cannot append point of other size", ErrorCodes::LOGICAL_ERROR);
+
+        Float64 point_weight = appendPointWeight(++num_points);
+        Float64 cluster_weight = 1 - point_weight;
+
+        for (size_t i = 0; i < coordinates.size(); ++i)
+            coordinates[i] = cluster_weight * coordinates[i] + point_weight * new_coordinates[i];
+    }
+
+    void mergeCluster(const KMeansCluster & other)
+    {
+        if (size() == 0 || other.size() == 0)
+            throw Exception("Merge empty cluster", ErrorCodes::LOGICAL_ERROR);
+
+        Float64 this_weight = mergeWeight(size(), other.size());
+        Float64 other_weight = 1 - this_weight;
+
+        for (size_t i = 0; i < coordinates.size(); ++i)
+            coordinates[i] = this_weight * coordinates[i] + other_weight * other.coordinates[i];
+
+        num_points += other.num_points;
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writeBinary(coordinates, buf);
+        writeBinary(num_points, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readBinary(coordinates, buf);
+        readBinary(num_points, buf);
+    }
+
+    UInt32 size() const
+    {
+        return num_points;
+    }
+
+    const Point & center() const
+    {
+        return coordinates;
+    }
+
+private:
+    static Float64 appendPointWeight(UInt32 size)
+    {
+        return Float64{1.0} / size;
+    }
+
+    static Float64 mergeWeight(UInt32 size1, UInt32 size2)
+    {
+        return static_cast<Float64>(size1) / (size1 + size2);
+    }
+
+    Point coordinates;
+    UInt32 num_points = 0;
+};
+
+using KMeansClusters = std::vector<KMeansCluster>;
+
+}
+
 class ClusteringData
 {
 public:
@@ -64,7 +174,7 @@ public:
         clusters[closest_cluster].appendPoint(columns, row_num);
     }
 
-    void addFromVector(const std::vector<Float64> & coordinates)
+    void addFromVector(const Point & coordinates)
     {
         predicted_clusters.clear();
         if (clusters.size() < multiplication_factor * num_clusters)
@@ -91,7 +201,7 @@ public:
 
         if (clusters.size() < multiplication_factor * num_clusters)
         {
-            std::vector<Cluster> old_clusters = std::move(clusters);
+            KMeansClusters old_clusters = std::move(clusters);
             clusters = rhs.clusters;
 
             for (auto & old_cluster : old_clusters)
@@ -154,9 +264,9 @@ public:
 
         makePrediction();
 
-        std::vector<std::vector<Float64>> distances(
+        Points distances(
             limit,
-            std::vector<Float64>(predicted_clusters.size(), 0)
+            Point(predicted_clusters.size(), 0)
         );
 
         for (size_t i = 0; i < num_dimensions; ++i)
@@ -217,107 +327,7 @@ public:
 
 private:
 
-    class Cluster
-    {
-    public:
-        Cluster() = default;
-        Cluster(const Cluster& other) = default;
-
-        explicit Cluster(std::vector<Float64> coordinates_) : coordinates(std::move(coordinates_)), num_points(1) {}
-
-        void swap(Cluster& other)
-        {
-            std::swap(coordinates, other.coordinates);
-            std::swap(num_points, other.num_points);
-        }
-
-        Cluster(const IColumn ** columns, size_t row_num, size_t dimensions) : num_points(1)
-        {
-            coordinates.resize(dimensions);
-
-            for (size_t i = 0; i < dimensions; ++i)
-                coordinates[i] = columns[i]->getFloat64(row_num);
-        }
-
-        void appendPoint(const IColumn ** columns, size_t row_num)
-        {
-            if (num_points == 0)
-                throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
-
-            Float64 point_weight = appendPointWeight(++num_points);
-            Float64 cluster_weight = 1 - point_weight;
-
-            for (size_t i = 0; i < coordinates.size(); ++i)
-                coordinates[i] = cluster_weight * coordinates[i] + point_weight * columns[i]->getFloat64(row_num);
-        }
-
-        void appendPointFromVector(const std::vector<Float64> & new_coordinates)
-        {
-            if (num_points == 0)
-                throw Exception("Append to empty cluster", ErrorCodes::LOGICAL_ERROR);
-
-            if (coordinates.size() != new_coordinates.size())
-                throw Exception("Cannot append point of other size", ErrorCodes::LOGICAL_ERROR);
-
-            Float64 point_weight = appendPointWeight(++num_points);
-            Float64 cluster_weight = 1 - point_weight;
-
-            for (size_t i = 0; i < coordinates.size(); ++i)
-                coordinates[i] = cluster_weight * coordinates[i] + point_weight * new_coordinates[i];
-        }
-
-        void mergeCluster(const Cluster & other)
-        {
-            if (size() == 0 || other.size() == 0)
-                throw Exception("Merge empty cluster", ErrorCodes::LOGICAL_ERROR);
-
-            Float64 this_weight = mergeWeight(size(), other.size());
-            Float64 other_weight = 1 - this_weight;
-
-            for (size_t i = 0; i < coordinates.size(); ++i)
-                coordinates[i] = this_weight * coordinates[i] + other_weight * other.coordinates[i];
-
-            num_points += other.num_points;
-        }
-
-        void write(WriteBuffer & buf) const
-        {
-            writeBinary(coordinates, buf);
-            writeBinary(num_points, buf);
-        }
-
-        void read(ReadBuffer & buf)
-        {
-            readBinary(coordinates, buf);
-            readBinary(num_points, buf);
-        }
-
-        UInt32 size() const
-        {
-            return num_points;
-        }
-
-        const std::vector<Float64> & center() const
-        {
-            return coordinates;
-        }
-
-    private:
-        static Float64 appendPointWeight(UInt32 size)
-        {
-            return Float64{1.0} / size;
-        }
-
-        static Float64 mergeWeight(UInt32 size1, UInt32 size2)
-        {
-            return static_cast<Float64>(size1) / (size1 + size2);
-        }
-
-        std::vector<Float64> coordinates;
-        UInt32 num_points = 0;
-    };
-
-    static Float64 computeDistanceBetweenPoints(const std::vector<Float64> & point1, const std::vector<Float64> & point2)
+    static Float64 computeDistanceBetweenPoints(const Point & point1, const Point & point2)
     {
         Float64 distance = 0;
         for (size_t i = 0; i != point1.size(); ++i)
@@ -328,7 +338,7 @@ private:
         return std::sqrt(distance);
     }
 
-    static Float64 computeDistanceBetweenPoints(const std::vector<Float64> & point, const IColumn ** columns, size_t row_num)
+    static Float64 computeDistanceBetweenPoints(const Point & point, const IColumn ** columns, size_t row_num)
     {
         Float64 distance = 0;
         for (size_t i = 0; i != point.size(); ++i)
@@ -340,7 +350,7 @@ private:
     }
 
     static size_t findNearestClusterForPointWithPenalty(
-        const IColumn ** columns, size_t row_num, const std::vector<Cluster> & clusters)
+        const IColumn ** columns, size_t row_num, const KMeansClusters & clusters)
     {
         Float64 min_distance = 0;
         UInt32 closest_point = 0;
@@ -360,7 +370,7 @@ private:
         return closest_point;
     }
 
-    static size_t findNearestClusterForPointWithPenalty(const std::vector<Float64> & point, const std::vector<Cluster> & clusters)
+    static size_t findNearestClusterForPointWithPenalty(const Point & point, const KMeansClusters & clusters)
     {
         Float64 min_distance = 0;
         UInt32 closest_point = 0;
@@ -379,7 +389,7 @@ private:
         return closest_point;
     }
 
-    static size_t findNearestCluster(const std::vector<Float64> & point, const std::vector<std::vector<Float64>> & clusters)
+    static size_t findNearestCluster(const Point & point, const Points & clusters)
     {
         Float64 min_distance = 0;
         UInt32 closest_point = 0;
@@ -396,7 +406,7 @@ private:
         return closest_point;
     }
 
-    static size_t findNearestCluster(const std::vector<Float64> & point, const std::vector<Cluster> & clusters, size_t from = 0)
+    static size_t findNearestCluster(const Point & point, const KMeansClusters & clusters, size_t from = 0)
     {
         Float64 min_distance = 0;
         UInt32 closest_point = 0;
@@ -418,7 +428,7 @@ private:
         return std::sqrt(cluster_size);
     }
 
-    static Float64 minSquaredDistance(const std::vector<Float64> & point, const std::vector<std::vector<Float64>> & clusters)
+    static Float64 minSquaredDistance(const Point & point, const Points & clusters)
     {
         Float64 min_squared_dist = 0;
 
@@ -469,9 +479,9 @@ private:
     Float64 kMeansUpdateClusters(const std::vector<size_t> & closest_cluster) const
     {
         Float64 diff = 0;
-        std::vector<std::vector<Float64>> new_clusters(
+        Points new_clusters(
             predicted_clusters.size(),
-            std::vector<Float64>(predicted_clusters[0].size(), 0)
+            Point(predicted_clusters[0].size(), 0)
         );
         std::vector<UInt64> cluster_weights(predicted_clusters.size());
         for (size_t point_idx = 0; point_idx < clusters.size(); ++point_idx)
@@ -541,8 +551,8 @@ private:
     UInt32 num_clusters = 0;
     UInt32 num_dimensions = 0;
 
-    std::vector<Cluster> clusters;
-    mutable std::vector<std::vector<Float64>> predicted_clusters;
+    KMeansClusters clusters;
+    mutable Points predicted_clusters;
 };
 
 
