@@ -26,7 +26,7 @@
 namespace DB
 {
 
-struct AnalyzedJoin;
+class AnalyzedJoin;
 
 namespace JoinStuff
 {

@@ -9,6 +9,7 @@ CREATE TABLE t2_00850 (dummy UInt8) ENGINE = Distributed(test_shard_localhost, c
 INSERT INTO t_local VALUES (1);
 
 SET asterisk_left_columns_only = 1;
+SET joined_subquery_requires_alias = 0;
 
 SELECT * FROM t1_00850
 GLOBAL INNER JOIN

@@ -3,11 +3,12 @@
 #include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <set>
@@ -44,8 +45,8 @@ Names ExpressionAction::getNeededColumns() const
 
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
-    if (join_params)
-        res.insert(res.end(), join_params->keyNamesLeft().begin(), join_params->keyNamesLeft().end());
+    if (table_join)
+        res.insert(res.end(), table_join->keyNamesLeft().begin(), table_join->keyNamesLeft().end());
 
     for (const auto & column : projection)
         res.push_back(column.first);
@@ -159,12 +160,11 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> join_params, std::shared_ptr<const Join> hash_join)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join)
 {
     ExpressionAction a;
     a.type = JOIN;
-    a.join_params = join_params;
-    a.join = hash_join;
+    a.table_join = table_join;
     return a;
 }
 
@@ -269,7 +269,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
         case JOIN:
         {
-            join_params->addJoinedColumnsAndCorrectNullability(sample_block);
+            table_join->addJoinedColumnsAndCorrectNullability(sample_block);
             break;
         }
 
@@ -475,7 +475,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            join->joinBlock(block, *join_params);
+            table_join->joinBlock(block);
             break;
         }
 
@@ -543,7 +543,7 @@ void ExpressionAction::executeOnTotals(Block & block) const
     if (type != JOIN)
         execute(block, false);
     else
-        join->joinTotals(block);
+        table_join->joinTotals(block);
 }
 
 
@@ -593,10 +593,10 @@ std::string ExpressionAction::toString() const
 
         case JOIN:
             ss << "JOIN ";
-            for (NamesAndTypesList::const_iterator it = join_params->columnsAddedByJoin().begin();
-                 it != join_params->columnsAddedByJoin().end(); ++it)
+            for (NamesAndTypesList::const_iterator it = table_join->columnsAddedByJoin().begin();
+                 it != table_join->columnsAddedByJoin().end(); ++it)
             {
-                if (it != join_params->columnsAddedByJoin().begin())
+                if (it != table_join->columnsAddedByJoin().begin())
                     ss << ", ";
                 ss << it->name;
             }
@@ -762,17 +762,10 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 
 bool ExpressionActions::hasTotalsInJoin() const
 {
-    bool has_totals_in_join = false;
     for (const auto & action : actions)
-    {
-        if (action.join && action.join->hasTotals())
-        {
-            has_totals_in_join = true;
-            break;
-        }
-    }
-
-    return has_totals_in_join;
+        if (action.table_join && action.table_join->hasTotals())
+            return true;
+    return false;
 }
 
 void ExpressionActions::executeOnTotals(Block & block) const
@@ -1164,13 +1157,11 @@ void ExpressionActions::optimizeArrayJoin()
 }
 
 
-BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
+std::shared_ptr<const AnalyzedJoin> ExpressionActions::getTableJoin() const
 {
     for (const auto & action : actions)
-        if (action.join && isRightOrFull(action.join->getKind()))
-            return action.join->createStreamWithNonJoinedRows(
-                source_header, *action.join_params, max_block_size);
-
+        if (action.table_join)
+            return action.table_join;
     return {};
 }
 
@@ -1216,7 +1207,7 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
                 hash.update(col);
             break;
         case JOIN:
-            for (const auto & col : action.join_params->columnsAddedByJoin())
+            for (const auto & col : action.table_join->columnsAddedByJoin())
                 hash.update(col.name);
             break;
         case PROJECT:
@@ -1274,8 +1265,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && argument_names == other.argument_names
         && array_joined_columns == other.array_joined_columns
         && array_join_is_left == other.array_join_is_left
-        && join == other.join
-        && AnalyzedJoin::sameJoin(join_params.get(), other.join_params.get())
+        && AnalyzedJoin::sameJoin(table_join.get(), other.table_join.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
 }

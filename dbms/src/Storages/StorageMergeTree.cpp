@@ -24,6 +24,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 #include <optional>
+#include <Interpreters/MutationsInterpreter.h>
 
 
 namespace DB
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int UNKNOWN_SETTING;
+    extern const int TOO_BIG_AST;
 }
 
 namespace ActionLocks
@@ -178,6 +180,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureW
         LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts.");
     }
 
+    clearOldMutations(true);
     clearOldPartsFromFilesystem();
 }
 
@@ -647,6 +650,7 @@ bool StorageMergeTree::merge(
 bool StorageMergeTree::tryMutatePart()
 {
     auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+    size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
@@ -671,8 +675,18 @@ bool StorageMergeTree::tryMutatePart()
             if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
+            size_t current_ast_elements = 0;
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
+            {
+                MutationsInterpreter interpreter(shared_from_this(), it->second.commands, global_context);
+
+                size_t commands_size = interpreter.evaluateCommandsSize();
+                if (current_ast_elements + commands_size >= max_ast_elements)
+                    break;
+
+                current_ast_elements += commands_size;
                 commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
+            }
 
             auto new_part_info = part->info;
             new_part_info.mutation = current_mutations_by_version.rbegin()->first;
@@ -810,31 +824,34 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
     return it->first;
 }
 
-void StorageMergeTree::clearOldMutations()
+void StorageMergeTree::clearOldMutations(bool truncate)
 {
     const auto settings = getSettings();
-    if (!settings->finished_mutations_to_keep)
+    if (!truncate && !settings->finished_mutations_to_keep)
         return;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_merging_mutex);
 
-        if (current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
+        if (!truncate && current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
             return;
 
-        auto begin_it = current_mutations_by_version.begin();
-
-        std::optional<Int64> min_version = getMinPartDataVersion();
         auto end_it = current_mutations_by_version.end();
-        if (min_version)
-            end_it = current_mutations_by_version.upper_bound(*min_version);
+        auto begin_it = current_mutations_by_version.begin();
+        size_t to_delete_count = std::distance(begin_it, end_it);
 
-        size_t done_count = std::distance(begin_it, end_it);
-        if (done_count <= settings->finished_mutations_to_keep)
-            return;
+        if (!truncate)
+        {
+            if (std::optional<Int64> min_version = getMinPartDataVersion())
+                end_it = current_mutations_by_version.upper_bound(*min_version);
 
-        size_t to_delete_count = done_count - settings->finished_mutations_to_keep;
+            size_t done_count = std::distance(begin_it, end_it);
+            if (done_count <= settings->finished_mutations_to_keep)
+                return;
+
+            to_delete_count = done_count - settings->finished_mutations_to_keep;
+        }
 
         auto it = begin_it;
         for (size_t i = 0; i < to_delete_count; ++i)
