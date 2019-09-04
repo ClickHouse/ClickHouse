@@ -176,6 +176,42 @@ TEST(Common, RWLock_Recursive)
 }
 
 
+TEST(Common, RWLock_Deadlock_WRWR)
+{
+    constexpr auto cycles = 10000;
+
+    auto rwlock = RWLockImpl::create();
+
+    Barrier barrier(2);
+
+    std::thread t1([&] ()
+    {
+        for (int i = 0; i < cycles; ++i)
+        {
+            barrier.arrive_and_wait();
+
+            auto lock = rwlock->getLock(RWLockImpl::Write, "q1");
+            lock.reset();
+            lock = rwlock->getLock(RWLockImpl::Write, "q1");
+        }
+    });
+
+    std::thread t2([&] ()
+    {
+        for (int i = 0; i < cycles; ++i)
+        {
+            barrier.arrive_and_wait();
+
+            auto lock1 = rwlock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            auto lock2 = rwlock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+        }
+    });
+
+    t1.join();
+    t2.join();
+}
+
+
 TEST(Common, RWLock_Deadlock)
 {
     static auto lock1 = RWLockImpl::create();
