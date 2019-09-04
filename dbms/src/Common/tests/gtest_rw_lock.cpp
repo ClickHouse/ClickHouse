@@ -9,6 +9,51 @@
 #include <thread>
 #include <atomic>
 #include <iomanip>
+#include <mutex>
+
+
+namespace
+{
+
+class Barrier
+{
+public:
+    explicit Barrier(const size_t _num_threads) : num_threads{_num_threads} {}
+    Barrier(const Barrier&) = delete;
+    Barrier& operator=(const Barrier&) = delete;
+
+    void arrive_and_wait();
+
+private:
+    const size_t num_threads;
+    std::mutex mutex;
+    std::condition_variable next_epoch_cv;
+};
+
+void Barrier::arrive_and_wait()
+{
+    static bool epoch = false;
+    static size_t threads_countdown = num_threads;
+
+    std::unique_lock<std::mutex> lock(mutex);
+
+    if (--threads_countdown > 0)
+    {
+        const auto my_epoch = epoch;
+        while (my_epoch == epoch)
+        {
+            next_epoch_cv.wait(lock);
+        }
+    }
+    else
+    {
+        threads_countdown = num_threads;
+        epoch = !epoch;
+        next_epoch_cv.notify_all();
+    }
+}
+
+}
 
 
 using namespace DB;
