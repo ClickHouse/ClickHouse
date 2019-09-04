@@ -1,3 +1,5 @@
+SET joined_subquery_requires_alias = 0;
+
 drop table if exists tab1;
 drop table if exists tab2;
 drop table if exists tab3;
