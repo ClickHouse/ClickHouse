@@ -3575,8 +3575,6 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
                         break;
-                    case PartitionCommand::MoveDestinationType::NONE:
-                        throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);
                 }
             }
             break;

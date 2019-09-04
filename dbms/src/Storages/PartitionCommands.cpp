@@ -53,9 +53,6 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
             case ASTAlterCommand::MoveDestinationType::VOLUME:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::VOLUME;
                 break;
-            case ASTAlterCommand::MoveDestinationType::NONE:
-                res.move_destination_type = PartitionCommand::MoveDestinationType::NONE;
-                break;
         }
         res.move_destination_name = command_ast->move_destination_name;
         return res;
