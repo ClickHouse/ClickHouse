@@ -122,35 +122,17 @@ public:
 
     bool tryReserve(UInt64 bytes) const;
 
-    const String & getName() const override
-    {
-        return name;
-    }
+    const String & getName() const override { return name; }
 
-    const String & getPath() const
-    {
-        return path;
-    }
+    const String & getPath() const { return path; }
 
-    UInt64 getKeepingFreeSpace() const
-    {
-        return keep_free_space_bytes;
-    }
+    UInt64 getKeepingFreeSpace() const { return keep_free_space_bytes; }
 
-    Stat getSpaceInformation() const
-    {
-        return Stat(*this);
-    }
+    Stat getSpaceInformation() const { return Stat(*this); }
 
-    UInt64 getTotalSpace() const
-    {
-        return getSpaceInformation().getTotalSpace();
-    }
+    UInt64 getTotalSpace() const { return getSpaceInformation().getTotalSpace(); }
 
-    UInt64 getAvailableSpace() const
-    {
-        return getSpaceInformation().getAvailableSpace();
-    }
+    UInt64 getAvailableSpace() const { return getSpaceInformation().getAvailableSpace(); }
 
     UInt64 getUnreservedSpace() const;
 

@@ -390,12 +390,6 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
     return virtual_parts.remove(part_info);
 }
 
-bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const String & part_name)
-{
-    std::lock_guard lock(state_mutex);
-    return virtual_parts.remove(part_name);
-}
-
 void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
@@ -1666,7 +1660,6 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     Int64 left_mutation_ver = queue.getCurrentMutationVersionImpl(
         left->info.partition_id, left->info.getDataVersion(), lock);
 
-    /// left->info.partition_id == right->info.partition_id
     Int64 right_mutation_ver = queue.getCurrentMutationVersionImpl(
         left->info.partition_id, right->info.getDataVersion(), lock);
 

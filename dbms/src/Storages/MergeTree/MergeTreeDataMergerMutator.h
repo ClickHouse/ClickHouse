@@ -41,7 +41,7 @@ public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
 
 public:
-    MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
+    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -142,7 +142,7 @@ private:
 
 private:
     MergeTreeData & data;
-    const BackgroundProcessingPool & pool;
+    const size_t background_pool_size;
 
     Logger * log;
 

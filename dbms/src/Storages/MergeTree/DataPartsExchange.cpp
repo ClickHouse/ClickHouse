@@ -36,6 +36,9 @@ namespace DataPartsExchange
 namespace
 {
 
+static constexpr auto REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE = "0";
+static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = "1";
+
 std::string getEndpointId(const std::string & node_id)
 {
     return "DataPartsExchange:" + node_id;
@@ -53,16 +56,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     if (blocker.isCancelled())
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
-    /// "0" for backward compatibility
-    String protocol_version = params.get("protocol_version", "0");
+    String protocol_version = params.get("protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
+    String part_name = params.get("part");
 
-    String part_name;
-
-    if (protocol_version == "0")
-        part_name = params.get("part");
-    else if (protocol_version == "1")
-        part_name = params.get("part_name");
-    else
+    if (protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
         throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
     const auto data_settings = data.getSettings();
@@ -111,18 +108,8 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         MergeTreeData::DataPart::Checksums data_checksums;
 
-        if (protocol_version == "1")
-        {
-            /// Get size of all files
-            UInt64 all_part_files_size = 0;
-            for (const auto &it : checksums.files)
-            {
-                String file_name = it.first;
-                String path = part->getFullPath() + file_name;
-                all_part_files_size += Poco::File(path).getSize();
-            }
-            writeBinary(all_part_files_size, out);
-        }
+        if (protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+            writeBinary(checksums.getTotalSizeOnDisk(), out);
 
         writeBinary(checksums.files.size(), out);
 
@@ -210,7 +197,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",         getEndpointId(replica_path)},
         {"part_name",        part_name},
-        {"protocol_version", "1"},
+        {"protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE},
         {"compress",         "false"}
     });
 

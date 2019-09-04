@@ -142,7 +142,6 @@ private:
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;
-    friend struct CurrentlyMovingPartsTagger;
 
 protected:
 

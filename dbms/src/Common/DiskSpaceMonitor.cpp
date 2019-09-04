@@ -83,12 +83,13 @@ bool Disk::tryReserve(UInt64 bytes) const
     std::lock_guard lock(mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserve 0 bytes on disk " << name);
+        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving 0 bytes on disk " << name);
         ++reservation_count;
         return true;
     }
+
     available_space -= std::min(available_space, reserved_bytes);
-    LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << available_space << ", to reserve " << bytes << " on disk " << name);
+    LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving " << bytes << " bytes on disk " << name << " having available " << available_space << " bytes.");
     if (available_space >= bytes)
     {
         ++reservation_count;
@@ -130,7 +131,7 @@ Reservation::~Reservation()
         if (disk_ptr->reserved_bytes < size)
         {
             disk_ptr->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size; it's a bug");
+            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size. It's a bug.");
         }
         else
         {
@@ -138,7 +139,7 @@ Reservation::~Reservation()
         }
 
         if (disk_ptr->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count; it's a bug");
+            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count. It's a bug.");
         else
             --disk_ptr->reservation_count;
     }
@@ -263,15 +264,13 @@ Volume::Volume(
     }
 
     if (disks.empty())
-        throw Exception("Volume must contain at least one disk", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception("Volume must contain at least one disk.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
     if (has_max_bytes && has_max_ratio)
-    {
-        throw Exception("Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified",
+        throw Exception("Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.",
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-    }
 
     if (has_max_bytes)
     {
@@ -281,7 +280,7 @@ Volume::Volume(
     {
         auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
         if (ratio < 0)
-            throw Exception("'max_data_part_size_ratio' have to be not less then 0",
+            throw Exception("'max_data_part_size_ratio' have to be not less then 0.",
                             ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         UInt64 sum_size = 0;
         std::vector<UInt64> sizes;
@@ -340,8 +339,12 @@ UInt64 Volume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-               const DiskSelector & disks) : name(std::move(name_))
+StoragePolicy::StoragePolicy(
+    String name_,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const DiskSelector & disks)
+    : name(std::move(name_))
 {
     String volumes_prefix = config_prefix + ".volumes";
     if (!config.has(volumes_prefix))
@@ -361,7 +364,7 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
     }
 
     if (volumes.empty())
-        throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception("StoragePolicy must contain at least one Volume.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     /// Check that disks are unique in Policy
     std::set<String> disk_names;
@@ -370,7 +373,7 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
         for (const auto & disk : volume->disks)
         {
             if (disk_names.find(disk->getName()) != disk_names.end())
-                throw Exception("StoragePolicy disks must not be repeated: " + disk->getName(), ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+                throw Exception("Duplicate disk '" + disk->getName() + "' in storage policy '" + name + "'.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
             disk_names.insert(disk->getName());
         }
@@ -378,19 +381,19 @@ StoragePolicy::StoragePolicy(String name_, const Poco::Util::AbstractConfigurati
 
     move_factor = config.getDouble(config_prefix + ".move_factor", 0.1);
     if (move_factor > 1)
-        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor),
+        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + ".",
             ErrorCodes::LOGICAL_ERROR);
 
 }
 
 
 StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
-    : volumes(std::move(volumes_)),
-      name(std::move(name_)),
-      move_factor(move_factor_)
+    : volumes(std::move(volumes_))
+    , name(std::move(name_))
+    , move_factor(move_factor_)
 {
     if (volumes.empty())
-        throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::UNKNOWN_POLICY);
+        throw Exception("StoragePolicy must contain at least one Volume.", ErrorCodes::UNKNOWN_POLICY);
 
     if (move_factor > 1)
         throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor),
@@ -399,7 +402,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     for (size_t i = 0; i < volumes.size(); ++i)
     {
         if (volumes_names.find(volumes[i]->getName()) != volumes_names.end())
-            throw Exception("Volumes names must be unique (" + volumes[i]->getName() + " duplicated)", ErrorCodes::UNKNOWN_POLICY);
+            throw Exception("Volumes names must be unique (" + volumes[i]->getName() + " duplicated).", ErrorCodes::UNKNOWN_POLICY);
         volumes_names[volumes[i]->getName()] = i;
     }
 }
@@ -420,15 +423,11 @@ DiskPtr StoragePolicy::getAnyDisk() const
     /// StoragePolicy must contain at least one Volume
     /// Volume must contain at least one Disk
     if (volumes.empty())
-    {
-        LOG_ERROR(&Logger::get("StoragePolicy"), "No volumes at StoragePolicy " << name);
-        throw Exception("StoragePolicy has no Volumes. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
-    }
+        throw Exception("StoragePolicy has no Volumes. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
+
     if (volumes[0]->disks.empty())
-    {
-        LOG_ERROR(&Logger::get("StoragePolicy"), "No Disks at volume 0 at StoragePolicy " << name);
-        throw Exception("StoragePolicy Volume 1 has no Disks. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
-    }
+        throw Exception("StoragePolicy Volume 1 has no disks. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
+
     return volumes[0]->disks[0];
 }
 
@@ -496,13 +495,11 @@ size_t StoragePolicy::getVolumePriorityByDisk(const DiskPtr & disk_ptr) const
     for (size_t i = 0; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
-        for (auto && disk : volume->disks)
-        {
+        for (const auto & disk : volume->disks)
             if (disk->getName() == disk_ptr->getName())
                 return i;
-        }
     }
-    throw Exception("No disk " + disk_ptr->getName() + " in Policy " + name, ErrorCodes::UNKNOWN_DISK);
+    throw Exception("No disk " + disk_ptr->getName() + " in policy " + name, ErrorCodes::UNKNOWN_DISK);
 }
 
 
@@ -527,6 +524,7 @@ StoragePolicySelector::StoragePolicySelector(
     constexpr auto default_storage_policy_name = "default";
     constexpr auto default_volume_name = "default";
     constexpr auto default_disk_name = "default";
+
     if (policies.find(default_storage_policy_name) == policies.end())
     {
         auto default_volume = std::make_shared<Volume>(
@@ -538,7 +536,7 @@ StoragePolicySelector::StoragePolicySelector(
     }
 }
 
-const StoragePolicyPtr &  StoragePolicySelector::operator[](const String & name) const
+const StoragePolicyPtr & StoragePolicySelector::operator[](const String & name) const
 {
     auto it = policies.find(name);
     if (it == policies.end())

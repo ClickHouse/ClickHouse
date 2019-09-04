@@ -213,8 +213,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             [this] (const std::string & name) { enqueuePartForCheck(name); }),
         zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name_, table_name_)),
         replica_name(global_context.getMacros()->expand(replica_name_, database_name_, table_name_)),
-        reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool()), parts_mover(*this),
-        queue(*this), fetcher(*this), cleanup_thread(*this), alter_thread(*this),
+        reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads()),
+        parts_mover(*this), queue(*this), fetcher(*this), cleanup_thread(*this), alter_thread(*this),
         part_check_thread(*this), restarting_thread(*this)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
@@ -4438,9 +4438,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
         if (missing_parts.empty())
         {
-            auto tmp = active_parts_set.getParts();
-            for (auto elem : tmp)
-                parts_to_fetch.push_back(elem);
+            parts_to_fetch = active_parts_set.getParts();
 
             /// Leaving only the parts of the desired partition.
             Strings parts_to_fetch_partition;

@@ -9,7 +9,6 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -120,18 +119,17 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         name = part_info.getPartName();
 }
 
-MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
-    : data(data_), pool(pool_), log(&Logger::get(data.getLogName() + " (MergerMutator)"))
+MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size_)
+    : data(data_), background_pool_size(background_pool_size_), log(&Logger::get(data.getLogName() + " (MergerMutator)"))
 {
 }
 
 
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge()
 {
-    size_t total_threads_in_pool = pool.getNumberOfThreads();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
-    return getMaxSourcePartsSizeForMerge(total_threads_in_pool, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
+    return getMaxSourcePartsSizeForMerge(background_pool_size, busy_threads_in_pool == 0 ? 0 : busy_threads_in_pool - 1); /// 1 is current thread
 }
 
 
@@ -159,11 +157,10 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t pool_siz
 UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation()
 {
     const auto data_settings = data.getSettings();
-    size_t total_threads_in_pool = pool.getNumberOfThreads();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
 
     /// Allow mutations only if there are enough threads, leave free threads for merges else
-    if (total_threads_in_pool - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
+    if (background_pool_size - busy_threads_in_pool >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(data.storage_policy->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;

@@ -465,8 +465,11 @@ private:
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
 
-    ///
+    /// Parts currently moving to another disks or volumes.
+    /// This operation doesn't replicate.
     DataParts currently_moving_parts;
+
+    /// Mutex for currenly_moving_parts
     std::mutex moving_parts_mutex;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
