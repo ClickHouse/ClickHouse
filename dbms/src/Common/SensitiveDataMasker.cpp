@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int LOGICAL_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
 }
@@ -38,7 +39,9 @@ private:
     const RE2 regexp;
     const re2::StringPiece replacement;
 
+#ifndef NDEBUG
     mutable std::atomic<std::uint64_t> matches_count = 0;
+#endif
 
 public:
     //* TODO: option with hyperscan? https://software.intel.com/en-us/articles/why-and-how-to-replace-pcre-with-hyperscan
@@ -61,15 +64,47 @@ public:
     uint64_t apply(std::string & data) const
     {
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
+#ifndef NDEBUG
         matches_count += m;
+#endif
         return m;
     }
 
     const std::string & getName() const { return name; }
     const std::string & getReplacementString() const { return replacement_string; }
+#ifndef NDEBUG
     uint64_t getMatchesCount() const { return matches_count; }
+#endif
+
 };
 
+bool SensitiveDataMasker::sensitive_data_masker_initialized = false;
+std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
+std::mutex SensitiveDataMasker::mutex;
+
+
+void SensitiveDataMasker::set(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
+{
+    if (!sensitive_data_masker_)
+        throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
+
+    std::lock_guard lock(SensitiveDataMasker::mutex);
+
+    if (sensitive_data_masker_initialized)
+        throw Exception("Logical error: second initialization of 'sensitive_data_masker' is foridden", ErrorCodes::LOGICAL_ERROR);
+
+    sensitive_data_masker_initialized = true;
+
+    if (sensitive_data_masker_->rulesCount() > 0)
+    {
+        sensitive_data_masker = std::move(sensitive_data_masker_);
+    }
+}
+
+SensitiveDataMasker * SensitiveDataMasker::get()
+{
+    return sensitive_data_masker.get();
+}
 
 SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {

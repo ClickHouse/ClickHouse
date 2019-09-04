@@ -107,4 +107,13 @@ drop table sensitive;" --log_queries=1 --ignore-error --multiquery >$tmp_file 2>
 grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 8a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 8b'
 
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS" --server_logs_file=/dev/null
+sleep 0.1;
+
+echo 9
+$CLICKHOUSE_CLIENT \
+   --server_logs_file=/dev/null \
+   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_time>now() - 60 and message like '%find_me%';
+   select * from system.text_log where event_time>now() - 60 and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
+
 echo 'finish'

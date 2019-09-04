@@ -447,7 +447,7 @@
     <query_masking_rules>
         <rule>
             <name>hide SSN</name>
-            <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+            <regexp>\b\d{3}-\d{2}-\d{4}\b</regexp>
             <replace>000-00-0000</replace>
         </rule>
     </query_masking_rules>
