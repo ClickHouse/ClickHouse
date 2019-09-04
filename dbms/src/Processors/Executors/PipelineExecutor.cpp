@@ -493,10 +493,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 if (!task_queue.empty())
                 {
-                    state = task_queue.front();
-                    task_queue.pop();
+                    state = task_queue.pop(thread_num);
 
-                    if (!task_queue.empty())
+                    if (!task_queue.empty() && !threads_queue.empty())
                     {
                         auto thread_to_wake = threads_queue.front();
                         threads_queue.pop();
@@ -575,11 +574,11 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
 
-                if (!state && !queue.empty())
-                {
-                    state = queue.front();
-                    queue.pop();
-                }
+//                if (!state && !queue.empty())
+//                {
+//                    state = queue.front();
+//                    queue.pop();
+//                }
 
                 prepare_all_processors(queue, parents, parents, parents);
 
@@ -592,6 +591,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         task_queue.push(queue.front());
                         queue.pop();
                     }
+
+                    if (!state && !threads_queue.empty())
+                        state = task_queue.pop(thread_num);
 
                     if (!threads_queue.empty())
                     {

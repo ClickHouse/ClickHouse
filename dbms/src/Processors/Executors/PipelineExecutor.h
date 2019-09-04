@@ -117,7 +117,36 @@ private:
 
     using Stack = std::stack<UInt64>;
 
-    using TaskQueue = std::queue<ExecutionState *>;
+    struct TaskQueue
+    {
+        void push(ExecutionState * state)
+        {
+            map.emplace(state->processor->getStream(), state);
+        }
+
+        ExecutionState * pop(size_t stream)
+        {
+            auto it = map.find(stream);
+
+            if (it == map.end())
+                it = map.find(IProcessor::NO_STREAM);
+
+            if (it == map.end())
+                it = map.begin();
+
+            if (it == map.end())
+                return nullptr;
+
+            auto res = it->second;
+            map.erase(it);
+
+            return res;
+        }
+
+        bool empty() const { return map.empty(); }
+
+        std::unordered_multimap<size_t, ExecutionState *> map;
+    };
 
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
