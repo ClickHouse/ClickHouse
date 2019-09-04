@@ -28,7 +28,6 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
-    friend class ReplicatedMergeTreeMovePredicate;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -253,8 +252,6 @@ public:
 
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 
-    bool removeFromVirtualParts(const String & part_name);
-
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
@@ -404,22 +401,6 @@ private:
     String inprogress_quorum_part;
 };
 
-
-class ReplicatedMergeTreeMovePredicate
-{
-public:
-    ReplicatedMergeTreeMovePredicate(const ReplicatedMergeTreeQueue & queue_);
-
-    bool operator()(const MergeTreeData::DataPartPtr & part, String * out_reason = nullptr) const;
-
-    ~ReplicatedMergeTreeMovePredicate();
-
-private:
-    const ReplicatedMergeTreeQueue & queue;
-
-    /// Locks queue state in constructor and unlocks in desctructor
-    std::unique_lock<std::mutex> queue_state_lock;
-};
 
 /** Convert a number to a string in the format of the suffixes of auto-incremental nodes in ZooKeeper.
   * Negative numbers are also supported - for them the name of the node looks somewhat silly

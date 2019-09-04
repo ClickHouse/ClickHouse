@@ -75,7 +75,7 @@ StorageMergeTree::StorageMergeTree(
             std::move(storage_settings_), false, attach),
         background_pool(context_.getBackgroundPool()),
         reader(*this), writer(*this),
-        merger_mutator(*this, global_context.getBackgroundPool()),
+        merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads()),
         parts_mover(*this)
 {
     loadDataParts(has_force_restore_data_flag);
@@ -113,8 +113,6 @@ void StorageMergeTree::shutdown()
 
     if (background_task_handle)
         background_pool.removeTask(background_task_handle);
-
-    background_task_handle.reset();
 }
 
 
