@@ -264,7 +264,9 @@ void StorageMergeTree::alter(
     }
 
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
+    /// Also block moves, because they can replace part with old state
     auto merge_blocker = merger_mutator.merges_blocker.cancel();
+    auto moves_blocked = parts_mover.moves_blocker.cancel();
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     checkAlter(params, context);
@@ -757,7 +759,7 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        /// DataPArt can be store only at one disk. Get Max of free space at all disks
+        /// DataPart can be store only at one disk. Get Max of free space at all disks
         UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
 
         std::lock_guard lock(currently_processing_in_background_mutex);
@@ -952,9 +954,10 @@ void StorageMergeTree::clearOldMutations(bool truncate)
 
 void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context)
 {
-    /// Asks to complete merges and does not allow them to start.
+    /// Asks to complete merges and moves and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger_mutator.merges_blocker.cancel();
+    auto move_blocker = parts_mover.moves_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
     auto lock_read_structure = lockStructureForShare(false, context.getCurrentQueryId());
@@ -1091,9 +1094,6 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, context);
                         break;
-
-                    case PartitionCommand::MoveDestinationType::NONE:
-                        throw Exception("Move destination was not provided", ErrorCodes::LOGICAL_ERROR);
                 }
 
             }

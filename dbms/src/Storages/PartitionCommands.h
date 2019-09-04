@@ -57,10 +57,9 @@ struct PartitionCommand
     {
         DISK,
         VOLUME,
-        NONE,
     };
 
-    MoveDestinationType move_destination_type = MoveDestinationType::NONE;
+    MoveDestinationType move_destination_type;
 
     String move_destination_name;
 

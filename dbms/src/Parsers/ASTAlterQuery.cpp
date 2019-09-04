@@ -182,8 +182,6 @@ void ASTAlterCommand::formatImpl(
             case MoveDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case MoveDestinationType::NONE:
-                throw Exception("Unexpected MOVE destination (NONE)", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
         }
         WriteBufferFromOwnString move_destination_name_buf;
         writeQuoted(move_destination_name, move_destination_name_buf);
