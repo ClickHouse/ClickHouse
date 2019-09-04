@@ -21,6 +21,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
+#include <Storages/StorageInput.h>
+
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -177,7 +179,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool has_query_tail)
+    bool has_query_tail,
+    ReadBuffer * istr)
 {
     time_t current_time = time(nullptr);
 
@@ -271,6 +274,28 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Load external tables if they were provided
         context.initializeExternalTablesIfSet();
+
+        auto * insert_query = ast->as<ASTInsertQuery>();
+        if (insert_query && insert_query->select)
+        {
+            /// Prepare Input storage before executing interpreter if we already got a buffer with data.
+            if (istr)
+            {
+                ASTPtr input_function;
+                insert_query->tryFindInputFunction(input_function);
+                if (input_function)
+                {
+                    StoragePtr storage = context.executeTableFunction(input_function);
+                    auto & input_storage = dynamic_cast<StorageInput &>(*storage);
+                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(ast, istr,
+                        input_storage.getSampleBlock(), context, input_function);
+                    input_storage.setInputStream(input_stream);
+                }
+            }
+        }
+        else
+            /// reset Input callbacks if query is not INSERT SELECT
+            context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         bool use_processors = settings.experimental_use_processors && interpreter->canExecuteWithProcessors();
@@ -525,7 +550,8 @@ BlockIO executeQuery(
     bool may_have_embedded_data)
 {
     BlockIO streams;
-    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, !may_have_embedded_data);
+    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
+        internal, stage, !may_have_embedded_data, nullptr);
     return streams;
 }
 
@@ -576,7 +602,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
 
     auto & pipeline = streams.pipeline;
 
@@ -584,7 +610,7 @@ void executeQuery(
     {
         if (streams.out)
         {
-            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context);
+            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
             copyData(in, *streams.out);
         }
 
