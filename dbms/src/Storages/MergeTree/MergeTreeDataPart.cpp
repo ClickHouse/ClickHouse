@@ -314,7 +314,7 @@ time_t MergeTreeDataPart::getMaxTime() const
 
 MergeTreeDataPart::~MergeTreeDataPart()
 {
-    if (remove_on_destroy || is_temp)
+    if (state == State::DeleteOnDestroy || is_temp)
     {
         try
         {
@@ -981,6 +981,8 @@ String MergeTreeDataPart::stateToString(MergeTreeDataPart::State state)
             return "Outdated";
         case State::Deleting:
             return "Deleting";
+        case State::DeleteOnDestroy:
+            return "DeleteOnDestroy";
     }
 
     __builtin_unreachable();

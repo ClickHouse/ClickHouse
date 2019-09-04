@@ -92,8 +92,6 @@ struct MergeTreeDataPart
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
 
-    mutable bool remove_on_destroy = false;
-
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 
@@ -105,20 +103,22 @@ struct MergeTreeDataPart
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted: we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:  we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Commited:  we successfully committed a part to active dataset
-     * Precommitted -> Outdated:  a part was replaced by a covering part or DROP PARTITION
-     * Outdated -> Deleting:      a cleaner selected this part for deletion
-     * Deleting -> Outdated:      if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
+     * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
+     * Precommitted -> Commited:    we successfully committed a part to active dataset
+     * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
+     * Outdated -> Deleting:        a cleaner selected this part for deletion
+     * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Committed -> DeleteOnDestroy if part was moved to another disk
      */
     enum class State
     {
-        Temporary,      /// the part is generating now, it is not in data_parts list
-        PreCommitted,   /// the part is in data_parts, but not used for SELECTs
-        Committed,      /// active data part, used by current and upcoming SELECTs
-        Outdated,       /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
-        Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+        Temporary,       /// the part is generating now, it is not in data_parts list
+        PreCommitted,    /// the part is in data_parts, but not used for SELECTs
+        Committed,       /// active data part, used by current and upcoming SELECTs
+        Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
+        Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+        DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
     using TTLInfo = MergeTreeDataPartTTLInfo;
@@ -148,8 +148,6 @@ struct MergeTreeDataPart
         }
         return false;
     }
-
-    void deleteOnDestroy() const { remove_on_destroy = true; }
 
     /// Throws an exception if state of the part is not in affordable_states
     void assertState(const std::initializer_list<State> & affordable_states) const;
