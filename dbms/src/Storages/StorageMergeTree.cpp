@@ -334,11 +334,16 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(const FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_)
+    CurrentlyMergingPartsTagger(const FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
-        reserved_space = storage.reserveSpaceForPart(total_size);
+
+        /// if we mutate part, than we should reserver space on the same disk, because mutation create hardlinks
+        if (is_mutation)
+            reserved_space = future_part_.parts[0]->disk->reserve(total_size);
+        else
+            reserved_space = storage.reserveSpace(total_size);
         if (!reserved_space)
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
 
@@ -400,7 +405,8 @@ public:
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
-    /// Choose any disk.
+    /// Choose any disk, because when we load mutations we search them at each disk
+    /// where storage can be placed. See loadMutations().
     auto disk = storage_policy->getAnyDisk();
     MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
@@ -565,7 +571,7 @@ bool StorageMergeTree::merge(
             return false;
         }
 
-        merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
+        merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
     }
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part);
@@ -798,7 +804,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.part_info = new_part_info;
             future_part.name = part->getNewName(new_part_info);
 
-            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this);
+            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
             break;
         }
     }

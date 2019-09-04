@@ -634,9 +634,9 @@ public:
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
 
-    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
+    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(
+        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
 
-                                                   const MergeTreePartInfo & dst_part_info);
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
     /// Returns true if table can create new parts with adaptive granularity
@@ -662,9 +662,8 @@ public:
 
     Strings getDataPaths() const override;
 
+    /// Reserves space at least 1MB
     DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
-
-    DiskSpace::ReservationPtr reserveSpaceForPart(UInt64 expected_size);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes

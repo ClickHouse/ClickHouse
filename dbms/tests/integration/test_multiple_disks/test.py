@@ -167,7 +167,7 @@ def test_background_move(start_cluster, name, engine):
             data = [] # 5MB in total
             for i in range(5):
                 data.append(get_random_string(1024 * 1024)) # 1MB row
-            # small jbod size is 40MB, so lets insert 5MB batch 6 times
+            # small jbod size is 40MB, so lets insert 5MB batch 5 times
             node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
 
 
@@ -470,6 +470,40 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("name,engine", [
+    ("mutating_mt","MergeTree()"),
+    ("replicated_mutating_mt","ReplicatedMergeTree('/clickhouse/replicated_mutating_mt', '1')",),
+])
+def test_mutate_to_another_disk(start_cluster, name, engine):
+
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                s1 String
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            SETTINGS storage_policy_name='moving_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        for i in range(5):
+            data = [] # 5MB in total
+            for i in range(5):
+                data.append(get_random_string(1024 * 1024)) # 1MB row
+            node1.query("INSERT INTO {} VALUES {}".format(name, ','.join(["('" + x + "')" for x in data])))
+
+        node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
+
+        retry = 10
+        while node1.query("SELECT * FROM system.mutations WHERE is_done = 0") != "" and retry > 0:
+            retry -= 1
+            time.sleep(0.5)
+
+        assert node1.query("SELECT sum(endsWith(s1, 'x')) FROM {}".format(name)) == "25\n"
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
 
 
 '''

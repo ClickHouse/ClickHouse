@@ -226,7 +226,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         protocol_error = false;
 
-        auto reservation = data.reserveSpaceForPart(sum_files_size);
+        auto reservation = data.reserveSpace(sum_files_size);
         return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
     }
     catch (const Exception & e) ///@TODO_IGR ASK maybe catch connection and others error here

@@ -1006,7 +1006,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception.
-    DiskSpace::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_merge);
+    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_merge);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1139,7 +1139,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
     /// Can throw an exception.
-    DiskSpace::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_result);
+    DiskSpace::ReservationPtr reserved_space = reserveSpace(estimated_space_for_result);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 

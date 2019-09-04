@@ -3022,19 +3022,17 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     return loaded_parts;
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
+DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
 {
     constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
-    constexpr UInt64 RESERVATION_MULTIPLY_ESTIMATION_FACTOR = 1;
 
-    if (expected_size < RESERVATION_MIN_ESTIMATION_SIZE)
-        expected_size = RESERVATION_MIN_ESTIMATION_SIZE;
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    auto reservation = reserveSpace(expected_size * RESERVATION_MULTIPLY_ESTIMATION_FACTOR);
+    auto reservation = storage_policy->reserve(expected_size);
     if (reservation)
         return reservation;
 
-    throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(expected_size) + " requested",
+    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enought space.",
                     ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
@@ -3217,7 +3215,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpaceForPart(src_part->bytes_on_disk);
+    auto reservation = reserveSpace(src_part->bytes_on_disk);
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
@@ -3236,11 +3234,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = Poco::File(dst_part_absolute_path).getLastModified().epochTime();
     return dst_data_part;
-}
-
-DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
-{
-    return storage_policy->reserve(expected_size);
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const
