@@ -99,16 +99,9 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
     // see https://github.com/edenhill/librdkafka/issues/2455
     while (consumer->get_subscription().empty())
     {
-        stalled = false;
-
         try
         {
             consumer->subscribe(topics);
-            if (nextImpl())
-                break;
-
-            // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
-            //        see https://github.com/edenhill/librdkafka/issues/2077
         }
         catch (cppkafka::HandleException & e)
         {
@@ -116,6 +109,14 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
                 continue;
             throw;
         }
+
+        // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+        //        see https://github.com/edenhill/librdkafka/issues/2077
+        do
+            stalled = false;
+        while (!nextImpl());
+
+        break;
     }
 
     stalled = false;

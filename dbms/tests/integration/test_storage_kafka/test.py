@@ -30,7 +30,6 @@ import kafka_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                config_dir='configs',
                                 main_configs=['configs/kafka.xml'],
                                 with_kafka=True,
                                 clickhouse_path_dir='clickhouse_path')
@@ -630,12 +629,15 @@ def test_kafka_commit_on_block_write(kafka_cluster):
 
     i = [0]
     def produce():
-        while not cancel.is_set():
+        limit = 0
+        while not cancel.is_set() and limit < 100:
             messages = []
             for _ in range(101):
                 messages.append(json.dumps({'key': i[0], 'value': i[0]}))
                 i[0] += 1
             kafka_produce('block', messages)
+            limit += 1
+            time.sleep(1)
 
     kafka_thread = threading.Thread(target=produce)
     kafka_thread.start()
