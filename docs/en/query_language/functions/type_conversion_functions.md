@@ -18,7 +18,7 @@ Converts an input value to the [Int](../../data_types/int_uint.md) data type. Th
 
 Integer value in `Int8`, `Int16`, `Int32` or `Int64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncates fraction digits of numbers with floating point.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
 
 The behaviour of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
 
@@ -54,9 +54,9 @@ Converts an input value to the [UInt](../../data_types/int_uint.md) data type. T
 
 Integer value in `UInt8`, `UInt16`, `UInt32` or `UInt64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncates fraction digits of numbers with floating point.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
 
-The behaviour of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
+The behaviour of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass the string with negative number, for example `'-32'`, ClickHouse rises an exception.
 
 **Example**
 
