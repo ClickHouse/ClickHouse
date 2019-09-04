@@ -5,18 +5,18 @@
 #include "ExtendedLogChannel.h"
 
 
-/** Format log messages own way.
-  * We can't obtain some details using Poco::PatternFormatter.
+/** Форматирует по своему.
+  * Некоторые детали невозможно получить, используя только Poco::PatternFormatter.
   *
-  * Firstly, the thread number here is peaked not from Poco::Thread
-  * threads only, but from all threads with number assigned (see ThreadNumber.h)
+  * Во-первых, используется номер потока не среди потоков Poco::Thread,
+  *  а среди всех потоков, для которых был получен номер (см. ThreadNumber.h)
   *
-  * Secondly, the local date and time are correctly displayed.
-  * Poco::PatternFormatter does not work well with local time,
-  * when timestamps are close to DST timeshift moments.
-  * - see Poco sources and http://thread.gmane.org/gmane.comp.time.tz/8883
+  * Во-вторых, корректно выводится локальная дата и время.
+  * Poco::PatternFormatter плохо работает с локальным временем,
+  *  в ситуациях, когда в ближайшем будущем намечается отмена или введение daylight saving time.
+  *  - см. исходники Poco и http://thread.gmane.org/gmane.comp.time.tz/8883
   *
-  * Also it's made a bit more efficient (unimportant).
+  * Также сделан чуть более эффективным (что имеет мало значения).
   */
 
 class Loggers;
