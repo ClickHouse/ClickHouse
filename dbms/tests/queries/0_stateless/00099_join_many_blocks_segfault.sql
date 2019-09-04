@@ -11,4 +11,4 @@ ANY LEFT JOIN
     SELECT
         2 AS DomainID,
         'def' AS Domain
-) USING DomainID;
+) js2 USING DomainID;

@@ -608,6 +608,7 @@ private:
 
             if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
             {
+                // TODO: should we do sensitive data masking on client too? History file can be source of secret leaks.
                 if (input != prev_input)
                 {
                     /// Replace line breaks with spaces to prevent the following problem.
@@ -1027,13 +1028,17 @@ private:
         while (true)
         {
             Block block = async_block_input->read();
-            connection->sendData(block);
-            processed_rows += block.rows();
 
             /// Check if server send Log packet
+            receiveLogs();
+
+            /// Check if server send Exception packet
             auto packet_type = connection->checkPacket();
-            if (packet_type && *packet_type == Protocol::Server::Log)
-                receiveAndProcessPacket();
+            if (packet_type && *packet_type == Protocol::Server::Exception)
+                return;
+
+            connection->sendData(block);
+            processed_rows += block.rows();
 
             if (!block)
                 break;
@@ -1250,6 +1255,17 @@ private:
         }
     }
 
+    /// Process Log packets, used when inserting data by blocks
+    void receiveLogs()
+    {
+        auto packet_type = connection->checkPacket();
+
+        while (packet_type && *packet_type == Protocol::Server::Log)
+        {
+            receiveAndProcessPacket();
+            packet_type = connection->checkPacket();
+        }
+    }
 
     void initBlockOutputStream(const Block & block)
     {
