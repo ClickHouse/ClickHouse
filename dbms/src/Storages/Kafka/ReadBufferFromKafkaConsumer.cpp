@@ -1,5 +1,7 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
+#include <common/logger_useful.h>
+
 namespace DB
 {
 
@@ -11,6 +13,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     size_t max_batch_size,
     size_t poll_timeout_,
     bool intermediate_commit_,
+    char delimiter_,
     const std::atomic<bool> & stopped_)
     : ReadBuffer(nullptr, 0)
     , consumer(consumer_)
@@ -18,6 +21,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , intermediate_commit(intermediate_commit_)
+    , delimiter(delimiter_)
     , stopped(stopped_)
     , current(messages.begin())
 {
@@ -141,6 +145,15 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     ///       Otherwise, the |poll_timeout| expectations get flawn.
     if (stalled || stopped)
         return false;
+
+    if (put_delimiter)
+    {
+        BufferBase::set(&delimiter, 1, 0);
+        put_delimiter = false;
+        return true;
+    }
+
+    put_delimiter = (delimiter != 0);
 
     if (current == messages.end())
     {
