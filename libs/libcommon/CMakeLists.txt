@@ -84,7 +84,7 @@ elseif (USE_TCMALLOC)
     endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
-else ()
+elseif (OS_LINUX)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
