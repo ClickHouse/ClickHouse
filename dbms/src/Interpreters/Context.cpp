@@ -86,6 +86,7 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -146,6 +147,9 @@ struct ContextShared
     mutable std::unique_ptr<DiskSpace::DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser
     mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
+
+    /// Allows to remove sensitive data from queries using set of regexp-based rules
+    std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -288,6 +292,8 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
+
+        sensitive_data_masker.reset();
     }
 
     bool hasTraceCollector()
@@ -535,6 +541,23 @@ String Context::getUserFilesPath() const
 {
     auto lock = getLock();
     return shared->user_files_path;
+}
+
+void Context::setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker)
+{
+    if (!sensitive_data_masker)
+        throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
+
+    if (sensitive_data_masker->rulesCount() > 0)
+    {
+        auto lock = getLock();
+        shared->sensitive_data_masker = std::move(sensitive_data_masker);
+    }
+}
+
+SensitiveDataMasker * Context::getSensitiveDataMasker() const
+{
+    return shared->sensitive_data_masker.get();
 }
 
 void Context::setPath(const String & path)

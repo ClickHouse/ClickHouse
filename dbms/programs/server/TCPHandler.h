@@ -82,6 +82,13 @@ struct QueryState
 };
 
 
+struct LastBlockInputParameters
+{
+    Protocol::Compression compression = Protocol::Compression::Disable;
+    Block header;
+};
+
+
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
@@ -126,6 +133,9 @@ private:
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
 
+    /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
+    LastBlockInputParameters last_block_in;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
     /// It is the name of the server that will be sent to the client.
@@ -138,6 +148,11 @@ private:
     void receiveQuery();
     bool receiveData();
     void readData(const Settings & global_settings);
+
+    [[noreturn]] void receiveUnexpectedData();
+    [[noreturn]] void receiveUnexpectedQuery();
+    [[noreturn]] void receiveUnexpectedHello();
+    [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
     void processInsertQuery(const Settings & global_settings);
