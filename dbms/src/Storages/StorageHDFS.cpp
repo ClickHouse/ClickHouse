@@ -155,15 +155,16 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
         const bool looking_for_directory = next_slash != std::string::npos;
+        const bool is_directory = ls.file_info[i].mKind == 'D';
         /// Condition with type of current file_info means what kind of path is it in current iteration of ls
-        if ((ls.file_info[i].mKind == 'F') && !looking_for_directory)
+        if (!is_directory && !looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 result.push_back(String(ls.file_info[i].mName));
             }
         }
-        else if ((ls.file_info[i].mKind == 'D') && looking_for_directory)
+        else if (is_directory && looking_for_directory)
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
@@ -187,7 +188,6 @@ BlockInputStreams StorageHDFS::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    Strings path_parts;
     const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);

@@ -16,60 +16,61 @@ namespace DB
  */
 std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs)
 {
-    std::ostringstream oss;
+    std::ostringstream oss_for_escaping;
     /// Escaping only characters that not used in glob syntax
     for (const auto & letter : initial_str_with_globs)
     {
         if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+') || (letter == '-') || (letter == '(') || (letter == ')'))
-            oss << '\\';
-        oss << letter;
+            oss_for_escaping << '\\';
+        oss_for_escaping << letter;
     }
-    std::string escaped_with_globs = oss.str();
-    oss.str("");
+    std::string escaped_with_globs = oss_for_escaping.str();
+
     static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without {}*,
     re2::StringPiece input(escaped_with_globs);
     re2::StringPiece matched;
+    std::ostringstream oss_for_replacing;
     size_t current_index = 0;
     while (RE2::FindAndConsume(&input, enum_or_range, &matched))
     {
         std::string buffer = matched.ToString();
-        oss << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
+        oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
         if (buffer.find(',') == std::string::npos)
         {
             size_t range_begin, range_end;
             char point;
-            std::istringstream iss(buffer);
-            iss >> range_begin >> point >> point >> range_end;
-            oss << range_begin;
+            std::istringstream iss_range(buffer);
+            iss_range >> range_begin >> point >> point >> range_end;
+            oss_for_replacing << range_begin;
             for (size_t i = range_begin + 1; i <= range_end; ++i)
             {
-                oss << '|' << i;
+                oss_for_replacing << '|' << i;
             }
         }
         else
         {
             std::replace(buffer.begin(), buffer.end(), ',', '|');
-            oss << buffer;
+            oss_for_replacing << buffer;
         }
-        oss << ")";
+        oss_for_replacing << ")";
         current_index = input.data() - escaped_with_globs.data();
     }
-    oss << escaped_with_globs.substr(current_index);
-    std::string almost_res = oss.str();
-    oss.str("");
+    oss_for_replacing << escaped_with_globs.substr(current_index);
+    std::string almost_res = oss_for_replacing.str();
+    std::ostringstream oss_final_processing;
     for (const auto & letter : almost_res)
     {
         if ((letter == '?') || (letter == '*'))
         {
-            oss << "[^/]";   /// '?' is any symbol except '/'
+            oss_final_processing << "[^/]";   /// '?' is any symbol except '/'
             if (letter == '?')
                 continue;
         }
         if ((letter == '.') || (letter == '{') || (letter == '}'))
-            oss << '\\';
-        oss << letter;
+            oss_final_processing << '\\';
+        oss_final_processing << letter;
     }
-    return oss.str();
+    return oss_final_processing.str();
 }
 }

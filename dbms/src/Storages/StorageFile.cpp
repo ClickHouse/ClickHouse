@@ -152,13 +152,16 @@ StorageFile::StorageFile(
             if (db_dir_path.empty())
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-            paths[0] = getTablePath(db_dir_path, table_name, format_name);
+            paths.push_back(getTablePath(db_dir_path, table_name, format_name));
             is_db_table = true;
-            Poco::File(Poco::Path(paths[0]).parent()).createDirectories();
+            Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
         }
     }
     else /// Will use FD
     {
+        if (paths.size() != 1)
+            throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
         checkCreationIsAllowed(context_global, db_dir_path, paths[0], table_fd);
 
         is_db_table = false;
@@ -266,6 +269,8 @@ public:
     explicit StorageFileBlockOutputStream(StorageFile & storage_)
         : storage(storage_), lock(storage.rwlock)
     {
+        if (storage.paths.size() != 1)
+            throw Exception("Table '" + storage.table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
         if (storage.use_table_fd)
         {
             /** NOTE: Using real file binded to FD may be misleading:
@@ -277,7 +282,6 @@ public:
         }
         else
         {
-            if (storage.paths.size() != 1)  throw Exception("Table '" + storage.table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
             write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
@@ -320,6 +324,12 @@ BlockOutputStreamPtr StorageFile::write(
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
 
+String StorageFile::getDataPath() const
+{
+    if (paths.size() != 1)
+        throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+    return paths[0];
+}
 
 void StorageFile::drop()
 {
