@@ -317,25 +317,25 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 Conditions in the `WHERE` clause contain calls of functions over the columns. If the column is a part of some index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subset of functions for using indexes.
 
-The `set`, `minmax`, `tokenbf_v1`, `bloom_filter` can be used with all functions. Functions subsets for other indexes are in the table below.
+The `set` and `bloom_filter` indexes can be used with all functions. Functions subsets for other indexes are in the table below.
 
-Function (operator) / Index | primary key | ngrambf_v1 | minmax | tokenbf_v1 | bloom_filter
----------------|-------------|------------|--------|------------|--------------
-[equals (=, ==)](../../query_language/functions/comparison_functions.md#function-equals) | ✔ | ✔ | | | 
-[notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | | | 
-[like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | | | 
-[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | | | 
-[startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | | | 
-[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✔ | |
-[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✔ | | |
-[in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | | | 
-[notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | | | 
-[less (<)](../../query_language/functions/comparison_functions.md#function-less) | ✔ | ✗ | | | 
-[greater (>)](../../query_language/functions/comparison_functions.md#function-greater) | ✔ | ✗ | | | 
-[lessOrEquals (<=)](../../query_language/functions/comparison_functions.md#function-lessorequals) | ✔ | ✗ | | | 
-[greaterOrEquals (>=)](../../query_language/functions/comparison_functions.md#function-greaterorequals) | ✔ | ✗ | | | 
-[empty](../../query_language/functions/array_functions.md#function-empty)  | ✔ | ✗ | | | 
-[notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✗ | | | 
+Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter
+----------------------------|-------------|--------|------------|------------|---------------
+[equals (=, ==)](../../query_language/functions/comparison_functions.md#function-equals) | ✔ | ✔ | ✔ | ✔ |
+[notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | ✔ | ✔ | 
+[like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✔ | 
+[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | 
+[startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | 
+[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ |
+[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ |
+[in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ |
+[notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ |
+[less (<)](../../query_language/functions/comparison_functions.md#function-less) | ✔ | ✔ | ✗ | ✗ |
+[greater (>)](../../query_language/functions/comparison_functions.md#function-greater) | ✔ | ✔ | ✗ | ✗ |
+[lessOrEquals (<=)](../../query_language/functions/comparison_functions.md#function-lessorequals) | ✔ | ✔ | ✗ | ✗ |
+[greaterOrEquals (>=)](../../query_language/functions/comparison_functions.md#function-greaterorequals) | ✔ | ✔ | ✗ | ✗ |
+[empty](../../query_language/functions/array_functions.md#function-empty)  | ✔ | ✔ | ✗ | ✗ |
+[notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✔ | ✗ | ✗ |
 
 Functions with a constant argument less than ngram size couldn't be used by `ngrambf_v1` for the query optimization.
 
