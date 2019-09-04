@@ -501,7 +501,6 @@ public:
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
-    // FIXME it's a temporary hack for ConstantExpressionTemplate
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return function->getArgumentsThatAreAlwaysConstant(); }
 
 protected:
