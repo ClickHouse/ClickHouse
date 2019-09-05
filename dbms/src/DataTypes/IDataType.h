@@ -136,6 +136,7 @@ public:
         OutputStreamGetter getter;
         SubstreamPath path;
 
+        size_t filling_mark_size = 0;
         size_t low_cardinality_max_dictionary_size = 0;
         bool low_cardinality_use_single_dictionary_for_part = true;
 
@@ -257,7 +258,7 @@ public:
     void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
     void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
-    virtual /** Text serialization for putting into the XML format.
+    /** Text serialization for putting into the XML format.
       */
     void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
@@ -515,7 +516,7 @@ struct WhichDataType
     bool isString() const { return idx == TypeIndex::String; }
     bool isFixedString() const { return idx == TypeIndex::FixedString; }
     bool isStringOrFixedString() const { return isString() || isFixedString(); }
-    bool isJSON() const { return idx == TypeIndex::Generics; }
+    bool isSmallestJSON() const { return idx == TypeIndex::SmallestJSON; }
 
     bool isUUID() const { return idx == TypeIndex::UUID; }
     bool isArray() const { return idx == TypeIndex::Array; }

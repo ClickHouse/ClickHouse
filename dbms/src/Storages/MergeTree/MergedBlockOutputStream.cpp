@@ -109,7 +109,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
             {
                 const auto columns = storage.getColumns();
                 const auto & effective_codec = columns.getCodecOrDefault(it->name, codec);
-                serialize_settings.getter = createStreamGetter(it->name, offset_columns, effective_codec, total_size, false);
+                serialize_settings.getter = createStreamGetter(it->name, offset_columns, serialize_settings, effective_codec, total_size, false);
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
 
@@ -302,7 +302,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         {
             const auto columns = storage.getColumns();
             const auto & effective_codec = columns.getCodecOrDefault(col.name, codec);
-            settings.getter = createStreamGetter(col.name, tmp_offset_columns, effective_codec, total_size, false);
+            settings.getter = createStreamGetter(col.name, tmp_offset_columns, settings, effective_codec, total_size, false, false);
             serialization_states.emplace_back(nullptr);
             col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
         }

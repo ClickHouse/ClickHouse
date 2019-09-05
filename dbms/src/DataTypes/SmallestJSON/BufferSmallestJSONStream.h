@@ -22,14 +22,14 @@ struct BufferStreamHelper
     template <typename BufferType>
     static void Put(BufferType & /*buffer*/, char /*value*/);
 
-    template <RapidFormat format>
+    template <FormatStyle format>
     static char SkipQuoted(ReadBuffer & /*buffer*/, const FormatSettings & /*setting*/, char /*maybe_opening_quoted*/);
 
-    template <RapidFormat format>
+    template <FormatStyle format>
     static char SkipQuoted(WriteBuffer & /*buffer*/, const FormatSettings & /*setting*/, char /*maybe_opening_quoted*/);
 };
 
-template <typename BufferType, RapidFormat format>
+template <typename BufferType, FormatStyle format>
 struct BufferSmallestJSONStream
 {
 public:

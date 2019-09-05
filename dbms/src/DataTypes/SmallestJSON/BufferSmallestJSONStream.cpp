@@ -33,13 +33,13 @@ void BufferStreamHelper::Put(BufferType & /*buffer*/, char /*value*/)
     throw Exception("Method Put is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-template<RapidFormat format>
+template<FormatStyle format>
 char BufferStreamHelper::SkipQuoted(WriteBuffer & /*buffer*/, const FormatSettings & /*setting*/, char /*maybe_opening_quoted*/)
 {
     throw Exception("Method SkipQuoted is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-template<RapidFormat format>
+template<FormatStyle format>
 char BufferStreamHelper::SkipQuoted(ReadBuffer & /*buffer*/, const FormatSettings & /*setting*/, char /*maybe_opening_quoted*/)
 {
     /// By default, we don't need to skip any quoted characters
@@ -80,7 +80,7 @@ size_t BufferStreamHelper::Tell(ReadBuffer & buffer)
 }
 
 template<>
-char BufferStreamHelper::SkipQuoted<RapidFormat::CSV>(ReadBuffer & buffer, const FormatSettings & setting, char maybe_opening_quoted)
+char BufferStreamHelper::SkipQuoted<FormatStyle::CSV>(ReadBuffer & buffer, const FormatSettings & setting, char maybe_opening_quoted)
 {
     if (buffer.eof())
         throwReadAfterEOF();
@@ -105,7 +105,7 @@ char BufferStreamHelper::SkipQuoted<RapidFormat::CSV>(ReadBuffer & buffer, const
 }
 
 template<>
-char BufferStreamHelper::SkipQuoted<RapidFormat::QUOTED>(ReadBuffer & buffer, const FormatSettings & /*setting*/, char maybe_opening_quoted)
+char BufferStreamHelper::SkipQuoted<FormatStyle::QUOTED>(ReadBuffer & buffer, const FormatSettings & /*setting*/, char maybe_opening_quoted)
 {
     if (buffer.eof() || *buffer.position() != '\'')
         throw Exception("Cannot parse quoted string: expected " + (maybe_opening_quoted ? String("closing") : String("opening")) + " quote",
@@ -120,12 +120,12 @@ template char BufferStreamHelper::Take(WriteBuffer & buffer);
 template size_t BufferStreamHelper::Tell(WriteBuffer & buffer);
 template void BufferStreamHelper::Put(ReadBuffer & buffer, char value);
 
-template char BufferStreamHelper::SkipQuoted<RapidFormat::JSON>(ReadBuffer &, const FormatSettings &, char);
-template char BufferStreamHelper::SkipQuoted<RapidFormat::ESCAPED>(ReadBuffer &, const FormatSettings &, char);
+template char BufferStreamHelper::SkipQuoted<FormatStyle::JSON>(ReadBuffer &, const FormatSettings &, char);
+template char BufferStreamHelper::SkipQuoted<FormatStyle::ESCAPED>(ReadBuffer &, const FormatSettings &, char);
 
-template char BufferStreamHelper::SkipQuoted<RapidFormat::CSV>(WriteBuffer &, const FormatSettings &, char);
-template char BufferStreamHelper::SkipQuoted<RapidFormat::JSON>(WriteBuffer &, const FormatSettings &, char);
-template char BufferStreamHelper::SkipQuoted<RapidFormat::QUOTED>(WriteBuffer &, const FormatSettings &, char);
-template char BufferStreamHelper::SkipQuoted<RapidFormat::ESCAPED>(WriteBuffer &, const FormatSettings &, char);
+template char BufferStreamHelper::SkipQuoted<FormatStyle::CSV>(WriteBuffer &, const FormatSettings &, char);
+template char BufferStreamHelper::SkipQuoted<FormatStyle::JSON>(WriteBuffer &, const FormatSettings &, char);
+template char BufferStreamHelper::SkipQuoted<FormatStyle::QUOTED>(WriteBuffer &, const FormatSettings &, char);
+template char BufferStreamHelper::SkipQuoted<FormatStyle::ESCAPED>(WriteBuffer &, const FormatSettings &, char);
 
 }

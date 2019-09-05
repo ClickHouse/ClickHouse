@@ -192,52 +192,52 @@ void DataTypeSmallestJSON::deserializeProtobuf(IColumn &, ProtobufReader &, bool
 
 void DataTypeSmallestJSON::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<RapidFormat::CSV>(&istr, settings));
+    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<FormatStyle::CSV>(&istr, settings));
 }
 
 void DataTypeSmallestJSON::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<RapidFormat::JSON>(&istr, settings));
+    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<FormatStyle::JSON>(&istr, settings));
 }
 
 void DataTypeSmallestJSON::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<RapidFormat::QUOTED>(&istr, settings));
+    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<FormatStyle::QUOTED>(&istr, settings));
 }
 
 void DataTypeSmallestJSON::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<RapidFormat::ESCAPED>(&istr, settings));
+    SmallestJSONSerialization::deserialize(column, settings, SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&istr, settings));
 }
 
 void DataTypeSmallestJSON::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<RapidFormat::ESCAPED>(&ostr, settings));
+    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&ostr, settings));
 }
 
 void DataTypeSmallestJSON::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<RapidFormat::JSON>(&ostr, settings));
+    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<FormatStyle::JSON>(&ostr, settings));
 }
 
 void DataTypeSmallestJSON::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<RapidFormat::CSV>(&ostr, settings));
-}
-
-void DataTypeSmallestJSON::serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<RapidFormat::ESCAPED>(&ostr, settings));
+    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<FormatStyle::CSV>(&ostr, settings));
 }
 
 void DataTypeSmallestJSON::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<RapidFormat::QUOTED>(&ostr, settings));
+    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<FormatStyle::QUOTED>(&ostr, settings));
 }
 
 void DataTypeSmallestJSON::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<RapidFormat::ESCAPED>(&ostr, settings));
+    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&ostr, settings));
+}
+
+void DataTypeSmallestJSON::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    SmallestJSONSerialization::serialize(column, row_num, SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&ostr, settings));
 }
 
 void DataTypeSmallestJSON::serializeBinaryBulkStatePrefix(SerializeBinaryBulkSettings & /*settings*/, SerializeBinaryBulkStatePtr & state) const
@@ -322,6 +322,7 @@ void DataTypeSmallestJSON::deserializeBinaryBulkWithMultipleStreams(
             {
                 const auto & [type, data_state] = serialize_state->getOrCreateDataState(info_stream, json_struct.access_path);
 
+                data_settings.avg_value_size_hint = 0;
                 data_settings.path.back().type = Substream::JSONElements;
                 data_settings.path.back().tuple_element_name = sub_type_name(sub_name_prefix, type);
                 type->deserializeBinaryBulkWithMultipleStreams(*json_struct.getOrCreateDataColumn(type), rows, data_settings, *data_state);
@@ -345,6 +346,11 @@ void DataTypeSmallestJSON::deserializeBinaryBulkWithMultipleStreams(
 
             MutableColumnPtr temp_column = ColumnSmallestJSON::create();
             readPartOfJSONColumn(*temp_column.get(), info_stream, num_rows_to_read);
+
+            if (temp_column->size() != num_rows_to_read)
+                throw Exception("LOGICAL_ERROR: column size: " + toString(temp_column->size()) + ", num_rows_to_read:" + toString(num_rows_to_read),
+                    ErrorCodes::LOGICAL_ERROR);
+
             smallest_json_column.insertRangeFrom(*temp_column, 0, num_rows_to_read);
             limit -= num_rows_to_read;
         }

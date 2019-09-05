@@ -26,7 +26,7 @@ Field ColumnSmallestJSON::operator[](size_t row_num) const
     FormatSettings settings{};
     WriteBufferFromOwnString buffer;
     SmallestJSONSerialization::serialize(*this, row_num,
-        SmallestJSONStreamFactory::fromBuffer<RapidFormat::ESCAPED>(static_cast<WriteBuffer *>(&buffer), settings));
+        SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<WriteBuffer *>(&buffer), settings));
     return Field(buffer.str());
 }
 
@@ -56,7 +56,7 @@ void ColumnSmallestJSON::insertData(const char * pos, size_t length)
     FormatSettings settings{};
     ReadBufferFromMemory buffer(pos, length);
     SmallestJSONSerialization::deserialize(*this, settings,
-        SmallestJSONStreamFactory::fromBuffer<RapidFormat::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
+        SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
 }
 
 void ColumnSmallestJSON::insertFrom(const IColumn & src, size_t row_num)
@@ -69,7 +69,7 @@ void ColumnSmallestJSON::insertRangeFrom(const IColumn & src_, size_t offset, si
     const auto & source_column = static_cast<const ColumnSmallestJSON &>(src_);
 
     size_t old_size = size();
-    size_t new_size = old_size + limit;
+    size_t new_size = old_size + (limit ? limit : source_column.size());
     insertNewStructFrom(source_column.info, info, offset, limit, old_size);
 
     for (size_t index = 0; index < mark_columns.size(); ++index)
@@ -87,7 +87,7 @@ void ColumnSmallestJSON::insertNewStructFrom(
         for (const auto & children : source_struct->children)
         {
             ColumnSmallestJSONStructPtr children_struct = to_struct->getOrCreateChildren(children->name);
-            insertNewStructFrom(children, children_struct, offset, limit, 0);
+            insertNewStructFrom(children, children_struct, offset, limit, old_size);
         }
     }
 
@@ -313,52 +313,38 @@ IColumn * ColumnSmallestJSON::insertBulkRowsWithDefaultValue(IColumn * column, s
 {
     if (column->size() < to_size)
     {
-        for (size_t index = 0; index < mark_columns.size(); ++index)
+        if (ColumnUInt8 * uint8_data_column = typeid_cast<ColumnUInt8 *>(column))
         {
-            ColumnUInt8 * mark_column = static_cast<ColumnUInt8 *>(mark_columns[index].get());
+            ColumnUInt8::Container & data_column_data = uint8_data_column->getData();
 
-            ColumnUInt8::Container & mark_column_data = mark_column->getData();
-
-            mark_column_data.reserve(to_size);
-            for (size_t row = mark_column_data.size(); row < to_size; ++row)
-                mark_column_data.push_back(UInt8());
+            data_column_data.reserve(to_size);
+            for (size_t row = data_column_data.size(); row < to_size; ++row)
+                data_column_data.push_back(UInt8());
         }
-
-        for (size_t index = 0; index < data_columns.size(); ++index)
+        else if (ColumnUInt64 * uint64_data_column = typeid_cast<ColumnUInt64 *>(column))
         {
-            if (ColumnUInt8 * uint8_data_column = static_cast<ColumnUInt8 *>(data_columns[index].get()))
-            {
-                ColumnUInt8::Container & data_column_data = uint8_data_column->getData();
+            ColumnUInt64::Container & data_column_data = uint64_data_column->getData();
 
-                data_column_data.reserve(to_size);
-                for (size_t row = data_column_data.size(); row < to_size; ++row)
-                    data_column_data.push_back(UInt8());
-            }
-            else if (ColumnUInt64 * uint64_data_column = static_cast<ColumnUInt64 *>(data_columns[index].get()))
-            {
-                ColumnUInt64::Container & data_column_data = uint64_data_column->getData();
-
-                data_column_data.reserve(to_size);
-                for (size_t row = data_column_data.size(); row < to_size; ++row)
-                    data_column_data.push_back(UInt64());
-            }
-            else if (ColumnString * string_data_column = static_cast<ColumnString *>(data_columns[index].get()))
-            {
-                ColumnString::Chars & data_column_chars = string_data_column->getChars();
-                ColumnString::Offsets & data_column_offsets = string_data_column->getOffsets();
-
-                data_column_chars.reserve(to_size - data_column_offsets.size());
-                data_column_offsets.reserve(to_size);
-
-                for (size_t row = data_column_offsets.size(); row < to_size; ++row)
-                {
-                    data_column_chars.push_back(UInt8(0));
-                    data_column_offsets.push_back(data_column_chars.size());
-                }
-            }
-            else
-                throw Exception("It is bug.", ErrorCodes::LOGICAL_ERROR);
+            data_column_data.reserve(to_size);
+            for (size_t row = data_column_data.size(); row < to_size; ++row)
+                data_column_data.push_back(UInt64());
         }
+        else if (ColumnString * string_data_column = typeid_cast<ColumnString *>(column))
+        {
+            ColumnString::Chars & data_column_chars = string_data_column->getChars();
+            ColumnString::Offsets & data_column_offsets = string_data_column->getOffsets();
+
+            data_column_chars.reserve(to_size - data_column_offsets.size());
+            data_column_offsets.reserve(to_size);
+
+            for (size_t row = data_column_offsets.size(); row < to_size; ++row)
+            {
+                data_column_chars.push_back(UInt8(0));
+                data_column_offsets.push_back(data_column_chars.size());
+            }
+        }
+        else
+            throw Exception("It is bug.", ErrorCodes::LOGICAL_ERROR);
     }
 
     return column;

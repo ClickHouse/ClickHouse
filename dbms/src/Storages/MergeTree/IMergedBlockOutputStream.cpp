@@ -48,7 +48,8 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 }
 
 IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
-    const String & name, WrittenOffsetColumns & offset_columns, const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets)
+    const String & name, WrittenOffsetColumns & offset_columns, IDataType::SerializeBinaryBulkSettings & settings,
+    const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets, bool filling_mark)
 {
     return [&, skip_offsets] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
@@ -61,7 +62,7 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
         if (Nested::offsetSubstream(name, stream_name) && offset_columns.count(stream_name))
             return nullptr;
 
-        return &getOrCreateColumnStream(name, stream_name, codec, estimated_size)->compressed;
+        return &getOrCreateColumnStream(name, stream_name, settings, codec, estimated_size, filling_mark)->compressed;
     };
 }
 
@@ -119,9 +120,10 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 
 void IMergedBlockOutputStream::writeSingleMark(const String & name, WrittenOffsetColumns & wrote_nested_offset, size_t number_of_rows)
 {
+    /// Here are some hacks: for the first mark,
+    /// Since no stream was created, we deferred marking writing to IMergedBlockOutputStream::fillMissingColumnStream
     if (!columns_streams.count(name))
         return;
-//        throw Exception("Cannot write mark to column " + name + " because it does not exist stream", ErrorCodes::ILLEGAL_COLUMN);
 
     for (const auto & column_stream : columns_streams.at(name))
     {
@@ -147,15 +149,13 @@ size_t IMergedBlockOutputStream::writeSingleGranule(
     IDataType::SerializeBinaryBulkStatePtr & serialization_state, IDataType::SerializeBinaryBulkSettings & serialize_settings,
     size_t from_row, size_t number_of_rows, bool write_marks)
 {
-//    serialize_settings->getter();
     if (write_marks)
         writeSingleMark(name, offset_columns, number_of_rows);
 
     type.serializeBinaryBulkWithMultipleStreams(column, from_row, number_of_rows, serialize_settings, serialization_state);
 
     if (!columns_streams.count(name))
-        return from_row + number_of_rows;
-//        throw Exception("Cannot write data to column " + name + " because it does not exist stream", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot write data to column " + name + " because it does not exist stream", ErrorCodes::LOGICAL_ERROR);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
     for (const auto & column_stream : columns_streams.at(name))
@@ -184,7 +184,7 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 {
     auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.getter = createStreamGetter(name, offset_columns, codec, estimated_size, skip_offsets);
+    serialize_settings.getter = createStreamGetter(name, offset_columns, serialize_settings, codec, estimated_size, skip_offsets);
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
 
@@ -201,6 +201,7 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
         {
             write_marks = false;
             rows_to_write = index_offset;
+            serialize_settings.filling_mark_size = current_column_mark - 1;
         }
         else
         {
@@ -209,20 +210,12 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
                     "Incorrect size of index granularity expect mark " + toString(current_column_mark) + " totally have marks " + toString(index_granularity.getMarksCount()),
                     ErrorCodes::LOGICAL_ERROR);
 
+            serialize_settings.filling_mark_size = current_column_mark;
             rows_to_write = index_granularity.getMarkRows(current_column_mark);
         }
 
         current_row = writeSingleGranule(
-            name,
-            type,
-            column,
-            offset_columns,
-            serialization_state,
-            serialize_settings,
-            current_row,
-            rows_to_write,
-            write_marks
-        );
+            name, type, column, offset_columns, serialization_state, serialize_settings, current_row, rows_to_write, write_marks);
 
         if (write_marks)
             current_column_mark++;
@@ -243,6 +236,9 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 
 void IMergedBlockOutputStream::writeFinalMark(const std::string & column_name, WrittenOffsetColumns & offset_columns)
 {
+    if (!columns_streams.count(column_name))
+        throw Exception("", ErrorCodes::LOGICAL_ERROR);
+
     writeSingleMark(column_name, offset_columns, 0);
 
     /// Memoize information about offsets
@@ -254,7 +250,8 @@ void IMergedBlockOutputStream::writeFinalMark(const std::string & column_name, W
 }
 
 IMergedBlockOutputStream::ColumnStream * IMergedBlockOutputStream::getOrCreateColumnStream(
-    const String & column_name, const String & stream_name, const CompressionCodecPtr & codec, size_t estimated_size)
+    const String & column_name, const String & stream_name, IDataType::SerializeBinaryBulkSettings & settings,
+    const CompressionCodecPtr & codec, size_t estimated_size, bool filling_mark)
 {
     if (!columns_streams.count(column_name))
         columns_streams[column_name] = ColumnStreams();
@@ -270,12 +267,13 @@ IMergedBlockOutputStream::ColumnStream * IMergedBlockOutputStream::getOrCreateCo
         part_path + stream_name, marks_file_extension,
         codec, max_compress_block_size, estimated_size, aio_threshold);
 
-    return fillMissingColumnStream(&*column_streams[stream_name]);
+    return filling_mark ? fillMissingColumnStream(settings, &*column_streams[stream_name]) : &*column_streams[stream_name];
 }
 
-IMergedBlockOutputStream::ColumnStream * IMergedBlockOutputStream::fillMissingColumnStream(ColumnStream * column_stream)
+IMergedBlockOutputStream::ColumnStream * IMergedBlockOutputStream::fillMissingColumnStream(
+    IDataType::SerializeBinaryBulkSettings & settings, ColumnStream * column_stream)
 {
-    for (size_t index = 0, size = current_mark + 1; index < size; ++index)
+    for (size_t index = 0, size = settings.filling_mark_size; index <= size; ++index)
     {
         writeIntBinary(column_stream->plain_hashing.count(), column_stream->marks);
         writeIntBinary(column_stream->compressed.offset(), column_stream->marks);

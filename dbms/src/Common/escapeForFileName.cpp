@@ -1,42 +1,15 @@
 #include <Common/hex.h>
-#include <Core/Types.h>
-#include <common/StringRef.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 
 namespace DB
 {
 
-std::string escapeForFileName(const String & s)
+std::string escapeForFileName(const std::string & s)
 {
     std::string res;
     const char * pos = s.data();
     const char * end = pos + s.size();
-
-    while (pos != end)
-    {
-        unsigned char c = *pos;
-
-        if (isWordCharASCII(c))
-            res += c;
-        else
-        {
-            res += '%';
-            res += hexDigitUppercase(c / 16);
-            res += hexDigitUppercase(c % 16);
-        }
-
-        ++pos;
-    }
-
-    return res;
-}
-
-std::string escapeForFileName(const StringRef & s)
-{
-    std::string res;
-    const char * pos = s.data;
-    const char * end = s.data + s.size;
 
     while (pos != end)
     {
