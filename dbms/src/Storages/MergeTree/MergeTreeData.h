@@ -597,13 +597,6 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
-protected:
-    /// Moves part to specified space
-    bool movePartsToSpace(
-        const DataPartsVector * parts = nullptr,
-        DiskSpace::SpacePtr space = nullptr);
-
-    virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
 public:
     /// Moves partition to specified Disk
@@ -741,7 +734,7 @@ public:
     DataParts currently_moving_parts;
 
     /// Mutex for currenly_moving_parts
-    std::mutex moving_parts_mutex;
+    mutable std::mutex moving_parts_mutex;
 
 protected:
 
@@ -922,6 +915,30 @@ protected:
         const DataPartPtr & result_part,
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry);
+
+    virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
+
+    /// Moves part to specified space
+    bool movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space);
+
+    /// Selects parts for move and moves them
+    bool selectPartsAndMove();
+
+private:
+    struct CurrentlyMovingPartsTagger
+    {
+        MergeTreeMovingParts parts_to_move;
+        MergeTreeData & data;
+        CurrentlyMovingPartsTagger(MergeTreeMovingParts && moving_parts_, MergeTreeData & data_);
+
+        CurrentlyMovingPartsTagger(const CurrentlyMovingPartsTagger & other) = delete;
+        ~CurrentlyMovingPartsTagger();
+    };
+
+    bool moveParts(CurrentlyMovingPartsTagger && parts_to_move);
+
+    CurrentlyMovingPartsTagger selectPartsForMove();
+    CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, DiskSpace::SpacePtr space);
 };
 
 }

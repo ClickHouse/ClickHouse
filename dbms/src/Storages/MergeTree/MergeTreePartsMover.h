@@ -43,7 +43,7 @@ public:
     {
     }
 
-    bool selectPartsToMove(
+    bool selectPartsForMove(
         MergeTreeMovingParts & parts_to_move,
         const AllowedMovingPredicate & can_move);
 

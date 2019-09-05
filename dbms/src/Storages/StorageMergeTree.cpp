@@ -347,7 +347,12 @@ public:
         else
             reserved_space = storage.reserveSpace(total_size);
         if (!reserved_space)
-            throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
+        {
+            if (is_mutation)
+                throw Exception("Not enough space for mutating part", ErrorCodes::NOT_ENOUGH_SPACE);
+            else
+                throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
+        }
 
         for (const auto & part : future_part.parts)
         {
@@ -631,7 +636,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::movePartsTask()
 {
     try
     {
-        if (!movePartsToSpace())
+        if (!selectPartsAndMove())
             return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
         return BackgroundProcessingPoolTaskResult::SUCCESS;
