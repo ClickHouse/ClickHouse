@@ -957,32 +957,12 @@ Running a query may use more memory than 'max_bytes_before_external_sort'. For t
 
 External sorting works much less effectively than sorting in RAM.
 
-### SELECT Clause {#select-select}
+### SELECT Clause
 
-[Expressions](syntax.md#syntax-expressions) that specified in the `SELECT` clause are analyzed after the calculations for all the clauses listed above are completed. More specifically, expressions are analyzed that are above the aggregate functions, if there are any aggregate functions. The aggregate functions and everything below them are calculated during aggregation (`GROUP BY`). These expressions work as if they are applied to separate rows in the result.
-
-If you want to get all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
-
-You can also use the `COLUMNS` expression to match some columns in the result by a regular expression.
-
-```sql
-COLUMNS('regexp')
-```
-
-Example:
-
-```sql
-SELECT COLUMNS('n') + COLUMNS('u') FROM system.numbers LIMIT 2
-```
-```text
-┌─plus(number, number)─┐
-│                    0 │
-│                    2 │
-└──────────────────────┘
-```
-
-The result is the sum of values in columns wich contain `n` and `u` in their names.
-
+The expressions specified in the SELECT clause are analyzed after the calculations for all the clauses listed above are completed.
+More specifically, expressions are analyzed that are above the aggregate functions, if there are any aggregate functions.
+The aggregate functions and everything below them are calculated during aggregation (GROUP BY).
+These expressions work as if they are applied to separate rows in the result.
 
 ### DISTINCT Clause {#select-distinct}
 
