@@ -77,7 +77,7 @@ static String prepareQueryForLogging(const String & query, Context & context)
 
     // wiping sensitive data before cropping query by log_queries_cut_to_length,
     // otherwise something like credit card without last digit can go to log
-    if (auto masker = SensitiveDataMasker::get())
+    if (auto masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
         if (matches > 0)

@@ -78,22 +78,12 @@ public:
 
 };
 
-bool SensitiveDataMasker::sensitive_data_masker_initialized = false;
 std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
-std::mutex SensitiveDataMasker::mutex;
 
-
-void SensitiveDataMasker::set(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
+void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
     if (!sensitive_data_masker_)
         throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
-
-    std::lock_guard lock(SensitiveDataMasker::mutex);
-
-    if (sensitive_data_masker_initialized)
-        throw Exception("Logical error: second initialization of 'sensitive_data_masker' is foridden", ErrorCodes::LOGICAL_ERROR);
-
-    sensitive_data_masker_initialized = true;
 
     if (sensitive_data_masker_->rulesCount() > 0)
     {
@@ -101,7 +91,7 @@ void SensitiveDataMasker::set(std::unique_ptr<SensitiveDataMasker> sensitive_dat
     }
 }
 
-SensitiveDataMasker * SensitiveDataMasker::get()
+SensitiveDataMasker * SensitiveDataMasker::getInstance()
 {
     return sensitive_data_masker.get();
 }
