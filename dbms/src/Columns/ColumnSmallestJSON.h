@@ -78,7 +78,7 @@ private:
     std::vector<WrappedPtr> mark_columns;
     std::vector<WrappedPtr> data_columns;
 
-    IColumn * insertBulkRowsWithDefaultValue(IColumn *column, size_t to_size);
+    IColumn * insertBulkRowsWithDefaultValue(IColumn * column, size_t to_size);
 
     void insertNewStructFrom(const ColumnSmallestJSONStructPtr & source_struct, ColumnSmallestJSONStructPtr & to_struct, size_t offset, size_t limit, size_t old_size);
 

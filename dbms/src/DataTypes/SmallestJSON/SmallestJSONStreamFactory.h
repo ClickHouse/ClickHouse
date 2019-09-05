@@ -7,7 +7,7 @@
 namespace DB
 {
 
-enum class RapidFormat
+enum class FormatStyle
 {
     CSV,
     JSON,
@@ -15,24 +15,24 @@ enum class RapidFormat
     ESCAPED,
 };
 
-template <typename PODArrayType, RapidFormat format>
+template <typename PODArrayType, FormatStyle format>
 struct PODArraySmallestJSONStream;
 
-template <typename PODArrayType, RapidFormat format>
+template <typename PODArrayType, FormatStyle format>
 using PODArraySmallestJSONStreamPtr = std::unique_ptr<PODArraySmallestJSONStream<PODArrayType, format>>;
 
-template <typename BufferType, RapidFormat format>
+template <typename BufferType, FormatStyle format>
 struct BufferSmallestJSONStream;
 
-template <typename BufferType, RapidFormat format>
+template <typename BufferType, FormatStyle format>
 using BufferSmallestJSONStreamPtr = std::unique_ptr<BufferSmallestJSONStream<BufferType, format>>;
 
 struct SmallestJSONStreamFactory
 {
-    template<RapidFormat format, typename BufferType>
+    template<FormatStyle format, typename BufferType>
     static BufferSmallestJSONStreamPtr<BufferType, format> fromBuffer(BufferType * buffer, const FormatSettings & settings);
 
-    template <RapidFormat format, typename PODArrayType>
+    template <FormatStyle format, typename PODArrayType>
     static PODArraySmallestJSONStreamPtr<PODArrayType, format> fromPODArray(PODArrayType & array, const FormatSettings & settings);
 };
 

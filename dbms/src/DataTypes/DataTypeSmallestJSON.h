@@ -16,7 +16,7 @@ public:
 
     Field getDefault() const override { return Null(); }
 
-    TypeIndex getTypeId() const override { return TypeIndex::Generics; }
+    TypeIndex getTypeId() const override { return TypeIndex::SmallestJSON; }
     const char * getFamilyName() const override { return "SmallestJSON"; }
 
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -62,29 +62,29 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
 
-    void serializeAsTextXML(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const override;
+protected:
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
     const DataTypes & support_types;
-
-protected:
-    void serializeTextEscaped(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const override;
-
-    void deserializeTextEscaped(IColumn &column, ReadBuffer &istr, const FormatSettings &settings) const override;
-
-    void serializeTextQuoted(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const override;
-
-    void deserializeTextQuoted(IColumn &column, ReadBuffer &istr, const FormatSettings &settings) const override;
-
-    void serializeTextCSV(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const override;
-
-    void deserializeTextCSV(IColumn &column, ReadBuffer &istr, const FormatSettings &settings) const override;
-
-    void serializeText(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const override;
-
-    void serializeTextJSON(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const override;
-
-    void deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &settings) const override;
 };
 
 }

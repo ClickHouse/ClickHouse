@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
-template <typename PODArrayType, RapidFormat format>
+template <typename PODArrayType, FormatStyle format>
 struct PODArraySmallestJSONStream
 {
 public:

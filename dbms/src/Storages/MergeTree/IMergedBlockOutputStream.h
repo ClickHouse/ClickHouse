@@ -71,7 +71,7 @@ protected:
     using ColumnWithSubstreams = std::map<String, ColumnStreams>;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns,
-        const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
+        IDataType::SerializeBinaryBulkSettings & settings, const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets, bool filling_mark = true);
 
     /// Write data of one column.
     /// Return how many marks were written and
@@ -107,9 +107,11 @@ protected:
     void calculateAndSerializeSkipIndices(const ColumnsWithTypeAndName & skip_indexes_columns, size_t rows);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 
-    ColumnStream * fillMissingColumnStream(ColumnStream * column_stream);
+    ColumnStream * fillMissingColumnStream(IDataType::SerializeBinaryBulkSettings & settings, ColumnStream * column_stream);
 
-    ColumnStream * getOrCreateColumnStream(const String & column_name, const String & stream_name, const CompressionCodecPtr & codec, size_t estimated_size);
+    ColumnStream * getOrCreateColumnStream(
+        const String & column_name, const String & stream_name, IDataType::SerializeBinaryBulkSettings & settings,
+        const CompressionCodecPtr & codec, size_t estimated_size, bool filling_mark);
 
 protected:
     MergeTreeData & storage;

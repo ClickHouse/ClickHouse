@@ -27,16 +27,13 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     for (const auto & column_name : header.getNames())
     {
-        const auto & column = header.getByName(column_name);
-        const auto & columns = storage.getColumns();
-        const auto & effective_codec = columns.getCodecOrDefault(column.name, codec);
-        settings.getter = createStreamGetter(column.name, already_written_offset_columns, effective_codec, 0, skip_offsets);
-
-        serialization_states.emplace_back(nullptr);
-        column.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
-    }
-
-    initSkipIndices();
+            const auto & column = header.getByName(column_name);
+            const auto & columns = storage.getColumns();
+            const auto & effective_codec = columns.getCodecOrDefault(column.name, codec);
+            serialization_states.emplace_back(nullptr);
+            settings.getter = createStreamGetter(column.name, tmp_offset_columns, settings, effective_codec, 0, skip_offsets, false);
+            column.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
+        }
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
@@ -98,7 +95,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         auto & column = header.getByPosition(i);
         const auto & columns = storage.getColumns();
         const auto & effective_codec = columns.getCodecOrDefault(column.name, codec);
-        serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, effective_codec, 0, skip_offsets);
+        serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, serialize_settings, effective_codec, 0, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
 
         /// We wrote at least one row

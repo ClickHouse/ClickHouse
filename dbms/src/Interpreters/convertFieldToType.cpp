@@ -221,7 +221,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (src.getType() == Field::Types::String)
             return src;
     }
-    else if (which_type.isJSON())
+    else if (which_type.isSmallestJSON())
     {
         return src;
     }

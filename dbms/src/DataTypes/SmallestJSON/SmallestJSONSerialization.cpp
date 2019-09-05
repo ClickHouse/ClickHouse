@@ -23,7 +23,7 @@ namespace
 
     inline UInt8 maybeFillingJSONTypeToMark(const ColumnSmallestJSONStructPtr & struct_info)
     {
-        return struct_info->data_columns.size() == 1 && !struct_info->children.empty() ? UInt8(TypeIndex::Generics) : UInt8(TypeIndex::Nothing);
+        return struct_info->data_columns.size() == 1 && !struct_info->children.empty() ? UInt8(TypeIndex::SmallestJSON) : UInt8(TypeIndex::Nothing);
     }
 
     static inline void normalizeForDeserialize(ColumnSmallestJSON & column, size_t old_column_size)
@@ -188,7 +188,7 @@ struct JSONStructAndColumnBinder
         parent_struct_info = current_struct_info;
 
         if (current_struct_info->mark_column)
-            NumberImpl<true>(current_struct_info->mark_column, UInt8(TypeIndex::Generics));
+            NumberImpl<true>(current_struct_info->mark_column, UInt8(TypeIndex::SmallestJSON));
 
         return true;
     }
@@ -321,7 +321,7 @@ void formatJSON(const ColumnSmallestJSONStructPtr & struct_info, size_t row_num,
 
     if (!mark_column && !struct_info->children.empty())
         formatJSONObject(struct_info, row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::Generics))
+    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::SmallestJSON))
         formatJSONObject(struct_info, row_num, writer);
     else if (mark_column->getData()[row_num] == UInt8(TypeIndex::UInt8))
         formatJSONNumber<TypeIndex::UInt8, UInt8>(*struct_info->getDataColumn(BOOLEAN_DATA_TYPE), row_num, writer);
@@ -339,19 +339,19 @@ void formatJSON(const ColumnSmallestJSONStructPtr & struct_info, size_t row_num,
         formatJSONString(*struct_info->getDataColumn(STRING_DATA_TYPE), row_num, writer);
 }
 
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, RapidFormat::CSV>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, RapidFormat::CSV> &);
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, RapidFormat::JSON>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, RapidFormat::JSON> &);
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, RapidFormat::QUOTED>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, RapidFormat::QUOTED> &);
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, RapidFormat::ESCAPED>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, RapidFormat::ESCAPED> &);
+template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::CSV>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::CSV> &);
+template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::JSON>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::JSON> &);
+template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::QUOTED>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::QUOTED> &);
+template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::ESCAPED>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::ESCAPED> &);
 
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::CSV>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::CSV> &);
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::JSON>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::JSON> &);
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::QUOTED>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::QUOTED> &);
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::ESCAPED>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::ESCAPED> &);
+template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::CSV>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::CSV> &);
+template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::JSON>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::JSON> &);
+template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::QUOTED>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::QUOTED> &);
+template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::ESCAPED>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::ESCAPED> &);
 
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, RapidFormat::CSV>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, RapidFormat::CSV> &);
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, RapidFormat::JSON>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, RapidFormat::JSON> &);
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, RapidFormat::QUOTED>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, RapidFormat::QUOTED> &);
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, RapidFormat::ESCAPED>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, RapidFormat::ESCAPED> &);
+template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::CSV>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::CSV> &);
+template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::JSON>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::JSON> &);
+template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::QUOTED>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::QUOTED> &);
+template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::ESCAPED>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::ESCAPED> &);
 
 }

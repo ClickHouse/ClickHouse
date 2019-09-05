@@ -1201,13 +1201,13 @@ public:
             const ColumnString::Offsets & column_offsets_data = string_column->getOffsets();
 
             FormatSettings settings{};
-            auto input_stream = SmallestJSONStreamFactory::fromPODArray<RapidFormat::ESCAPED>(column_string_data, settings);
+            auto input_stream = SmallestJSONStreamFactory::fromPODArray<FormatStyle::ESCAPED>(column_string_data, settings);
 
             for (size_t index = 0; index < column_offsets_data.size(); ++index)
             {
                 const IColumn::Offset & offset = column_offsets_data[index - 1];
                 input_stream->setOffsetAndLimit(offset, column_offsets_data[index] - offset);
-                SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, RapidFormat::ESCAPED>>(*smallest_column.get(), settings, input_stream);
+                SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::ESCAPED>>(*smallest_column.get(), settings, input_stream);
             }
         }
     }
