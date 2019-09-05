@@ -71,12 +71,10 @@ public:
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
 private:
-    BackgroundProcessingPool & background_pool;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
-    MergeTreePartsMover parts_mover;
 
     /// For block numbers.
     SimpleIncrement increment{0};
@@ -92,13 +90,6 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
-    /// Parts that currently moving from disk/volume to another.
-    /// This set have to be used with `currently_processing_in_background_mutex`.
-    /// Moving may conflict with merges and mutations, but this is OK, because
-    /// if we decide to move some part to another disk, than we
-    /// assuredly will choose this disk for containing part, which will appear
-    /// as result of merge or mutation.
-    DataParts currently_moving_parts;
 
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
@@ -106,7 +97,8 @@ private:
     std::atomic<bool> shutdown_called {false};
 
     /// Task handler for merges, mutations and moves.
-    BackgroundProcessingPool::TaskHandle background_task_handle;
+    BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
+    BackgroundProcessingPool::TaskHandle moving_task_handle;
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> prepareAlterTransactions(
         const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context);
@@ -119,12 +111,12 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
-    bool moveParts();
+    BackgroundProcessingPoolTaskResult movePartsTask();
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
-    BackgroundProcessingPoolTaskResult backgroundTask();
+    BackgroundProcessingPoolTaskResult mergeMutateTask();
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
@@ -137,7 +129,8 @@ private:
     void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
-    void movePartsToSpace(const MergeTreeData::DataPartsVector & part, DiskSpace::SpacePtr space) override;
+    bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
+
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;

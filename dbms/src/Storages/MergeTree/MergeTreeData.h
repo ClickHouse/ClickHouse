@@ -17,6 +17,7 @@
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
 #include <Common/DiskSpaceMonitor.h>
 
@@ -31,6 +32,7 @@ namespace DB
 
 class MergeListEntry;
 class AlterCommands;
+class MergeTreePartsMover;
 
 namespace ErrorCodes
 {
@@ -597,7 +599,11 @@ public:
 
 protected:
     /// Moves part to specified space
-    virtual void movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space) = 0;
+    bool movePartsToSpace(
+        const DataPartsVector * parts = nullptr,
+        DiskSpace::SpacePtr space = nullptr);
+
+    virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
 public:
     /// Moves partition to specified Disk
@@ -726,6 +732,16 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
+    /// Parts that currently moving from disk/volume to another.
+    /// This set have to be used with `currently_processing_in_background_mutex`.
+    /// Moving may conflict with merges and mutations, but this is OK, because
+    /// if we decide to move some part to another disk, than we
+    /// assuredly will choose this disk for containing part, which will appear
+    /// as result of merge or mutation.
+    DataParts currently_moving_parts;
+
+    /// Mutex for currenly_moving_parts
+    std::mutex moving_parts_mutex;
 
 protected:
 
@@ -798,6 +814,8 @@ protected:
     DataPartsIndexes data_parts_indexes;
     DataPartsIndexes::index<TagByInfo>::type & data_parts_by_info;
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
+
+    MergeTreePartsMover parts_mover;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;

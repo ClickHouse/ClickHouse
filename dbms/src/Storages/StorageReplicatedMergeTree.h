@@ -229,7 +229,6 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
-    MergeTreePartsMover parts_mover;
 
     /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
      * In ZK entries in chronological order. Here it is not necessary.
@@ -338,12 +337,9 @@ private:
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction,
                                                                const DataPartPtr & part);
 
-    void movePartsToSpace(const MergeTreeData::DataPartsVector & parts, DiskSpace::SpacePtr space) override;
+    bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
-    void getCommitPartOps(
-        Coordination::Requests & ops,
-        MutableDataPartPtr & part,
-        const String & block_id_path = "") const;
+    void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
 
     /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
     void updatePartHeaderInZooKeeperAndCommit(
@@ -406,7 +402,7 @@ private:
 
     /// Perform moves of parts to another disks.
     /// Local operation, doesn't interact with replicationg queue.
-    BackgroundProcessingPoolTaskResult movingPartsTask();
+    BackgroundProcessingPoolTaskResult movePartsTask();
 
 
     /// Postcondition:
@@ -465,12 +461,6 @@ private:
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
 
-    /// Parts currently moving to another disks or volumes.
-    /// This operation doesn't replicate.
-    DataParts currently_moving_parts;
-
-    /// Mutex for currenly_moving_parts
-    std::mutex moving_parts_mutex;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);

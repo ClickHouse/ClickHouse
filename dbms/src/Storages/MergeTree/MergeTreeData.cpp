@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int BAD_DATA_PART_NAME;
     extern const int UNKNOWN_SETTING;
     extern const int READONLY_SETTING;
+    extern const int ABORTED;
 }
 
 
@@ -128,6 +129,7 @@ MergeTreeData::MergeTreeData(
     , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy_name))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
+    , parts_mover(this)
 {
     const auto settings = getSettings();
     setProperties(order_by_ast_, primary_key_ast_, columns_, indices_, constraints_);
@@ -2723,7 +2725,8 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
             throw Exception("Part " + part->name + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
     }
 
-    movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk));
+    if (!movePartsToSpace(&parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
+        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
 }
 
 
@@ -2756,7 +2759,8 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             if (part->disk->getName() == disk->getName())
                 throw Exception("Part " + part->name + " already on volume " + name, ErrorCodes::UNKNOWN_DISK);
 
-    movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume));
+    if (!movePartsToSpace(&parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
+        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
 }
 
 
@@ -3383,5 +3387,144 @@ catch (...)
     tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
+namespace
+{
+
+struct MovingPartsTagger
+{
+    MergeTreeMovingParts parts_to_move;
+    std::unique_lock<std::mutex> background_lock;
+    MergeTreeData::DataParts & all_moving_parts;
+
+    MovingPartsTagger(MergeTreeMovingParts && moving_parts_,
+        std::unique_lock<std::mutex> && background_lock_,
+        MergeTreeData::DataParts & all_moving_data_parts_)
+        : parts_to_move(std::move(moving_parts_))
+        , background_lock(std::move(background_lock_))
+        , all_moving_parts(all_moving_data_parts_)
+    {
+        if (!background_lock)
+            throw Exception("Cannot tag moving parts without background lock.", ErrorCodes::LOGICAL_ERROR);
+
+        for (const auto & moving_part : parts_to_move)
+            if (!all_moving_parts.emplace(moving_part.part).second)
+                throw Exception("Cannot move part '" + moving_part.part->name + "'. It's already moving.", ErrorCodes::LOGICAL_ERROR);
+
+        background_lock.unlock();
+    }
+
+    ~MovingPartsTagger()
+    {
+        background_lock.lock();
+        for (const auto & moving_part : parts_to_move)
+        {
+            /// Something went completely wrong
+            if (!all_moving_parts.count(moving_part.part))
+                std::terminate();
+            all_moving_parts.erase(moving_part.part);
+        }
+
+    }
+};
+
+}
+
+bool MergeTreeData::movePartsToSpace(const DataPartsVector * parts, DiskSpace::SpacePtr space)
+{
+    if (parts_mover.moves_blocker.isCancelled())
+        return false;
+
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+
+    std::optional<MovingPartsTagger> moving_tagger;
+    {
+        MergeTreeMovingParts parts_to_move;
+        std::unique_lock moving_parts_lock(moving_parts_mutex);
+
+        if (parts != nullptr)
+        {
+            for (const auto & part : *parts)
+            {
+                auto reservation = space->reserve(part->bytes_on_disk);
+                if (!reservation)
+                    throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
+
+                auto & reserved_disk = reservation->getDisk();
+                String path_to_clone = getFullPathOnDisk(reserved_disk);
+
+                if (Poco::File(path_to_clone + part->name).exists())
+                    throw Exception(
+                        "Move is not possible: " + path_to_clone + part->name + " already exists.",
+                        ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+                if (currently_moving_parts.count(part) || partIsAssignedToBackgroundOperation(part))
+                    throw Exception(
+                        "Cannot move part '" + part->name + "' because it's participating in background process.",
+                        ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+
+                parts_to_move.emplace_back(part, std::move(reservation));
+            }
+        }
+        else
+        {
+            auto can_move = [this](const DataPartPtr & part, String * reason) -> bool
+            {
+                if (partIsAssignedToBackgroundOperation(part))
+                {
+                    *reason = "part already assigned to replicated background operation.";
+                    return false;
+                }
+                if (currently_moving_parts.count(part))
+                {
+                    *reason = "part is already moving.";
+                    return false;
+                }
+
+                return true;
+            };
+
+            if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
+                return false;
+        }
+
+        LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
+        moving_tagger.emplace(std::move(parts_to_move), std::move(moving_parts_lock), currently_moving_parts);
+    }
+
+
+    for (const auto & moving_part : moving_tagger->parts_to_move)
+    {
+        Stopwatch stopwatch;
+        DataPartPtr cloned_part;
+
+        auto write_part_log = [&](const ExecutionStatus & execution_status)
+        {
+            writePartLog(
+                PartLogElement::Type::MOVE_PART,
+                execution_status,
+                stopwatch.elapsed(),
+                moving_part.part->name,
+                cloned_part,
+                {moving_part.part},
+                nullptr);
+        };
+
+        try
+        {
+            cloned_part = parts_mover.clonePart(moving_part);
+            parts_mover.swapClonedPart(cloned_part);
+            write_part_log({});
+        }
+        catch (...)
+        {
+            write_part_log(ExecutionStatus::fromCurrentException());
+            if (cloned_part)
+                cloned_part->remove();
+
+            throw;
+        }
+    }
+    return true;
+}
 
 }
