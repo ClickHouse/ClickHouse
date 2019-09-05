@@ -1,4 +1,5 @@
 SET enable_debug_queries = 1;
+SET joined_subquery_requires_alias = 0;
 
 DROP TABLE IF EXISTS t1_00849;
 DROP TABLE IF EXISTS t2_00849;

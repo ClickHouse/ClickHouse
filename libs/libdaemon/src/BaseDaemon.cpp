@@ -648,6 +648,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
+    // sensitive data masking rules are not used here
     buildLoggers(config(), logger());
 
     if (is_daemon)

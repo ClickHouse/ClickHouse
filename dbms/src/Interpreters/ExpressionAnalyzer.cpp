@@ -406,10 +406,9 @@ bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & cha
     return true;
 }
 
-/// It's possible to set nullptr as join for only_types mode
-void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr join) const
+void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions) const
 {
-    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join, join));
+    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join));
 }
 
 bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -419,13 +418,13 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
         return false;
 
     SubqueryForSet & subquery_for_set = getSubqueryForJoin(*ast_join);
+    syntax->analyzed_join->setHashJoin(subquery_for_set.join);
 
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions);
-    addJoinAction(step.actions, subquery_for_set.join);
-
+    addJoinAction(step.actions);
     return true;
 }
 
