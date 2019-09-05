@@ -348,10 +348,10 @@ private:
             const UInt32 range_start = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const UInt32 range_end = is_column_const[2] ? (*container2)[0] : (*container2)[i];
 
-            auto bd2 = new AggregateFunctionGroupBitmapData<T>();
-            bd0.rbs.rb_range(range_start, range_end, bd2->rbs);
-
-            col_to->insertFrom(reinterpret_cast<ConstAggregateDataPtr>(bd2));
+            col_to->insertDefault();
+            AggregateFunctionGroupBitmapData<T> & bd2
+                = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
+            bd0.rbs.rb_range(range_start, range_end, bd2.rbs);
         }
         block.getByPosition(result).column = std::move(col_to);
     }

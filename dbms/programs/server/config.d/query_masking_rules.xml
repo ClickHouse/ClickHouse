@@ -1,3 +1,5 @@
+<?xml version="1.0"?>
+<!-- Config for test server -->
 <yandex>
     <query_masking_rules>
         <!-- An example of query masking rule to remove profanity.
@@ -7,6 +9,11 @@
             <name>profanity</name>
             <regexp>(?i:shit)</regexp>
             <replace>substance</replace>
+        </rule>
+        <!-- This rule is used in tests. -->
+        <rule>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
         </rule>
     </query_masking_rules>
 </yandex>
