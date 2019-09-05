@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <map>
 #include <string>
+#include <unordered_map>
 
 
 namespace DB
@@ -53,7 +54,7 @@ private:
 
     struct Group;
     using GroupsContainer = std::list<Group>;
-    using QueryIdToHolder = std::map<String, std::weak_ptr<LockHolderImpl>>;
+    using OwnerQueryIds = std::unordered_map<String, size_t>;
 
     /// Group of locking requests that should be granted concurrently
     /// i.e. a group can contain several readers, but only one writer
@@ -67,9 +68,10 @@ private:
         explicit Group(Type type_) : type{type_}, referers{0} {}
     };
 
-    mutable std::mutex mutex;
     GroupsContainer queue;
-    QueryIdToHolder query_id_to_holder;
+    OwnerQueryIds owner_queries;
+
+    mutable std::mutex mutex;
 };
 
 
