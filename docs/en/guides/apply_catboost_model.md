@@ -44,7 +44,21 @@ yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-**4.** Install packages:
+**4.** Remove old ClickHouse versions:
+
+```bash
+$ sudo apt-get purge clickhouse-server-base
+$ sudo apt-get purge clickhouse-server-common
+$ sudo apt-get autoremove
+```
+
+**5.** Проверьте успешность удаления:
+
+```bash
+dpkg -l | grep clickhouse-server
+```
+
+**6.** Install packages:
 
 ```bash
 $ sudo apt-get install dirmngr
