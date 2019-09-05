@@ -86,11 +86,6 @@ Chunk ValuesBlockInputFormat::generate()
             throw;
         }
     }
-    if (!buf.eof())
-    {
-        assertChar(';', buf);
-        skipWhitespaceIfAny(buf);
-    }
 
     /// Evaluate expressions, which were parsed using templates, if any
     for (size_t i = 0; i < columns.size(); ++i)
@@ -196,34 +191,23 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
     const IDataType & type = *header.getByPosition(column_idx).type;
 
     Expected expected;
-    auto tokens = std::make_unique<Tokens>(buf.position(), buf.buffer().end());
-    IParser::Pos token_iterator(*tokens);
+    /// TODO use FileSegmentationEngineValues from #6553 to find end of expression and get continuous memory containing expression
+    Tokens tokens(buf.position(), buf.buffer().end());
+    IParser::Pos token_iterator(tokens);
     ASTPtr ast;
 
-    bool near_the_end_of_buffer = true;
-    bool can_peek = true;
-    while (near_the_end_of_buffer)
+    bool parsed = parser.parse(token_iterator, ast, expected);
+    if (parsed)
     {
-        bool parsed = parser.parse(token_iterator, ast, expected);
         buf.position() = const_cast<char *>(token_iterator->begin);
-        parsed &= checkDelimiterAfterValue(column_idx);
-
-        near_the_end_of_buffer = buf.available() < 256 && can_peek;
-        if (near_the_end_of_buffer)
-        {
-            /// Rare case: possibly only some prefix of expression was parsed. Peek more data and try again
-            can_peek = buf.peekNext();
-            buf.rollbackToCheckpoint();
-            tokens = std::make_unique<Tokens>(buf.position(), buf.buffer().end());
-            token_iterator = IParser::Pos{*tokens};
-        }
-        else if (!parsed)
-        {
-            buf.rollbackToCheckpoint();
-            throw Exception("Cannot parse expression of type " + type.getName() + " here: "
-                            + String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
-                            ErrorCodes::SYNTAX_ERROR);
-        }
+        parsed = checkDelimiterAfterValue(column_idx);
+    }
+    if (!parsed)
+    {
+        buf.rollbackToCheckpoint();
+        throw Exception("Cannot parse expression of type " + type.getName() + " here: "
+                        + String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
+                        ErrorCodes::SYNTAX_ERROR);
     }
 
     if (format_settings.values.deduce_templates_of_expressions && deduce_template)
@@ -233,7 +217,7 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
                                 ErrorCodes::LOGICAL_ERROR);
         try
         {
-            templates[column_idx] = ConstantExpressionTemplate(header.getByPosition(column_idx).type, TokenIterator(*tokens), token_iterator, ast, *context);
+            templates[column_idx] = ConstantExpressionTemplate(header.getByPosition(column_idx).type, TokenIterator(tokens), token_iterator, ast, *context);
             buf.rollbackToCheckpoint();
             templates[column_idx].value().parseExpression(buf, format_settings);
             assertDelimiterAfterValue(column_idx);
