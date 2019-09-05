@@ -108,9 +108,6 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
                                                 : ProfileEvents::RWLockWritersWaitMilliseconds, watch.elapsedMilliseconds());
     };
 
-    GroupsContainer::iterator it_group;
-    ClientsContainer::iterator it_client;
-
     /// This object is placed above unique_lock, because it may lock in destructor.
     LockHolder res;
 
@@ -157,9 +154,13 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
       * We will throw an exception instead.
       */
 
+    GroupsContainer::iterator it_group;
+
+    /// A locking request is considered potentially dangerous if it needs to wait in the queue and
+    /// its associated query_id already holds at least one Read lock. We raise an exception in such case
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
     {
-        if (type == Type::Read && !queue.empty() && queue.back().type == Type::Write && request_has_query_id)
+        if (type == Type::Read && request_has_query_id && !queue.empty())
             all_read_locks.check(query_id);
 
         /// Create new group of clients
@@ -167,13 +168,14 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     }
     else
     {
+        if (type == Type::Read && request_has_query_id && queue.size() > 1)
+            all_read_locks.check(query_id);
+
         /// Will append myself to last group
         it_group = std::prev(queue.end());
-
-        if (it_group != queue.begin() && request_has_query_id)
-            all_read_locks.check(query_id);
     }
 
+    ClientsContainer::iterator it_client;
     /// Append myself to the end of chosen group
     auto & clients = it_group->clients;
     try
