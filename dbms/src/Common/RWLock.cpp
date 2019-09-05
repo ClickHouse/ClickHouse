@@ -199,11 +199,24 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
 {
     std::lock_guard lock(parent->mutex);
 
-    /// Remove weak_ptrs to the holder, since there are no owners of the current lock
-    parent->query_id_to_holder.erase(query_id);
+    if (query_id != RWLockImpl::NO_QUERY)
+    {
+        /// Since every access to query_id_to_holder is syncronized, expired() == true means
+        /// that the current lock holder being destroyed is the last remaining to be associated with query_id
+        /// (query_id_to_holder is only updated in PointA)
+        /// so we can safely erase query_id, otherwise there still are other lock holders for this query_id
+        ///
+        /// XXX: There might be other destructors as well running concurrently that might have already erased this query_id
+        const auto it_query_id = parent->query_id_to_holder.find(query_id);
+        if (it_query_id != parent->query_id_to_holder.end())
+        {
+            if (it_query_id->second.expired())
+                parent->query_id_to_holder.erase(it_query_id);
+        }
 
-    if (it_group->type == RWLockImpl::Read && query_id != RWLockImpl::NO_QUERY)
-        all_read_locks.remove(query_id);
+        if (it_group->type == RWLockImpl::Read)
+            all_read_locks.remove(query_id);
+    }
 
     /// Remove the group if we were the last referer and notify the next group
     if (--it_group->referers == 0)
