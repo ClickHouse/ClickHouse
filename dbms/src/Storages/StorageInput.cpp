@@ -12,12 +12,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 StorageInput::StorageInput(const String &table_name_, const ColumnsDescription & columns_)
     : IStorage(columns_), table_name(table_name_)
 {
+    setColumns(columns_);
 }
 
 
@@ -67,7 +68,7 @@ BlockInputStreams StorageInput::read(const Names & /*column_names*/,
     }
 
     if (!input_stream)
-        throw Exception("Input stream is not initialized, input() must be used only in INSERT SELECT query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Input stream is not initialized, input() must be used only in INSERT SELECT query", ErrorCodes::INVALID_USAGE_OF_INPUT);
 
     return {input_stream};
 }

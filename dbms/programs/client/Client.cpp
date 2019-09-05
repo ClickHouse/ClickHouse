@@ -106,6 +106,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READLINE;
     extern const int SYSTEM_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -845,7 +846,7 @@ private:
             if (insert && (!insert->select || input_function))
             {
                 if (input_function && insert->format.empty())
-                    throw Exception("FORMAT must be specified for function input()", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
                 processInsertQuery();
             }
             else

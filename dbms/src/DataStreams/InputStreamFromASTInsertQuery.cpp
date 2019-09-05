@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -31,7 +32,7 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     if (format.empty())
     {
         if (input_function)
-            throw Exception("FORMAT must be specified for function input()", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
         format = "Values";
     }
 
