@@ -70,7 +70,7 @@ private:
 
     int table_fd = -1;
 
-    std::vector<std::string> paths;
+    std::vector<std::string> paths{""};
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
     bool use_table_fd = false;                    /// Use table_fd insted of path

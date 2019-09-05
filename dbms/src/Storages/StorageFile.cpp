@@ -152,13 +152,14 @@ StorageFile::StorageFile(
             if (db_dir_path.empty())
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-            paths.push_back(getTablePath(db_dir_path, table_name, format_name));
+            paths = {getTablePath(db_dir_path, table_name, format_name)};
             is_db_table = true;
             Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
         }
     }
     else /// Will use FD
     {
+
         if (paths.size() != 1)
             throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
@@ -326,7 +327,7 @@ BlockOutputStreamPtr StorageFile::write(
 
 String StorageFile::getDataPath() const
 {
-    if (paths.size() != 1)
+    if (paths.empty())
         throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
     return paths[0];
 }
