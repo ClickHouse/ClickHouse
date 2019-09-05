@@ -73,13 +73,13 @@ bool MergeTreePartsMover::selectPartsToMove(
     MergeTreeMovingParts & parts_to_move,
     const AllowedMovingPredicate & can_move)
 {
-    MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVector();
 
     if (data_parts.empty())
         return false;
 
     std::unordered_map<DiskSpace::DiskPtr, LargestPartsWithRequiredSize> need_to_move;
-    const auto & policy = data.getStoragePolicy();
+    const auto & policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
     /// Do not check if policy has one volume
@@ -146,7 +146,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
     MergeTreeData::MutableDataPartPtr cloned_part =
-        std::make_shared<MergeTreeData::DataPart>(data, moving_part.reserved_space->getDisk(), moving_part.part->name);
+        std::make_shared<MergeTreeData::DataPart>(*data, moving_part.reserved_space->getDisk(), moving_part.part->name);
     cloned_part->relative_path = "detached/" + moving_part.part->name;
     LOG_TRACE(log, "Part " << moving_part.part->name << " was cloned to " << cloned_part->getFullPath());
 
@@ -161,7 +161,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     if (moves_blocker.isCancelled())
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
-    auto active_part = data.getActiveContainingPart(cloned_part->name);
+    auto active_part = data->getActiveContainingPart(cloned_part->name);
 
     if (!active_part || active_part->name != cloned_part->name)
         throw Exception("Failed to swap " + cloned_part->name + ". Active part doesn't exist."
@@ -170,7 +170,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
 
     cloned_part->renameTo(active_part->name);
 
-    data.swapActivePart(cloned_part);
+    data->swapActivePart(cloned_part);
 }
 
 }

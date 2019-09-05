@@ -495,7 +495,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
 
         node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
 
-        retry = 10
+        retry = 20
         while node1.query("SELECT * FROM system.mutations WHERE is_done = 0") != "" and retry > 0:
             retry -= 1
             time.sleep(0.5)

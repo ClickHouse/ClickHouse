@@ -73,10 +73,8 @@ StorageMergeTree::StorageMergeTree(
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
             std::move(storage_settings_), false, attach),
-        background_pool(context_.getBackgroundPool()),
         reader(*this), writer(*this),
-        merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads()),
-        parts_mover(*this)
+        merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -99,7 +97,8 @@ void StorageMergeTree::startup()
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
-    background_task_handle = background_pool.addTask([this] { return backgroundTask(); });
+    merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+    moving_task_handle = global_context.getBackgroundPool().addTask([this] { return movePartsTask(); });
 }
 
 
@@ -111,8 +110,11 @@ void StorageMergeTree::shutdown()
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
-    if (background_task_handle)
-        background_pool.removeTask(background_task_handle);
+    if (merging_mutating_task_handle)
+        global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
+
+    if (moving_task_handle)
+        global_context.getBackgroundPool().removeTask(moving_task_handle);
 }
 
 
@@ -421,7 +423,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     }
 
     LOG_INFO(log, "Added mutation: " << file_name);
-    background_task_handle->wake();
+    merging_mutating_task_handle->wake();
 }
 
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
@@ -492,7 +494,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    background_task_handle->wake();
+    merging_mutating_task_handle->wake();
 
     return CancellationCode::CancelSent;
 }
@@ -617,139 +619,28 @@ bool StorageMergeTree::merge(
     return true;
 }
 
-void StorageMergeTree::movePartsToSpace(const MergeTreeData::DataPartsVector & parts, DiskSpace::SpacePtr space)
+
+bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
-    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
-
-    std::optional<MovingPartsTagger> moving_tagger;
-    {
-        MergeTreeMovingParts parts_to_move;
-        std::unique_lock background_processing_lock(currently_processing_in_background_mutex);
-
-        for (const auto & part : parts)
-        {
-            auto reservation = space->reserve(part->bytes_on_disk);
-            if (!reservation)
-                throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
-
-            auto & reserved_disk = reservation->getDisk();
-            String path_to_clone = getFullPathOnDisk(reserved_disk);
-
-            if (Poco::File(path_to_clone + part->name).exists())
-                throw Exception("Move is not possible: " + path_to_clone + part->name + " already exists.",
-                    ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-
-            if (currently_merging_mutating_parts.count(part))
-                throw Exception("Cannot move part '" + part->name + "' because it's participating in background process.",
-                    ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
-
-            parts_to_move.emplace_back(part, std::move(reservation));
-        }
-
-        moving_tagger.emplace(std::move(parts_to_move), std::move(background_processing_lock), currently_moving_parts);
-    }
-
-    for (const auto & moving_part : moving_tagger->parts_to_move)
-    {
-        Stopwatch stopwatch;
-        DataPartPtr cloned_part;
-
-        auto write_part_log = [&](const ExecutionStatus & execution_status)
-        {
-            writePartLog(
-                PartLogElement::Type::MOVE_PART,
-                execution_status,
-                stopwatch.elapsed(),
-                moving_part.part->name,
-                cloned_part,
-                {moving_part.part},
-                nullptr);
-        };
-
-        try
-        {
-            cloned_part = parts_mover.clonePart(moving_part);
-            parts_mover.swapClonedPart(cloned_part);
-            write_part_log({});
-        }
-        catch (...)
-        {
-            write_part_log(ExecutionStatus::fromCurrentException());
-            if (cloned_part)
-                cloned_part->remove();
-            throw;
-        }
-    }
+    std::lock_guard background_processing_lock(currently_processing_in_background_mutex);
+    return currently_merging_mutating_parts.count(part);
 }
 
 
-bool StorageMergeTree::moveParts()
+BackgroundProcessingPoolTaskResult StorageMergeTree::movePartsTask()
 {
-    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
-
-    std::optional<MovingPartsTagger> moving_tagger;
+    try
     {
-        MergeTreeMovingParts parts_to_move;
-        std::unique_lock background_processing_lock(currently_processing_in_background_mutex);
+        if (!movePartsToSpace())
+            return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
-        auto can_move = [this](const DataPartPtr & part, String * reason) -> bool
-        {
-
-            if (currently_merging_mutating_parts.count(part))
-            {
-                *reason = "part is already assigned to merge or mutation.";
-                return false;
-            }
-
-            if (currently_moving_parts.count(part))
-            {
-                *reason = "part is already moving.";
-                return false;
-            }
-
-            return true;
-        };
-
-        if (!parts_mover.selectPartsToMove(parts_to_move, can_move))
-            return false;
-
-        LOG_INFO(log, "Found " << parts_to_move.size() << " parts to move.");
-        moving_tagger.emplace(std::move(parts_to_move), std::move(background_processing_lock), currently_moving_parts);
+        return BackgroundProcessingPoolTaskResult::SUCCESS;
     }
-
-    for (const auto & moving_part : moving_tagger->parts_to_move)
+    catch (...)
     {
-        Stopwatch stopwatch;
-        DataPartPtr cloned_part;
-
-        auto write_part_log = [&](const ExecutionStatus & execution_status)
-        {
-            writePartLog(
-                PartLogElement::Type::MOVE_PART,
-                execution_status,
-                stopwatch.elapsed(),
-                moving_part.part->name,
-                cloned_part,
-                {moving_part.part},
-                nullptr);
-        };
-
-        try
-        {
-            cloned_part = parts_mover.clonePart(moving_part);
-            parts_mover.swapClonedPart(cloned_part);
-            write_part_log({});
-        }
-        catch (...)
-        {
-            write_part_log(ExecutionStatus::fromCurrentException());
-            if (cloned_part)
-                cloned_part->remove();
-            return false;
-        }
+        tryLogCurrentException(log);
+        return BackgroundProcessingPoolTaskResult::ERROR;
     }
-
-    return true;
 }
 
 
@@ -849,15 +740,12 @@ bool StorageMergeTree::tryMutatePart()
 }
 
 
-BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
+BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 {
     if (shutdown_called)
         return BackgroundProcessingPoolTaskResult::ERROR;
 
-    bool merges_mutations_blocked = merger_mutator.merges_blocker.isCancelled();
-    bool moves_blocked = parts_mover.moves_blocker.isCancelled();
-
-    if (merges_mutations_blocked && moves_blocked)
+    if (merger_mutator.merges_blocker.isCancelled())
         return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
     try
@@ -875,14 +763,11 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         }
 
         ///TODO: read deduplicate option from table config
-        if (!merges_mutations_blocked && merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
-
-        if (!moves_blocked && moveParts())
+        if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
 
-        if (!merges_mutations_blocked && tryMutatePart())
+        if (tryMutatePart())
             return BackgroundProcessingPoolTaskResult::SUCCESS;
 
         return BackgroundProcessingPoolTaskResult::ERROR;
