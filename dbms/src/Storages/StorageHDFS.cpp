@@ -192,7 +192,7 @@ BlockInputStreams StorageHDFS::read(
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
-    HDFSBuilderPtr builder = createHDFSBuilder(Poco::URI(uri_without_path + "/"));
+    HDFSBuilderPtr builder = createHDFSBuilder(uri_without_path + "/");
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
     const Strings res_paths = LSWithRegexpMatching("/", fs, path_from_uri);
