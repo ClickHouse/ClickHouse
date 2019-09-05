@@ -927,7 +927,7 @@ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parq
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Для обмена данными с экосистемой Hadoop можно использовать движки таблиц `HDFS` и `URL`.
+Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [`HDFS`](../../operations/table_engines/hdfs.md) и `URL`.
 
 ## Схема формата {#formatschema}
 
