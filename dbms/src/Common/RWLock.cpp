@@ -95,6 +95,8 @@ namespace
 
 RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id)
 {
+    const bool request_has_query_id = query_id != NO_QUERY;
+
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     CurrentMetrics::Increment waiting_client_increment((type == Read) ? CurrentMetrics::RWLockWaitingReaders
                                                                       : CurrentMetrics::RWLockWaitingWriters);
@@ -112,10 +114,10 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     /// This object is placed above unique_lock, because it may lock in destructor.
     LockHolder res;
 
-    std::unique_lock lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
 
     /// Check if the same query is acquiring previously acquired lock
-    if (query_id != RWLockImpl::NO_QUERY)
+    if (request_has_query_id)
     {
         const auto it_query = query_id_to_holder.find(query_id);
         if (it_query != query_id_to_holder.end())
@@ -157,7 +159,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
 
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
     {
-        if (type == Type::Read && !queue.empty() && queue.back().type == Type::Write && query_id != RWLockImpl::NO_QUERY)
+        if (type == Type::Read && !queue.empty() && queue.back().type == Type::Write && request_has_query_id)
             all_read_locks.check(query_id);
 
         /// Create new group of clients
@@ -168,7 +170,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         /// Will append myself to last group
         it_group = std::prev(queue.end());
 
-        if (it_group != queue.begin() && query_id != RWLockImpl::NO_QUERY)
+        if (it_group != queue.begin() && request_has_query_id)
             all_read_locks.check(query_id);
     }
 
@@ -192,7 +194,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
     /// Insert myself (weak_ptr to the holder) to queries set to implement recursive lock
-    if (query_id != RWLockImpl::NO_QUERY)
+    if (request_has_query_id)
     {
         query_id_to_holder.emplace(query_id, res);
 
