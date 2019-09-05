@@ -413,8 +413,6 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
-    FilterInfoPtr filter_info;
-
     /// Need to create sets before analyzeExpressions(). Otherwise some sets for index won't be created.
     query_analyzer->makeSetsForIndex(getSelectQuery().where());
     query_analyzer->makeSetsForIndex(getSelectQuery().prewhere());
@@ -426,8 +424,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             options.to_stage,
             context,
             storage,
-            true,
-            filter_info);
+            true,  // only_types
+            {}     // filter_info
+        );
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
