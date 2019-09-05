@@ -18,12 +18,12 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM input_function_table_2 FORMAT CSV"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS input_function_table_3"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE input_function_table_3 (a String, b Date, c Int32, d Int16) ENGINE=Memory()"
-cat ${CLICKHOUSE_TMP}/data_for_input_function.csv | ${CLICKHOUSE_CLIENT} --query="INSERT INTO input_function_table_3 (a, b, c) SELECT * FROM (SELECT a, b, c*c FROM input('a String, b Int32, c Int32') JOIN input_function_table_1 ON a=input_function_table_1.a) FORMAT CSV"
+cat ${CLICKHOUSE_TMP}/data_for_input_function.csv | ${CLICKHOUSE_CLIENT} --query="INSERT INTO input_function_table_3 (a, b, c) SELECT * FROM (SELECT s, b, c*c FROM input('s String, b Int32, c Int32') JOIN input_function_table_1 ON s=input_function_table_1.a) FORMAT CSV"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM input_function_table_3 FORMAT CSV"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS input_function_table_4"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE input_function_table_4 (a String, b Date, c Int32, d Int16) ENGINE=Memory()"
-cat ${CLICKHOUSE_TMP}/data_for_input_function.csv | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL_PARAMS}&query=INSERT%20INTO%20input_function_table_4%20%28a%2C%20b%2C%20c%29%20SELECT%20%2A%20FROM%20%28SELECT%20a%2C%20b%2C%20c%2Ac%20FROM%20input%28%27a%20String%2C%20b%20Int32%2C%20c%20Int32%27%29%20JOIN%20input_function_table_1%20ON%20a%3Dinput_function_table_1.a%29%20FORMAT%20CSV" --data-binary @-
+cat ${CLICKHOUSE_TMP}/data_for_input_function.csv | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL_PARAMS}&query=INSERT%20INTO%20input_function_table_4%20%28a%2C%20b%2C%20c%29%20SELECT%20%2A%20FROM%20%28SELECT%20s%2C%20b%2C%20c%2Ac%20FROM%20input%28%27s%20String%2C%20b%20Int32%2C%20c%20Int32%27%29%20JOIN%20input_function_table_1%20ON%20s%3Dinput_function_table_1.a%29%20FORMAT%20CSV" --data-binary @-
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM input_function_table_4 FORMAT CSV"
 
 

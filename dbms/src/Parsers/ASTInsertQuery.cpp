@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -70,7 +70,7 @@ void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
         if (table_function_ast->name == "input")
         {
             if (input_function)
-                throw Exception("You can use 'input()' function only once per request.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("You can use 'input()' function only once per request.", ErrorCodes::INVALID_USAGE_OF_INPUT);
             input_function = ast;
         }
     }
