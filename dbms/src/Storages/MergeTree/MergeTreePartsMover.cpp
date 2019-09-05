@@ -69,7 +69,7 @@ public:
 
 }
 
-bool MergeTreePartsMover::selectPartsToMove(
+bool MergeTreePartsMover::selectPartsForMove(
     MergeTreeMovingParts & parts_to_move,
     const AllowedMovingPredicate & can_move)
 {
@@ -171,6 +171,8 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     cloned_part->renameTo(active_part->name);
 
     data->swapActivePart(cloned_part);
+
+    LOG_TRACE(log, "Part " << cloned_part->name << " was moved to " << cloned_part->getFullPath());
 }
 
 }

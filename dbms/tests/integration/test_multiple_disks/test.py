@@ -284,6 +284,7 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
     paths = node.query("SELECT path_on_disk FROM system.part_log WHERE table = '{}' and partition_id = '{}' ORDER BY event_time DESC".format(table, partition_id))
     return paths.strip().split('\n')
 
+
 @pytest.mark.parametrize("name,engine", [
     ("altering_mt","MergeTree()"),
     ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
@@ -299,6 +300,8 @@ def test_alter_move(start_cluster, name, engine):
             PARTITION BY toYYYYMM(EventDate)
             SETTINGS storage_policy_name='jbods_with_external'
         """.format(name=name, engine=engine))
+
+        node1.query("SYSTEM STOP MERGES {}".format(name)) # to avoid conflicts
 
         node1.query("INSERT INTO {} VALUES(toDate('2019-03-15'), 65)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 66)".format(name))
@@ -328,7 +331,6 @@ def test_alter_move(start_cluster, name, engine):
         assert len(disks) == 2
         assert all(d == "external" for d in disks)
         assert all(path.startswith("/external") for path in get_paths_for_partition_from_part_log(node1, name, '201904')[:2])
-
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
@@ -500,7 +502,21 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
             retry -= 1
             time.sleep(0.5)
 
-        assert node1.query("SELECT sum(endsWith(s1, 'x')) FROM {}".format(name)) == "25\n"
+        if node1.query("SELECT latest_fail_reason FROM system.mutations WHERE table = '{}'".format(name)) == "":
+            assert node1.query("SELECT sum(endsWith(s1, 'x')) FROM {}".format(name)) == "25\n"
+        else: # mutation failed, let's try on another disk
+            print "Mutation failed"
+            node1.query("OPTIMIZE TABLE {} FINAL".format(name))
+            node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
+            retry = 20
+            while node1.query("SELECT * FROM system.mutations WHERE is_done = 0") != "" and retry > 0:
+                retry -= 1
+                time.sleep(0.5)
+
+            assert node1.query("SELECT sum(endsWith(s1, 'x')) FROM {}".format(name)) == "25\n"
+
+
+
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 

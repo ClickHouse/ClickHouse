@@ -2157,7 +2157,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movePartsTask()
 {
     try
     {
-        if (!movePartsToSpace())
+        if (!selectPartsAndMove())
             return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
         return BackgroundProcessingPoolTaskResult::SUCCESS;
