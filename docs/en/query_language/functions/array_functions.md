@@ -73,7 +73,7 @@ Get the element with the index `n` from the array `arr`. `n` must be any integer
 Indexes in an array begin from one.
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
-If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.).
+If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index of 0 (in this case there will be an error `Array indices are 1-based`).
 
 ## has(arr, elem)
 
