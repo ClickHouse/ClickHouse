@@ -19,7 +19,7 @@ void OwnSplitChannel::log(const Poco::Message & msg)
     if (channels.empty() && (logs_queue == nullptr || msg.getPriority() > logs_queue->max_priority))
         return;
 
-    if (auto masker = SensitiveDataMasker::get())
+    if (auto masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
         auto matches = masker->wipeSensitiveData(message_text);

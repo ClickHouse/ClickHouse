@@ -18,14 +18,14 @@ namespace Util
 
 /// It's used as a singelton via get method
 
-/// initially it's empty (nullprt) and after manual initialization
+/// Initially it's empty (nullptr) and after manual initialization
 /// (one-time, done by set call) it takes the proper value which
 /// is stored in unique_ptr.
 
 /// It looks like the singelton is the best option here, as
 /// two users of that object (OwnSplitChannel & Interpreters/executeQuery)
 /// can't own/share that Masker properly without syncronization & locks,
-/// and we can afford setting global locks for each logged line.
+/// and we can't afford setting global locks for each logged line.
 
 /// I've considered singleton alternatives, but it's unclear who should own the object,
 /// and it introduce unnecessary complexity in implementation (passing references back and forward):
@@ -47,9 +47,6 @@ class SensitiveDataMasker
 private:
     class MaskingRule;
     std::vector<std::unique_ptr<MaskingRule>> all_masking_rules;
-
-    static std::mutex mutex;
-    static bool sensitive_data_masker_initialized;
     static std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
 
 public:
@@ -59,8 +56,10 @@ public:
     /// Returns the number of matched rules.
     size_t wipeSensitiveData(std::string & data) const;
 
-    static void set(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_);
-    static SensitiveDataMasker * get();
+    /// setInstance is not thread-safe and should be called once in single-thread mode.
+    /// https://github.com/yandex/ClickHouse/pull/6810#discussion_r321183367
+    static void setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_);
+    static SensitiveDataMasker * getInstance();
 
     /// Used in tests.
     void addMaskingRule(const std::string & name, const std::string & regexp_string, const std::string & replacement_string);

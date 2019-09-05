@@ -405,7 +405,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (config().has("query_masking_rules"))
     {
-        SensitiveDataMasker::set(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
