@@ -1,16 +1,16 @@
 ---
-name: Bug report
-about: Create a report to help us improve ClickHouse
+name: Performance issue
+about: Report something working slower than expected
 title: ''
-labels: bug, issue
+labels: performance
 assignees: ''
 
 ---
 
 (you don't have to strictly follow this form)
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**Describe the situation**
+What exactly works slower than expected?
 
 **How to reproduce**
 * Which ClickHouse server version to use
@@ -18,13 +18,10 @@ A clear and concise description of what the bug is.
 * Non-default settings, if any
 * `CREATE TABLE` statements for all tables involved
 * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/yandex/ClickHouse/blob/master/dbms/programs/obfuscator/Obfuscator.cpp#L42-L80) if necessary
-* Queries to run that lead to unexpected result
+* Queries to run that lead to slow performance
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
-
-**Error message and/or stacktrace**
-If applicable, add screenshots to help explain your problem.
+**Expected performance**
+What are your performance expectation, why do you think they are realistic? Has it been working faster in older ClickHouse releases? Is it working faster in some specific other system?
 
 **Additional context**
 Add any other context about the problem here.
