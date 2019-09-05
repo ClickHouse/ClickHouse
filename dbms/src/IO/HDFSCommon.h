@@ -1,7 +1,6 @@
 #include <Common/config.h>
 #include <memory>
 #include <type_traits>
-#include <Poco/URI.h>
 
 #if USE_HDFS
 #include <hdfs/hdfs.h>
@@ -52,7 +51,7 @@ using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsD
 
 // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
 /// TODO Allow to tune from query Settings.
-HDFSBuilderPtr createHDFSBuilder(const Poco::URI & hdfs_uri);
+HDFSBuilderPtr createHDFSBuilder(const std::string & hdfs_uri);
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
 }
 #endif
