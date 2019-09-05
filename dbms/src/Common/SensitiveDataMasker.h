@@ -3,8 +3,6 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
-#include <mutex>
-
 
 namespace Poco
 {
