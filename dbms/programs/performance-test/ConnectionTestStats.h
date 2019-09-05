@@ -7,9 +7,9 @@
 
 namespace DB
 {
-struct ConnectionStats
+struct ConnectionTestStats
 {
-    ConnectionStats();
+    ConnectionTestStats();
     Stopwatch watch;
     Stopwatch watch_per_query;
     Stopwatch min_time_watch;
@@ -80,6 +80,6 @@ struct ConnectionStats
     void updateQueryInfo();
 };
 
-using TestStats = std::vector<ConnectionStats>;
+using TestStats = std::vector<ConnectionTestStats>;
 
 }

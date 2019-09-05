@@ -8,7 +8,7 @@
 
 #include "StopConditionsSet.h"
 #include "TestStopConditions.h"
-#include "ConnectionStats.h"
+#include "ConnectionTestStats.h"
 
 namespace DB
 {

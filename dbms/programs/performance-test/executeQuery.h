@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "ConnectionStats.h"
+#include "ConnectionTestStats.h"
 #include "TestStopConditions.h"
 #include <Common/InterruptListener.h>
 #include <Common/StudentTTest.h>

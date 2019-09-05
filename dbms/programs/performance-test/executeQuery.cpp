@@ -11,9 +11,9 @@ namespace
 {
 
 void checkFulfilledConditionsAndUpdate(
-    const Progress & progress, RemoteBlockInputStream & stream,
-    ConnectionStats & statistics, TestStopConditions & stop_conditions,
-    InterruptListener & interrupt_listener, StudentTTest & t_test, Poco::Logger * log)
+        const Progress & progress, RemoteBlockInputStream & stream,
+        ConnectionTestStats & statistics, TestStopConditions & stop_conditions,
+        InterruptListener & interrupt_listener, StudentTTest & t_test, Poco::Logger * log)
 {
     statistics.add(progress.read_rows, progress.read_bytes);
 
@@ -56,7 +56,7 @@ void executeQuery(
     static const std::string query_id_prefix = Poco::UUIDGenerator::defaultGenerator().create().toString() + "-";
     static int next_query_id = 1;
 
-    ConnectionStats & statistic = statistics[connection_index];
+    ConnectionTestStats & statistic = statistics[connection_index];
 
     statistic.watch_per_query.restart();
     statistic.last_query_was_cancelled = false;

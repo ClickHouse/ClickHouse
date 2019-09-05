@@ -97,7 +97,7 @@ std::string ReportBuilder::buildFullReport(
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             size_t stat_index = number_of_launch * test_info.queries.size() + query_index;
-            ConnectionStats & statistics = stats[stat_index][connection_index];
+            ConnectionTestStats & statistics = stats[stat_index][connection_index];
 
             if (!statistics.ready)
                 continue;

@@ -32,7 +32,7 @@
 #include <Common/StudentTTest.h>
 
 #include "TestStopConditions.h"
-#include "ConnectionStats.h"
+#include "ConnectionTestStats.h"
 #include "ConfigPreprocessor.h"
 #include "PerformanceTest.h"
 #include "ReportBuilder.h"

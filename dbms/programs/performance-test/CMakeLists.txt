@@ -2,7 +2,7 @@ set(CLICKHOUSE_PERFORMANCE_TEST_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/JSONString.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/StopConditionsSet.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/TestStopConditions.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionStats.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionTestStats.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ConfigPreprocessor.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceTest.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceTestInfo.cpp
