@@ -53,20 +53,18 @@ private:
 
     struct Group;
     using GroupsContainer = std::list<Group>;
-    using ClientsContainer = std::list<Type>;
     using QueryIdToHolder = std::map<String, std::weak_ptr<LockHolderImpl>>;
 
-    /// Group of clients that should be executed concurrently
-    /// i.e. a group could contain several readers, but only one writer
+    /// Group of locking requests that should be granted concurrently
+    /// i.e. a group can contain several readers, but only one writer
     struct Group
     {
-        // FIXME: there is only redundant |type| information inside |clients|.
         const Type type;
-        ClientsContainer clients;
+        size_t referers;
 
-        std::condition_variable cv; /// all clients of the group wait group condvar
+        std::condition_variable cv; /// all locking requests of the group wait on this condvar
 
-        explicit Group(Type type_) : type{type_} {}
+        explicit Group(Type type_) : type{type_}, referers{0} {}
     };
 
     mutable std::mutex mutex;
