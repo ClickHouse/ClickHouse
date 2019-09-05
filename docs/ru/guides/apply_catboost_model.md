@@ -44,21 +44,25 @@ yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-**4.** Удалите старые версии СlickHouse:
+**4.** Удалите старую версию СlickHouse:
 
 ```bash
+// Проверяем версию СlickHouse
+$ dpkg -l | grep clickhouse-server
+
+// Останавливаем СlickHouse Server
+$ sudo service clickhouse-server stop
+
+// Удаляем СlickHouse
 $ sudo apt-get purge clickhouse-server-base
 $ sudo apt-get purge clickhouse-server-common
 $ sudo apt-get autoremove
+
+// Проверяем, что все успешно удалилось
+$ dpkg -l | grep clickhouse-server
 ```
 
-**5.** Проверьте успешность удаления:
-
-```bash
-dpkg -l | grep clickhouse-server
-```
-
-**6.** Установите последние версии пакетов:
+**5.** Установите СlickHouse:
 
 ```bash
 $ sudo apt-get install dirmngr
