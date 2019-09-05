@@ -28,10 +28,7 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
         return;
 
     if (broken)
-    {
-        buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->unsubscribe();
-        buffer->reset();
-    }
+        buffer->unsubscribe();
 
     storage.pushReadBuffer(buffer);
 }
@@ -50,23 +47,22 @@ void KafkaBlockInputStream::readPrefixImpl()
     if (!buffer)
         return;
 
-    buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.getTopics());
+    buffer->subscribe(storage.getTopics());
 
     const auto & limits_ = getLimits();
-    const size_t poll_timeout = buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->pollTimeout();
+    const size_t poll_timeout = buffer->pollTimeout();
     size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits_.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
     rows_portion_size = std::max(rows_portion_size, 1ul);
 
     auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
     auto read_callback = [this]
     {
-        const auto * sub_buffer = buffer->subBufferAs<ReadBufferFromKafkaConsumer>();
-        virtual_columns[0]->insert(sub_buffer->currentTopic());     // "topic"
-        virtual_columns[1]->insert(sub_buffer->currentKey());       // "key"
-        virtual_columns[2]->insert(sub_buffer->currentOffset());    // "offset"
-        virtual_columns[3]->insert(sub_buffer->currentPartition()); // "partition"
+        virtual_columns[0]->insert(buffer->currentTopic());     // "topic"
+        virtual_columns[1]->insert(buffer->currentKey());       // "key"
+        virtual_columns[2]->insert(buffer->currentOffset());    // "offset"
+        virtual_columns[3]->insert(buffer->currentPartition()); // "partition"
 
-        auto timestamp = sub_buffer->currentTimestamp();
+        auto timestamp = buffer->currentTimestamp();
         if (timestamp)
             virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
     };
@@ -106,7 +102,7 @@ void KafkaBlockInputStream::readSuffixImpl()
     if (!buffer)
         return;
 
-    buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->commit();
+    buffer->commit();
 
     broken = false;
 }
