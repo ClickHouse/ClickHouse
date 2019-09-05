@@ -7,9 +7,9 @@
 
 namespace DB
 {
-struct TestStats
+struct ConnectionStats
 {
-    TestStats();
+    ConnectionStats();
     Stopwatch watch;
     Stopwatch watch_per_query;
     Stopwatch min_time_watch;
@@ -78,15 +78,8 @@ struct TestStats
     void add(size_t rows_read_inc, size_t bytes_read_inc);
 
     void updateQueryInfo();
-
-    void setTotalTime()
-    {
-        total_time = watch.elapsedSeconds();
-    }
-
-    void startWatches();
 };
-using TestStatsPtr = std::shared_ptr<TestStats>;
-using TestStatsPtrs = std::vector<TestStatsPtr>;
+
+using TestStats = std::vector<ConnectionStats>;
 
 }

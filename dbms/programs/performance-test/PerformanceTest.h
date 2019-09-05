@@ -31,7 +31,7 @@ public:
 
     bool checkPreconditions() const;
     void prepare() const;
-    std::vector<TestStatsPtrs> execute();
+    std::vector<TestStats> execute();
     void finish() const;
 
     bool checkSIGINT() const
@@ -42,7 +42,7 @@ public:
 private:
     void runQueries(
         const QueriesWithIndexes & queries_with_indexes,
-        std::vector<TestStatsPtrs> & statistics_by_run);
+        std::vector<TestStats> & statistics_by_run);
 
     UInt64 calculateMaxExecTime() const;
 

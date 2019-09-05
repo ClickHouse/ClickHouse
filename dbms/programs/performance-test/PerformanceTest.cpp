@@ -228,9 +228,8 @@ void PerformanceTest::finish() const
     }
 }
 
-std::vector<TestStatsPtrs> PerformanceTest::execute()
+std::vector<TestStats> PerformanceTest::execute()
 {
-    std::vector<TestStatsPtrs> statistics_by_run;
     size_t query_count;
     if (queries_to_run.empty())
         query_count = test_info.queries.size();
@@ -239,16 +238,11 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
 
     size_t total_runs = test_info.times_to_run * test_info.queries.size();
 
-    for (size_t i = 0; i != total_runs; ++i)
-    {
-        TestStatsPtrs tmp;
-        tmp.reserve(connections.size());
-        for (size_t j = 0; j != connections.size(); ++j)
-        {
-            tmp.emplace_back(std::make_shared<TestStats>());
-        }
-        statistics_by_run.push_back(tmp);
-    }
+    std::vector<TestStats> statistics_by_run;
+    statistics_by_run.reserve(total_runs);
+    for (size_t i = 0; i < total_runs; ++i)
+        statistics_by_run.emplace_back(TestStats(connections.size()));
+
     LOG_INFO(log, "Totally will run cases " << test_info.times_to_run * query_count << " times");
     UInt64 max_exec_time = calculateMaxExecTime();
     if (max_exec_time != 0)
@@ -302,7 +296,7 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
             auto & connection = *connections[i];
             auto & statistics = statistics_by_connections[i];
 
-            if (statistics->query_id.empty())
+            if (statistics.query_id.empty())
             {
                 // We have statistics structs for skipped queries as well, so we
                 // have to filter them out.
@@ -314,7 +308,7 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
             // last one, because this is when the query performance has stabilized.
             RemoteBlockInputStream log_reader(connection,
                 "select memory_usage, query_start_time from system.query_log "
-                "where type = 2 and query_id = '" + statistics->query_id + "' "
+                "where type = 2 and query_id = '" + statistics.query_id + "' "
                 "order by query_start_time desc",
                 {} /* header */, context);
 
@@ -322,12 +316,12 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
             Block block = log_reader.read();
             if (block.columns() == 0)
             {
-                LOG_WARNING(log, "Query '" << statistics->query_id << "' is not found in query log.");
+                LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
                 continue;
             }
 
             auto column = block.getByName("memory_usage").column;
-            statistics->memory_usage = column->get64(0);
+            statistics.memory_usage = column->get64(0);
 
             log_reader.readSuffix();
         }
@@ -338,21 +332,21 @@ std::vector<TestStatsPtrs> PerformanceTest::execute()
 
 void PerformanceTest::runQueries(
     const QueriesWithIndexes & queries_with_indexes,
-    std::vector<TestStatsPtrs> & statistics_by_run)
+    std::vector<TestStats> & statistics_by_run)
 {
     for (const auto & [query, run_index] : queries_with_indexes)
     {
-        LOG_INFO(log, "[" << run_index<< "] Run query '" << query << "'");
+        LOG_INFO(log, "[" << run_index << "] Run query '" << query << "'");
 
         TestStopConditions & stop_conditions = test_info.stop_conditions_by_run[run_index];
-        TestStatsPtrs & statistics_by_connections = statistics_by_run[run_index];
+        TestStats & statistics_by_connections = statistics_by_run[run_index];
         t_test.clear();
 
         auto gotSIGINT = [&statistics_by_connections]()
         {
             for (const auto & statistics : statistics_by_connections)
             {
-                if (statistics->got_SIGINT)
+                if (statistics.got_SIGINT)
                     return true;
             }
             return false;
@@ -389,14 +383,14 @@ void PerformanceTest::runQueries(
         }
         catch (const Exception & e)
         {
-            statistics_by_connections[connection_index]->exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
+            statistics_by_connections[connection_index].exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
             LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
         }
         if (!gotSIGINT())
         {
             for (auto & statistics : statistics_by_connections)
-                statistics->ready = true;
+                statistics.ready = true;
         }
         else
         {

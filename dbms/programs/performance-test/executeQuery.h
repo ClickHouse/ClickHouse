@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "TestStats.h"
+#include "ConnectionStats.h"
 #include "TestStopConditions.h"
 #include <Common/InterruptListener.h>
 #include <Common/StudentTTest.h>
@@ -11,14 +11,14 @@
 namespace DB
 {
 void executeQuery(
-    Connections & connections,
-    const std::string & query,
-    TestStatsPtrs & statistics,
-    StudentTTest & t_test,
-    TestStopConditions & stop_conditions,
-    InterruptListener & interrupt_listener,
-    Context & context,
-    const Settings & settings,
-    size_t connection_index,
-    Poco::Logger * log);
+        Connections & connections,
+        const std::string & query,
+        TestStats & statistics,
+        StudentTTest & t_test,
+        TestStopConditions & stop_conditions,
+        InterruptListener & interrupt_listener,
+        Context & context,
+        const Settings & settings,
+        size_t connection_index,
+        Poco::Logger * log);
 }

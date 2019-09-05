@@ -32,7 +32,7 @@
 #include <Common/StudentTTest.h>
 
 #include "TestStopConditions.h"
-#include "TestStats.h"
+#include "ConnectionStats.h"
 #include "ConfigPreprocessor.h"
 #include "PerformanceTest.h"
 #include "ReportBuilder.h"
@@ -208,12 +208,12 @@ private:
 
         if (current.checkPreconditions())
         {
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fulfilled");
             LOG_INFO(log, "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
             current.prepare();
             LOG_INFO(log, "Prepared");
             LOG_INFO(log, "Running test '" << info.test_name << "'");
-            auto result_by_servers = current.execute();
+            auto results = current.execute();
             LOG_INFO(log, "Test '" << info.test_name << "' finished");
 
             LOG_INFO(log, "Running post run queries");
@@ -224,12 +224,12 @@ private:
             if (lite_output)
             {
                 for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
-                    reports_by_connections.push_back(report_builder->buildCompactReport(info, result_by_servers, connections, timeouts, connection_index, query_indexes[info.path]));
+                    reports_by_connections.push_back(report_builder->buildCompactReport(info, results, connections, timeouts, connection_index, query_indexes[info.path]));
             }
             else
             {
                 for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
-                    reports_by_connections.push_back(report_builder->buildFullReport(info, result_by_servers, connections, timeouts, connection_index, query_indexes[info.path]));
+                    reports_by_connections.push_back(report_builder->buildFullReport(info, results, connections, timeouts, connection_index, query_indexes[info.path]));
             }
 
             return {reports_by_connections, current.checkSIGINT()};

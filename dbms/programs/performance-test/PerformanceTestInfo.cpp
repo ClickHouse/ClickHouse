@@ -100,11 +100,11 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         settings.loadFromChanges(settings_to_apply);
 
         if (settings_contain("average_rows_speed_precision"))
-            TestStats::avg_rows_speed_precision =
+            ConnectionStats::avg_rows_speed_precision =
                 config->getDouble("settings.average_rows_speed_precision");
 
         if (settings_contain("average_bytes_speed_precision"))
-            TestStats::avg_bytes_speed_precision =
+            ConnectionStats::avg_bytes_speed_precision =
                 config->getDouble("settings.average_bytes_speed_precision");
     }
 }

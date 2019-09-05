@@ -1,4 +1,4 @@
-#include "TestStats.h"
+#include "ConnectionStats.h"
 #include <algorithm>
 namespace DB
 {
@@ -8,7 +8,7 @@ namespace
 const std::string FOUR_SPACES = "    ";
 }
 
-std::string TestStats::getStatisticByName(const std::string & statistic_name)
+std::string ConnectionStats::getStatisticByName(const std::string & statistic_name)
 {
     if (statistic_name == "min_time")
         return std::to_string(min_time) + "ms";
@@ -58,7 +58,7 @@ std::string TestStats::getStatisticByName(const std::string & statistic_name)
 }
 
 
-void TestStats::update_min_time(UInt64 min_time_candidate)
+void ConnectionStats::update_min_time(UInt64 min_time_candidate)
 {
     if (min_time_candidate < min_time)
     {
@@ -67,7 +67,7 @@ void TestStats::update_min_time(UInt64 min_time_candidate)
     }
 }
 
-void TestStats::update_max_speed(
+void ConnectionStats::update_max_speed(
     size_t max_speed_candidate,
     Stopwatch & max_speed_watch,
     UInt64 & max_speed)
@@ -80,7 +80,7 @@ void TestStats::update_max_speed(
 }
 
 
-void TestStats::update_average_speed(
+void ConnectionStats::update_average_speed(
     double new_speed_info,
     Stopwatch & avg_speed_watch,
     size_t & number_of_info_batches,
@@ -103,7 +103,7 @@ void TestStats::update_average_speed(
     }
 }
 
-void TestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
+void ConnectionStats::add(size_t rows_read_inc, size_t bytes_read_inc)
 {
     total_rows_read += rows_read_inc;
     total_bytes_read += bytes_read_inc;
@@ -131,7 +131,7 @@ void TestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
         avg_bytes_speed_value);
 }
 
-void TestStats::updateQueryInfo()
+void ConnectionStats::updateQueryInfo()
 {
     ++queries;
     sampler.insert(watch_per_query.elapsedSeconds());
@@ -139,7 +139,7 @@ void TestStats::updateQueryInfo()
 }
 
 
-TestStats::TestStats()
+ConnectionStats::ConnectionStats()
 {
     watch.reset();
     watch_per_query.reset();
@@ -150,16 +150,5 @@ TestStats::TestStats()
     avg_bytes_speed_watch.reset();
 }
 
-
-void TestStats::startWatches()
-{
-    watch.start();
-    watch_per_query.start();
-    min_time_watch.start();
-    max_rows_speed_watch.start();
-    max_bytes_speed_watch.start();
-    avg_rows_speed_watch.start();
-    avg_bytes_speed_watch.start();
-}
 
 }
