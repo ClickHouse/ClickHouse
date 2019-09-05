@@ -117,18 +117,27 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     /// Check if the same query is acquiring previously acquired lock
     if (query_id != RWLockImpl::NO_QUERY)
     {
-        auto it_query = query_id_to_holder.find(query_id);
+        const auto it_query = query_id_to_holder.find(query_id);
         if (it_query != query_id_to_holder.end())
+        {
             res = it_query->second.lock();
-    }
+            if (res)
+            {
+                /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
+                if (type == Write)
+                    throw Exception(
+                            "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked",
+                            ErrorCodes::LOGICAL_ERROR);
 
-    if (res)
-    {
-        /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
-        if (type != Read || res->it_group->type != Read)
-            throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
-        else
-            return res;
+                if (res->it_group->type == Write)
+                    throw Exception(
+                            "RWLockImpl::getLock(): RWLock is already locked in exclusive mode",
+                            ErrorCodes::LOGICAL_ERROR);
+
+                finalize_metrics();
+                return res;
+            }
+        }
     }
 
     /** If the query already has any active read lock and tries to acquire another read lock
