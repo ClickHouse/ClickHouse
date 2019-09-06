@@ -864,6 +864,8 @@ Default value: 0.
 
 Enables or disables throwing an exception if the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query have not performed a merge.
 
+If the `OPTIMIZE` query doesn't perform a merge of data parts for any reason (for example, nothing to merge or lack of resources) it finishes and the client cann't know why. To know when and why the `OPTIMIZE` query have not performed merge, enable the exception throwing.
+
 Possible values:
 
 - 1 — Throwing an exception is enabled.
