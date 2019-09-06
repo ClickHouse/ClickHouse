@@ -33,7 +33,7 @@ public:
 private:
     static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr);
     bool getDataType(const LiteralInfo & info, DataTypePtr & type) const;
-    void parseLiteralAndAssertType(ReadBuffer & istr, const IDataType & type, size_t column_idx);
+    void parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * type, size_t column_idx);
 
 private:
     DataTypePtr result_column_type;
