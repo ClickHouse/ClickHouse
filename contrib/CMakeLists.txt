@@ -10,15 +10,6 @@ endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-if (USE_INTERNAL_ORC_LIBRARY)
-    set(BUILD_JAVA OFF CACHE INTERNAL "")
-    set(ANALYZE_JAVA OFF CACHE INTERNAL "")
-    set(BUILD_CPP_TESTS OFF CACHE INTERNAL "")
-    set(BUILD_TOOLS OFF CACHE INTERNAL "")
-    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/contrib/orc/cmake_modules")
-    add_subdirectory(orc)
-endif()
-
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
 endif ()
@@ -323,3 +314,7 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
+
+#if (USE_INTERNAL_ORC_LIBRARY)
+#    add_subdirectory(orc-cmake)
+#endif ()
