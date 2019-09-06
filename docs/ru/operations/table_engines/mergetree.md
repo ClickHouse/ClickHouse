@@ -330,7 +330,7 @@ TTL date_time + INTERVAL 15 HOUR
 Примеры:
 
 ```sql
-CREATE TABLE ttl 
+CREATE TABLE example_table 
 (
     d DateTime,
     a Int TTL d + interval 1 month,
@@ -341,15 +341,15 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d;
 
--- добавление ttl на колонку существующей таблицы
+-- добавление TTL на колонку существующей таблицы
 
-ALTER TABLE ttl
+ALTER TABLE example_table
     MODIFY COLUMN
     c String TTL d + interval 1 day;
     
--- изменение ttl у колонки
+-- изменение TTL у колонки
 
-ALTER TABLE ttl
+ALTER TABLE example_table
     MODIFY COLUMN
     c String TTL d + interval 1 month;
 ```
@@ -361,7 +361,7 @@ ALTER TABLE ttl
 Примеры:
 
 ```sql
-CREATE TABLE ttl 
+CREATE TABLE example_table 
 (
     d DateTime,
     a Int
@@ -373,7 +373,7 @@ TTL d + interval 1 month;
 
 -- Изменение TTL 
 
-ALTER TABLE ttl
+ALTER TABLE example_table
     MODIFY TTL d + interval 1 day;
 ```
 
