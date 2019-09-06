@@ -45,6 +45,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
+#include <Interpreters/AnalyzedJoin.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
