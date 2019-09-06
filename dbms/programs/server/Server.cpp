@@ -55,6 +55,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
+#include <Common/SensitiveDataMasker.h>
 
 
 #if defined(__linux__)
@@ -279,8 +280,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
           */
         LOG_INFO(log, "Shutting down storages.");
 
-        // global_context is the owner of sensitive_data_masker, which will be destoyed after global_context->shutdown() call
-        setLoggerSensitiveDataMasker(logger(), nullptr);
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shutted down storages.");
@@ -414,7 +413,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (config().has("query_masking_rules"))
     {
-        global_context->setSensitiveDataMasker(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
@@ -426,10 +425,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             setTextLog(global_context->getTextLog());
             buildLoggers(*config, logger());
-            if (auto masker = global_context->getSensitiveDataMasker())
-            {
-                setLoggerSensitiveDataMasker(logger(), masker);
-            }
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
