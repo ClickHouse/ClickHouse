@@ -44,7 +44,7 @@ Flushes buffers of log messages to system tables (e.g. system.query_log). Allows
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
-Reloads ClickHouse configuration. Used when configuration is stored in zookeeeper.
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeeper.
 
 ## SHUTDOWN {#query_language-system-shutdown}
 
