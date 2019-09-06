@@ -26,9 +26,6 @@ class ASTExpressionList;
 class ASTSelectQuery;
 struct ASTTablesInSelectQueryElement;
 
-struct SyntaxAnalyzerResult;
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
-
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
@@ -222,9 +219,9 @@ private:
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
-    SubqueryForSet & getSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element);
-    ExpressionActionsPtr createJoinedBlockActions() const;
-    void makeHashJoin(const ASTTablesInSelectQueryElement & join_element, SubqueryForSet & subquery_for_set) const;
+    void makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, const ExpressionActionsPtr & joined_block_actions,
+                             SubqueryForSet & subquery_for_set) const;
 
     const ASTSelectQuery * getAggregatingQuery() const;
 };

@@ -31,6 +31,7 @@
 #include <Common/ProfileEvents.h>
 
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Common/SensitiveDataMasker.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -76,7 +77,7 @@ static String prepareQueryForLogging(const String & query, Context & context)
 
     // wiping sensitive data before cropping query by log_queries_cut_to_length,
     // otherwise something like credit card without last digit can go to log
-    if (auto masker = context.getSensitiveDataMasker())
+    if (auto masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
         if (matches > 0)
