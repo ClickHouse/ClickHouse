@@ -133,7 +133,6 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
                         ErrorCodes::LOGICAL_ERROR);
 
             res.reset(new LockHolderImpl(shared_from_this(), current_owner_group));
-            res.make_shared(shared_from_this(), current_owner_group);
             ++current_owner_group->referers;
 
             ++owner_queries[query_id];
