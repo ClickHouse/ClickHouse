@@ -431,8 +431,14 @@ private:
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
-            else if (!home_path.empty())
-                history_file = home_path + "/.clickhouse-client-history";
+            else
+            {
+                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                if (history_file_from_env)
+                    history_file = history_file_from_env;
+                else if (!home_path.empty())
+                    history_file = home_path + "/.clickhouse-client-history";
+            }
 
             if (!history_file.empty())
             {
