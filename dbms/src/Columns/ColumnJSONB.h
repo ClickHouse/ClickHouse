@@ -12,14 +12,14 @@
 namespace DB
 {
 
-class ColumnSmallestJSON;
-using ColumnSmallestJSONStruct = JSONStructAndDataColumn;
-using ColumnSmallestJSONStructPtr = std::shared_ptr<ColumnSmallestJSONStruct>;
+class ColumnJSONB;
+using ColumnJSONBStruct = JSONStructAndDataColumn;
+using ColumnJSONBStructPtr = std::shared_ptr<ColumnJSONBStruct>;
 
-class ColumnSmallestJSON final : public COWHelper<IColumn, ColumnSmallestJSON>
+class ColumnJSONB final : public COWHelper<IColumn, ColumnJSONB>
 {
 public:
-    const char * getFamilyName() const override { return "SmallestJSON"; }
+    const char * getFamilyName() const override { return "JSONB"; }
 
     size_t size() const override { return mark_columns.empty() ? 0 : mark_columns[0]->size(); }
 
@@ -74,20 +74,20 @@ public:
     IColumn * createDataColumn(const DataTypePtr & type);
 
 private:
-    ColumnSmallestJSONStructPtr info;
+    ColumnJSONBStructPtr info;
     std::vector<WrappedPtr> mark_columns;
     std::vector<WrappedPtr> data_columns;
 
     IColumn * insertBulkRowsWithDefaultValue(IColumn * column, size_t to_size);
 
-    void insertNewStructFrom(const ColumnSmallestJSONStructPtr & source_struct, ColumnSmallestJSONStructPtr & to_struct, size_t offset, size_t limit, size_t old_size);
+    void insertNewStructFrom(const ColumnJSONBStructPtr & source_struct, ColumnJSONBStructPtr & to_struct, size_t offset, size_t limit, size_t old_size);
 
 public:
-    ColumnSmallestJSON();
+    ColumnJSONB();
 
-    ColumnSmallestJSONStructPtr getStruct() { return info; }
+    ColumnJSONBStructPtr getStruct() { return info; }
 
-    ColumnSmallestJSONStructPtr getStruct() const { return info; }
+    ColumnJSONBStructPtr getStruct() const { return info; }
 
     std::vector<WrappedPtr> & getFields() { return data_columns; }
 

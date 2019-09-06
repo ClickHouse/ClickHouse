@@ -1,5 +1,5 @@
 #include <Columns/JSONStructAndDataColumn.h>
-#include <Columns/ColumnSmallestJSON.h>
+#include <Columns/ColumnJSONB.h>
 #include "JSONStructAndDataColumn.h"
 
 
@@ -17,7 +17,7 @@ JSONStructAndDataColumn::JSONStructAndDataColumn(
 IColumn * JSONStructAndDataColumn::getOrCreateMarkColumn()
 {
     if (!mark_column)
-        mark_column = static_cast<ColumnSmallestJSON *>(column)->createMarkColumn();
+        mark_column = static_cast<ColumnJSONB *>(column)->createMarkColumn();
 
     return mark_column;
 }
@@ -37,7 +37,7 @@ IColumn * JSONStructAndDataColumn::getOrCreateDataColumn(const DataTypePtr & typ
         if (type->getTypeId() == data_columns[index].first->getTypeId())
             return data_columns[index].second;
 
-    data_columns.push_back(std::make_pair(type, static_cast<ColumnSmallestJSON *>(column)->createDataColumn(type)));
+    data_columns.push_back(std::make_pair(type, static_cast<ColumnJSONB *>(column)->createDataColumn(type)));
     return data_columns.back().second;
 }
 

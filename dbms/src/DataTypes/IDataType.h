@@ -516,7 +516,7 @@ struct WhichDataType
     bool isString() const { return idx == TypeIndex::String; }
     bool isFixedString() const { return idx == TypeIndex::FixedString; }
     bool isStringOrFixedString() const { return isString() || isFixedString(); }
-    bool isSmallestJSON() const { return idx == TypeIndex::SmallestJSON; }
+    bool isJSONB() const { return idx == TypeIndex::JSONB; }
 
     bool isUUID() const { return idx == TypeIndex::UUID; }
     bool isArray() const { return idx == TypeIndex::Array; }

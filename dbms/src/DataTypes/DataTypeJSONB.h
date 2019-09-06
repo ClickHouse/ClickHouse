@@ -1,23 +1,23 @@
 #pragma once
 
-#include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <Columns/ColumnJSONB.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnSmallestJSON.h>
-#include "DataTypes/SmallestJSON/SmallestJSONSerialization.h"
+#include <DataTypes/JSONB/JSONBSerialization.h>
+#include <DataTypes/DataTypeWithSimpleSerialization.h>
 
 namespace DB
 {
 
-class DataTypeSmallestJSON final : public IDataType
+class DataTypeJSONB final : public IDataType
 {
 public:
-    DataTypeSmallestJSON(const DataTypes & nested_types);
+    DataTypeJSONB(const DataTypes & nested_types);
 
     Field getDefault() const override { return Null(); }
 
-    TypeIndex getTypeId() const override { return TypeIndex::SmallestJSON; }
-    const char * getFamilyName() const override { return "SmallestJSON"; }
+    TypeIndex getTypeId() const override { return TypeIndex::JSONB; }
+    const char * getFamilyName() const override { return "JSONB"; }
 
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 

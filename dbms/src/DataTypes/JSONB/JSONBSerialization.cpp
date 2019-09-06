@@ -1,11 +1,11 @@
-#include <DataTypes/SmallestJSON/SmallestJSONSerialization.h>
+#include <DataTypes/JSONB/JSONBSerialization.h>
 #include <ext/bit_cast.h>
 #include <Columns/ColumnString.h>
 #include <rapidjson/prettywriter.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/SmallestJSON/BufferSmallestJSONStream.h>
-#include <DataTypes/SmallestJSON/SmallestJSONStreamFactory.h>
-#include <DataTypes/SmallestJSON/PODArraySmallestJSONStream.h>
+#include <DataTypes/JSONB/JSONBStreamBuffer.h>
+#include <DataTypes/JSONB/JSONBStreamFactory.h>
+#include <DataTypes/JSONB/JSONBStreamPODArray.h>
 
 
 namespace DB
@@ -21,15 +21,15 @@ namespace
     const static DataTypePtr & STRING_DATA_TYPE = std::make_shared<DataTypeString>();
     const static DataTypePtr & BOOLEAN_DATA_TYPE = std::make_shared<DataTypeUInt8>();
 
-    inline UInt8 maybeFillingJSONTypeToMark(const ColumnSmallestJSONStructPtr & struct_info)
+    inline UInt8 maybeFillingJSONTypeToMark(const ColumnJSONBStructPtr & struct_info)
     {
-        return struct_info->data_columns.size() == 1 && !struct_info->children.empty() ? UInt8(TypeIndex::SmallestJSON) : UInt8(TypeIndex::Nothing);
+        return struct_info->data_columns.size() == 1 && !struct_info->children.empty() ? UInt8(TypeIndex::JSONB) : UInt8(TypeIndex::Nothing);
     }
 
-    static inline void normalizeForDeserialize(ColumnSmallestJSON & column, size_t old_column_size)
+    static inline void normalizeForDeserialize(ColumnJSONB & column, size_t old_column_size)
     {
-        std::vector<ColumnSmallestJSON::WrappedPtr> & marks = column.getMarks();
-        std::vector<ColumnSmallestJSON::WrappedPtr> & fields = column.getFields();
+        std::vector<ColumnJSONB::WrappedPtr> & marks = column.getMarks();
+        std::vector<ColumnJSONB::WrappedPtr> & fields = column.getFields();
 
         for (size_t index = 0; index < marks.size(); ++index)
             if (marks[index]->size() == old_column_size)
@@ -46,10 +46,10 @@ struct JSONStructAndColumnBinder
     typedef char Ch;
 
     size_t row_size;
-    ColumnSmallestJSONStructPtr parent_struct_info;
-    ColumnSmallestJSONStructPtr current_struct_info;
+    ColumnJSONBStructPtr parent_struct_info;
+    ColumnJSONBStructPtr current_struct_info;
 
-    JSONStructAndColumnBinder(size_t row_size, ColumnSmallestJSONStructPtr & struct_info)
+    JSONStructAndColumnBinder(size_t row_size, ColumnJSONBStructPtr & struct_info)
         : row_size(row_size), parent_struct_info(struct_info), current_struct_info(struct_info)
     {
     }
@@ -188,7 +188,7 @@ struct JSONStructAndColumnBinder
         parent_struct_info = current_struct_info;
 
         if (current_struct_info->mark_column)
-            NumberImpl<true>(current_struct_info->mark_column, UInt8(TypeIndex::SmallestJSON));
+            NumberImpl<true>(current_struct_info->mark_column, UInt8(TypeIndex::JSONB));
 
         return true;
     }
@@ -207,27 +207,27 @@ struct JSONStructAndColumnBinder
 
     bool StartArray()
     {
-        throw Exception("SmallestJSON type does not support parse array json.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("JSONB type does not support parse array json.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool EndArray(rapidjson::SizeType /*type*/)
     {
-        throw Exception("SmallestJSON type does not support parse array json.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("JSONB type does not support parse array json.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 
 
 template <typename InputStream>
-void SmallestJSONSerialization::deserialize(DB::IColumn & column_, const DB::FormatSettings & settings, InputStream & input_stream)
+void JSONBSerialization::deserialize(DB::IColumn & column_, const DB::FormatSettings & settings, InputStream & input_stream)
 {
     rapidjson::Reader reader;
-    ColumnSmallestJSON & column = static_cast<ColumnSmallestJSON &>(column_);
+    ColumnJSONB & column = static_cast<ColumnJSONB &>(column_);
 
     if (likely(!settings.input_allow_errors_num && !settings.input_allow_errors_ratio))
     {
         /// In this case, we don't need any rollback operations.
         const size_t old_column_rows = column.size();
-        ColumnSmallestJSONStructPtr json_struct = column.getStruct();
+        ColumnJSONBStructPtr json_struct = column.getStruct();
         JSONStructAndColumnBinder fields_binder = JSONStructAndColumnBinder(old_column_rows, json_struct);
 
         input_stream.SkipQuoted();
@@ -241,8 +241,8 @@ void SmallestJSONSerialization::deserialize(DB::IColumn & column_, const DB::For
     {
         /// In this case, it's always slow.
         MutableColumnPtr temp_column = column.cloneEmpty();
-        ColumnSmallestJSON * temp_json_column = static_cast<ColumnSmallestJSON *>(temp_column.get());
-        ColumnSmallestJSONStructPtr json_struct = temp_json_column->getStruct();
+        ColumnJSONB * temp_json_column = static_cast<ColumnJSONB *>(temp_column.get());
+        ColumnJSONBStructPtr json_struct = temp_json_column->getStruct();
         JSONStructAndColumnBinder fields_binder = JSONStructAndColumnBinder(temp_column->size(), json_struct);
 
         input_stream.SkipQuoted();
@@ -256,23 +256,23 @@ void SmallestJSONSerialization::deserialize(DB::IColumn & column_, const DB::For
 
 
 template <TypeIndex type_index, typename ColumnType, typename RapidWrite>
-void formatJSONNumber(const IColumn &column, size_t row_num, RapidWrite &writer);
+void formatJSONNumber(const IColumn & column, size_t row_num, RapidWrite & writer);
 
 template <typename RapidWrite>
-void formatJSONString(const IColumn &column, size_t row_num, RapidWrite &writer);
+void formatJSONString(const IColumn & column, size_t row_num, RapidWrite & writer);
 
 template <typename RapidWrite>
-void formatJSONObject(const ColumnSmallestJSONStructPtr &struct_info, size_t row_num, RapidWrite &writer);
+void formatJSONObject(const ColumnJSONBStructPtr & struct_info, size_t row_num, RapidWrite & writer);
 
 template <typename RapidWrite>
-void formatJSON(const ColumnSmallestJSONStructPtr &struct_info, size_t row_num, RapidWrite &writer);
+void formatJSON(const ColumnJSONBStructPtr & struct_info, size_t row_num, RapidWrite & writer);
 
 template<typename OutputStream>
-void SmallestJSONSerialization::serialize(const IColumn & column, size_t row_num, OutputStream & output_stream)
+void JSONBSerialization::serialize(const IColumn & column, size_t row_num, OutputStream & output_stream)
 {
     rapidjson::Writer<OutputStream> writer(output_stream);
-    const ColumnSmallestJSON & smallest_json_column = typeid_cast<const ColumnSmallestJSON &>(column);
-    formatJSON(smallest_json_column.getStruct(), row_num, writer);
+    const ColumnJSONB & serialization_json_column = typeid_cast<const ColumnJSONB &>(column);
+    formatJSON(serialization_json_column.getStruct(), row_num, writer);
 }
 
 
@@ -294,7 +294,7 @@ void formatJSONNumber(const IColumn & column, size_t row_num, RapidWrite & write
 }
 
 template <typename RapidWrite>
-void formatJSONObject(const ColumnSmallestJSONStructPtr &struct_info, size_t row_num, RapidWrite &writer)
+void formatJSONObject(const ColumnJSONBStructPtr & struct_info, size_t row_num, RapidWrite & writer)
 {
     writer.StartObject();
     for (const auto & struct_children : struct_info->children)
@@ -303,7 +303,7 @@ void formatJSONObject(const ColumnSmallestJSONStructPtr &struct_info, size_t row
 }
 
 template <typename RapidWrite>
-void formatJSONString(const IColumn &column, size_t row_num, RapidWrite &writer)
+void formatJSONString(const IColumn & column, size_t row_num, RapidWrite & writer)
 {
     const ColumnString & data_column = static_cast<const ColumnString &>(column);
 
@@ -312,16 +312,19 @@ void formatJSONString(const IColumn &column, size_t row_num, RapidWrite &writer)
 }
 
 template <typename RapidWrite>
-void formatJSON(const ColumnSmallestJSONStructPtr & struct_info, size_t row_num, RapidWrite & writer)
+void formatJSON(const ColumnJSONBStructPtr & struct_info, size_t row_num, RapidWrite & writer)
 {
+    const ColumnUInt8 * mark_column = static_cast<const ColumnUInt8 *>(struct_info->mark_column);
+
+    if (mark_column && mark_column->getData()[row_num] == UInt8(TypeIndex::Nothing))
+        return;
+
     if (!struct_info->name.empty())
         writer.Key(struct_info->name.data(), struct_info->name.size());
 
-    const ColumnUInt8 * mark_column = static_cast<const ColumnUInt8 *>(struct_info->mark_column);
-
     if (!mark_column && !struct_info->children.empty())
         formatJSONObject(struct_info, row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::SmallestJSON))
+    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::JSONB))
         formatJSONObject(struct_info, row_num, writer);
     else if (mark_column->getData()[row_num] == UInt8(TypeIndex::UInt8))
         formatJSONNumber<TypeIndex::UInt8, UInt8>(*struct_info->getDataColumn(BOOLEAN_DATA_TYPE), row_num, writer);
@@ -339,19 +342,19 @@ void formatJSON(const ColumnSmallestJSONStructPtr & struct_info, size_t row_num,
         formatJSONString(*struct_info->getDataColumn(STRING_DATA_TYPE), row_num, writer);
 }
 
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::CSV>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::CSV> &);
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::JSON>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::JSON> &);
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::QUOTED>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::QUOTED> &);
-template void SmallestJSONSerialization::serialize<BufferSmallestJSONStream<WriteBuffer, FormatStyle::ESCAPED>>(const IColumn &, size_t, BufferSmallestJSONStream<WriteBuffer, FormatStyle::ESCAPED> &);
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::CSV>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::CSV> &);
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::JSON>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::JSON> &);
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::QUOTED>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::QUOTED> &);
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::ESCAPED>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::ESCAPED> &);
 
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::CSV>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::CSV> &);
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::JSON>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::JSON> &);
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::QUOTED>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::QUOTED> &);
-template void SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::ESCAPED>>(IColumn &, const FormatSettings &, PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::ESCAPED> &);
+template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::CSV>>(IColumn &, const FormatSettings &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::CSV> &);
+template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::JSON>>(IColumn &, const FormatSettings &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::JSON> &);
+template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::QUOTED>>(IColumn &, const FormatSettings &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::QUOTED> &);
+template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED>>(IColumn &, const FormatSettings &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED> &);
 
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::CSV>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::CSV> &);
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::JSON>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::JSON> &);
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::QUOTED>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::QUOTED> &);
-template void SmallestJSONSerialization::deserialize<BufferSmallestJSONStream<ReadBuffer, FormatStyle::ESCAPED>>(IColumn &, const FormatSettings &, BufferSmallestJSONStream<ReadBuffer, FormatStyle::ESCAPED> &);
+template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::CSV>>(IColumn &, const FormatSettings &, JSONBStreamBuffer<ReadBuffer, FormatStyle::CSV> &);
+template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::JSON>>(IColumn &, const FormatSettings &, JSONBStreamBuffer<ReadBuffer, FormatStyle::JSON> &);
+template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::QUOTED>>(IColumn &, const FormatSettings &, JSONBStreamBuffer<ReadBuffer, FormatStyle::QUOTED> &);
+template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::ESCAPED>>(IColumn &, const FormatSettings &, JSONBStreamBuffer<ReadBuffer, FormatStyle::ESCAPED> &);
 
 }

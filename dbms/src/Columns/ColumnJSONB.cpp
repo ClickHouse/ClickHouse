@@ -1,6 +1,6 @@
 #include <utility>
 
-#include <Columns/ColumnSmallestJSON.h>
+#include <Columns/ColumnJSONB.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -8,9 +8,9 @@
 #include <IO/WriteHelpers.h>
 #include <rapidjson/reader.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/SmallestJSON/BufferSmallestJSONStream.h>
-#include <DataTypes/SmallestJSON/SmallestJSONSerialization.h>
-#include <DataTypes/SmallestJSON/SmallestJSONStreamFactory.h>
+#include <DataTypes/JSONB/JSONBStreamBuffer.h>
+#include <DataTypes/JSONB/JSONBSerialization.h>
+#include <DataTypes/JSONB/JSONBStreamFactory.h>
 
 
 namespace DB
@@ -21,21 +21,21 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-Field ColumnSmallestJSON::operator[](size_t row_num) const
+Field ColumnJSONB::operator[](size_t row_num) const
 {
     FormatSettings settings{};
     WriteBufferFromOwnString buffer;
-    SmallestJSONSerialization::serialize(*this, row_num,
-        SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<WriteBuffer *>(&buffer), settings));
+    JSONBSerialization::serialize(*this, row_num,
+        JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<WriteBuffer *>(&buffer), settings));
     return Field(buffer.str());
 }
 
-void ColumnSmallestJSON::get(size_t rows, Field & res) const
+void ColumnJSONB::get(size_t rows, Field & res) const
 {
     res = operator[](rows);
 }
 
-void ColumnSmallestJSON::insertDefault()
+void ColumnJSONB::insertDefault()
 {
     /// Default value is TypeIndex::Nothing
     for (size_t index = 0; index < mark_columns.size(); ++index)
@@ -45,31 +45,31 @@ void ColumnSmallestJSON::insertDefault()
         data_columns[index]->insertDefault();
 }
 
-void ColumnSmallestJSON::insert(const Field & field)
+void ColumnJSONB::insert(const Field & field)
 {
     const String & s = DB::get<const String &>(field);
     insertData(s.data(), s.size());
 }
 
-void ColumnSmallestJSON::insertData(const char * pos, size_t length)
+void ColumnJSONB::insertData(const char * pos, size_t length)
 {
     FormatSettings settings{};
     ReadBufferFromMemory buffer(pos, length);
-    SmallestJSONSerialization::deserialize(*this, settings,
-        SmallestJSONStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
+    JSONBSerialization::deserialize(*this, settings, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
 }
 
-void ColumnSmallestJSON::insertFrom(const IColumn & src, size_t row_num)
+void ColumnJSONB::insertFrom(const IColumn & src, size_t row_num)
 {
     insertRangeFrom(src, row_num, 1);
 }
 
-void ColumnSmallestJSON::insertRangeFrom(const IColumn & src_, size_t offset, size_t limit)
+void ColumnJSONB::insertRangeFrom(const IColumn & src, size_t offset, size_t limit)
 {
-    const auto & source_column = static_cast<const ColumnSmallestJSON &>(src_);
+    limit = limit ? limit : src.size();
+    const auto & source_column = static_cast<const ColumnJSONB &>(src);
 
     size_t old_size = size();
-    size_t new_size = old_size + (limit ? limit : source_column.size());
+    size_t new_size = old_size + limit;
     insertNewStructFrom(source_column.info, info, offset, limit, old_size);
 
     for (size_t index = 0; index < mark_columns.size(); ++index)
@@ -79,15 +79,24 @@ void ColumnSmallestJSON::insertRangeFrom(const IColumn & src_, size_t offset, si
         insertBulkRowsWithDefaultValue(data_columns[index].get(), new_size);
 }
 
-void ColumnSmallestJSON::insertNewStructFrom(
-    const ColumnSmallestJSONStructPtr & source_struct, ColumnSmallestJSONStructPtr & to_struct, size_t offset, size_t limit, size_t old_size)
+void ColumnJSONB::insertNewStructFrom(
+    const ColumnJSONBStructPtr & source_struct, ColumnJSONBStructPtr & to_struct, size_t offset, size_t limit, size_t old_size)
 {
     if (!source_struct->children.empty())
     {
         for (const auto & children : source_struct->children)
         {
-            ColumnSmallestJSONStructPtr children_struct = to_struct->getOrCreateChildren(children->name);
+            ColumnJSONBStructPtr children_struct = to_struct->getOrCreateChildren(children->name);
             insertNewStructFrom(children, children_struct, offset, limit, old_size);
+        }
+
+        if (!source_struct->mark_column && to_struct->mark_column)
+        {
+            auto to_marks_column = static_cast<ColumnUInt8 *>(to_struct->getOrCreateMarkColumn());
+            ColumnUInt8::Container & to_marks_column_data = to_marks_column->getData();
+
+            for (size_t index = 0; index < limit; ++index)
+                to_marks_column_data.push_back(UInt8(TypeIndex::JSONB));
         }
     }
 
@@ -104,7 +113,7 @@ void ColumnSmallestJSON::insertNewStructFrom(
     }
 }
 
-void ColumnSmallestJSON::popBack(size_t n)
+void ColumnJSONB::popBack(size_t n)
 {
     for (size_t index = 0; index < mark_columns.size(); ++index)
         mark_columns[index]->popBack(n);
@@ -113,7 +122,7 @@ void ColumnSmallestJSON::popBack(size_t n)
         data_columns[index]->popBack(n);
 }
 
-size_t ColumnSmallestJSON::byteSize() const
+size_t ColumnJSONB::byteSize() const
 {
     size_t bytes_size = 0;
 
@@ -126,7 +135,7 @@ size_t ColumnSmallestJSON::byteSize() const
     return bytes_size;
 }
 
-size_t ColumnSmallestJSON::allocatedBytes() const
+size_t ColumnJSONB::allocatedBytes() const
 {
     size_t allocated_size = 0;
 
@@ -139,7 +148,7 @@ size_t ColumnSmallestJSON::allocatedBytes() const
     return allocated_size;
 }
 
-void ColumnSmallestJSON::updateHashWithValue(size_t n, SipHash & hash) const
+void ColumnJSONB::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (size_t index = 0; index < mark_columns.size(); ++index)
         mark_columns[index]->updateHashWithValue(n, hash);
@@ -148,9 +157,9 @@ void ColumnSmallestJSON::updateHashWithValue(size_t n, SipHash & hash) const
         data_columns[index]->updateHashWithValue(n, hash);
 }
 
-ColumnPtr ColumnSmallestJSON::filter(const IColumn::Filter & filter, ssize_t result_size_hint) const
+ColumnPtr ColumnJSONB::filter(const IColumn::Filter & filter, ssize_t result_size_hint) const
 {
-    ColumnSmallestJSON::MutablePtr filtered_column = ColumnSmallestJSON::create();
+    ColumnJSONB::MutablePtr filtered_column = ColumnJSONB::create();
 
     filtered_column->data_columns.reserve(data_columns.size());
     filtered_column->mark_columns.reserve(mark_columns.size());
@@ -173,9 +182,9 @@ ColumnPtr ColumnSmallestJSON::filter(const IColumn::Filter & filter, ssize_t res
     return filtered_column;
 }
 
-ColumnPtr ColumnSmallestJSON::permute(const IColumn::Permutation & perm, size_t limit) const
+ColumnPtr ColumnJSONB::permute(const IColumn::Permutation & perm, size_t limit) const
 {
-    ColumnSmallestJSON::MutablePtr permuted_column = ColumnSmallestJSON::create();
+    ColumnJSONB::MutablePtr permuted_column = ColumnJSONB::create();
 
     permuted_column->data_columns.reserve(data_columns.size());
     permuted_column->mark_columns.reserve(mark_columns.size());
@@ -198,9 +207,9 @@ ColumnPtr ColumnSmallestJSON::permute(const IColumn::Permutation & perm, size_t 
     return permuted_column;
 }
 
-ColumnPtr ColumnSmallestJSON::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnJSONB::index(const IColumn & indexes, size_t limit) const
 {
-    ColumnSmallestJSON::MutablePtr indexed_column = ColumnSmallestJSON::create();
+    ColumnJSONB::MutablePtr indexed_column = ColumnJSONB::create();
 
     indexed_column->data_columns.reserve(data_columns.size());
     indexed_column->mark_columns.reserve(mark_columns.size());
@@ -223,9 +232,9 @@ ColumnPtr ColumnSmallestJSON::index(const IColumn & indexes, size_t limit) const
     return indexed_column;
 }
 
-ColumnPtr ColumnSmallestJSON::replicate(const IColumn::Offsets & offsets) const
+ColumnPtr ColumnJSONB::replicate(const IColumn::Offsets & offsets) const
 {
-    ColumnSmallestJSON::MutablePtr replicated_column = ColumnSmallestJSON::create();
+    ColumnJSONB::MutablePtr replicated_column = ColumnJSONB::create();
 
     replicated_column->data_columns.reserve(data_columns.size());
     replicated_column->mark_columns.reserve(mark_columns.size());
@@ -248,10 +257,10 @@ ColumnPtr ColumnSmallestJSON::replicate(const IColumn::Offsets & offsets) const
     return replicated_column;
 }
 
-std::vector<MutableColumnPtr> ColumnSmallestJSON::scatter(IColumn::ColumnIndex /*num_columns*/, const IColumn::Selector & /*selector*/) const
+std::vector<MutableColumnPtr> ColumnJSONB::scatter(IColumn::ColumnIndex /*num_columns*/, const IColumn::Selector & /*selector*/) const
 {
     throw Exception("", ErrorCodes::NOT_IMPLEMENTED);
-//    ColumnSmallestJSON::MutablePtr indexed_column = ColumnSmallestJSON::create();
+//    ColumnJSONB::MutablePtr indexed_column = ColumnJSONB::create();
 //
 //    indexed_column->data_columns.reserve(data_columns.size());
 //    indexed_column->mark_columns.reserve(mark_columns.size());
@@ -274,42 +283,42 @@ std::vector<MutableColumnPtr> ColumnSmallestJSON::scatter(IColumn::ColumnIndex /
 //    return indexed_column;
 }
 
-void ColumnSmallestJSON::gather(ColumnGathererStream & /*gatherer_stream*/)
+void ColumnJSONB::gather(ColumnGathererStream & /*gatherer_stream*/)
 {
     throw Exception("", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-StringRef ColumnSmallestJSON::getDataAt(size_t /*n*/) const
+StringRef ColumnJSONB::getDataAt(size_t /*n*/) const
 {
     throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void ColumnSmallestJSON::getExtremes(Field & /*min*/, Field & /*max*/) const
+void ColumnJSONB::getExtremes(Field & /*min*/, Field & /*max*/) const
 {
     throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-const char * ColumnSmallestJSON::deserializeAndInsertFromArena(const char * /*pos*/)
+const char * ColumnJSONB::deserializeAndInsertFromArena(const char * /*pos*/)
 {
     throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-StringRef ColumnSmallestJSON::serializeValueIntoArena(size_t /*n*/, Arena & /*arena*/, char const *& /*begin*/) const
+StringRef ColumnJSONB::serializeValueIntoArena(size_t /*n*/, Arena & /*arena*/, char const *& /*begin*/) const
 {
     throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-int ColumnSmallestJSON::compareAt(size_t /*n*/, size_t /*m*/, const IColumn & /*rhs*/, int /*nan_direction_hint*/) const
+int ColumnJSONB::compareAt(size_t /*n*/, size_t /*m*/, const IColumn & /*rhs*/, int /*nan_direction_hint*/) const
 {
     throw Exception("Method compareAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void ColumnSmallestJSON::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & /*res*/) const
+void ColumnJSONB::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & /*res*/) const
 {
     throw Exception("Method getPermutation is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-IColumn * ColumnSmallestJSON::insertBulkRowsWithDefaultValue(IColumn * column, size_t to_size)
+IColumn * ColumnJSONB::insertBulkRowsWithDefaultValue(IColumn * column, size_t to_size)
 {
     if (column->size() < to_size)
     {
@@ -350,24 +359,24 @@ IColumn * ColumnSmallestJSON::insertBulkRowsWithDefaultValue(IColumn * column, s
     return column;
 }
 
-ColumnSmallestJSON::ColumnSmallestJSON()
+ColumnJSONB::ColumnJSONB()
 {
-    info = std::make_shared<ColumnSmallestJSONStruct>(this);
+    info = std::make_shared<ColumnJSONBStruct>(this);
 }
 
-MutableColumnPtr ColumnSmallestJSON::cloneEmpty() const
+MutableColumnPtr ColumnJSONB::cloneEmpty() const
 {
-    return ColumnSmallestJSON::create();
+    return ColumnJSONB::create();
 }
 
-IColumn * ColumnSmallestJSON::createMarkColumn()
+IColumn * ColumnJSONB::createMarkColumn()
 {
     MutableColumnPtr mark_column = ColumnUInt8::create();
     mark_columns.push_back(std::move(mark_column));
     return mark_columns.back().get();
 }
 
-IColumn * ColumnSmallestJSON::createDataColumn(const DataTypePtr & type)
+IColumn * ColumnJSONB::createDataColumn(const DataTypePtr & type)
 {
     MutableColumnPtr data_column = type->createColumn();
     data_columns.push_back(std::move(data_column));
