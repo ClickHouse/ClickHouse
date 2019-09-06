@@ -388,9 +388,55 @@ When the values in the column expire, ClickHouse replaces them with the default 
 
 The `TTL` clause can't be used for key columns.
 
+Examples:
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int TTL d + interval 1 month,
+    b Int TTL d + interval 1 month,
+    c String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d;
+
+// adding TTL to a column of an existing table
+
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + interval 1 day;
+    
+// altering TTL of the column
+
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + interval 1 month;
+```
+
 **Table TTL**
 
 When data in a table expires, ClickHouse deletes all corresponding rows.
+
+Examples:
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + interval 1 month;
+
+-- altering of TTL 
+
+ALTER TABLE example_table
+    MODIFY TTL d + interval 1 day;
+```
 
 **Removing Data**
 
