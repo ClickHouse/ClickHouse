@@ -390,29 +390,35 @@ The `TTL` clause can't be used for key columns.
 
 Examples:
 
+Creating a table with TTL
+
 ```sql
 CREATE TABLE example_table 
 (
     d DateTime,
-    a Int TTL d + interval 1 month,
-    b Int TTL d + interval 1 month,
+    a Int TTL d + INTERVAL 1 MONTH,
+    b Int TTL d + INTERVAL 1 MONTH,
     c String
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d;
+```
 
--- adding TTL to a column of an existing table
+Adding TTL to a column of an existing table
 
+```sql
 ALTER TABLE example_table
     MODIFY COLUMN
-    c String TTL d + interval 1 day;
-    
--- altering TTL of the column
+    c String TTL d + INTERVAL 1 DAY;
+```
 
+Altering TTL of the column
+
+```sql
 ALTER TABLE example_table
     MODIFY COLUMN
-    c String TTL d + interval 1 month;
+    c String TTL d + INTERVAL 1 MONTH;
 ```
 
 **Table TTL**
@@ -420,6 +426,8 @@ ALTER TABLE example_table
 When data in a table expires, ClickHouse deletes all corresponding rows.
 
 Examples:
+
+Creating a table with TTL
 
 ```sql
 CREATE TABLE example_table 
@@ -430,12 +438,14 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + interval 1 month;
+TTL d + INTERVAL 1 MONTH;
+```
 
--- altering of TTL 
+Altering TTL of the table
 
+```sql
 ALTER TABLE example_table
-    MODIFY TTL d + interval 1 day;
+    MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
 **Removing Data**
