@@ -17,7 +17,7 @@ namespace Util
 /// It's used as a singelton via getInstance method
 
 /// Initially it's empty (nullptr) and after manual initialization
-/// (one-time, done by set call) it takes the proper value which
+/// (one-time, done by setInstance call) it takes the proper value which
 /// is stored in unique_ptr.
 
 /// It looks like the singelton is the best option here, as
