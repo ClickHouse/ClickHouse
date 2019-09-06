@@ -287,7 +287,8 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 @pytest.mark.parametrize("name,engine", [
     ("altering_mt","MergeTree()"),
-    ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
+    #("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
+    # SYSTEM STOP MERGES doesn't disable merges assignments
 ])
 def test_alter_move(start_cluster, name, engine):
     try:
@@ -520,93 +521,113 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
+@pytest.mark.parametrize("name,engine", [
+    ("alter_modifying_mt","MergeTree()"),
+    ("replicated_alter_modifying_mt","ReplicatedMergeTree('/clickhouse/replicated_alter_modifying_mt', '1')",),
+])
+def test_concurrent_alter_modify(start_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                EventDate Date,
+                number UInt64
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(EventDate)
+            SETTINGS storage_policy_name='jbods_with_external'
+        """.format(name=name, engine=engine))
 
+        def insert(num):
+            for i in range(num):
+                day = random.randint(11, 30)
+                value = random.randint(1, 1000000)
+                month = '0' + str(random.choice([3, 4]))
+                node1.query("INSERT INTO {} VALUES(toDate('2019-{m}-{d}'), {v})".format(name, m=month, d=day, v=value))
 
-'''
-## Test stand for multiple disks feature
+        def alter_move(num):
+            for i in range(num):
+                produce_alter_move(node1, name)
 
-Currently for manual tests, can be easily scripted to be the part of integration tests.
+        def alter_modify(num):
+            for i in range(num):
+                column_type = random.choice(["UInt64", "String"])
+                node1.query("ALTER TABLE {} MODIFY COLUMN number {}".format(name, column_type))
 
-To run you need to have docker & docker-compose.
+        insert(100)
 
-```
-(Check makefile)
-make run
-make ch1_shell
- > clickhouse-client
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"
 
-make logs # Ctrl+C
-make cleup
-```
+        p = Pool(50)
+        tasks = []
+        for i in range(5):
+            tasks.append(p.apply_async(alter_move, (100,)))
+            tasks.append(p.apply_async(alter_modify, (100,)))
 
-### basic
+        for task in tasks:
+            task.get(timeout=60)
 
-* allows to configure multiple disks & folumes & shemas
-* clickhouse check that all disks are write-accessible
-* clickhouse can create a table with provided storagepolicy
+        assert node1.query("SELECT 1") == "1\n"
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"
 
-### one volume-one disk custom storagepolicy
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
 
-* clickhouse puts data to correct folder when storagepolicy is used
-* clickhouse can do merges / detach / attach / freeze on that folder
+def test_simple_replication_and_moves(start_cluster):
+    try:
+        for i, node in enumerate([node1, node2]):
+            node.query("""
+                CREATE TABLE replicated_table_for_moves (
+                    s1 String
+                ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_moves', '{}')
+                ORDER BY tuple()
+                SETTINGS storage_policy_name='moving_jbod_with_external', old_parts_lifetime=5
+            """.format(i + 1))
 
-### one volume-multiple disks storagepolicy (JBOD scenario)
+        def insert(num):
+           for i in range(num):
+               node = random.choice([node1, node2])
+               data = [] # 1MB in total
+               for i in range(2):
+                   data.append(get_random_string(512 * 1024)) # 500KB value
+               node.query("INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
 
-* clickhouse uses round-robin to place new parts
-* clickhouse can do merges / detach / attach / freeze on that folder
+        def optimize(num):
+           for i in range(num):
+               node = random.choice([node1, node2])
+               node.query("OPTIMIZE TABLE replicated_table_for_moves FINAL")
 
-### two volumes-one disk per volume (fast expensive / slow cheap storage)
+        p = Pool(50)
+        tasks = []
+        tasks.append(p.apply_async(insert, (20,)))
+        tasks.append(p.apply_async(optimize, (20,)))
 
-* clickhouse uses round-robin to place new parts
-* clickhouse can do merges / detach / attach / freeze on that folder
-* clickhouse put parts to different volumes depending on part size
+        for task in tasks:
+            task.get(timeout=60)
 
-### use 'default' storagepolicy for tables created without storagepolicy provided.
+        node1.query("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
+        node2.query("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
 
+        assert node1.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
+        assert node2.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
 
-# ReplicatedMergeTree
+        data = [] # 1MB in total
+        for i in range(2):
+            data.append(get_random_string(512 * 1024)) # 500KB value
 
-....
+        time.sleep(5) # wait until old parts will be deleted
 
-For all above:
-clickhouse respect free space limitation setting.
-ClickHouse writes important disk-related information to logs.
+        node1.query("INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
+        node2.query("INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
 
-## Queries
+        time.sleep(3) # nothing was moved
 
-```
-CREATE TABLE table_with_storage_policy_default (id UInt64) Engine=MergeTree() ORDER BY (id);
+        disks1 = get_used_disks_for_table(node1, "replicated_table_for_moves")
+        disks2 = get_used_disks_for_table(node2, "replicated_table_for_moves")
 
-select name, data_paths, storage_policy from system.tables where name='table_with_storage_policy_default';
-"table_with_storage_policy_default","['/mainstorage/default/table_with_storage_policy_default/']","default"
+        assert set(disks1) == set(["jbod1", "external"])
+        assert set(disks2) == set(["jbod1", "external"])
+    finally:
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS replicated_table_for_moves")
 
-    INSERT INTO table_with_storage_policy_default SELECT rand64() FROM numbers(100);
-CREATE TABLE table_with_storage_policy_default_explicit           (id UInt64) Engine=MergeTree() ORDER BY (id) SETTINGS storage_table_with_storage_policy_name='default';
-CREATE TABLE table_with_storage_policy_default_disk_with_external (id UInt64) Engine=MergeTree() ORDER BY (id) SETTINGS storage_table_with_storage_policy_name='default_disk_with_external';
-CREATE TABLE table_with_storage_policy_jbod_with_external         (id UInt64) Engine=MergeTree() ORDER BY (id) SETTINGS storage_table_with_storage_policy_name='jbods_with_external';
-
-CREATE TABLE replicated_table_with_storage_policy_default                    (id UInt64) Engine=ReplicatedMergeTree('/clickhouse/tables/{database}/{table}', '{replica}') ORDER BY (id);
-CREATE TABLE replicated_table_with_storage_policy_default_explicit           (id UInt64) Engine=ReplicatedMergeTree('/clickhouse/tables/{database}/{table}', '{replica}') ORDER BY (id) SETTINGS storage_table_with_storage_policy_name='default';
-CREATE TABLE replicated_table_with_storage_policy_default_disk_with_external (id UInt64) Engine=ReplicatedMergeTree('/clickhouse/tables/{database}/{table}', '{replica}') ORDER BY (id) SETTINGS storage_table_with_storage_policy_name='default_disk_with_external';
-CREATE TABLE replicated_table_with_storage_policy_jbod_with_external         (id UInt64) Engine=ReplicatedMergeTree('/clickhouse/tables/{database}/{table}', '{replica}') ORDER BY (id) SETTINGS storage_table_with_storage_policy_name='jbods_with_external';
-```
-
-
-## Extra acceptance criterias
-
-* hardlinks problems. Thouse stetements should be able to work properly (or give a proper feedback) on multidisk scenarios
-  * ALTER TABLE ... UPDATE
-  * ALTER TABLE ... TABLE
-  * ALTER TABLE ... MODIFY COLUMN ...
-  * ALTER TABLE ... CLEAR COLUMN
-  * ALTER TABLE ... REPLACE PARTITION ...
-* Maintainance - system tables show proper values:
-  * system.parts
-  * system.tables
-  * system.part_log (target disk?)
-* New system table
-  * system.volumes
-  * system.disks
-  * system.storagepolicys
-* chown / create needed disk folders in docker
-'''
+#def test_replica_download_to_appropriate_disk(start_cluster):

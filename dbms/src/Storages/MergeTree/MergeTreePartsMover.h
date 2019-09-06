@@ -45,7 +45,8 @@ public:
 
     bool selectPartsForMove(
         MergeTreeMovingParts & parts_to_move,
-        const AllowedMovingPredicate & can_move);
+        const AllowedMovingPredicate & can_move,
+        const std::lock_guard<std::mutex> & moving_parts_lock);
 
     std::shared_ptr<const MergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
 
