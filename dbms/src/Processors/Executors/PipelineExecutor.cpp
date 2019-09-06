@@ -287,12 +287,6 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Stack & children, Stack & pa
     switch (node.last_processor_status)
     {
         case IProcessor::Status::NeedData:
-        {
-            add_neighbours_to_prepare_queue();
-            try_release_ownership();
-
-            break;
-        }
         case IProcessor::Status::PortFull:
         {
             add_neighbours_to_prepare_queue();

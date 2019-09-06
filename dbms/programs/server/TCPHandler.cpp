@@ -636,6 +636,13 @@ void TCPHandler::processTablesStatusRequest()
     response.write(*out, client_revision);
 }
 
+void TCPHandler::receiveUnexpectedTablesStatusRequest()
+{
+    TablesStatusRequest skip_request;
+    skip_request.read(*in, client_revision);
+
+    throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
@@ -725,6 +732,23 @@ void TCPHandler::receiveHello()
 }
 
 
+void TCPHandler::receiveUnexpectedHello()
+{
+    UInt64 skip_uint_64;
+    String skip_string;
+
+    readStringBinary(skip_string, *in);
+    readVarUInt(skip_uint_64, *in);
+    readVarUInt(skip_uint_64, *in);
+    readVarUInt(skip_uint_64, *in);
+    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in);
+
+    throw NetException("Unexpected packet Hello received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
+
+
 void TCPHandler::sendHello()
 {
     writeVarUInt(Protocol::Server::Hello, *out);
@@ -747,19 +771,19 @@ bool TCPHandler::receivePacket()
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
-//    std::cerr << "Packet: " << packet_type << std::endl;
+//    std::cerr << "Server got packet: " << Protocol::Client::toString(packet_type) << "\n";
 
     switch (packet_type)
     {
         case Protocol::Client::Query:
             if (!state.empty())
-                throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                receiveUnexpectedQuery();
             receiveQuery();
             return true;
 
         case Protocol::Client::Data:
             if (state.empty())
-                throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                receiveUnexpectedData();
             return receiveData();
 
         case Protocol::Client::Ping:
@@ -771,12 +795,11 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Hello:
-            throw Exception("Unexpected packet " + String(Protocol::Client::toString(packet_type)) + " received from client",
-                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            receiveUnexpectedHello();
 
         case Protocol::Client::TablesStatusRequest:
             if (!state.empty())
-                throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                receiveUnexpectedTablesStatusRequest();
             processTablesStatusRequest();
             out->next();
             return false;
@@ -845,6 +868,26 @@ void TCPHandler::receiveQuery()
     readStringBinary(state.query, *in);
 }
 
+void TCPHandler::receiveUnexpectedQuery()
+{
+    UInt64 skip_uint_64;
+    String skip_string;
+
+    readStringBinary(skip_string, *in);
+
+    ClientInfo & skip_client_info = query_context->getClientInfo();
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+        skip_client_info.read(*in, client_revision);
+
+    Settings & skip_settings = query_context->getSettingsRef();
+    skip_settings.deserialize(*in);
+
+    readVarUInt(skip_uint_64, *in);
+    readVarUInt(skip_uint_64, *in);
+    readStringBinary(skip_string, *in);
+
+    throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
 
 bool TCPHandler::receiveData()
 {
@@ -883,6 +926,27 @@ bool TCPHandler::receiveData()
         return false;
 }
 
+void TCPHandler::receiveUnexpectedData()
+{
+    String skip_external_table_name;
+    readStringBinary(skip_external_table_name, *in);
+
+    std::shared_ptr<ReadBuffer> maybe_compressed_in;
+
+    if (last_block_in.compression == Protocol::Compression::Enable)
+        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+    else
+        maybe_compressed_in = in;
+
+    auto skip_block_in = std::make_shared<NativeBlockInputStream>(
+            *maybe_compressed_in,
+            last_block_in.header,
+            client_revision,
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+
+    Block skip_block = skip_block_in->read();
+    throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
 
 void TCPHandler::initBlockInput()
 {
@@ -896,6 +960,9 @@ void TCPHandler::initBlockInput()
         Block header;
         if (state.io.out)
             header = state.io.out->getHeader();
+
+        last_block_in.header = header;
+        last_block_in.compression = state.compression;
 
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,

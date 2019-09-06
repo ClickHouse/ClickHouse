@@ -745,6 +745,30 @@ Block Aggregator::convertOneBucketToBlock(
     return block;
 }
 
+Block Aggregator::mergeAndConvertOneBucketToBlock(
+    ManyAggregatedDataVariants & variants,
+    Arena * arena,
+    bool final,
+    size_t bucket) const
+{
+    auto & merged_data = *variants[0];
+    auto method = merged_data.type;
+    Block block;
+
+    if (false) {}
+#define M(NAME) \
+    else if (method == AggregatedDataVariants::Type::NAME) \
+    { \
+        mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena); \
+        block = convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket); \
+    }
+
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+
+    return block;
+}
+
 
 template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
@@ -1654,9 +1678,7 @@ private:
     }
 };
 
-
-std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
-    ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
+ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const
 {
     if (data_variants.empty())
         throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
@@ -1670,7 +1692,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
             non_empty_data.push_back(data);
 
     if (non_empty_data.empty())
-        return std::make_unique<NullBlockInputStream>(getHeader(final));
+        return {};
 
     if (non_empty_data.size() > 1)
     {
@@ -1713,6 +1735,17 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
         first->aggregates_pools.insert(first->aggregates_pools.end(),
             non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
     }
+
+    return non_empty_data;
+}
+
+std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
+    ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
+{
+    ManyAggregatedDataVariants non_empty_data = prepareVariantsToMerge(data_variants);
+
+    if (non_empty_data.empty())
+        return std::make_unique<NullBlockInputStream>(getHeader(final));
 
     return std::make_unique<MergingAndConvertingBlockInputStream>(*this, non_empty_data, final, max_threads);
 }
