@@ -3,7 +3,6 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>

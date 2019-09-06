@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -11,6 +11,9 @@ namespace DB
 NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
 class ASTFunction;
+class AnalyzedJoin;
+class Context;
+struct SelectQueryOptions;
 
 struct SyntaxAnalyzerResult
 {
