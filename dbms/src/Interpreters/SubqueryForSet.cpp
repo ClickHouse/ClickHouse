@@ -1,5 +1,4 @@
 #include <Interpreters/SubqueryForSet.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <DataStreams/LazyBlockInputStream.h>
 
@@ -7,26 +6,14 @@ namespace DB
 {
 
 void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
-                                const std::unordered_map<String, String> & name_to_origin)
+                                NamesWithAliases && joined_block_aliases_)
 {
+    joined_block_aliases = std::move(joined_block_aliases_);
     source = std::make_shared<LazyBlockInputStream>(interpreter->getSampleBlock(),
                                                     [interpreter]() mutable { return interpreter->execute().in; });
 
-    for (const auto & names : name_to_origin)
-        joined_block_aliases.emplace_back(names.second, names.first);
-
     sample_block = source->getHeader();
-    for (const auto & name_with_alias : joined_block_aliases)
-    {
-        if (sample_block.has(name_with_alias.first))
-        {
-            auto pos = sample_block.getPositionByName(name_with_alias.first);
-            auto column = sample_block.getByPosition(pos);
-            sample_block.erase(pos);
-            column.name = name_with_alias.second;
-            sample_block.insert(std::move(column));
-        }
-    }
+    renameColumns(sample_block);
 }
 
 void SubqueryForSet::renameColumns(Block & block)

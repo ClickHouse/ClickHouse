@@ -29,7 +29,7 @@
 
 Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
-## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#function-multisearchany}
 Возвращает 1, если хотя бы одна подстрока needle<sub>i</sub> нашлась в строке `haystack` и 0 иначе.
 
 Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
@@ -77,7 +77,7 @@
 ## extractAll(haystack, pattern)
 Извлечение всех фрагментов строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Возвращается массив строк, состоящий из всех соответствий регулярному выражению. В остальном, поведение аналогично функции extract (по прежнему, вынимается первый subpattern, или всё выражение, если subpattern-а нет).
 
-## like(haystack, pattern), оператор haystack LIKE pattern
+## like(haystack, pattern), оператор haystack LIKE pattern {#function-like}
 Проверка строки на соответствие простому регулярному выражению.
 Регулярное выражение может содержать метасимволы `%` и `_`.
 
@@ -90,7 +90,7 @@
 Для регулярных выражений вида `%needle%` действует более оптимальный код, который работает также быстро, как функция `position`.
 Для остальных регулярных выражений, код аналогичен функции match.
 
-## notLike(haystack, pattern), оператор haystack NOT LIKE pattern
+## notLike(haystack, pattern), оператор haystack NOT LIKE pattern {#function-notlike}
 То же, что like, но с отрицанием.
 
 ## ngramDistance(haystack, needle)
