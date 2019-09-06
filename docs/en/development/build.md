@@ -67,7 +67,7 @@ export CXX=g++-9
 ## Install Required Libraries from Packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev gperf
+sudo apt-get install libicu-dev libreadline-dev gperf cmake ninja-build
 ```
 
 ## Checkout ClickHouse Sources
