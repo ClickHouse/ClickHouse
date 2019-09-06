@@ -62,11 +62,11 @@ public:
 
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
-    void work(size_t thread_num) override;
+    void work() override;
     Processors expandPipeline() override;
 
 protected:
-    void consume(Chunk chunk, size_t thread_num);
+    void consume(Chunk chunk);
 
 private:
     /// To read the data that was flushed into the temporary data file.
@@ -81,7 +81,6 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
-    std::mutex & mutex;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
 

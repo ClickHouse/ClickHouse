@@ -392,7 +392,6 @@ AggregatingTransform::AggregatingTransform(
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
-    , mutex(*many_data->mutexes[current_variant])
     , max_threads(std::min(many_data->variants.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
 {
@@ -463,13 +462,13 @@ IProcessor::Status AggregatingTransform::prepare()
     return Status::Ready;
 }
 
-void AggregatingTransform::work(size_t thread_num)
+void AggregatingTransform::work()
 {
     if (is_consume_finished)
         initGenerate();
     else
     {
-        consume(std::move(current_chunk), thread_num);
+        consume(std::move(current_chunk));
         read_current_chunk = false;
     }
 }
@@ -483,7 +482,7 @@ Processors AggregatingTransform::expandPipeline()
     return std::move(processors);
 }
 
-void AggregatingTransform::consume(Chunk chunk, size_t thread_num)
+void AggregatingTransform::consume(Chunk chunk)
 {
     UInt64 num_rows = chunk.getNumRows();
 
@@ -499,14 +498,7 @@ void AggregatingTransform::consume(Chunk chunk, size_t thread_num)
     src_rows += chunk.getNumRows();
     src_bytes += chunk.bytes();
 
-    if (thread_num > many_data->variants.size() && many_data->variants.size() > 1)
-        throw Exception("Invalid thread number for AggregatingTransform.", ErrorCodes::LOGICAL_ERROR);
-
-    auto & cur_variants = many_data->variants[thread_num];
-
-    std::lock_guard lg(*many_data->mutexes[thread_num]);
-
-    if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, *cur_variants, key_columns, aggregate_columns, no_more_keys))
+    if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
         is_consume_finished = true;
 }
 
@@ -516,8 +508,6 @@ void AggregatingTransform::initGenerate()
         return;
 
     is_generate_initialized = true;
-
-    std::lock_guard lg(mutex);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
