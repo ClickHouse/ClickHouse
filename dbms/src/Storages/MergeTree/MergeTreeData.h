@@ -276,7 +276,7 @@ public:
         const MergeTreeData & storage;
         const String source_dir;
         std::vector<std::pair<String, String>> old_and_new_names;
-        std::unordered_map<String, DiskSpace::DiskPtr> name_to_disk;
+        std::unordered_map<String, String> old_part_name_to_full_path;
         bool renamed = false;
     };
 
@@ -655,8 +655,14 @@ public:
         return storage_settings.get();
     }
 
+    /// Get table path on disk
     String getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const;
+
+    /// Get disk for part. Looping through directories on FS because some parts maybe not in
+    /// active dataparts set (detached)
     DiskSpace::DiskPtr getDiskForPart(const String & part_name, const String & relative_path = "") const;
+
+    /// Get full path for part. Uses getDiskForPart and returns the full path
     String getFullPathForPart(const String & part_name, const String & relative_path = "") const;
 
     Strings getDataPaths() const override;
@@ -666,7 +672,7 @@ public:
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
-    DiskSpace::ReservationPtr reserveOnMaxDiskWithoutReservation() { return storage_policy->reserveOnMaxDiskWithoutReservation(); }
+    DiskSpace::ReservationPtr makeEmptyReservationOnLargestDisk() { return storage_policy->makeEmptyReservationOnLargestDisk(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -733,7 +739,7 @@ public:
     /// as result of merge or mutation.
     DataParts currently_moving_parts;
 
-    /// Mutex for currenly_moving_parts
+    /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
 protected:
@@ -916,6 +922,7 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry);
 
+    /// If part is assigned to merge or mutation (possibly replicated)
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
     /// Moves part to specified space
@@ -925,6 +932,7 @@ protected:
     bool selectPartsAndMove();
 
 private:
+    /// RAII Wrapper for atomic work with currently moving parts
     struct CurrentlyMovingPartsTagger
     {
         MergeTreeMovingParts parts_to_move;
@@ -935,9 +943,13 @@ private:
         ~CurrentlyMovingPartsTagger();
     };
 
+    /// Move selected parts to corresponding volumes
     bool moveParts(CurrentlyMovingPartsTagger && parts_to_move);
 
+    /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTagger selectPartsForMove();
+
+    /// Check selected parts for movements. Used ALTER ... MOVE queries/
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, DiskSpace::SpacePtr space);
 };
 

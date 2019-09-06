@@ -233,8 +233,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     else
     {
-        /// We don't know real size of part because sender server version is old
-        reservation = data.reserveOnMaxDiskWithoutReservation();
+        /// We don't know real size of part because sender server version is too old
+        reservation = data.makeEmptyReservationOnLargestDisk();
     }
 
     return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);

@@ -470,7 +470,7 @@ ReservationPtr StoragePolicy::reserve(UInt64 expected_size) const
 }
 
 
-ReservationPtr StoragePolicy::reserveOnMaxDiskWithoutReservation() const
+ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
 {
     UInt64 max_space = 0;
     DiskPtr max_disk;

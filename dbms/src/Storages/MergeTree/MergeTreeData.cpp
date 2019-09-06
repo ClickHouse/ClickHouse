@@ -1874,16 +1874,15 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
 {
     old_and_new_names.push_back({old_name, new_name});
-    const auto disks = storage.getStoragePolicy()->getDisks();
-    for (const DiskSpace::DiskPtr & disk : disks)
+    const auto paths = storage.getDataPaths();
+    for (const auto & full_path : paths)
     {
-        const auto full_path = storage.getFullPathOnDisk(disk);
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
             String name = it.name();
             if (name == old_name)
             {
-                name_to_disk[old_name] = disk;
+                old_part_name_to_full_path[old_name] = full_path;
                 break;
             }
         }
@@ -1900,7 +1899,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             const auto & names = old_and_new_names[i];
             if (names.first.empty() || names.second.empty())
                 throw DB::Exception("Empty part name. Most likely it's a bug.", ErrorCodes::INCORRECT_FILE_NAME);
-            const auto full_path = storage.getFullPathOnDisk(name_to_disk[names.first]) + source_dir; /// old_name
+            const auto full_path = old_part_name_to_full_path[names.first] + source_dir; /// old_name
             Poco::File(full_path + names.first).renameTo(full_path + names.second);
         }
         catch (...)
@@ -1924,7 +1923,7 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
 
         try
         {
-            const auto full_path = storage.getFullPathOnDisk(name_to_disk[names.first]) + source_dir; /// old_name
+            const auto full_path = old_part_name_to_full_path[names.first] + source_dir; /// old_name
             Poco::File(full_path + names.second).renameTo(full_path + names.first);
         }
         catch (...)
@@ -2943,11 +2942,11 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
 
     renamed_parts.tryRenameAll();
 
-    for (auto & names : renamed_parts.old_and_new_names)
+    for (auto & [old_name, new_name] : renamed_parts.old_and_new_names)
     {
-        Poco::File(getFullPathOnDisk(renamed_parts.name_to_disk[names.first]) + "detached/" + names.second).remove(true);
-        LOG_DEBUG(log, "Dropped detached part " << names.first);
-        names.first.clear();
+        Poco::File(renamed_parts.old_part_name_to_full_path[old_name] + "detached/" + new_name).remove(true);
+        LOG_DEBUG(log, "Dropped detached part " << old_name);
+        old_name.clear();
     }
 }
 
@@ -3402,7 +3401,10 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     {
         /// Something went completely wrong
         if (!data.currently_moving_parts.count(moving_part.part))
+        {
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "TERMINATING ON PART:" << moving_part.part->name);
             std::terminate();
+        }
         data.currently_moving_parts.erase(moving_part.part);
     }
 }
@@ -3453,7 +3455,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
 
     std::lock_guard moving_lock(moving_parts_mutex);
 
-    parts_mover.selectPartsForMove(parts_to_move, can_move);
+    parts_mover.selectPartsForMove(parts_to_move, can_move, moving_lock);
     return CurrentlyMovingPartsTagger(std::move(parts_to_move), *this);
 }
 

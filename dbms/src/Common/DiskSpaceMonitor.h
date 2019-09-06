@@ -278,7 +278,7 @@ public:
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size!!!
-    ReservationPtr reserveOnMaxDiskWithoutReservation() const;
+    ReservationPtr makeEmptyReservationOnLargestDisk() const;
 
     const Volumes & getVolumes() const { return volumes; }
 
