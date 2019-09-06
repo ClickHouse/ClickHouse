@@ -341,13 +341,13 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d;
 
-// добавление ttl на колонку существующей таблицы
+-- добавление ttl на колонку существующей таблицы
 
 ALTER TABLE ttl
     MODIFY COLUMN
     c String TTL d + interval 1 day;
     
-// изменение ttl у колонки
+-- изменение ttl у колонки
 
 ALTER TABLE ttl
     MODIFY COLUMN
