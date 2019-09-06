@@ -860,4 +860,15 @@ Possible values:
 
 Default value: 0.
 
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
+
+Enables or disables throwing an exception if the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query have not performed a merge.
+
+Possible values:
+
+- 1 — Throwing an exception is enabled.
+- 0 — Throwing an exception is disabled.
+
+Default value: 0.
+
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
