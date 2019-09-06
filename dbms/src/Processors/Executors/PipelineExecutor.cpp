@@ -134,11 +134,11 @@ void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
     }
 }
 
-static void executeJob(IProcessor * processor, size_t thread_num)
+static void executeJob(IProcessor * processor)
 {
     try
     {
-        processor->work(thread_num);
+        processor->work();
     }
     catch (Exception & exception)
     {
@@ -151,12 +151,12 @@ static void executeJob(IProcessor * processor, size_t thread_num)
 
 void PipelineExecutor::addJob(ExecutionState * execution_state)
 {
-    auto job = [execution_state](size_t thread_num)
+    auto job = [execution_state]()
     {
         try
         {
             // Stopwatch watch;
-            executeJob(execution_state->processor, thread_num);
+            executeJob(execution_state->processor);
             // execution_state->execution_time_ns += watch.elapsed();
 
             ++execution_state->num_executed_jobs;
@@ -487,7 +487,8 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 if (!task_queue.empty())
                 {
-                    state = task_queue.pop(thread_num);
+                    state = task_queue.front();
+                    task_queue.pop();
 
                     if (!task_queue.empty() && !threads_queue.empty())
                     {
@@ -539,7 +540,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
             {
                 // Stopwatch execution_time_watch;
-                state->job(thread_num);
+                state->job();
                 // execution_time_ns += execution_time_watch.elapsed();
             }
 
@@ -568,11 +569,11 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
 
-//                if (!state && !queue.empty())
-//                {
-//                    state = queue.front();
-//                    queue.pop();
-//                }
+                if (!state && !queue.empty())
+                {
+                    state = queue.front();
+                    queue.pop();
+                }
 
                 prepare_all_processors(queue, parents, parents, parents);
 
@@ -585,9 +586,6 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         task_queue.push(queue.front());
                         queue.pop();
                     }
-
-                    if (!state && !threads_queue.empty())
-                        state = task_queue.pop(thread_num);
 
                     if (!threads_queue.empty())
                     {
