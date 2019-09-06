@@ -262,8 +262,8 @@ public:
     iterator end() { return iterator(this, buf + BUFFER_SIZE); }
 
 
-protected:
-    void ALWAYS_INLINE emplaceImpl(Key x, iterator & it, bool & inserted)
+public:
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t /* hash */ = 0)
     {
         it = iterator(this, &buf[x]);
 
@@ -278,21 +278,15 @@ protected:
         ++m_size;
     }
 
-
-public:
     std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
     {
         std::pair<iterator, bool> res;
-        emplaceImpl(Cell::getKey(x), res.first, res.second);
+        emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
             res.first.ptr->setMapped(x);
 
         return res;
     }
-
-
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted) { emplaceImpl(x, it, inserted); }
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t) { emplaceImpl(x, it, inserted); }
 
     iterator ALWAYS_INLINE find(Key x)
     {
