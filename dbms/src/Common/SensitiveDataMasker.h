@@ -14,7 +14,7 @@ namespace Util
 
 /// SensitiveDataMasker allows to remove sensitive data from queries using set of regexp-based rules
 
-/// It's used as a singelton via get method
+/// It's used as a singelton via getInstance method
 
 /// Initially it's empty (nullptr) and after manual initialization
 /// (one-time, done by set call) it takes the proper value which
