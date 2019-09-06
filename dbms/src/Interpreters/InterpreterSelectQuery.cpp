@@ -637,9 +637,17 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         if (expressions.prewhere_info)
+        {
             pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
                     pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
+
+            // To remove additional columns in dry run
+            // For example, sample column which can be removed in this stage
+            if (expressions.prewhere_info->remove_columns_actions)
+                pipeline.streams.back() = std::make_shared<ExpressionBlockInputStream>(pipeline.streams.back(), expressions.prewhere_info->remove_columns_actions);
+
+        }
     }
     else
     {
@@ -1172,14 +1180,22 @@ void InterpreterSelectQuery::executeFetchColumns(
             pipeline.streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
             if (query_info.prewhere_info)
-                pipeline.transform([&](auto & stream)
+            {
+                pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
+                    pipeline.streams.back(),
+                    prewhere_info->prewhere_actions,
+                    prewhere_info->prewhere_column_name,
+                    prewhere_info->remove_prewhere_column);
+
+                // To remove additional columns
+                // In some cases, we did not read any marks so that the pipeline.streams is empty
+                // Thus, some columns in prewhere are not removed as expected
+                // This leads to mismatched header in distributed table
+                if (query_info.prewhere_info->remove_columns_actions)
                 {
-                    stream = std::make_shared<FilterBlockInputStream>(
-                        stream,
-                        prewhere_info->prewhere_actions,
-                        prewhere_info->prewhere_column_name,
-                        prewhere_info->remove_prewhere_column);
-                });
+                    pipeline.streams.back() = std::make_shared<ExpressionBlockInputStream>(pipeline.streams.back(), query_info.prewhere_info->remove_columns_actions);
+                }
+            }
         }
 
         pipeline.transform([&](auto & stream)
