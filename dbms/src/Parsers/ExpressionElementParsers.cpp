@@ -1360,7 +1360,12 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword first("FIRST");
     ParserKeyword last("LAST");
     ParserKeyword collate("COLLATE");
+    ParserKeyword with_fill("WITH FILL");
+    ParserKeyword from("FROM");
+    ParserKeyword to("TO");
+    ParserKeyword step("STEP");
     ParserStringLiteral collate_locale_parser;
+    ParserExpressionWithOptionalAlias exp_parser(false);
 
     ASTPtr expr_elem;
     if (!elem_p.parse(pos, expr_elem, expected))
@@ -1395,7 +1400,27 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
     }
 
-    node = std::make_shared<ASTOrderByElement>(direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node);
+    /// WITH FILL [FROM x] [TO y] [STEP z]
+    bool has_with_fill = false;
+    ASTPtr fill_from;
+    ASTPtr fill_to;
+    ASTPtr fill_step;
+    if (with_fill.ignore(pos))
+    {
+        has_with_fill = true;
+        if (from.ignore(pos) && !exp_parser.parse(pos, fill_from, expected))
+            return false;
+
+        if (to.ignore(pos) && !exp_parser.parse(pos, fill_to, expected))
+            return false;
+
+        if (step.ignore(pos) && !exp_parser.parse(pos, fill_step, expected))
+            return false;
+    }
+
+    node = std::make_shared<ASTOrderByElement>(
+            direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node,
+            has_with_fill, fill_from, fill_to, fill_step);
     node->children.push_back(expr_elem);
     if (locale_node)
         node->children.push_back(locale_node);
