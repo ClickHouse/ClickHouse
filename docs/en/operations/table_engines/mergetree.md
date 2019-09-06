@@ -402,13 +402,13 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d;
 
-// adding TTL to a column of an existing table
+-- adding TTL to a column of an existing table
 
 ALTER TABLE example_table
     MODIFY COLUMN
     c String TTL d + interval 1 day;
     
-// altering TTL of the column
+-- altering TTL of the column
 
 ALTER TABLE example_table
     MODIFY COLUMN
