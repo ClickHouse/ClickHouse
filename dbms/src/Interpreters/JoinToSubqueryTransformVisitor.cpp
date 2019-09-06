@@ -6,6 +6,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -295,6 +296,23 @@ struct RewriteTablesVisitorData
     }
 };
 
+/// Attach alias to the first visited subquery
+struct SetSubqueryAliasVisitorData
+{
+    using TypeToVisit = ASTSubquery;
+
+    const String & alias;
+    bool done = false;
+
+    void visit(ASTSubquery &, ASTPtr & ast)
+    {
+        if (done)
+            return;
+        ast->setAlias(alias);
+        done = true;
+    }
+};
+
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables())
@@ -354,6 +372,8 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
 
 using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
+using SetSubqueryAliasMatcher = OneTypeMatcher<SetSubqueryAliasVisitorData>;
+using SetSubqueryAliasVisitor = InDepthNodeVisitor<SetSubqueryAliasMatcher, true>;
 using ExtractAsterisksVisitor = ExtractAsterisksMatcher::Visitor;
 using ColumnAliasesVisitor = InDepthNodeVisitor<ColumnAliasesMatcher, true>;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
@@ -418,6 +438,14 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         left_table = replaceJoin(left_table, src_tables[i]);
         if (!left_table)
             throw Exception("Cannot replace tables with subselect", ErrorCodes::LOGICAL_ERROR);
+
+        /// attach an alias to subquery.
+        /// TODO: remove setting check after testing period
+        if (data.context.getSettingsRef().joined_subquery_requires_alias)
+        {
+            SetSubqueryAliasVisitor::Data alias_data{String("--.join") + std::to_string(i)};
+            SetSubqueryAliasVisitor(alias_data).visit(left_table);
+        }
 
         /// attach data to generated asterisk
         AppendSemanticVisitor::Data semantic_data{rev_aliases, false};

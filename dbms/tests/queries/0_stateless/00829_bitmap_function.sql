@@ -31,11 +31,11 @@ SELECT
 FROM
 (
  SELECT city_id, groupBitmapState( uid ) AS day_today FROM bitmap_test WHERE pickup_date = '2019-01-02' GROUP BY city_id
- )
+) js1
 ALL LEFT JOIN
 (
  SELECT city_id, groupBitmapState( uid ) AS day_before FROM bitmap_test WHERE pickup_date = '2019-01-01' GROUP BY city_id
-)
+) js2
 USING city_id;
 
 SELECT
@@ -48,11 +48,11 @@ SELECT
 FROM
 (
  SELECT city_id, groupBitmapState( uid ) AS day_today FROM bitmap_test WHERE pickup_date = '2019-01-02' GROUP BY city_id
- )
+) js1
 ALL LEFT JOIN
 (
  SELECT city_id, groupBitmapState( uid ) AS day_before FROM bitmap_test WHERE pickup_date = '2019-01-01' GROUP BY city_id
-)
+) js2
 USING city_id;
 
 SELECT count(*) FROM bitmap_test WHERE bitmapHasAny((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), bitmapBuild([uid]));

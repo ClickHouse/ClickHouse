@@ -554,6 +554,36 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_log>
 ```
 
+## query_masking_rules
+
+Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
+`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to client. That allows preventing
+sensitive data leakage from SQL queries (like names / emails / personal
+identifiers / credit card numbers etc) to logs.
+
+**Example**
+
+```xml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```
+
+Config fields:
+- `name` - name for the rule (optional)
+- `regexp` - RE2 compatible regular expression (mandatory)
+- `replace` - substitution string for sensitive data (optional, by default - six asterisks)
+
+The masking rules are applied on whole query (to prevent leaks of sensitive data from malformed / non parsable queries).
+
+`system.events` table have counter `QueryMaskingRulesMatch` which have overall number of query masking rules matches.
+
+For distributed queries each server have to be configured separately, otherwise subquries passed to other
+nodes will be stored without masking.
 
 ## remote_servers {#server_settings_remote_servers}
 

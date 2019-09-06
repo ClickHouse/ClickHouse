@@ -332,7 +332,7 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
         }
     }
 
-    if (items == 0 && args.items_count != 0)
+    if (items == 0)
     {
         size_t l = geohashEncodeImpl(args.longitude_min, args.latitude_min, args.precision, out);
         out += l;

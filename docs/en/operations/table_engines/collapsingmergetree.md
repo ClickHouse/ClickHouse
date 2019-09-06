@@ -214,4 +214,66 @@ SELECT * FROM UAct FINAL
 
 This way of selecting the data is very inefficient. Don't use it for big tables.
 
+## Example of another approach
+
+Example data:
+
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+│ 4324182021466249494 │        -5 │     -146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+The idea is that merges take into account only key fields. And in the "Cancel" line we can specify negative values that equalize the previous version of the row when summing without using the Sign column. For this approach, it is necessary to change the data type `PageViews`,` Duration` to store negative values of UInt8 -> Int16.
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews Int16,
+    Duration Int16,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+```
+
+Let's test the approach:
+```sql
+insert into UAct values(4324182021466249494,  5,  146,  1);
+insert into UAct values(4324182021466249494, -5, -146, -1);
+insert into UAct values(4324182021466249494,  6,  185,  1);
+
+select * from UAct final; // avoid using final in production (just for a test or small tables)
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+
+SELECT
+    UserID,
+    sum(PageViews) AS PageViews,
+    sum(Duration) AS Duration
+FROM UAct
+GROUP BY UserID
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+
+select count() FROM UAct
+┌─count()─┐
+│       3 │
+└─────────┘
+
+optimize table UAct final;
+
+select * FROM UAct
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+
+
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

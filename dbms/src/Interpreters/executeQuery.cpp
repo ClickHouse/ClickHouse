@@ -28,11 +28,18 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Common/ProfileEvents.h>
+
 #include <Interpreters/DNSCacheUpdater.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
+
+namespace ProfileEvents
+{
+    extern const Event QueryMaskingRulesMatch;
+}
 
 namespace DB
 {
@@ -54,12 +61,32 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkSize(settings.max_ast_elements);
 }
 
-
 /// NOTE This is wrong in case of single-line comments and in case of multiline string literals.
 static String joinLines(const String & query)
 {
     String res = query;
     std::replace(res.begin(), res.end(), '\n', ' ');
+    return res;
+}
+
+
+static String prepareQueryForLogging(const String & query, Context & context)
+{
+    String res = query;
+
+    // wiping sensitive data before cropping query by log_queries_cut_to_length,
+    // otherwise something like credit card without last digit can go to log
+    if (auto masker = context.getSensitiveDataMasker())
+    {
+        auto matches = masker->wipeSensitiveData(res);
+        if (matches > 0)
+        {
+            ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
+        }
+    }
+
+    res = res.substr(0, context.getSettingsRef().log_queries_cut_to_length);
+
     return res;
 }
 
@@ -111,7 +138,7 @@ static void logException(Context & context, QueryLogElement & elem)
 }
 
 
-static void onExceptionBeforeStart(const String & query, Context & context, time_t current_time)
+static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
 {
     /// Exception before the query execution.
     context.getQuota().addError();
@@ -126,7 +153,7 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     elem.event_time = current_time;
     elem.query_start_time = current_time;
 
-    elem.query = query.substr(0, settings.log_queries_cut_to_length);
+    elem.query = query_for_logging;
     elem.exception = getCurrentExceptionMessage(false);
 
     elem.client_info = context.getClientInfo();
@@ -193,10 +220,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         /// Anyway log the query.
         String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-        logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
+
+        auto query_for_logging = prepareQueryForLogging(query, context);
+        logQuery(query_for_logging, context, internal);
 
         if (!internal)
-            onExceptionBeforeStart(query, context, current_time);
+            onExceptionBeforeStart(query_for_logging, context, current_time);
 
         throw;
     }
@@ -205,6 +234,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query(begin, query_end);
     BlockIO res;
     QueryPipeline & pipeline = res.pipeline;
+
+    String query_for_logging = "";
 
     try
     {
@@ -218,7 +249,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             query = serializeAST(*ast);
         }
 
-        logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
+        query_for_logging = prepareQueryForLogging(query, context);
+
+        logQuery(query_for_logging, context, internal);
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
@@ -232,7 +265,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         ProcessList::EntryPtr process_list_entry;
         if (!internal && !ast->as<ASTShowProcesslistQuery>())
         {
-            process_list_entry = context.getProcessList().insert(query, ast.get(), context);
+            /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
+            process_list_entry = context.getProcessList().insert(query_for_logging, ast.get(), context);
             context.setProcessListElement(&process_list_entry->get());
         }
 
@@ -324,7 +358,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.event_time = current_time;
             elem.query_start_time = current_time;
 
-            elem.query = query.substr(0, settings.log_queries_cut_to_length);
+            elem.query = query_for_logging;
 
             elem.client_info = context.getClientInfo();
 
@@ -470,7 +504,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     catch (...)
     {
         if (!internal)
-            onExceptionBeforeStart(query, context, current_time);
+        {
+            if (query_for_logging.empty())
+                query_for_logging = prepareQueryForLogging(query, context);
+
+            onExceptionBeforeStart(query_for_logging, context, current_time);
+        }
 
         throw;
     }
