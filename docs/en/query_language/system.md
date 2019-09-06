@@ -22,7 +22,7 @@ Always returns `Ok.` regardless of the result of the dictionary update.
 
 Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT_LOADED / FAILED).
 Always returns `Ok.` regardless of the result of updating the dictionary.
-The status of the dictionary can be checked by querying `system.dictionaries`.
+The status of the dictionary can be checked by querying the `system.dictionaries` table.
 
 ```sql
 SELECT name, status FROM system.dictionaries;
