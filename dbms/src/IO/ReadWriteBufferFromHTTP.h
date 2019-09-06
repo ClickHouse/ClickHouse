@@ -38,20 +38,23 @@ namespace detail
         SessionPtr session;
         std::istream * istr; /// owned by session
         std::unique_ptr<ReadBuffer> impl;
+        std::vector<Poco::Net::HTTPCookie> cookies;
 
     public:
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
-        explicit ReadWriteBufferFromHTTPBase(SessionPtr session_,
+        explicit ReadWriteBufferFromHTTPBase(
+            SessionPtr session_,
             Poco::URI uri_,
             const std::string & method_ = {},
             OutStreamCallback out_stream_callback = {},
             const Poco::Net::HTTPBasicCredentials & credentials = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
             : ReadBuffer(nullptr, 0)
-            , uri {uri_}
-            , method {!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
-            , session {session_}
+            , uri{uri_}
+            , method{!method_.empty() ? method_
+                                      : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
+            , session{session_}
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
             if (uri.getPath().empty())
@@ -78,6 +81,7 @@ namespace detail
                     out_stream_callback(stream_out);
 
                 istr = receiveResponse(*session, request, response);
+                response.getCookies(cookies);
 
                 impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
             }
@@ -90,7 +94,6 @@ namespace detail
             }
         }
 
-
         bool nextImpl() override
         {
             if (!impl->next())
@@ -98,6 +101,14 @@ namespace detail
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
             return true;
+        }
+
+        std::string getResponseCookie(const std::string & name, const std::string & def) const
+        {
+            for (const auto & cookie : cookies)
+                if (cookie.getName() == name)
+                    return cookie.getValue();
+            return def;
         }
     };
 }
