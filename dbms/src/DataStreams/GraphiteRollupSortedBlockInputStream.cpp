@@ -321,7 +321,7 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
 }
 
 
-void GraphiteRollupSortedBlockInputStream::accumulateRow(RowRef & row)
+void GraphiteRollupSortedBlockInputStream::accumulateRow(SharedBlockRowRef & row)
 {
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
     if (aggregate_state_created)

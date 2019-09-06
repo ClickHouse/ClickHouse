@@ -27,7 +27,7 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../query_language/misc.md) it to table information with matching name, so you can query data from that file.
 
 !!! warning
-    Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+    Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
 **Example:**
 
@@ -73,9 +73,9 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 - Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
 - Not supported:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - Indices
-  - Replication
+    - `ALTER`
+    - `SELECT ... SAMPLE`
+    - Indices
+    - Replication
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->
