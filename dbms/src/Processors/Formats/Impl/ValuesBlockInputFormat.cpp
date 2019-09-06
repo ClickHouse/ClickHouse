@@ -119,14 +119,12 @@ bool ValuesBlockInputFormat::parseExpressionUsingTemplate(MutableColumnPtr & col
         try
         {
             templates[column_idx].value().parseExpression(buf, format_settings);
-            assertDelimiterAfterValue(column_idx);
             ++rows_parsed_using_template[column_idx];
             return true;
         }
         catch (DB::Exception & e)
         {
-            if (e.code() != ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE &&
-                e.code() != ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+            if (e.code() != ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
                 throw;
             /// Expression in the current row is not match template deduced on the first row.
             /// Evaluate expressions, which were parsed using this template.
@@ -199,8 +197,14 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
     bool parsed = parser.parse(token_iterator, ast, expected);
     if (parsed)
     {
+        /// Consider delimiter after value (',' or ')') as part of expression
+        if (column_idx + 1 != num_columns)
+            parsed = token_iterator->type == TokenType::Comma;
+        else
+            parsed = token_iterator->type == TokenType::ClosingRoundBracket;
+
+        ++token_iterator;
         buf.position() = const_cast<char *>(token_iterator->begin);
-        parsed = checkDelimiterAfterValue(column_idx);
     }
     if (!parsed)
     {
@@ -220,7 +224,6 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
             templates[column_idx] = ConstantExpressionTemplate(header.getByPosition(column_idx).type, TokenIterator(tokens), token_iterator, ast, *context);
             buf.rollbackToCheckpoint();
             templates[column_idx].value().parseExpression(buf, format_settings);
-            assertDelimiterAfterValue(column_idx);
             return;
         }
         catch (...)
@@ -246,7 +249,6 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
                         ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
     }
 
-    assertDelimiterAfterValue(column_idx);
     column.insert(value);
 }
 

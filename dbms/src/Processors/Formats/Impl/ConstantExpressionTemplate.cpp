@@ -15,6 +15,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Interpreters/convertFieldToType.h>
 
 
 namespace DB
@@ -101,9 +102,14 @@ private:
             return false;
         if (literal->begin && literal->end)
         {
-            /// Do not replace empty array
-            if (literal->value.getType() == Field::Types::Array && literal->value.get<Array>().empty())
-                return false;
+            /// Do not replace empty array and array of NULLs
+            if (literal->value.getType() == Field::Types::Array)
+            {
+                const Array & array = literal->value.get<Array>();
+                auto not_null = std::find_if_not(array.begin(), array.end(), [](const auto & elem) { return elem.isNull(); });
+                if (not_null == array.end())
+                    return true;
+            }
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             ast = std::make_shared<ASTIdentifier>(column_name);
@@ -202,7 +208,7 @@ bool ConstantExpressionTemplate::getDataType(const LiteralInfo & info, DataTypeP
 
         /// It can be Array(Nullable(nested_type))
         bool array_of_nullable = false;
-        if (auto nullable = dynamic_cast<const DataTypeNullable *>(type.get()))
+        if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
         {
             nested_type = nullable->getNestedType();
             array_of_nullable = true;
@@ -257,11 +263,11 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
             }
             skipWhitespaceIfAny(istr);
 
-            const IDataType & type = *literals.getByPosition(cur_column).type;
+            const DataTypePtr & type = literals.getByPosition(cur_column).type;
             if (settings.values.accurate_types_of_literals && use_special_parser[cur_column])
-                parseLiteralAndAssertType(istr, type, cur_column);
+                parseLiteralAndAssertType(istr, type.get(), cur_column);
             else
-                type.deserializeAsTextQuoted(*columns[cur_column], istr, settings);
+                type->deserializeAsTextQuoted(*columns[cur_column], istr, settings);
 
             ++cur_column;
         }
@@ -284,22 +290,29 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
     }
 }
 
-void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType & type, size_t column_idx)
+void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx)
 {
     /// TODO faster way to check types without using Parsers
     ParserKeyword parser_null("NULL");
     ParserNumber parser_number;
     ParserArrayOfLiterals parser_array;
 
+    const IDataType * type = complex_type;
+    bool is_array = false;
+    if (auto array = dynamic_cast<const DataTypeArray *>(type))
+    {
+        type = array->getNestedType().get();
+        is_array = true;
+    }
+
+    bool is_nullable = false;
+    if (auto nullable = dynamic_cast<const DataTypeNullable *>(type))
+    {
+        type = nullable->getNestedType().get();
+        is_nullable = true;
+    }
+
     WhichDataType type_info(type);
-
-    bool is_array = type_info.isArray();
-    if (is_array)
-        type_info = WhichDataType(dynamic_cast<const DataTypeArray &>(type).getNestedType());
-
-    bool is_nullable = type_info.isNullable();
-    if (is_nullable)
-        type_info = WhichDataType(dynamic_cast<const DataTypeNullable &>(type).getNestedType());
 
     /// If literal does not fit entirely in the buffer, parsing error will happen.
     /// However, it's possible to deduce new template after error like it was template mismatch.
@@ -327,7 +340,8 @@ void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
             (nested_type_info.isNativeInt()  && type_info.isInt64())  ||
             (nested_type_info.isFloat64()    && type_info.isFloat64()))
         {
-            columns[column_idx]->insert(array);
+            Field array_same_types = convertFieldToType(array, *complex_type, nullptr);
+            columns[column_idx]->insert(array_same_types);
             return;
         }
     }
