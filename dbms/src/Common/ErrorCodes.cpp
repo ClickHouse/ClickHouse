@@ -449,10 +449,12 @@ namespace ErrorCodes
     extern const int READONLY_SETTING = 472;
     extern const int DEADLOCK_AVOIDED = 473;
     extern const int INVALID_TEMPLATE_FORMAT = 474;
-    extern const int UNKNOWN_POLICY = 475;
-    extern const int UNKNOWN_DISK = 476;
-    extern const int UNKNOWN_PROTOCOL = 477;
-    extern const int PATH_ACCESS_DENIED = 478;
+    extern const int INVALID_WITH_FILL_EXPRESSION = 475;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY = 476;
+    extern const int UNKNOWN_POLICY = 477;
+    extern const int UNKNOWN_DISK = 478;
+    extern const int UNKNOWN_PROTOCOL = 479;
+    extern const int PATH_ACCESS_DENIED = 480;
 
 
     extern const int KEEPER_EXCEPTION = 999;
