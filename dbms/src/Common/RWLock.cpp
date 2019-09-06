@@ -179,7 +179,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     }
 
     /// LockHolder needs to be created before waiting to guarantee
-    /// that this group does not get deleted (group's referers is incremented)
+    /// that this group does not get deleted prematurely (group's referers is incremented)
     res.reset(new LockHolderImpl(shared_from_this(), it_group));
 
     /// Wait a notification until we will be the only in the group.
@@ -212,14 +212,14 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
             all_read_locks.remove(query_id);
     }
 
-    /// Remove the group if we were the last referer and notify the next group
+    /// Remove the group if we are the last referer and notify the next group
     if (--it_group->referers == 0)
     {
         auto & parent_queue = parent->queue;
         parent_queue.erase(it_group);
 
         if (!parent_queue.empty())
-            parent_queue.front().cv.notify_all();
+            parent_queue.begin()->cv.notify_all();
     }
 }
 
