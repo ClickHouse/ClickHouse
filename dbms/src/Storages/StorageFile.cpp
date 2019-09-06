@@ -18,11 +18,18 @@
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Common/parseGlobs.h>
 
 #include <fcntl.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
+
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -39,6 +46,54 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
+namespace
+{
+/* Recursive directory listing with matched paths as a result.
+ * Have the same method in StorageHDFS.
+ */
+std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+{
+    const size_t first_glob = for_match.find_first_of("*?{");
+
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+
+    const size_t next_slash = suffix_with_globs.find('/', 1);
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+
+    std::vector<std::string> result;
+    const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
+    if (!fs::exists(fs::path(prefix_without_globs.data())))
+    {
+        return result;
+    }
+    const fs::directory_iterator end;
+    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
+    {
+        const std::string full_path = it->path().string();
+        const size_t last_slash = full_path.rfind('/');
+        const String file_name = full_path.substr(last_slash);
+        const bool looking_for_directory = next_slash != std::string::npos;
+        /// Condition is_directory means what kind of path is it in current iteration of ls
+        if (!fs::is_directory(it->path()) && !looking_for_directory)
+        {
+            if (re2::RE2::FullMatch(file_name, matcher))
+            {
+                result.push_back(it->path().string());
+            }
+        }
+        else if (fs::is_directory(it->path()) && looking_for_directory)
+        {
+            if (re2::RE2::FullMatch(file_name, matcher))
+            {
+                Strings result_part = LSWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
+                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+            }
+        }
+    }
+    return result;
+}
+}
 
 static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
 {
@@ -90,8 +145,10 @@ StorageFile::StorageFile(
             if (poco_path.isRelative())
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
-            path = poco_path.absolute().toString();
-            checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+            const std::string path = poco_path.absolute().toString();
+            paths = LSWithRegexpMatching("/", path);
+            for (const auto & cur_path : paths)
+                checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
             is_db_table = false;
         }
         else /// Is DB's file
@@ -99,14 +156,18 @@ StorageFile::StorageFile(
             if (db_dir_path.empty())
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-            path = getTablePath(db_dir_path, table_name, format_name);
+            paths = {getTablePath(db_dir_path, table_name, format_name)};
             is_db_table = true;
-            Poco::File(Poco::Path(path).parent()).createDirectories();
+            Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
         }
     }
     else /// Will use FD
     {
-        checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+
+        if (paths.size() != 1)
+            throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+        checkCreationIsAllowed(context_global, db_dir_path, paths[0], table_fd);
 
         is_db_table = false;
         use_table_fd = true;
@@ -121,7 +182,7 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, std::string file_path)
         : storage(storage_)
     {
         if (storage.use_table_fd)
@@ -147,8 +208,7 @@ public:
         else
         {
             shared_lock = std::shared_lock(storage.rwlock);
-
-            read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
+            read_buf = std::make_unique<ReadBufferFromFile>(file_path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
@@ -195,12 +255,16 @@ BlockInputStreams StorageFile::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
-    if (column_defaults.empty())
-        return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
+    BlockInputStreams blocks_input;
+    blocks_input.reserve(paths.size());
+    for (const auto & file_path : paths)
+    {
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, file_path);
+        blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
+    }
+    return blocks_input;
 }
 
 
@@ -210,6 +274,8 @@ public:
     explicit StorageFileBlockOutputStream(StorageFile & storage_)
         : storage(storage_), lock(storage.rwlock)
     {
+        if (storage.paths.size() != 1)
+            throw Exception("Table '" + storage.table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
         if (storage.use_table_fd)
         {
             /** NOTE: Using real file binded to FD may be misleading:
@@ -221,7 +287,7 @@ public:
         }
         else
         {
-            write_buf = std::make_unique<WriteBufferFromFile>(storage.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
@@ -263,19 +329,28 @@ BlockOutputStreamPtr StorageFile::write(
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
 
+String StorageFile::getDataPath() const
+{
+    if (paths.empty())
+        throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+    return paths[0];
+}
 
 void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
+    if (paths.size() != 1)
+        throw Exception("Can't rename table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     std::string path_new = getTablePath(new_path_to_db, new_table_name, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
-    Poco::File(path).renameTo(path_new);
+    Poco::File(paths[0]).renameTo(path_new);
 
-    path = std::move(path_new);
+    paths[0] = std::move(path_new);
     table_name = new_table_name;
     database_name = new_database_name;
 }
