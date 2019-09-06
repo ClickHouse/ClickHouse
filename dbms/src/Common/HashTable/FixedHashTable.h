@@ -263,6 +263,7 @@ public:
 
 
 public:
+    /// The last parameter is unused but exists for compatibility with HashTable interface.
     void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t /* hash */ = 0)
     {
         it = iterator(this, &buf[x]);
