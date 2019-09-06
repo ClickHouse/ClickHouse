@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/SmallestJSON/SmallestJSONStreamFactory.h>
+#include <DataTypes/JSONB/JSONBStreamFactory.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -12,12 +12,12 @@ namespace ErrorCodes
 }
 
 template <typename PODArrayType, FormatStyle format>
-struct PODArraySmallestJSONStream
+struct JSONBStreamPODArray
 {
 public:
     typedef char Ch;
 
-    PODArraySmallestJSONStream(PODArrayType & array_, const FormatSettings & settings_)
+    JSONBStreamPODArray(PODArrayType & array_, const FormatSettings & settings_)
         : array(array_), settings(settings_), offset(0), limit(array.size())
     {}
 
@@ -87,12 +87,12 @@ public:
 
     size_t PutEnd(char * /*value*/)
     {
-        throw Exception("Method PutEnd is not supported for PODArraySmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method PutEnd is not supported for JSONBStreamPODArray", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     char * PutBegin()
     {
-        throw Exception("Method PutBegin is not supported for PODArraySmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method PutBegin is not supported for JSONBStreamPODArray", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 private:

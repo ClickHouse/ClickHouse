@@ -1,4 +1,4 @@
-#include <DataTypes/SmallestJSON/BufferSmallestJSONStream.h>
+#include <DataTypes/JSONB/JSONBStreamBuffer.h>
 
 namespace DB
 {
@@ -12,31 +12,31 @@ namespace ErrorCodes
 template<typename BufferType>
 char BufferStreamHelper::Take(BufferType & /*buffer*/)
 {
-    throw Exception("Method Take is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Method Take is not supported for JSONBStreamBuffer", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template<typename BufferType>
 char BufferStreamHelper::Peek(BufferType & /*buffer*/)
 {
-    throw Exception("Method Peek is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Method Peek is not supported for JSONBStreamBuffer", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template<typename BufferType>
 size_t BufferStreamHelper::Tell(BufferType & /*buffer*/)
 {
-    throw Exception("Method Tell is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Method Tell is not supported for JSONBStreamBuffer", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template<typename BufferType>
 void BufferStreamHelper::Put(BufferType & /*buffer*/, char /*value*/)
 {
-    throw Exception("Method Put is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Method Put is not supported for JSONBStreamBuffer", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template<FormatStyle format>
 char BufferStreamHelper::SkipQuoted(WriteBuffer & /*buffer*/, const FormatSettings & /*setting*/, char /*maybe_opening_quoted*/)
 {
-    throw Exception("Method SkipQuoted is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("Method SkipQuoted is not supported for JSONBStreamBuffer", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template<FormatStyle format>

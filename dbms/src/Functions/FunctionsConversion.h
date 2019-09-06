@@ -42,10 +42,10 @@
 #include <Functions/DateTimeTransforms.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <DataTypes/DataTypeSmallestJSON.h>
-#include <DataTypes/SmallestJSON/SmallestJSONSerialization.h>
-#include <DataTypes/SmallestJSON/SmallestJSONStreamFactory.h>
-#include <DataTypes/SmallestJSON/PODArraySmallestJSONStream.h>
+#include <DataTypes/DataTypeJSONB.h>
+#include <DataTypes/JSONB/JSONBSerialization.h>
+#include <DataTypes/JSONB/JSONBStreamFactory.h>
+#include <DataTypes/JSONB/JSONBStreamPODArray.h>
 
 
 namespace DB
@@ -1168,11 +1168,11 @@ public:
     }
 };
 
-class FunctionToSmallestJSON : public IFunction
+class FunctionToJSONB : public IFunction
 {
 public:
-    static constexpr auto name = "toSmallestJSON";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToSmallestJSON>(); }
+    static constexpr auto name = "toJSONB";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToJSONB>(); }
 
     String getName() const override { return name; }
     bool isInjective(const Block &) override { return true; }
@@ -1190,10 +1190,10 @@ public:
                 " can only accept Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64, String, FixedString types argument.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        return std::make_shared<DataTypeSmallestJSON>(DataTypes{});
+        return std::make_shared<DataTypeJSONB>(DataTypes{});
     }
 
-    void executeForString(const IColumn * source, ColumnSmallestJSON::MutablePtr & smallest_column)
+    void executeForString(const IColumn * source, ColumnJSONB::MutablePtr & smallest_column)
     {
         if (const ColumnString * string_column = static_cast<const ColumnString *>(source))
         {
@@ -1201,19 +1201,19 @@ public:
             const ColumnString::Offsets & column_offsets_data = string_column->getOffsets();
 
             FormatSettings settings{};
-            auto input_stream = SmallestJSONStreamFactory::fromPODArray<FormatStyle::ESCAPED>(column_string_data, settings);
+            auto input_stream = JSONBStreamFactory::fromPODArray<FormatStyle::ESCAPED>(column_string_data, settings);
 
             for (size_t index = 0; index < column_offsets_data.size(); ++index)
             {
                 const IColumn::Offset & offset = column_offsets_data[index - 1];
                 input_stream->setOffsetAndLimit(offset, column_offsets_data[index] - offset);
-                SmallestJSONSerialization::deserialize<PODArraySmallestJSONStream<const ColumnString::Chars, FormatStyle::ESCAPED>>(*smallest_column.get(), settings, input_stream);
+                JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED>>(*smallest_column.get(), settings, input_stream);
             }
         }
     }
 
     template <typename FromType>
-    void executeForNumber(const IColumn * source, ColumnSmallestJSON::MutablePtr & smallest_column, UInt8 mark_value)
+    void executeForNumber(const IColumn * source, ColumnJSONB::MutablePtr & smallest_column, UInt8 mark_value)
     {
         if (const ColumnVector<FromType> * number_column = static_cast<const ColumnVector<FromType> *>(source))
         {
@@ -1243,22 +1243,22 @@ public:
         const auto & type_and_column = block.getByPosition(arguments[0]);
 
         WhichDataType which(type_and_column.type);
-        ColumnSmallestJSON::MutablePtr column_smallest_json = ColumnSmallestJSON::create();
+        ColumnJSONB::MutablePtr converted_column = ColumnJSONB::create();
 
-        if (which.isStringOrFixedString()) executeForString(type_and_column.column.get(), column_smallest_json);
-        else if (which.isInt8()) executeForNumber<Int8>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::Int32));
-        else if (which.isInt16()) executeForNumber<Int16>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::Int32));
-        else if (which.isInt32()) executeForNumber<Int32>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::Int32));
-        else if (which.isInt64()) executeForNumber<Int64>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::Int64));
-        else if (which.isUInt8()) executeForNumber<UInt8>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::UInt32));
-        else if (which.isUInt16()) executeForNumber<UInt16>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::UInt32));
-        else if (which.isUInt32()) executeForNumber<UInt32>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::UInt32));
-        else if (which.isUInt64()) executeForNumber<UInt64>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::UInt64));
-        else if (which.isFloat32()) executeForNumber<Float32>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::Float64));
-        else if (which.isFloat64()) executeForNumber<Float64>(type_and_column.column.get(), column_smallest_json, UInt8(TypeIndex::Float64));
+        if (which.isStringOrFixedString()) executeForString(type_and_column.column.get(), converted_column);
+        else if (which.isInt8()) executeForNumber<Int8>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int32));
+        else if (which.isInt16()) executeForNumber<Int16>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int32));
+        else if (which.isInt32()) executeForNumber<Int32>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int32));
+        else if (which.isInt64()) executeForNumber<Int64>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int64));
+        else if (which.isUInt8()) executeForNumber<UInt8>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt32));
+        else if (which.isUInt16()) executeForNumber<UInt16>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt32));
+        else if (which.isUInt32()) executeForNumber<UInt32>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt32));
+        else if (which.isUInt64()) executeForNumber<UInt64>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt64));
+        else if (which.isFloat32()) executeForNumber<Float32>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Float64));
+        else if (which.isFloat64()) executeForNumber<Float64>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Float64));
         else throw Exception("It is bug", ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = std::move(column_smallest_json);
+        block.getByPosition(result).column = std::move(converted_column);
     }
 };
 

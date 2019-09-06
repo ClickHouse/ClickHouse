@@ -1,9 +1,9 @@
 #pragma once
 
 #include <IO/ReadHelpers.h>
-#include <Formats/FormatSettings.h>
-#include <DataTypes/SmallestJSON/SmallestJSONStreamFactory.h>
 #include <IO/WriteHelpers.h>
+#include <Formats/FormatSettings.h>
+#include <DataTypes/JSONB/JSONBStreamFactory.h>
 
 namespace DB
 {
@@ -30,12 +30,12 @@ struct BufferStreamHelper
 };
 
 template <typename BufferType, FormatStyle format>
-struct BufferSmallestJSONStream
+struct JSONBStreamBuffer
 {
 public:
     typedef char Ch;
 
-    BufferSmallestJSONStream(BufferType * buffer_, const FormatSettings & settings_)
+    JSONBStreamBuffer(BufferType * buffer_, const FormatSettings & settings_)
         : buffer(buffer_), settings(settings_)
     {
     }
@@ -52,9 +52,9 @@ public:
 
     void SkipQuoted() { quote_char = BufferStreamHelper::SkipQuoted<format>(*buffer, settings, quote_char); }
 
-    char * PutBegin() { throw Exception("Method PutBegin is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED); }
+    char * PutBegin() { throw Exception("Method PutBegin is not supported for JSONBStreamBuffer", ErrorCodes::NOT_IMPLEMENTED); }
 
-    size_t PutEnd(char * /*value*/) { throw Exception("Method PutEnd is not supported for BufferSmallestJSONStream", ErrorCodes::NOT_IMPLEMENTED); }
+    size_t PutEnd(char * /*value*/) { throw Exception("Method PutEnd is not supported for JSONBStreamBuffer", ErrorCodes::NOT_IMPLEMENTED); }
 
 private:
     char quote_char{0};

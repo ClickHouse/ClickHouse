@@ -45,7 +45,7 @@ enum class TypeIndex
     Function,
     AggregateFunction,
     LowCardinality,
-    SmallestJSON,
+    JSONB,
 };
 
 using UInt8 = uint8_t;
@@ -205,7 +205,7 @@ inline const char * getTypeName(TypeIndex idx)
         case TypeIndex::Function:   return "Function";
         case TypeIndex::AggregateFunction: return "AggregateFunction";
         case TypeIndex::LowCardinality: return "LowCardinality";
-        case TypeIndex::SmallestJSON: return "SmallestJSON";
+        case TypeIndex::JSONB: return "JSONB";
     }
 
     __builtin_unreachable();

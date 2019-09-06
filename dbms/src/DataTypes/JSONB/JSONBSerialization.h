@@ -4,7 +4,7 @@
 #include <rapidjson/reader.h>
 #include <IO/ReadBuffer.h>
 #include <Columns/JSONStructAndDataColumn.h>
-#include <Columns/ColumnSmallestJSON.h>
+#include <Columns/ColumnJSONB.h>
 #include <DataTypes/DataTypesNumber.h>
 
 namespace DB
@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_JSON;
 }
 
-struct SmallestJSONSerialization
+struct JSONBSerialization
 {
 
     template <typename OutputStream>
