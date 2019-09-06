@@ -27,7 +27,7 @@ public:
         set(key, std::to_string(value), /*wrap= */ false);
     }
 
-    void set(const std::string & key, const std::vector<JSONString> & run_infos);
+    void set(const std::string & key, const std::vector<std::vector<JSONString>> & run_infos);
 
     std::string asString() const
     {
@@ -35,6 +35,11 @@ public:
     }
 
     std::string asString(size_t cur_padding) const;
+
+    size_t getPadding() const
+    {
+        return padding;
+    }
 };
 
 }

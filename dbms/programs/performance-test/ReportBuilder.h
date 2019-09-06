@@ -1,5 +1,6 @@
 #pragma once
 #include "PerformanceTestInfo.h"
+#include "JSONString.h"
 #include <IO/ConnectionTimeouts.h>
 #include <Client/Connection.h>
 #include <vector>
@@ -15,23 +16,29 @@ public:
     std::string buildFullReport(
         const PerformanceTestInfo & test_info,
         std::vector<TestStats> & stats,
+        const std::vector<std::size_t> & queries_to_run,
         const Connections & connections,
-        const ConnectionTimeouts & timeouts,
-        size_t connection_index,
-        const std::vector<std::size_t> & queries_to_run) const;
+        const ConnectionTimeouts & timeouts) const;
 
 
     std::string buildCompactReport(
         const PerformanceTestInfo & test_info,
         std::vector<TestStats> & stats,
+        const std::vector<std::size_t> & queries_to_run,
         const Connections & connections,
-        const ConnectionTimeouts & timeouts,
-        size_t connection_index,
-        const std::vector<std::size_t> & queries_to_run) const;
+        const ConnectionTimeouts & timeouts) const;
 
 private:
 
     std::string getCurrentTime() const;
+
+    void buildRunsReport(
+            const PerformanceTestInfo & test_info,
+            std::vector<TestStats> & stats,
+            const std::vector<std::size_t> & queries_to_run,
+            const Connections & connections,
+            const ConnectionTimeouts & /*timeouts*/,
+            JSONString & json_output) const;
 
 };
 

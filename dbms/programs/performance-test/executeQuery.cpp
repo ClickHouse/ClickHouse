@@ -11,9 +11,13 @@ namespace
 {
 
 void checkFulfilledConditionsAndUpdate(
-        const Progress & progress, RemoteBlockInputStream & stream,
-        ConnectionTestStats & statistics, TestStopConditions & stop_conditions,
-        InterruptListener & interrupt_listener, StudentTTest & t_test, Poco::Logger * log)
+        const Progress & progress,
+        RemoteBlockInputStream & stream,
+        ConnectionTestStats & statistics,
+        TestStopConditions & stop_conditions,
+        InterruptListener & interrupt_listener,
+        StudentTTest & t_test,
+        Poco::Logger * log)
 {
     statistics.add(progress.read_rows, progress.read_bytes);
 
@@ -58,11 +62,11 @@ void executeQuery(
 
     ConnectionTestStats & statistic = statistics[connection_index];
 
-    statistic.watch_per_query.restart();
     statistic.last_query_was_cancelled = false;
     statistic.last_query_rows_read = 0;
     statistic.last_query_bytes_read = 0;
     statistic.query_id = query_id_prefix + std::to_string(next_query_id++);
+    statistic.watch_per_query.restart();
 
     RemoteBlockInputStream stream(*connections[connection_index], query, {}, context, &settings);
     stream.setQueryId(statistic.query_id);

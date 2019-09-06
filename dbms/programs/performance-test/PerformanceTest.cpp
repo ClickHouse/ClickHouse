@@ -88,8 +88,7 @@ bool PerformanceTest::checkPreconditions() const
     {
         if (precondition == "flush_disk_cache")
         {
-            if (system(
-                    "(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
+            if (system("(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
             {
                 LOG_WARNING(log, "Failed to flush disk cache");
                 return false;
@@ -130,7 +129,7 @@ bool PerformanceTest::checkPreconditions() const
                     {
                         for (const ColumnWithTypeAndName & column : packet.block)
                         {
-                            if (column.name == "result" && column.column->size() > 0)
+                            if (column.name == "result" && !column.column->empty())
                             {
                                 exist = column.column->get64(0);
                                 if (exist)
@@ -139,8 +138,7 @@ bool PerformanceTest::checkPreconditions() const
                         }
                     }
 
-                    if (packet.type == Protocol::Server::Exception
-                        || packet.type == Protocol::Server::EndOfStream)
+                    if (packet.type == Protocol::Server::Exception || packet.type == Protocol::Server::EndOfStream)
                         break;
                 }
                 if (!exist)
@@ -240,6 +238,7 @@ std::vector<TestStats> PerformanceTest::execute()
 
     std::vector<TestStats> statistics_by_run;
     statistics_by_run.reserve(total_runs);
+
     for (size_t i = 0; i < total_runs; ++i)
         statistics_by_run.emplace_back(TestStats(connections.size()));
 
@@ -283,8 +282,7 @@ std::vector<TestStats> PerformanceTest::execute()
         // previous queries.
         {
             NullBlockOutputStream null_output(Block{});
-            RemoteBlockInputStream flush_log(*connection, "system flush logs",
-                {} /* header */, context);
+            RemoteBlockInputStream flush_log(*connection, "system flush logs", {} /* header */, context);
             copyData(flush_log, null_output);
         }
     }
@@ -370,7 +368,7 @@ void PerformanceTest::runQueries(
                     stop_conditions.reportIterations(iteration);
                     if (stop_conditions.areFulfilled())
                     {
-                        LOG_INFO(log, "Stop conditions fullfilled");
+                        LOG_INFO(log, "Stop conditions fulfilled");
                         break;
                     }
                     for (size_t i = 0; i < connections.size(); ++i)

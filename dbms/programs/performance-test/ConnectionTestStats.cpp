@@ -16,10 +16,9 @@ std::string ConnectionTestStats::getStatisticByName(const std::string & statisti
     if (statistic_name == "quantiles")
     {
         std::string result = "\n";
-
-        for (double percent = 10; percent <= 90; percent += 10)
+        for (int percent = 10; percent <= 90; percent += 10)
         {
-            result += FOUR_SPACES + std::to_string((percent / 100));
+            result += FOUR_SPACES + std::to_string(percent / 100.0).substr(0, 3);
             result += ": " + std::to_string(sampler.quantileInterpolated(percent / 100.0));
             result += "\n";
         }
@@ -134,7 +133,10 @@ void ConnectionTestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
 void ConnectionTestStats::updateQueryInfo()
 {
     ++queries;
-    sampler.insert(watch_per_query.elapsedSeconds());
+
+    double seconds = watch_per_query.elapsedSeconds();
+    total_time += seconds;
+    sampler.insert(seconds);
     update_min_time(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
 }
 

@@ -31,7 +31,6 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 
-#include "TestStopConditions.h"
 #include "ConnectionTestStats.h"
 #include "ConfigPreprocessor.h"
 #include "PerformanceTest.h"
@@ -48,7 +47,6 @@ using Ports = std::vector<UInt16>;
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
 }
 
@@ -134,8 +132,6 @@ private:
 
     InterruptListener interrupt_listener;
 
-    StudentTTest t_test;
-
     using XMLConfiguration = Poco::Util::XMLConfiguration;
     using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
 
@@ -145,6 +141,8 @@ private:
     Strings input_files;
     std::vector<XMLConfigurationPtr> tests_configurations;
     Poco::Logger * log;
+
+    StudentTTest t_test;
 
     void processTestsConfigurations(const Strings & paths)
     {
@@ -166,20 +164,16 @@ private:
 
             for (auto & test_config : tests_configurations)
             {
-                auto [output_by_servers, signal] = runTest(test_config);
-
-                for (auto & output : output_by_servers)
+                auto [output, signal] = runTest(test_config);
+                if (!output.empty())
                 {
-                    if (!output.empty())
-                    {
-                        if (lite_output)
-                            std::cout << output;
-                        else
-                            outputs.push_back(output);
-                    }
-                    if (signal)
-                        break;
+                    if (lite_output)
+                        std::cout << output;
+                    else
+                        outputs.push_back(output);
                 }
+                if (signal)
+                    break;
             }
 
             if (!lite_output && !outputs.empty())
@@ -200,44 +194,33 @@ private:
         }
     }
 
-    std::pair<DB::Strings, bool> runTest(XMLConfigurationPtr & test_config)
+    std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
         PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connections, timeouts, interrupt_listener, info, global_context, query_indexes[info.path], t_test);
 
-        if (current.checkPreconditions())
+        if (!current.checkPreconditions())
         {
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fulfilled");
-            LOG_INFO(log, "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
-            current.prepare();
-            LOG_INFO(log, "Prepared");
-            LOG_INFO(log, "Running test '" << info.test_name << "'");
-            auto results = current.execute();
-            LOG_INFO(log, "Test '" << info.test_name << "' finished");
-
-            LOG_INFO(log, "Running post run queries");
-            current.finish();
-            LOG_INFO(log, "Postqueries finished");
-
-            DB::Strings reports_by_connections;
-            if (lite_output)
-            {
-                for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
-                    reports_by_connections.push_back(report_builder->buildCompactReport(info, results, connections, timeouts, connection_index, query_indexes[info.path]));
-            }
-            else
-            {
-                for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
-                    reports_by_connections.push_back(report_builder->buildFullReport(info, results, connections, timeouts, connection_index, query_indexes[info.path]));
-            }
-
-            return {reports_by_connections, current.checkSIGINT()};
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fulfilled, skip run");
+            return {"", current.checkSIGINT()};
         }
-        else
-            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
 
-        return {{""}, current.checkSIGINT()};
+        LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fulfilled");
+        LOG_INFO(log, "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
+        current.prepare();
+        LOG_INFO(log, "Prepared");
+        LOG_INFO(log, "Running test '" << info.test_name << "'");
+        auto result = current.execute();
+        LOG_INFO(log, "Test '" << info.test_name << "' finished");
+        LOG_INFO(log, "Running post run queries");
+        current.finish();
+        LOG_INFO(log, "Post run queries finished");
+
+        if (lite_output)
+            return {report_builder->buildCompactReport(info, result, query_indexes[info.path], connections, timeouts), current.checkSIGINT()};
+
+        return {report_builder->buildFullReport(info, result, query_indexes[info.path], connections, timeouts), current.checkSIGINT()};
     }
 };
 
@@ -253,6 +236,7 @@ static void getFilesFromDir(const fs::path & dir, std::vector<std::string> & inp
     for (fs::directory_iterator it(dir); it != end; ++it)
     {
         const fs::path file = (*it);
+
         if (recursive && fs::is_directory(file))
             getFilesFromDir(file, input_files, recursive);
         else if (!fs::is_directory(file) && file.extension().string() == ".xml")
@@ -288,13 +272,12 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
                 throw DB::Exception("File '" + filename + "' does not exist", DB::ErrorCodes::FILE_DOESNT_EXIST);
 
             if (fs::is_directory(file))
-            {
                 getFilesFromDir(file, collected_files, recursive);
-            }
             else
             {
                 if (file.extension().string() != ".xml")
                     throw DB::Exception("File '" + filename + "' does not have .xml extension", DB::ErrorCodes::BAD_ARGUMENTS);
+
                 collected_files.push_back(filename);
             }
         }
@@ -307,25 +290,20 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
     return input_files;
 }
 
-std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
+static std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
 {
     std::unordered_map<std::string, std::vector<std::size_t>> result;
     const auto & options = parsed_opts.options;
-    if (options.empty())
-        return result;
-    for (size_t i = 0; i < options.size() - 1; ++i)
+
+    for (size_t i = 0; i + 1 < options.size(); ++i)
     {
-        const auto & opt = options[i];
-        if (opt.string_key == "input-files")
+        if (options[i].string_key == "input-files" && options[i + 1].string_key == "query-indexes")
         {
-            if (options[i + 1].string_key == "query-indexes")
+            const std::string & test_path = Poco::Path(options[i].value[0]).absolute().toString();
+            for (const auto & query_num_str : options[i + 1].value)
             {
-                const std::string & test_path = Poco::Path(opt.value[0]).absolute().toString();
-                for (const auto & query_num_str : options[i + 1].value)
-                {
-                    size_t query_num = std::stoul(query_num_str);
-                    result[test_path].push_back(query_num);
-                }
+                size_t query_num = std::stoul(query_num_str);
+                result[test_path].push_back(query_num);
             }
         }
     }
@@ -414,7 +392,7 @@ try
         options["user"].as<std::string>(),
         options["password"].as<std::string>(),
         cmd_settings,
-        options.count("lite") > 0,
+        options.count("lite"),
         options["profiles-file"].as<std::string>(),
         std::move(input_files),
         std::move(tests_tags),
