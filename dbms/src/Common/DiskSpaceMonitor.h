@@ -172,15 +172,8 @@ public:
     /// availability of free space is not checked.
     void update(UInt64 new_size);
 
-    UInt64 getSize() const
-    {
-        return size;
-    }
-
-    const DiskPtr & getDisk() const
-    {
-        return disk_ptr;
-    }
+    UInt64 getSize() const { return size; }
+    const DiskPtr & getDisk() const { return disk_ptr; }
 
 private:
     UInt64 size;
@@ -311,8 +304,6 @@ private:
     /// filled more than total_size * move_factor
     double move_factor;
 };
-
-
 
 
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;

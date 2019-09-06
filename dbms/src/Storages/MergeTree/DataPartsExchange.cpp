@@ -56,10 +56,12 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     if (blocker.isCancelled())
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
-    String protocol_version = params.get("protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
+    String client_protocol_version = params.get("client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
+
+
     String part_name = params.get("part");
 
-    if (protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
+    if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
         throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
     const auto data_settings = data.getSettings();
@@ -78,6 +80,8 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         response.setChunkedTransferEncoding(false);
         return;
     }
+    response.addCookie({"server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE});
+
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
 
@@ -108,11 +112,11 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         MergeTreeData::DataPart::Checksums data_checksums;
 
-        if (protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+
+        if (client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
             writeBinary(checksums.getTotalSizeOnDisk(), out);
 
         writeBinary(checksums.files.size(), out);
-
         for (const auto & it : checksums.files)
         {
             String file_name = it.first;
@@ -195,10 +199,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     uri.setPort(port);
     uri.setQueryParameters(
     {
-        {"endpoint",         getEndpointId(replica_path)},
-        {"part_name",        part_name},
-        {"protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE},
-        {"compress",         "false"}
+        {"endpoint",                getEndpointId(replica_path)},
+        {"part",                    part_name},
+        {"client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE},
+        {"compress",                "false"}
     });
 
     Poco::Net::HTTPBasicCredentials creds{};
@@ -208,50 +212,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         creds.setPassword(password);
     }
 
-    bool protocol_error = true;
-    try
-    {
-        PooledReadWriteBufferFromHTTP in{
-            uri,
-            Poco::Net::HTTPRequest::HTTP_POST,
-            {},
-            timeouts,
-            creds,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            data_settings->replicated_max_parallel_fetches_for_host
-        };
-
-        UInt64 sum_files_size;
-        readBinary(sum_files_size, in);
-
-        protocol_error = false;
-
-        auto reservation = data.reserveSpace(sum_files_size);
-        return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
-    }
-    catch (const Exception & e) ///@TODO_IGR ASK maybe catch connection and others error here
-    {
-        if (!protocol_error)
-            throw;
-        LOG_WARNING(log, "Looks like old ClickHouse version node. Trying to use fetch protocol version 0 (" + String(e.what()) + ")"); ///@TODO_IGR ASK new msg
-    }
-
-    /// Protocol error
-    /// Seems to be replica without protocol_version "1" supporting
-    /// Try to use old one
-    Poco::URI uri_v0;
-    uri_v0.setScheme(interserver_scheme);
-    uri_v0.setHost(host);
-    uri_v0.setPort(port);
-    uri_v0.setQueryParameters(
-    {
-        {"endpoint", getEndpointId(replica_path)},
-        {"part",     part_name},
-        {"compress", "false"}
-    });
-
     PooledReadWriteBufferFromHTTP in{
-        uri_v0,
+        uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         {},
         timeouts,
@@ -260,8 +222,21 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         data_settings->replicated_max_parallel_fetches_for_host
     };
 
-    /// We don't know real size of part
-    auto reservation = data.reserveOnMaxDiskWithoutReservation();
+    auto server_protocol_version = in.getResponseCookie("server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
+
+    DiskSpace::ReservationPtr reservation;
+    if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+    {
+        size_t sum_files_size;
+        readBinary(sum_files_size, in);
+        reservation = data.reserveSpace(sum_files_size);
+    }
+    else
+    {
+        /// We don't know real size of part because sender server version is old
+        reservation = data.reserveOnMaxDiskWithoutReservation();
+    }
+
     return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
 }
 

@@ -33,7 +33,7 @@ Block PartLogElement::createBlock()
 
     return
     {
-        {ColumnInt8::create(), std::move(event_type_datatype),         "event_type"},
+        {ColumnInt8::create(),   std::move(event_type_datatype),       "event_type"},
         {ColumnUInt16::create(), std::make_shared<DataTypeDate>(),     "event_date"},
         {ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "event_time"},
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "duration_ms"},
