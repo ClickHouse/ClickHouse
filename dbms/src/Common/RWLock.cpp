@@ -110,10 +110,10 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     /// This object is placed above unique_lock, because it may lock in destructor.
     LockHolder res;
 
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
 
-    /// Check if the same query is acquiring previously acquired lock
-    /// This FastPath tries to create a "light copy" of a lock without creating a separate LockHolderImpl
+    /// FastPath - Check if the same query_id already holds the required lock
+    ///            in which case we can proceed without waiting
     if (request_has_query_id)
     {
         const auto it_query = owner_queries.find(query_id);
@@ -133,7 +133,6 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
                         ErrorCodes::LOGICAL_ERROR);
 
             res.reset(new LockHolderImpl(shared_from_this(), current_owner_group));
-            ++current_owner_group->referers;
 
             ++owner_queries[query_id];
             if (type == Type::Read)
@@ -162,9 +161,6 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
       */
 
     GroupsContainer::iterator it_group;
-
-    /// A locking request is considered potentially dangerous if it needs to wait in the queue and
-    /// its associated query_id already holds at least one Read lock. We raise an exception in such case
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
     {
         if (type == Type::Read && request_has_query_id && !queue.empty())
@@ -181,8 +177,10 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         /// Will append myself to last group
         it_group = std::prev(queue.end());
     }
+
+    /// LockHolder needs to be created before waiting to guarantee
+    /// that this group does not get deleted (group's referers is incremented)
     res.reset(new LockHolderImpl(shared_from_this(), it_group));
-    ++it_group->referers;
 
     /// Wait a notification until we will be the only in the group.
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
@@ -231,6 +229,7 @@ RWLockImpl::LockHolderImpl::LockHolderImpl(RWLock && parent_, RWLockImpl::Groups
       active_client_increment{(it_group_->type == RWLockImpl::Read) ? CurrentMetrics::RWLockActiveReaders
                                                                : CurrentMetrics::RWLockActiveWriters}
 {
+    ++it_group->referers;
 }
 
 }
