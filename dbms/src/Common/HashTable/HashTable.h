@@ -658,7 +658,7 @@ protected:
         return false;
     }
 
-    template<typename KeyHolder>
+    template <typename KeyHolder>
     void ALWAYS_INLINE emplaceNonZeroImpl(size_t place_value, KeyHolder && key_holder,
                                           iterator & it, bool & inserted, size_t hash_value)
     {
