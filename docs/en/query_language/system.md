@@ -25,7 +25,7 @@ Always returns `Ok.` regardless of the result of updating the dictionary.
 The status of the dictionary can be checked by querying `system.dictionaries`.
 
 ```sql
-select name,status from system.dictionaries
+SELECT name, status FROM system.dictionaries;
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
