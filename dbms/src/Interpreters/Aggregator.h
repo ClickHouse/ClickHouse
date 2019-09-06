@@ -733,6 +733,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
+using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingBlockInputStream.)
@@ -846,6 +847,7 @@ public:
     /** Merge several aggregation data structures and output the result as a block stream.
       */
     std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
+    ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const;
 
     /** Merge the stream of partially aggregated blocks into one data structure.
       * (Pre-aggregate several blocks that represent the result of independent aggregations from remote servers.)
@@ -900,6 +902,8 @@ public:
 protected:
     friend struct AggregatedDataVariants;
     friend class MergingAndConvertingBlockInputStream;
+    friend class ConvertingAggregatedToChunksTransform;
+    friend class ConvertingAggregatedToChunksSource;
 
     Params params;
 
@@ -1080,6 +1084,12 @@ protected:
         bool final,
         size_t bucket) const;
 
+    Block mergeAndConvertOneBucketToBlock(
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        bool final,
+        size_t bucket) const;
+
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     Block prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
@@ -1150,6 +1160,5 @@ template <typename Method> Method & getDataVariant(AggregatedDataVariants & vari
 APPLY_FOR_AGGREGATED_VARIANTS(M)
 
 #undef M
-
 
 }
