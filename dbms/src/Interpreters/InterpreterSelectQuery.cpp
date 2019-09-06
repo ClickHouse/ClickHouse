@@ -1526,7 +1526,6 @@ void InterpreterSelectQuery::executeFetchColumns(
                     streams.back() = std::make_shared<ExpressionBlockInputStream>(streams.back(), query_info.prewhere_info->remove_columns_actions);
                 }
             }
-                
         }
 
         for (auto & stream : streams)
