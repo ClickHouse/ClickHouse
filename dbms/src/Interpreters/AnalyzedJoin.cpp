@@ -93,14 +93,14 @@ NameSet AnalyzedJoin::getOriginalColumnsSet() const
     return out;
 }
 
-std::unordered_map<String, String> AnalyzedJoin::getOriginalColumnsMap(const NameSet & required_columns) const
+NamesWithAliases AnalyzedJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
-    std::unordered_map<String, String> out;
+    NamesWithAliases out;
     for (const auto & column : required_columns)
     {
         auto it = original_names.find(column);
         if (it != original_names.end())
-            out.insert(*it);
+            out.emplace_back(it->second, it->first); /// {original_name, name}
     }
     return out;
 }
@@ -129,15 +129,15 @@ Names AnalyzedJoin::requiredJoinedNames() const
     return Names(required_columns_set.begin(), required_columns_set.end());
 }
 
-void AnalyzedJoin::appendRequiredColumns(const Block & sample, NameSet & required_columns) const
+NamesWithAliases AnalyzedJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
 {
-    for (auto & column : key_names_right)
+    NameSet required_columns(action_required_columns.begin(), action_required_columns.end());
+
+    for (auto & column : requiredJoinedNames())
         if (!sample.has(column))
             required_columns.insert(column);
 
-    for (auto & column : columns_added_by_join)
-        if (!sample.has(column.name))
-            required_columns.insert(column.name);
+    return getNamesWithAliases(required_columns);
 }
 
 void AnalyzedJoin::addJoinedColumn(const NameAndTypePair & joined_column)
