@@ -632,7 +632,7 @@ protected:
 
     /// If the key is zero, insert it into a special place and return true.
     /// We don't have to persist a zero key, because it's not actually inserted.
-    /// That's why we just take a Key by value, an not a smart pointer to it.
+    /// That's why we just take a Key by value, an not a key holder.
     bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
