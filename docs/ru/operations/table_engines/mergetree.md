@@ -329,29 +329,35 @@ TTL date_time + INTERVAL 15 HOUR
 
 Примеры:
 
+Создание таблицы с TTL
+
 ```sql
 CREATE TABLE example_table 
 (
     d DateTime,
-    a Int TTL d + interval 1 month,
-    b Int TTL d + interval 1 month,
+    a Int TTL d + INTERVAL 1 MONTH,
+    b Int TTL d + INTERVAL 1 MONTH,
     c String
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d;
+```
 
--- добавление TTL на колонку существующей таблицы
+Добавление TTL на колонку существующей таблицы
 
+```sql
 ALTER TABLE example_table
     MODIFY COLUMN
-    c String TTL d + interval 1 day;
-    
--- изменение TTL у колонки
+    c String TTL d + INTERVAL 1 DAY;
+```
 
+Изменение TTL у колонки
+
+```sql
 ALTER TABLE example_table
     MODIFY COLUMN
-    c String TTL d + interval 1 month;
+    c String TTL d + INTERVAL 1 MONTH;
 ```
 
 **TTL таблицы**
@@ -369,12 +375,14 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + interval 1 month;
+TTL d + INTERVAL 1 MONTH;
+```
 
--- Изменение TTL 
+Изменение TTL 
 
+```sql
 ALTER TABLE example_table
-    MODIFY TTL d + interval 1 day;
+    MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
 **Удаление данных**
