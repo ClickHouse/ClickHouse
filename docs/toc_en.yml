@@ -158,6 +158,7 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'input': 'query_language/table_functions/input.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':
