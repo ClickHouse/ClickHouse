@@ -103,7 +103,7 @@ add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
-add_headers_and_sources(dbms src/Account)
+add_headers_and_sources(dbms src/ACL)
 add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/Compression/)
 add_headers_and_sources(dbms src/DataStreams)

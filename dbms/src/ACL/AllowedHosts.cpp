@@ -1,4 +1,4 @@
-#include <Account/AllowedHosts.h>
+#include <ACL/AllowedHosts.h>
 #include <Common/Exception.h>
 #include <common/SimpleCache.h>
 #include <Poco/Net/SocketAddress.h>
@@ -85,6 +85,7 @@ namespace
     }
 
 
+    /// Cached version of isAddressOfHostImpl(). We need to cache DNS requests.
     bool isAddressOfHost(const IPAddress & address, const String & host)
     {
         static SimpleCache<decltype(isAddressOfHostImpl), isAddressOfHostImpl> cache;
@@ -102,12 +103,14 @@ namespace
         if (0 != gai_errno)
             throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::DNS_ERROR);
 
+        /// Check that PTR record is resolved back to client address
         if (!isAddressOfHost(address, host))
             throw Exception("Host " + String(host) + " isn't resolved back to " + address.toString(), ErrorCodes::DNS_ERROR);
         return host;
     }
 
 
+    /// Cached version of getHostByAddressImpl(). We need to cache DNS requests.
     String getHostByAddress(const IPAddress & address)
     {
         static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
@@ -163,7 +166,7 @@ void AllowedHosts::addIPAddress(const IPAddress & address)
 {
     IPAddress addr_v6 = toIPv6(address);
 
-    /// Keep the vector `ip_addresses` sorted to simplify the comparison.
+    /// The vector `ip_addresses` is sorted to simplify the comparison.
     ip_addresses.insert(std::upper_bound(ip_addresses.begin(), ip_addresses.end(), addr_v6), addr_v6);
 }
 
@@ -171,17 +174,18 @@ void AllowedHosts::addIPAddress(const IPAddress & address)
 void AllowedHosts::addIPSubnet(const IPSubnet & subnet)
 {
     IPSubnet subnet_v6;
+    subnet_v6.prefix = toIPv6(subnet.prefix);
     subnet_v6.mask = maskToIPv6(subnet.mask);
 
     if (subnet_v6.mask == Poco::Net::IPAddress(128, Poco::Net::IPAddress::IPv6))
     {
-        addIPAddress(subnet.prefix);
+        addIPAddress(subnet_v6.prefix);
         return;
     }
 
-    subnet_v6.prefix = toIPv6(subnet.prefix) & subnet_v6.mask;
+    subnet_v6.prefix = subnet_v6.prefix & subnet_v6.mask;
 
-    /// Keep the vector `ip_subnets` sorted to simplify the comparison.
+    /// The vector `ip_subnets` is sorted to simplify the comparison.
     ip_subnets.insert(std::upper_bound(ip_subnets.begin(), ip_subnets.end(), subnet_v6), subnet_v6);
 }
 
@@ -200,13 +204,14 @@ void AllowedHosts::addIPSubnet(const IPAddress & prefix, size_t num_prefix_bits)
 
 void AllowedHosts::addHost(const String & host)
 {
-    /// Keep the vector `hosts` sorted to simplify the comparison.
+    /// The vector `hosts` is sorted to simplify the comparison.
     hosts.insert(std::upper_bound(hosts.begin(), hosts.end(), host), host);
 }
 
 
 void AllowedHosts::addHostRegexp(const String & host_regexp)
 {
+    /// Keep the same order of the vectors `host_regexps` and `host_regexps_compiled`.
     auto compiled_regexp = std::make_unique<Poco::RegularExpression>(host_regexp);
     auto new_pos_it = std::upper_bound(host_regexps.begin(), host_regexps.end(), host_regexp);
     size_t new_pos = new_pos_it - host_regexps.begin();
@@ -217,28 +222,25 @@ void AllowedHosts::addHostRegexp(const String & host_regexp)
 
 bool AllowedHosts::contains(const IPAddress & address) const
 {
-    std::exception_ptr error;
-    return containsImpl(address, error);
+    return containsImpl(address, String(), nullptr);
 }
 
 
-void AllowedHosts::checkContains(const IPAddress & address) const
+void AllowedHosts::checkContains(const IPAddress & address, const String & user_name) const
 {
-    std::exception_ptr error;
-    if (containsImpl(address, error))
-        return;
+    String error;
+    if (!containsImpl(address, user_name, &error))
+        throw Exception(error, ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+}
 
+
+bool AllowedHosts::containsImpl(const IPAddress & address, const String & user_name, String * error) const
+{
     if (error)
-        std::rethrow_exception(error);
-    throw Exception("You are not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-}
-
-
-bool AllowedHosts::containsImpl(const IPAddress & address, std::exception_ptr & error) const
-{
-    IPAddress addr_v6 = toIPv6(address);
+        error->clear();
 
     /// Check `ip_addresses`.
+    IPAddress addr_v6 = toIPv6(address);
     if (std::binary_search(ip_addresses.begin(), ip_addresses.end(), addr_v6))
         return true;
 
@@ -246,6 +248,8 @@ bool AllowedHosts::containsImpl(const IPAddress & address, std::exception_ptr & 
     for (const auto & subnet : ip_subnets)
         if ((addr_v6 & subnet.mask) == subnet.prefix)
             return true;
+
+    auto user_name_with_colon = [&user_name]() { return user_name.empty() ? String() : user_name + ": "; };
 
     /// Check `hosts`.
     for (const String & host : hosts)
@@ -255,32 +259,21 @@ bool AllowedHosts::containsImpl(const IPAddress & address, std::exception_ptr & 
             if (isAddressOfHost(address, host))
                 return true;
         }
-        catch (...)
+        catch (Exception & e)
         {
-            if (!error)
-                error = std::current_exception();
+            if (e.code() != ErrorCodes::DNS_ERROR)
+                e.rethrow();
+
+            /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
+            if (error && error->empty())
+                *error = user_name_with_colon() + "Failed to check if the allowed hosts contain address " + address.toString() + ": " + e.displayText();
         }
     }
 
     /// Check `host_regexps`.
     if (!host_regexps.empty())
     {
-        for (size_t i = 0; i != host_regexps.size(); ++i)
-        {
-            if (!host_regexps_compiled[i])
-            {
-                try
-                {
-                    host_regexps_compiled[i] = std::make_unique<Poco::RegularExpression>(host_regexps[i]);
-                }
-                catch (...)
-                {
-                    if (!error)
-                        error = std::current_exception();
-                }
-            }
-        }
-
+        ensureRegexpsCompiled();
         try
         {
             String resolved_host = getHostByAddress(address);
@@ -290,14 +283,30 @@ bool AllowedHosts::containsImpl(const IPAddress & address, std::exception_ptr & 
                     return true;
             }
         }
-        catch (...)
+        catch (Exception & e)
         {
-            if (!error)
-                error = std::current_exception();
+            if (e.code() != ErrorCodes::DNS_ERROR)
+                e.rethrow();
+
+            /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
+            if (error && error->empty())
+                *error = user_name_with_colon() + "Failed to check if the allowed hosts contain address " + address.toString() + ": " + e.displayText();
         }
     }
 
+    if (error && error->empty())
+        *error = user_name_with_colon() + "It's not allowed to connect from address " + address.toString();
     return false;
+}
+
+
+void AllowedHosts::ensureRegexpsCompiled() const
+{
+    for (size_t i = 0; i != host_regexps.size(); ++i)
+    {
+        if (!host_regexps_compiled[i])
+            host_regexps_compiled[i] = std::make_unique<Poco::RegularExpression>(host_regexps[i]);
+    }
 }
 
 

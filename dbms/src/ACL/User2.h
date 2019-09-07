@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Account/Role.h>
+#include <ACL/Role.h>
 
 
 namespace DB
@@ -26,7 +26,7 @@ public:
     using Role::Role;
 
     AttributesPtr getAttributes() const { return getAttributesImpl<Attributes>(); }
-    AttributesPtr tryGetAttributes() const { return tryGetAttributesImpl<Attributes>(); }
+    AttributesPtr getAttributesStrict() const { return getAttributesStrictImpl<Attributes>(); }
 
    /// Sets the default roles, i.e. roles which are set immediately after login.
     /// You can set only granted roles to be default.

@@ -29,7 +29,8 @@ public:
     bool isCorrect(const String & password) const;
 
     /// Checks if the provided password is correct. Throws an exception if not.
-    void check(const String & password) const;
+    /// `username` is only used for generating an error message if the password is incorrect.
+    void checkIsCorrect(const String & password, const String & user_name = String()) const;
 
     friend bool operator ==(const EncodedPassword & lhs, const EncodedPassword & rhs);
     friend bool operator !=(const EncodedPassword & lhs, const EncodedPassword & rhs) { return !(lhs == rhs); }

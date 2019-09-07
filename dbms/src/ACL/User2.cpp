@@ -1,4 +1,5 @@
-#include <Account/User.h>
+#if 0
+#include <ACL/User2.h>
 #include <Common/Exception.h>
 
 
@@ -26,7 +27,7 @@ bool User2::Attributes::equal(const IAccessControlElement::Attributes & other) c
 std::shared_ptr<IAccessControlElement::Attributes> User2::Attributes::clone() const
 {
     auto result = std::make_shared<Attributes>();
-    *result == *this;
+    *result = *this;
     return result;
 }
 
@@ -51,7 +52,7 @@ Operation User2::setDefaultRolesOp(const std::vector<Role> & roles) const
 
 std::vector<Role> User2::getDefaultRoles() const
 {
-    auto attrs = getAttributes();
+    auto attrs = getAttributesStrict();
     std::vector<Role> result;
     result.reserve(attrs->granted_roles.size());
     for (const auto & [granted_id, settings] : attrs->granted_roles)
@@ -84,3 +85,4 @@ int User2::getAlreadyExistsErrorCode() const
     return ErrorCodes::USER_ALREADY_EXISTS;
 }
 }
+#endif

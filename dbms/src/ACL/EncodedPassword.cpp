@@ -1,4 +1,4 @@
-#include <Account/EncodedPassword.h>
+#include <ACL/EncodedPassword.h>
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 #include "config_core.h"
@@ -75,13 +75,14 @@ bool EncodedPassword::isCorrect(const String & password) const
 }
 
 
-void EncodedPassword::check(const String & password) const
+void EncodedPassword::checkIsCorrect(const String & password, const String & user_name) const
 {
     if (isCorrect(password))
         return;
+    auto user_name_with_colon = [&user_name]() { return user_name.empty() ? String() : user_name + ": "; };
     if (password.empty())
-        throw Exception("Password is required", ErrorCodes::REQUIRED_PASSWORD);
-    throw Exception("Wrong password", ErrorCodes::WRONG_PASSWORD);
+        throw Exception(user_name_with_colon() + "Password is required", ErrorCodes::REQUIRED_PASSWORD);
+    throw Exception(user_name_with_colon() + "Wrong password", ErrorCodes::WRONG_PASSWORD);
 }
 
 

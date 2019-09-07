@@ -4,14 +4,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
-#include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
-#include "config_core.h"
-#if USE_SSL
-#   include <openssl/sha.h>
-#endif
 
 
 namespace DB
@@ -19,14 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int DNS_ERROR;
-    extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
     extern const int UNKNOWN_USER;
-    extern const int REQUIRED_PASSWORD;
-    extern const int WRONG_PASSWORD;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
-    extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 using UserPtr = UsersManager::UserPtr;
@@ -57,47 +44,8 @@ UserPtr UsersManager::authorizeAndGetUser(
     if (users.end() == it)
         throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
 
-    if (!it->second->addresses.contains(address))
-        throw Exception("User " + user_name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-
-    auto on_wrong_password = [&]()
-    {
-        if (password.empty())
-            throw Exception("Password required for user " + user_name, ErrorCodes::REQUIRED_PASSWORD);
-        else
-            throw Exception("Wrong password for user " + user_name, ErrorCodes::WRONG_PASSWORD);
-    };
-
-    if (!it->second->password_sha256_hex.empty())
-    {
-#if USE_SSL
-        unsigned char hash[32];
-
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(password.data()), password.size());
-        SHA256_Final(hash, &ctx);
-
-        String hash_hex;
-        {
-            WriteBufferFromString buf(hash_hex);
-            HexWriteBuffer hex_buf(buf);
-            hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
-        }
-
-        Poco::toLowerInPlace(hash_hex);
-
-        if (hash_hex != it->second->password_sha256_hex)
-            on_wrong_password();
-#else
-        throw DB::Exception("SHA256 passwords support is disabled, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
-    }
-    else if (password != it->second->password)
-    {
-        on_wrong_password();
-    }
-
+    it->second->allowed_hosts.checkContains(address, user_name);
+    it->second->encoded_password.checkIsCorrect(password, user_name);
     return it->second;
 }
 

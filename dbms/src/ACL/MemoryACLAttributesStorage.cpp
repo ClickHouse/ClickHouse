@@ -1,25 +1,27 @@
-#include <Account/MemoryAccessControlStorage.h>
+#include <ACL/MemoryACLAttributesStorage.h>
 #include <Poco/UUIDGenerator.h>
 
 
 namespace DB
 {
-using Status = IAccessControlStorage::Status;
-using Subscription = IAccessControlStorage::Subscription;
+using Status = IACLAttributesStorage::Status;
+using Subscription = IACLAttributesStorage::Subscription;
+using SubscriptionPtr = IACLAttributesStorage::SubscriptionPtr;
 
 
-MemoryAccessControlStorage::MemoryAccessControlStorage()
+MemoryACLAttributesStorage::MemoryACLAttributesStorage()
 {
-    static_assert(static_cast<size_t>(ElementType::ROLE) < MAX_TYPE);
-    static_assert(static_cast<size_t>(ElementType::USER) < MAX_TYPE);
-    static_assert(static_cast<size_t>(ElementType::ROW_LEVEL_SECURITY_POLICY) < MAX_TYPE);
+    static_assert(static_cast<size_t>(IACLAttributes::Type::USER) < MAX_TYPE);
+    static_assert(static_cast<size_t>(IACLAttributes::Type::ROLE) < MAX_TYPE);
+    static_assert(static_cast<size_t>(IACLAttributes::Type::QUOTA) < MAX_TYPE);
+    static_assert(static_cast<size_t>(IACLAttributes::Type::ROW_FILTER_POLICY) < MAX_TYPE);
 }
 
 
-MemoryAccessControlStorage::~MemoryAccessControlStorage() {}
+MemoryACLAttributesStorage::~MemoryACLAttributesStorage() {}
 
 
-std::vector<UUID> MemoryAccessControlStorage::findAll(ElementType type) const
+std::vector<UUID> MemoryACLAttributesStorage::findAll(IACLAttributes::Type type) const
 {
     std::lock_guard lock{mutex};
     std::vector<UUID> result;
@@ -31,7 +33,7 @@ std::vector<UUID> MemoryAccessControlStorage::findAll(ElementType type) const
 }
 
 
-UUID MemoryAccessControlStorage::find(const String & name, ElementType type) const
+UUID MemoryACLAttributesStorage::find(const String & name, IACLAttributes::Type type) const
 {
     std::lock_guard lock{mutex};
     const auto & names_of_type = names[static_cast<size_t>(type)];
@@ -42,14 +44,14 @@ UUID MemoryAccessControlStorage::find(const String & name, ElementType type) con
 }
 
 
-bool MemoryAccessControlStorage::exists(const UUID & id) const
+bool MemoryACLAttributesStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     return entries.count(id);
 }
 
 
-Status MemoryAccessControlStorage::insert(const Attributes & attrs, UUID & id)
+Status MemoryACLAttributesStorage::insert(const IACLAttributes & attrs, UUID & id)
 {
     std::unique_lock lock{mutex};
     id = UUID(UInt128(0));
@@ -67,21 +69,14 @@ Status MemoryAccessControlStorage::insert(const Attributes & attrs, UUID & id)
 
     Entry & entry = entries[id];
     entry.attrs = attrs.clone();
-    const auto & notify_list_src = on_new_attrs_functions[static_cast<size_t>(attrs.getType())];
-    std::vector<OnNewAttributesFunction> notify_list(notify_list_src.begin(), notify_list_src.end());
-    lock.unlock();
-
-    for (const auto & fn : notify_list)
-        fn(id);
-
     return Status::OK;
 }
 
 
-Status MemoryAccessControlStorage::remove(const UUID & id)
+Status MemoryACLAttributesStorage::remove(const UUID & id)
 {
     std::unique_lock lock{mutex};
-    std::vector<std::pair<OnChangedFunction, AttributesPtr>> notify_list;
+    std::vector<std::pair<OnChangedFunction, ACLAttributesPtr>> notify_list;
     Status result = Status::NOT_FOUND;
 
     auto it = entries.find(id);
@@ -116,7 +111,7 @@ Status MemoryAccessControlStorage::remove(const UUID & id)
 }
 
 
-Status MemoryAccessControlStorage::read(const UUID & id, AttributesPtr & attrs) const
+Status MemoryACLAttributesStorage::readImpl(const UUID & id, ACLAttributesPtr & attrs) const
 {
     std::lock_guard lock{mutex};
     attrs.reset();
@@ -128,7 +123,7 @@ Status MemoryAccessControlStorage::read(const UUID & id, AttributesPtr & attrs) 
 }
 
 
-Status MemoryAccessControlStorage::write(const UUID & id, const MakeChangeFunction & make_change)
+Status MemoryACLAttributesStorage::writeImpl(const UUID & id, const MakeChangeFunction & make_change)
 {
     std::unique_lock lock{mutex};
     auto it = entries.find(id);
@@ -136,7 +131,9 @@ Status MemoryAccessControlStorage::write(const UUID & id, const MakeChangeFuncti
         return Status::NOT_FOUND;
     Entry & entry = it->second;
     auto new_attrs = entry.attrs->clone();
-    make_change(*new_attrs);
+    Status status = make_change(*new_attrs);
+    if (status != Status::OK)
+        return status;
     if (*entry.attrs == *new_attrs)
         return Status::OK;
     if (entry.attrs->name != new_attrs->name)
@@ -158,57 +155,35 @@ Status MemoryAccessControlStorage::write(const UUID & id, const MakeChangeFuncti
 }
 
 
-class MemoryAccessControlStorage::SubscriptionForNew : public IAccessControlStorage::Subscription
+class MemoryACLAttributesStorage::SubscriptionImpl : public Subscription
 {
 public:
-    SubscriptionForNew(
-        const MemoryAccessControlStorage * storage_, ElementType type_, const std::list<OnNewAttributesFunction>::iterator & functions_it_)
-        : storage(storage_), type(type_), functions_it(functions_it_)
-    {
-    }
-    ~SubscriptionForNew() override { storage->removeSubscriptionForNew(type, functions_it); }
-
-private:
-    const MemoryAccessControlStorage * storage;
-    ElementType type;
-    std::list<OnNewAttributesFunction>::iterator functions_it;
-};
-
-
-void MemoryAccessControlStorage::removeSubscriptionForNew(ElementType type, const std::list<OnNewAttributesFunction>::iterator & functions_it) const
-{
-    std::lock_guard lock{mutex};
-    auto & functions = on_new_attrs_functions[static_cast<size_t>(type)];
-    functions.erase(functions_it);
-}
-
-
-std::unique_ptr<Subscription> MemoryAccessControlStorage::subscribeForNew(ElementType type, const OnNewAttributesFunction & on_new_attrs) const
-{
-    std::lock_guard lock{mutex};
-    auto & functions = on_new_attrs_functions[static_cast<size_t>(type)];
-    return std::make_unique<SubscriptionForNew>(this, type, functions.emplace(functions.end(), on_new_attrs));
-}
-
-
-class MemoryAccessControlStorage::SubscriptionForChanges : public IAccessControlStorage::Subscription
-{
-public:
-    SubscriptionForChanges(
-        const MemoryAccessControlStorage * storage_, const UUID & id_, const std::list<OnChangedFunction>::iterator & functions_it_)
+    SubscriptionImpl(
+        const MemoryACLAttributesStorage * storage_, const UUID & id_, const std::list<OnChangedFunction>::iterator & functions_it_)
         : storage(storage_), id(id_), functions_it(functions_it_)
     {
     }
-    ~SubscriptionForChanges() override { storage->removeSubscriptionForChanges(id, functions_it); }
+    ~SubscriptionImpl() override { storage->removeSubscription(id, functions_it); }
 
 private:
-    const MemoryAccessControlStorage * storage;
+    const MemoryACLAttributesStorage * storage;
     UUID id;
     std::list<OnChangedFunction>::iterator functions_it;
 };
 
 
-void MemoryAccessControlStorage::removeSubscriptionForChanges(const UUID & id, const std::list<OnChangedFunction>::iterator & functions_it) const
+SubscriptionPtr MemoryACLAttributesStorage::subscribeForChangesImpl(const UUID & id, const OnChangedFunction & on_changed) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries.find(id);
+    if (it == entries.end())
+        return nullptr;
+    auto & functions = it->second.on_changed_functions;
+    return std::make_unique<SubscriptionImpl>(this, id, functions.emplace(functions.end(), on_changed));
+}
+
+
+void MemoryACLAttributesStorage::removeSubscription(const UUID & id, const std::list<OnChangedFunction>::iterator & functions_it) const
 {
     std::lock_guard lock{mutex};
     auto it = entries.find(id);
@@ -216,16 +191,5 @@ void MemoryAccessControlStorage::removeSubscriptionForChanges(const UUID & id, c
         return;
     auto & functions = it->second.on_changed_functions;
     functions.erase(functions_it);
-}
-
-
-std::unique_ptr<Subscription> MemoryAccessControlStorage::subscribeForChanges(const UUID & id, const OnChangedFunction & on_changed) const
-{
-    std::lock_guard lock{mutex};
-    auto it = entries.find(id);
-    if (it == entries.end())
-        return nullptr;
-    auto & functions = it->second.on_changed_functions;
-    return std::make_unique<SubscriptionForChanges>(this, id, functions.emplace(functions.end(), on_changed));
 }
 }

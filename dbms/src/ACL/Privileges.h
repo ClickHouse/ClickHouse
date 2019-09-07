@@ -100,11 +100,17 @@ public:
     bool hasAccess(Types access, const String & database, const String & table, const Strings & columns) const { return !(access & getAccess(database, table, columns)); }
 
     /// Checks if a specified privilege is granted. Throws an exception if it isn't.
+    /// `username` is only used for generating an error message if not enough privileges.
     void checkAccess(Types access) const;
     void checkAccess(Types access, const String & database) const;
     void checkAccess(Types access, const String & database, const String & table) const;
     void checkAccess(Types access, const String & database, const String & table, const String & column) const;
     void checkAccess(Types access, const String & database, const String & table, const Strings & columns) const;
+    void checkAccess(const String & user_name, Types access) const;
+    void checkAccess(const String & user_name, Types access, const String & database) const;
+    void checkAccess(const String & user_name, Types access, const String & database, const String & table) const;
+    void checkAccess(const String & user_name, Types access, const String & database, const String & table, const String & column) const;
+    void checkAccess(const String & user_name, Types access, const String & database, const String & table, const Strings & columns) const;
 
     /// Merges two sets of privileges together.
     /// It's used to combine privileges when several roles are being used by the same user.

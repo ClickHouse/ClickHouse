@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Account/IAccessControlElement.h>
-#include <Account/Privileges.h>
+#include <ACL/IACLAttributable.h>
+#include <ACL/Privileges.h>
 
 
 namespace DB
 {
 /// Represents a role in Role-based Access Control.
-class Role : public IAccessControlElement
+class Role : public IACLAttributable
 {
 public:
-    struct Attributes : public IAccessControlElement::Attributes
+    struct Attributes : public IACLAttributable::Attributes
     {
         /// Granted privileges. This doesn't include the privileges from the granted roles.
         Privileges privileges;
@@ -31,26 +31,28 @@ public:
         /// Applied row-level security policies.
         //std::unordered_set<UUID> applied_row_level_security_plocies;
 
-        /// Applied quotas.
-        //std::unordered_set<UUID> applied_quotas;
+        /// Quota. Zero means no quota.
+        UUID quota;
 
         /// Applied setting profiles.
         //std::unordered_set<UUID> applied_settings_profiles;
+        /// Settings settings;
+        /// SettingsConstraints settings_constraints;
 
         Type getType() const override { return Type::ROLE; }
-        std::shared_ptr<IAccessControlElement::Attributes> clone() const override;
+        std::shared_ptr<IACLAttributes> clone() const override;
         bool hasReferences(UUID ref_id) const override;
         void removeReferences(UUID ref_id) override;
 
     protected:
-        bool equal(const IAccessControlElement::Attributes & other) const override;
+        bool equal(const IACLAttributes & other) const override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;
-    using IAccessControlElement::IAccessControlElement;
+    using IACLAttributable::IACLAttributable;
 
-    AttributesPtr getAttributes() const { return getAttributesImpl<Attributes>(); }
-    AttributesPtr tryGetAttributes() const { return tryGetAttributesImpl<Attributes>(); }
+    AttributesPtr getAttributes() const { AttributesPtr attrs; readAttributes(attrs); return attrs; }
+    AttributesPtr getAttributesStrict() const { AttributesPtr attrs; readAttributesStrict(attrs); return attrs; }
 
     struct GrantParams
     {
@@ -117,7 +119,6 @@ public:
     std::vector<Role> getGrantedRolesWithAdminOption() const;
 
 private:
-    Operation prepareOperation(const std::function<void(Attributes &)> & fn) const;
     const String & getTypeName() const override;
     int getNotFoundErrorCode() const override;
     int getAlreadyExistsErrorCode() const override;

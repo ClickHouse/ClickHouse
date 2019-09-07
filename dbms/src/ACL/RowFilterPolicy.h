@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Account/IAccessControlElement.h>
-#include <Account/Privileges.h>
+#include <ACL/IAccessControlElement.h>
+#include <ACL/Privileges.h>
 
 
 namespace DB

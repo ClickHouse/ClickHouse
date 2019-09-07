@@ -1,4 +1,4 @@
-#include <Account/Privileges.h>
+#include <ACL/Privileges.h>
 #include <Common/Exception.h>
 #include <Parsers/IAST.h>
 
@@ -592,50 +592,85 @@ bool Privileges::revoke(Types access, const String & database, const String & ta
 
 void Privileges::checkAccess(Types access) const
 {
-    Types access_denied = (access & ~getAccess());
-    if (access_denied)
-        throw Exception(
-            "Not enough privileges. To run this command you should have been granted " + accessToString(access_denied),
-            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+    checkAccess(String(), access);
 }
 
 
 void Privileges::checkAccess(Types access, const String & database) const
 {
-    Types access_denied = (access & ~getAccess(database));
-    if (access_denied)
-        throw Exception(
-            "Not enough privileges. To run this command you should have been granted " + accessToString(access_denied, database),
-            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+    checkAccess(String(), access, database);
 }
 
 
 void Privileges::checkAccess(Types access, const String & database, const String & table) const
 {
-    Types access_denied = (access & ~getAccess(database, table));
-    if (access_denied)
-        throw Exception(
-            "Not enough privileges. To run this command you should have been granted " + accessToString(access_denied, database, table),
-            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+    checkAccess(String(), access, database, table);
 }
 
 
 void Privileges::checkAccess(Types access, const String & database, const String & table, const String & column) const
 {
-    Types access_denied = (access & ~getAccess(database, table, column));
-    if (access_denied)
-        throw Exception(
-            "Not enough privileges. To run this command you should have been granted " + accessToString(access_denied, database, table, column),
-            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+    checkAccess(String(), access, database, table, column);
 }
 
 
 void Privileges::checkAccess(Types access, const String & database, const String & table, const Strings & columns) const
 {
+    checkAccess(String(), access, database, table, columns);
+}
+
+
+void Privileges::checkAccess(const String & user_name, Types access) const
+{
+    Types access_denied = (access & ~getAccess());
+    if (access_denied)
+        throw Exception(
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+                + accessToString(access_denied),
+            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
+
+void Privileges::checkAccess(const String & user_name, Types access, const String & database) const
+{
+    Types access_denied = (access & ~getAccess(database));
+    if (access_denied)
+        throw Exception(
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+                + accessToString(access_denied, database),
+            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
+
+void Privileges::checkAccess(const String & user_name, Types access, const String & database, const String & table) const
+{
+    Types access_denied = (access & ~getAccess(database, table));
+    if (access_denied)
+        throw Exception(
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+                + accessToString(access_denied, database, table),
+            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
+
+void Privileges::checkAccess(const String & user_name, Types access, const String & database, const String & table, const String & column) const
+{
+    Types access_denied = (access & ~getAccess(database, table, column));
+    if (access_denied)
+        throw Exception(
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+                + accessToString(access_denied, database, table, column),
+            ErrorCodes::NOT_ENOUGH_PRIVILEGES);
+}
+
+
+void Privileges::checkAccess(const String & user_name, Types access, const String & database, const String & table, const Strings & columns) const
+{
     Types access_denied = (access & ~getAccess(database, table, columns));
     if (access_denied)
         throw Exception(
-            "Not enough privileges. To run this command you should have been granted " + accessToString(access_denied, database, table, columns),
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+                + accessToString(access_denied, database, table, columns),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 

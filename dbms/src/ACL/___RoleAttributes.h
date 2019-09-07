@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Account/IAccessAttributes.h>
-#include <Account/Privileges.h>
+#include <ACL/IAccessAttributes.h>
+#include <ACL/Privileges.h>
 #include <Core/UUID.h>
 #include <unordered_map>
 #include <unordered_set>
