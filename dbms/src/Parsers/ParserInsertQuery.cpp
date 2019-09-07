@@ -8,7 +8,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -97,6 +97,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = before_select;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
+
+        /// FORMAT section is expected if we have input() in SELECT part
+        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
+            return false;
     }
     else
     {
