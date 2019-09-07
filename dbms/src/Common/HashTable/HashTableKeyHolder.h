@@ -77,7 +77,7 @@ struct ArenaKeyHolder
 
 };
 
-} /* namespace DB */
+}
 
 inline StringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaKeyHolder & holder)
 {
@@ -109,7 +109,7 @@ struct SerializedKeyHolder
     Arena & pool;
 };
 
-} /// namespace DB
+}
 
 inline StringRef & ALWAYS_INLINE keyHolderGetKey(DB::SerializedKeyHolder & holder)
 {
