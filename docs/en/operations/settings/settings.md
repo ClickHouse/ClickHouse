@@ -834,9 +834,6 @@ Possible values:
 
 Default value: `uniqExact`.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
-
-
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Enables or disables silent skipping of:
