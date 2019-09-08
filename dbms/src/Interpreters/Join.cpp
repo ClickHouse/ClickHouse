@@ -929,10 +929,16 @@ void Join::joinGet(Block & block, const String & column_name) const
 
     if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::Any)
     {
-        joinGetImpl(block, column_name, std::get<MapsAny>(maps));
+        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
+            block, {block.getByPosition(0).name}, {}, {sample_block_with_columns_to_add.getByName(column_name)}, std::get<MapsAny>(maps));
+    }
+    else if (kind == ASTTableJoin::Kind::Full && strictness == ASTTableJoin::Strictness::Any)
+    {
+        joinBlockImpl<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Any>(
+            block, {block.getByPosition(0).name}, {}, {sample_block_with_columns_to_add.getByName(column_name)}, std::get<MapsAnyFull>(maps));
     }
     else
-        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("joinGet only supports StorageJoin of type Left/Full Any", ErrorCodes::LOGICAL_ERROR);
 }
 
 
