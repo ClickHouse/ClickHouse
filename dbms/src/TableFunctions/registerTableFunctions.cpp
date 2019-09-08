@@ -10,6 +10,7 @@ namespace DB
 void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
+void registerTableFunctionWindow(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionS3(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
@@ -38,6 +39,7 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionWindow(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionS3(factory);
     registerTableFunctionURL(factory);
