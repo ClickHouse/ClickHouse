@@ -112,7 +112,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
     {
         out = std::make_shared<SquashingBlockOutputStream>(
-            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes, query.select ? true : false);
     }
     auto query_sample_block = getSampleBlock(query, table);
 

@@ -115,9 +115,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(
         auto format = getOutputFormat("PrettyCompact", buf, sample, context);
         auto res = std::make_shared<SquashingBlockOutputStream>(
                 std::make_shared<OutputStreamToOutputFormat>(format),
-                sample, context.getSettingsRef().output_format_pretty_max_rows, 0);
-
-        res->disableFlush();
+                sample, context.getSettingsRef().output_format_pretty_max_rows, 0, true);
 
         return std::make_shared<MaterializingBlockOutputStream>(res, sample);
     }

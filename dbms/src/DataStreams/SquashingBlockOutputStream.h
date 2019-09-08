@@ -12,7 +12,7 @@ namespace DB
 class SquashingBlockOutputStream : public IBlockOutputStream
 {
 public:
-    SquashingBlockOutputStream(BlockOutputStreamPtr dst, Block header_, size_t min_block_size_rows, size_t min_block_size_bytes);
+    SquashingBlockOutputStream(BlockOutputStreamPtr dst, Block header_, size_t min_block_size_rows, size_t min_block_size_bytes, bool disable_flush_);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -20,9 +20,6 @@ public:
     void flush() override;
     void writePrefix() override;
     void writeSuffix() override;
-
-    /// Don't write blocks less than specified size even when flush method was called by user.
-    void disableFlush() { disable_flush = true; }
 
 private:
     BlockOutputStreamPtr output;
@@ -33,7 +30,7 @@ private:
 
     void finalize();
 
-    bool disable_flush = false;
+    bool disable_flush;
 };
 
 }
