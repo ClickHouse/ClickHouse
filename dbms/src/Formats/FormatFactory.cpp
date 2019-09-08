@@ -47,6 +47,9 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.template_settings.format = settings.format_schema;
+    format_settings.template_settings.row_format = settings.format_schema_rows;
+    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
 
     return format_settings;
 }
@@ -63,6 +66,9 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.template_settings.format = settings.format_schema;
+    format_settings.template_settings.row_format = settings.format_schema_rows;
+    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
 
@@ -220,8 +226,6 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatTabSeparated(FormatFactory & factory);
-void registerInputFormatCSV(FormatFactory & factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -242,6 +246,8 @@ void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorTemplate(FormatFactory & factory);
+void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 
 /// Output only (presentational) formats.
 
@@ -267,8 +273,6 @@ FormatFactory::FormatFactory()
 {
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
-    registerInputFormatTabSeparated(*this);
-    registerInputFormatCSV(*this);
 
     registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
@@ -292,6 +296,8 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorTemplate(*this);
+    registerOutputFormatProcessorTemplate(*this);
 
 
     registerOutputFormatNull(*this);

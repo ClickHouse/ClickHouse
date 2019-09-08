@@ -36,13 +36,17 @@
     M(MarkCacheMisses, "") \
     M(CreatedReadBufferOrdinary, "") \
     M(CreatedReadBufferAIO, "") \
+    M(CreatedReadBufferAIOFailed, "") \
     M(CreatedWriteBufferOrdinary, "") \
     M(CreatedWriteBufferAIO, "") \
+    M(CreatedWriteBufferAIOFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "") \
     M(NetworkSendElapsedMicroseconds, "") \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform the 'max_network_bandwidth' setting.") \
+    \
+    M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
     M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
     M(ReplicatedPartFailedFetches, "") \

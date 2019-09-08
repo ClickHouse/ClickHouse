@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/Join.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/NullableUtils.h>
 
@@ -50,7 +51,7 @@ static std::unordered_map<String, DataTypePtr> requiredRightKeys(const Names & k
 
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    if (column.type->isNullable())
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
     column.type = makeNullable(column.type);
@@ -71,7 +72,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     if (nullable)
     {
         convertColumnToNullable(column);
-        if (negative_null_map.size())
+        if (column.type->isNullable() && negative_null_map.size())
         {
             MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
             assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
@@ -1048,8 +1049,11 @@ void Join::joinGet(Block & block, const String & column_name) const
 }
 
 
-void Join::joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const
+void Join::joinBlock(Block & block, const AnalyzedJoin & join_params) const
 {
+    const Names & key_names_left = join_params.keyNamesLeft();
+    const NamesAndTypesList & columns_added_by_join = join_params.columnsAddedByJoin();
+
     std::shared_lock lock(rwlock);
 
     checkTypesOfKeys(block, key_names_left, sample_block_with_keys);
@@ -1457,10 +1461,11 @@ private:
 };
 
 
-BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                        const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const
+BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const AnalyzedJoin & join_params,
+                                                        UInt64 max_block_size) const
 {
-    return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, key_names_left, columns_added_by_join, max_block_size);
+    return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block,
+                                                       join_params.keyNamesLeft(), join_params.columnsAddedByJoin(), max_block_size);
 }
 
 

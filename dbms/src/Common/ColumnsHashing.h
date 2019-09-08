@@ -1,6 +1,8 @@
 #pragma once
 
 
+#include <Common/HashTable/HashTable.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
 #include <Common/LRUCache.h>
@@ -57,7 +59,7 @@ struct HashMethodOneNumber
     using Base::getHash; /// (const Data & data, size_t row, Arena & pool) -> size_t
 
     /// Is used for default implementation in HashMethodBase.
-    FieldType getKey(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
+    FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
 
     /// Get StringRef from value which can be inserted into column.
     static StringRef getValueRef(const Value & value)
@@ -86,24 +88,24 @@ struct HashMethodString
         chars = column_string.getChars().data();
     }
 
-    auto getKey(ssize_t row, Arena &) const
+    auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
-        return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
+        StringRef key(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
+
+        if constexpr (place_string_to_arena)
+        {
+            return ArenaKeyHolder{key, pool};
+        }
+        else
+        {
+            return key;
+        }
     }
 
     static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
-
-    static ALWAYS_INLINE void onNewKey([[maybe_unused]] StringRef & key, [[maybe_unused]] Arena & pool)
-    {
-        if constexpr (place_string_to_arena)
-        {
-            if (key.size)
-                key.data = pool.insert(key.data, key.size);
-        }
-    }
 };
 
 
@@ -126,17 +128,24 @@ struct HashMethodFixedString
         chars = &column_string.getChars();
     }
 
-    StringRef getKey(size_t row, Arena &) const { return StringRef(&(*chars)[row * n], n); }
+    auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
+    {
+        StringRef key(&(*chars)[row * n], n);
+
+        if constexpr (place_string_to_arena)
+        {
+            return ArenaKeyHolder{key, pool};
+        }
+        else
+        {
+            return key;
+        }
+    }
 
     static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
-    static ALWAYS_INLINE void onNewKey([[maybe_unused]] StringRef & key, [[maybe_unused]] Arena & pool)
-    {
-        if constexpr (place_string_to_arena)
-            key.data = pool.insert(key.data, key.size);
-    }
 };
 
 
@@ -316,10 +325,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
     }
 
-    /// Get the key from the key columns for insertion into the hash table.
-    ALWAYS_INLINE auto getKey(size_t row, Arena & pool) const
+    /// Get the key holder from the key columns for insertion into the hash table.
+    ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
     {
-        return Base::getKey(getIndexAt(row), pool);
+        return Base::getKeyHolder(getIndexAt(row), pool);
     }
 
     template <typename Data>
@@ -347,30 +356,23 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 return EmplaceResult(false);
         }
 
-        auto key = getKey(row_, pool);
+        auto key_holder = getKeyHolder(row_, pool);
 
         bool inserted = false;
         typename Data::iterator it;
         if (saved_hash)
-            data.emplace(key, it, inserted, saved_hash[row]);
+            data.emplace(key_holder, it, inserted, saved_hash[row]);
         else
-            data.emplace(key, it, inserted);
+            data.emplace(key_holder, it, inserted);
 
         visit_cache[row] = VisitValue::Found;
 
-        if (inserted)
-        {
-            if constexpr (has_mapped)
-            {
-                new(&it->getSecond()) Mapped();
-                Base::onNewKey(it->getFirstMutable(), pool);
-            }
-            else
-                Base::onNewKey(*it, pool);
-        }
-
         if constexpr (has_mapped)
         {
+            if (inserted)
+            {
+                new (&it->getSecond()) Mapped();
+            }
             mapped_cache[row] = it->getSecond();
             return EmplaceResult(it->getSecond(), mapped_cache[row], inserted);
         }
@@ -407,13 +409,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 return FindResult(visit_cache[row] == VisitValue::Found);
         }
 
-        auto key = getKey(row_, pool);
+        auto key_holder = getKeyHolder(row_, pool);
 
         typename Data::iterator it;
         if (saved_hash)
-            it = data.find(key, saved_hash[row]);
+            it = data.find(*key_holder, saved_hash[row]);
         else
-            it = data.find(key);
+            it = data.find(*key_holder);
 
         bool found = it != data.end();
         visit_cache[row] = found ? VisitValue::Found : VisitValue::NotFound;
@@ -493,7 +495,7 @@ struct HashMethodKeysFixed
         }
     }
 
-    ALWAYS_INLINE Key getKey(size_t row, Arena &) const
+    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
         if constexpr (has_nullable_keys)
         {
@@ -532,12 +534,12 @@ struct HashMethodSerialized
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
-    ALWAYS_INLINE StringRef getKey(size_t row, Arena & pool) const
+    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
     {
-        return serializeKeysToPoolContiguous(row, keys_size, key_columns, pool);
+        return SerializedKeyHolder{
+            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
+            pool};
     }
-
-    static ALWAYS_INLINE void onExistingKey(StringRef & key, Arena & pool) { pool.rollback(key.size); }
 };
 
 /// For the case when there is one string key.
@@ -554,7 +556,10 @@ struct HashMethodHashed
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns_)) {}
 
-    ALWAYS_INLINE Key getKey(size_t row, Arena &) const { return hash128(row, key_columns.size(), key_columns); }
+    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
+    {
+        return hash128(row, key_columns.size(), key_columns);
+    }
 
     static ALWAYS_INLINE StringRef getValueRef(const Value & value)
     {

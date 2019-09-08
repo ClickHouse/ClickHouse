@@ -145,11 +145,11 @@ Decode base64-encoded string 's' into original string. In case of failure raises
 ## tryBase64Decode(s)
 Similar to base64Decode, but in case of error an empty string would be returned.
 
-## endsWith(s, suffix)
+## endsWith(s, suffix) {#function-endswith}
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(s, prefix)
+## startsWith(s, prefix) {#function-startswith}
 
 Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
 

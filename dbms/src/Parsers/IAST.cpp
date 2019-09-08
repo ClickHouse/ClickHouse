@@ -46,6 +46,14 @@ String backQuote(const String & x)
     return res;
 }
 
+size_t IAST::size() const
+{
+    size_t res = 1;
+    for (const auto & child : children)
+        res += child->size();
+
+    return res;
+}
 
 size_t IAST::checkSize(size_t max_size) const
 {

@@ -152,4 +152,17 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчеркивание (`_`) вместо точки в конфигурации ClickHouse. Например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
 
+## Виртуальные столбцы
+
+- `_topic` — топик Kafka.
+- `_key` — ключ сообщения.
+- `_offset` — оффсет сообщения.
+- `_timestamp` — временная метка сообщения.
+- `_partition` — секция топика Kafka.
+
+**Смотрите также**
+
+- [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/kafka/) <!--hide-->
+

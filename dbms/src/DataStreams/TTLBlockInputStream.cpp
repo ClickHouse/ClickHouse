@@ -34,7 +34,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
     {
-        if (ttl_info.min <= current_time)
+        if (force || isTTLExpired(ttl_info.min))
         {
             new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
@@ -51,7 +51,7 @@ TTLBlockInputStream::TTLBlockInputStream(
             new_ttl_infos.columns_ttl.emplace(name, ttl_info);
     }
 
-    if (old_ttl_infos.table_ttl.min > current_time)
+    if (!force && !isTTLExpired(old_ttl_infos.table_ttl.min))
         new_ttl_infos.table_ttl = old_ttl_infos.table_ttl;
 
     if (!default_expr_list->children.empty())
@@ -69,22 +69,19 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl)
 
 Block TTLBlockInputStream::readImpl()
 {
+    /// Skip all data if table ttl is expired for part
+    if (storage.hasTableTTL() && isTTLExpired(old_ttl_infos.table_ttl.max))
+    {
+        rows_removed = data_part->rows_count;
+        return {};
+    }
+
     Block block = children.at(0)->read();
     if (!block)
         return block;
 
-    if (storage.hasTableTTL())
-    {
-        /// Skip all data if table ttl is expired for part
-        if (isTTLExpired(old_ttl_infos.table_ttl.max))
-        {
-            rows_removed = data_part->rows_count;
-            return {};
-        }
-
-        if (force || isTTLExpired(old_ttl_infos.table_ttl.min))
-            removeRowsWithExpiredTableTTL(block);
-    }
+    if (storage.hasTableTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
+        removeRowsWithExpiredTableTTL(block);
 
     removeValuesWithExpiredColumnTTL(block);
 
@@ -94,9 +91,9 @@ Block TTLBlockInputStream::readImpl()
 void TTLBlockInputStream::readSuffixImpl()
 {
     for (const auto & elem : new_ttl_infos.columns_ttl)
-        new_ttl_infos.updatePartMinTTL(elem.second.min);
+        new_ttl_infos.updatePartMinMaxTTL(elem.second.min, elem.second.max);
 
-    new_ttl_infos.updatePartMinTTL(new_ttl_infos.table_ttl.min);
+    new_ttl_infos.updatePartMinMaxTTL(new_ttl_infos.table_ttl.min, new_ttl_infos.table_ttl.max);
 
     data_part->ttl_infos = std::move(new_ttl_infos);
     data_part->empty_columns = std::move(empty_columns);

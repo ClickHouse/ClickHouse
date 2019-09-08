@@ -204,7 +204,7 @@ private:
     StringRef current_group_path;
 
     /// Last row with maximum version for current primary key (time bucket).
-    RowRef current_subgroup_newest_row;
+    SharedBlockRowRef current_subgroup_newest_row;
 
     /// Time of last read row
     time_t current_time = 0;
@@ -236,7 +236,7 @@ private:
     void finishCurrentGroup(MutableColumns & merged_columns);
 
     /// Update the state of the aggregate function with the new `value`.
-    void accumulateRow(RowRef & row);
+    void accumulateRow(SharedBlockRowRef & row);
 };
 
 }

@@ -265,11 +265,6 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    auto use_processors = context.getSettingsRef().experimental_use_processors;
-    context.getSettingsRef().experimental_use_processors = false;
-
-    SCOPE_EXIT(context.getSettingsRef().experimental_use_processors = use_processors);
-
     BlockIO block_io = executeQuery(select_query, context, true);
     Block res = block_io.in->read();
 

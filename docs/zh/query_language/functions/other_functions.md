@@ -122,7 +122,7 @@ Accepts constant strings: database name, table name, and column name. Returns a 
 The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
-## bar
+## bar {#function-bar}
 
 使用unicode构建图表。
 
