@@ -30,7 +30,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
-Сбрасывает внутренний DNS кеш ClickHouse. Иногда необходимо использовать эту команду при изменении инфраструктуры (смене IP адреса у другого ClickHouse сервера или сервера, используемого словарями).
+Сбрасывает внутренний DNS кеш ClickHouse. Иногда (для старых версий ClickHouse) необходимо использовать эту команду при изменении инфраструктуры (смене IP адреса у другого ClickHouse сервера или сервера, используемого словарями).
 
 Для более удобного (автоматического) управления кешем см. параметры disable_internal_dns_cache, dns_cache_update_period.
 
