@@ -133,7 +133,7 @@ Reservation::~Reservation()
         if (disk_ptr->reserved_bytes < size)
         {
             disk_ptr->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size. It's a bug.");
+            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size for disk '" + disk_ptr->getName() + "'.");
         }
         else
         {
@@ -141,7 +141,7 @@ Reservation::~Reservation()
         }
 
         if (disk_ptr->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count. It's a bug.");
+            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count for disk '" + disk_ptr->getName() + "'.");
         else
             --disk_ptr->reservation_count;
     }
@@ -276,7 +276,7 @@ Volume::Volume(
 
     if (has_max_bytes)
     {
-        max_data_part_size = config.getUInt64(config_prefix + ".max_data_part_size_bytes");
+        max_data_part_size = config.getUInt64(config_prefix + ".max_data_part_size_bytes", 0);
     }
     else if (has_max_ratio)
     {
@@ -299,10 +299,6 @@ Volume::Volume(
                                     ") for containing part the size of max_data_part_size (" <<
                                     max_data_part_size << ")");
     }
-    else
-    {
-        max_data_part_size = UNLIMITED_PARTITION_SIZE;
-    }
     constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(logger, "Volume '" << name << "' max_data_part_size is too low ("
@@ -315,7 +311,7 @@ ReservationPtr Volume::reserve(UInt64 expected_size) const
 {
     /// This volume can not store files which size greater than max_data_part_size
 
-    if (expected_size > max_data_part_size)
+    if (max_data_part_size != 0 && expected_size > max_data_part_size)
         return {};
 
     size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
@@ -532,7 +528,8 @@ StoragePolicySelector::StoragePolicySelector(
         auto default_volume = std::make_shared<Volume>(
             default_volume_name,
             std::vector<DiskPtr>{disks[default_disk_name]},
-            UNLIMITED_PARTITION_SIZE);
+            0);
+
         auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, Volumes{default_volume}, 0.0);
         policies.emplace(default_storage_policy_name, default_policy);
     }

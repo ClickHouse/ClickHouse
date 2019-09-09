@@ -2,9 +2,11 @@ import time
 import pytest
 import random
 import string
+import json
 from multiprocessing.dummy import Pool
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
@@ -33,50 +35,158 @@ def start_cluster():
         cluster.shutdown()
 
 
+def test_system_tables(start_cluster):
+
+    expected_disks_data = [
+        {
+            "name": "default",
+            "path": "/var/lib/clickhouse/data/",
+            "keep_free_space": '1024',
+        },
+        {
+            "name": "jbod1",
+            "path": "/jbod1/",
+            "keep_free_space": '0',
+        },
+        {
+            "name": "jbod2",
+            "path": "/jbod2/",
+            "keep_free_space": '10485760',
+        },
+        {
+            "name": "external",
+            "path": "/external/",
+            "keep_free_space": '0',
+        }
+    ]
+
+    click_disk_data = json.loads(node1.query("SELECT name, path, keep_free_space FROM system.disks FORMAT JSON"))["data"]
+    assert sorted(click_disk_data, key=lambda x: x["name"]) == sorted(expected_disks_data, key=lambda x: x["name"])
+
+    expected_policies_data = [
+        {
+            "policy_name": "small_jbod_with_external",
+            "volume_name": "main",
+            "volume_priority": "1",
+            "disks": ["jbod1"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "small_jbod_with_external",
+            "volume_name": "external",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "jbods_with_external",
+            "volume_name": "main",
+            "volume_priority": "1",
+            "disks": ["jbod1", "jbod2"],
+            "max_data_part_size": "10485760",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "jbods_with_external",
+            "volume_name": "external",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "moving_jbod_with_external",
+            "volume_name": "main",
+            "volume_priority": "1",
+            "disks": ["jbod1"],
+            "max_data_part_size": "0",
+            "move_factor": 0.7,
+        },
+        {
+            "policy_name": "moving_jbod_with_external",
+            "volume_name": "external",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.7,
+        },
+        {
+            "policy_name": "default_disk_with_external",
+            "volume_name": "small",
+            "volume_priority": "1",
+            "disks": ["default"],
+            "max_data_part_size": "2097152",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "default_disk_with_external",
+            "volume_name": "big",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "20971520",
+            "move_factor": 0.1,
+        },
+    ]
+
+    clickhouse_policies_data = json.loads(node1.query("SELECT * FROM system.storage_policies WHERE policy_name != 'default' FORMAT JSON"))["data"]
+
+    def key(x):
+        return (x["policy_name"], x["volume_name"], x["volume_priority"])
+
+    assert sorted(clickhouse_policies_data, key=key) == sorted(expected_policies_data, key=key)
+
+
+
+
 def test_query_parser(start_cluster):
-    with pytest.raises(QueryRuntimeException):
+    try:
+        with pytest.raises(QueryRuntimeException):
+            node1.query("""
+                CREATE TABLE table_with_absent_policy (
+                    d UInt64
+                ) ENGINE = MergeTree()
+                ORDER BY d
+                SETTINGS storage_policy_name='very_exciting_policy'
+            """)
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("""
+                CREATE TABLE table_with_absent_policy (
+                    d UInt64
+                ) ENGINE = MergeTree()
+                ORDER BY d
+                SETTINGS storage_policy_name='jbod1'
+            """)
+
+
         node1.query("""
-            CREATE TABLE table_with_absent_policy (
-                d UInt64
-            ) ENGINE = MergeTree()
-            ORDER BY d
-            SETTINGS storage_policy_name='very_exciting_policy'
+                CREATE TABLE table_with_normal_policy (
+                    d UInt64
+                ) ENGINE = MergeTree()
+                ORDER BY d
+                SETTINGS storage_policy_name='default'
         """)
 
-    with pytest.raises(QueryRuntimeException):
-        node1.query("""
-            CREATE TABLE table_with_absent_policy (
-                d UInt64
-            ) ENGINE = MergeTree()
-            ORDER BY d
-            SETTINGS storage_policy_name='jbod1'
-        """)
+        node1.query("INSERT INTO table_with_normal_policy VALUES (5)")
 
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO VOLUME 'some_volume'")
 
-    node1.query("""
-            CREATE TABLE table_with_normal_policy (
-                d UInt64
-            ) ENGINE = MergeTree()
-            ORDER BY d
-            SETTINGS storage_policy_name='default'
-    """)
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO DISK 'some_volume'")
 
-    node1.query("INSERT INTO table_with_normal_policy VALUES (5)")
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE table_with_normal_policy MOVE PART 'xxxxx' TO DISK 'jbod1'")
 
-    with pytest.raises(QueryRuntimeException):
-        node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO VOLUME 'some_volume'")
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'yyyy' TO DISK 'jbod1'")
 
-    with pytest.raises(QueryRuntimeException):
-        node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO DISK 'some_volume'")
-
-    with pytest.raises(QueryRuntimeException):
-        node1.query("ALTER TABLE table_with_normal_policy MOVE PART 'xxxxx' TO DISK 'jbod1'")
-
-    with pytest.raises(QueryRuntimeException):
-        node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'yyyy' TO DISK 'jbod1'")
-
-    with pytest.raises(QueryRuntimeException):
-        node1.query("ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy_name='moving_jbod_with_external'")
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy_name='moving_jbod_with_external'")
+    finally:
+        node1.query("DROP TABLE IF EXISTS table_with_normal_policy")
 
 
 def get_random_string(length):
