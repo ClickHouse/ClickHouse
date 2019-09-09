@@ -680,9 +680,9 @@ Array представлены как длина в формате varint (unsig
 
 То же самое что [RowBinary](#rowbinary), но добавляется заголовок:
 
- * Число (N) колонок закодированное [LEB128](https://en.wikipedia.org/wiki/LEB128)
- * N строк (`String`) с именами колонок
- * N строк (`String`) с типами колонок
+ * Количество колонок - N, закодированное [LEB128](https://en.wikipedia.org/wiki/LEB128),
+ * N строк (`String`) с именами колонок,
+ * N строк (`String`) с типами колонок.
 
 ## Values {#data-format-values}
 
