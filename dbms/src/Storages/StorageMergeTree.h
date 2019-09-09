@@ -55,10 +55,10 @@ public:
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
-    void drop() override;
-    void truncate(const ASTPtr &, const Context &) override;
+    void drop(TableStructureWriteLockHolder &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
@@ -116,7 +116,7 @@ private:
         const DataPartPtr & part,
         std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
 
-    void clearOldMutations();
+    void clearOldMutations(bool truncate = false);
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);

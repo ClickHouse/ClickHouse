@@ -40,7 +40,7 @@ sudo apt-get install git cmake ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-## Install GCC 8
+## Install GCC 9
 
 There are several ways to do this.
 
@@ -50,18 +50,18 @@ There are several ways to do this.
 sudo apt-get install software-properties-common
 sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 sudo apt-get update
-sudo apt-get install gcc-8 g++-8
+sudo apt-get install gcc-9 g++-9
 ```
 
 ### Install from Sources
 
 Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Use GCC 8 for Builds
+## Use GCC 9 for Builds
 
 ```bash
-export CC=gcc-8
-export CXX=g++-8
+export CC=gcc-9
+export CXX=g++-9
 ```
 
 ## Install Required Libraries from Packages

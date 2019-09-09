@@ -13,6 +13,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
+void registerTableFunctionInput(TableFunctionFactory & factory);
 
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory);
@@ -39,6 +40,7 @@ void registerTableFunctions()
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionValues(factory);
+    registerTableFunctionInput(factory);
 
 #if USE_HDFS
     registerTableFunctionHDFS(factory);

@@ -31,7 +31,7 @@ struct SubqueryForSet
     StoragePtr table;
 
     void makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
-                    const std::unordered_map<String, String> & name_to_origin);
+                    NamesWithAliases && joined_block_aliases_);
 
     Block renamedSampleBlock() const { return sample_block; }
     void renameColumns(Block & block);

@@ -55,6 +55,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
+#include <Common/SensitiveDataMasker.h>
 
 
 #if defined(__linux__)
@@ -278,7 +279,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+
         global_context->shutdown();
+
         LOG_DEBUG(log, "Shutted down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -407,6 +410,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    if (config().has("query_masking_rules"))
+    {
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         config().getString("path", ""),
@@ -520,7 +529,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-#if USE_INTERNAL_UNWIND_LIBRARY && !WITH_COVERAGE
+    ///
+    /// It also cannot work with sanitizers.
+    /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
+    /// And they do unwiding frequently (on every malloc/free, thread/mutex operations, etc).
+    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwiding
+    ///  and query profiler decide to unwind stack with libunwind at this moment.
+    ///
+    /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
+    ///
+    /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
+    ///
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
         global_context->initializeTraceCollector();

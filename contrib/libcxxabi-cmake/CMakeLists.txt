@@ -1,13 +1,10 @@
 set(LIBCXXABI_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxxabi)
-set(LIBCXX_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxx)
-#set(LIBCXXABI_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/libcxxabi)
 
 set(SRCS
 ${LIBCXXABI_SOURCE_DIR}/src/stdlib_stdexcept.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_virtual.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_thread_atexit.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/fallback_malloc.cpp
-#${LIBCXXABI_SOURCE_DIR}/src/cxa_noexception.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_guard.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_default_handlers.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/cxa_personality.cpp
@@ -25,10 +22,20 @@ ${LIBCXXABI_SOURCE_DIR}/src/cxa_vector.cpp
 ${LIBCXXABI_SOURCE_DIR}/src/stdlib_new_delete.cpp
 )
 
-add_library(cxxabi_static ${SRCS})
+add_library(cxxabi ${SRCS})
 
-target_include_directories(cxxabi_static PUBLIC ${LIBCXXABI_SOURCE_DIR}/include ${LIBCXX_SOURCE_DIR}/include)
-target_compile_definitions(cxxabi_static PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
-target_compile_options(cxxabi_static PRIVATE -nostdinc++ -fno-sanitize=undefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
+target_include_directories(cxxabi SYSTEM BEFORE
+    PUBLIC $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/include>
+    PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/include>
+)
+target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY)
+target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
+target_link_libraries(cxxabi PUBLIC ${EXCEPTION_HANDLING_LIBRARY})
 
-
+install(
+    TARGETS cxxabi
+    EXPORT global
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION lib
+    LIBRARY DESTINATION lib
+)

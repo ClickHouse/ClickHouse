@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
     extern const int UNKNOWN_SETTING;
+    extern const int READONLY_SETTING;
 }
 
 
@@ -358,10 +359,10 @@ void MergeTreeData::setProperties(
             const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
             new_indices.push_back(
-                    MergeTreeIndexFactory::instance().get(
-                            all_columns,
-                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                            global_context));
+                 MergeTreeIndexFactory::instance().get(
+                        all_columns,
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
+                        global_context));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
@@ -1293,7 +1294,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
         }
 
         if (columns_alter_forbidden.count(command.column_name))
-            throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 
         if (columns_alter_metadata_only.count(command.column_name))
         {
@@ -1324,10 +1325,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
 
     for (const auto & setting : new_changes)
-    {
-        if (!hasSetting(setting.name))
-            throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting.name + "'", ErrorCodes::UNKNOWN_SETTING};
-    }
+        checkSettingCanBeChanged(setting.name);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -1578,7 +1576,8 @@ void MergeTreeData::alterDataPart(
     if (expression)
     {
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
-            *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+                *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
+
 
         auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
@@ -1600,7 +1599,8 @@ void MergeTreeData::alterDataPart(
             true /* sync */,
             compression_codec,
             true /* skip_offsets */,
-            {},
+            /// Don't recalc indices because indices alter is restricted
+            std::vector<MergeTreeIndexPtr>{},
             unused_written_offsets,
             part->index_granularity,
             &part->index_granularity_info);
@@ -1645,23 +1645,25 @@ void MergeTreeData::alterDataPart(
     return;
 }
 
-void MergeTreeData::alterSettings(
+void MergeTreeData::changeSettings(
         const SettingsChanges & new_changes,
-        const Context & context,
-        TableStructureWriteLockHolder & table_lock_holder)
+        TableStructureWriteLockHolder & /* table_lock_holder */)
 {
-    const String current_database_name = getDatabaseName();
-    const String current_table_name = getTableName();
-
-    MergeTreeSettings copy = *getSettings();
-    copy.updateFromChanges(new_changes);
-    IStorage::alterSettings(new_changes, context, table_lock_holder);
-    storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+    if (!new_changes.empty())
+    {
+        MergeTreeSettings copy = *getSettings();
+        copy.applyChanges(new_changes);
+        storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
+    }
 }
 
-bool MergeTreeData::hasSetting(const String & setting_name) const
+void MergeTreeData::checkSettingCanBeChanged(const String & setting_name) const
 {
-    return MergeTreeSettings::findIndex(setting_name) != MergeTreeSettings::npos;
+    if (MergeTreeSettings::findIndex(setting_name) == MergeTreeSettings::npos)
+        throw Exception{"Storage '" + getName() + "' doesn't have setting '" + setting_name + "'", ErrorCodes::UNKNOWN_SETTING};
+    if (MergeTreeSettings::isReadonlySetting(setting_name))
+        throw Exception{"Setting '" + setting_name + "' is readonly for storage '" + getName() + "'", ErrorCodes::READONLY_SETTING};
+
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
@@ -1692,7 +1694,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     empty_columns.clear();
 }
 
-void MergeTreeData::freezeAll(const String & with_name, const Context & context)
+void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
@@ -2552,7 +2554,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
+void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     std::optional<String> prefix;
     String partition_id;
