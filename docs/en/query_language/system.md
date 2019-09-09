@@ -30,7 +30,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
-Resets ClickHouse's internal DNS cache. Sometimes it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
+Resets ClickHouse's internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
 For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_update_period parameters.
 
