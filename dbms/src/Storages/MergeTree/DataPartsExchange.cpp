@@ -224,6 +224,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     auto server_protocol_version = in.getResponseCookie("server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
 
+
     DiskSpace::ReservationPtr reservation;
     if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
