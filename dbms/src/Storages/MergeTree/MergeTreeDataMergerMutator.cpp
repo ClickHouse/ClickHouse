@@ -529,7 +529,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry, TableStructureReadLockHolder &,
-    time_t time_of_merge, DiskSpace::Reservation * disk_reservation, bool deduplicate, bool force_ttl)
+    time_t time_of_merge, DiskSpace::Reservation * space_reservation, bool deduplicate, bool force_ttl)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -542,7 +542,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
               << parts.front()->name << " to " << parts.back()->name
               << " into " << TMP_PREFIX + future_part.name);
 
-    String part_path = data.getFullPathOnDisk(disk_reservation->getDisk());
+    String part_path = data.getFullPathOnDisk(space_reservation->getDisk());
     String new_part_tmp_path = part_path + TMP_PREFIX + future_part.name + "/";
     if (Poco::File(new_part_tmp_path).exists())
         throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
@@ -563,7 +563,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-            data, disk_reservation->getDisk(), future_part.name, future_part.part_info);
+            data, space_reservation->getDisk(), future_part.name, future_part.part_info);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
@@ -737,7 +737,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     to.writePrefix();
 
     size_t rows_written = 0;
-    const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
+    const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
 
     auto is_cancelled = [&]() { return merges_blocker.isCancelled()
         || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
@@ -753,7 +753,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
         /// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
-        if (disk_reservation && sum_input_rows_upper_bound)
+        if (space_reservation && sum_input_rows_upper_bound)
         {
             /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
             /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
@@ -761,7 +761,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
                 : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));
 
-            disk_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
+            space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
         }
     }
     merged_stream->readSuffix();
@@ -898,7 +898,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
     const Context & context,
-    DiskSpace::Reservation * disk_reservation,
+    DiskSpace::Reservation * space_reservation,
     TableStructureReadLockHolder & table_lock_holder)
 {
     auto check_not_cancelled = [&]()
@@ -945,7 +945,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-        data, disk_reservation->getDisk(), future_part.name, future_part.part_info);
+        data, space_reservation->getDisk(), future_part.name, future_part.part_info);
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;

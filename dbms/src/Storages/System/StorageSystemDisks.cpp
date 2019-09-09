@@ -32,36 +32,30 @@ BlockInputStreams StorageSystemDisks::read(
 {
     check(column_names);
 
-    MutableColumnPtr col_name_mut = ColumnString::create();
-    MutableColumnPtr col_path_mut = ColumnString::create();
-    MutableColumnPtr col_free_mut = ColumnUInt64::create();
-    MutableColumnPtr col_total_mut = ColumnUInt64::create();
-    MutableColumnPtr col_keep_mut = ColumnUInt64::create();
+    MutableColumnPtr col_name = ColumnString::create();
+    MutableColumnPtr col_path = ColumnString::create();
+    MutableColumnPtr col_free = ColumnUInt64::create();
+    MutableColumnPtr col_total = ColumnUInt64::create();
+    MutableColumnPtr col_keep = ColumnUInt64::create();
 
     const auto & disk_selector = context.getDiskSelector();
 
     for (const auto & [disk_name, disk_ptr] : disk_selector.getDisksMap())
     {
-        col_name_mut->insert(disk_name);
-        col_path_mut->insert(disk_ptr->getPath());
-        col_free_mut->insert(disk_ptr->getAvailableSpace());
-        col_total_mut->insert(disk_ptr->getTotalSpace());
-        col_keep_mut->insert(disk_ptr->getKeepingFreeSpace());
+        col_name->insert(disk_name);
+        col_path->insert(disk_ptr->getPath());
+        col_free->insert(disk_ptr->getAvailableSpace());
+        col_total->insert(disk_ptr->getTotalSpace());
+        col_keep->insert(disk_ptr->getKeepingFreeSpace());
     }
-
-    ColumnPtr col_name = std::move(col_name_mut);
-    ColumnPtr col_path = std::move(col_path_mut);
-    ColumnPtr col_free = std::move(col_free_mut);
-    ColumnPtr col_total = std::move(col_total_mut);
-    ColumnPtr col_keep = std::move(col_keep_mut);
 
     Block res = getSampleBlock().cloneEmpty();
     size_t col_num = 0;
-    res.getByPosition(col_num++).column = col_name;
-    res.getByPosition(col_num++).column = col_path;
-    res.getByPosition(col_num++).column = col_free;
-    res.getByPosition(col_num++).column = col_total;
-    res.getByPosition(col_num++).column = col_keep;
+    res.getByPosition(col_num++).column = std::move(col_name);
+    res.getByPosition(col_num++).column = std::move(col_path);
+    res.getByPosition(col_num++).column = std::move(col_free);
+    res.getByPosition(col_num++).column = std::move(col_total);
+    res.getByPosition(col_num++).column = std::move(col_keep);
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res));
 }

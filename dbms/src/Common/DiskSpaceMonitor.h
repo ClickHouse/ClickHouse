@@ -43,7 +43,6 @@ namespace ErrorCodes
 namespace DiskSpace
 {
 
-static constexpr UInt64 UNLIMITED_PARTITION_SIZE = std::numeric_limits<UInt64>::max();
 
 class Reservation;
 using ReservationPtr = std::unique_ptr<Reservation>;
@@ -118,9 +117,8 @@ public:
             throw Exception("Disk path must ends with '/', but '" + path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
     }
 
+    /// Reserves bytes on disk, if not possible returns nullptr.
     ReservationPtr reserve(UInt64 bytes) const override;
-
-    bool tryReserve(UInt64 bytes) const;
 
     const String & getName() const override { return name; }
 
@@ -137,14 +135,18 @@ public:
     UInt64 getUnreservedSpace() const;
 
 private:
-    String name;
-    String path;
-    UInt64 keep_free_space_bytes;
+    const String name;
+    const String path;
+    const UInt64 keep_free_space_bytes;
 
     /// Real reservation data
     static std::mutex mutex;
     mutable UInt64 reserved_bytes = 0;
     mutable UInt64 reservation_count = 0;
+
+private:
+    /// Reserves bytes on disk, if not possible returns false
+    bool tryReserve(UInt64 bytes) const;
 };
 
 /// It is not possible to change disk runtime.
@@ -154,7 +156,7 @@ using Disks = std::vector<DiskPtr>;
 
 /**
  * Information about reserved size on concrete disk.
- * Unreserve on destroy.
+ * Unreserve on destroy. Doesn't reserve bytes in constructor.
  */
 class Reservation final : private boost::noncopyable
 {
@@ -182,7 +184,7 @@ private:
 };
 
 /// Parse .xml configuration and store information about disks
-/// Mostly used for introspection
+/// Mostly used for introspection.
 class DiskSelector
 {
 public:
@@ -231,13 +233,13 @@ public:
 
     const String & getName() const override { return name; }
 
-    UInt64 max_data_part_size = UNLIMITED_PARTITION_SIZE;
+    UInt64 max_data_part_size = 0;
 
     Disks disks;
 
 private:
     mutable std::atomic<size_t> last_used = 0;
-    String name;
+    const String name;
 };
 
 using VolumePtr = std::shared_ptr<const Volume>;
@@ -277,7 +279,7 @@ public:
     size_t getVolumePriorityByDisk(const DiskPtr & disk_ptr) const;
 
     /// Reserves 0 bytes on disk with max available space
-    /// Do not use this function when it is possible to predict size!!!
+    /// Do not use this function when it is possible to predict size.
     ReservationPtr makeEmptyReservationOnLargestDisk() const;
 
     const Volumes & getVolumes() const { return volumes; }
@@ -296,7 +298,7 @@ public:
 
 private:
     Volumes volumes;
-    String name;
+    const String name;
     std::map<String, size_t> volumes_names;
 
     /// move_factor from interval [0., 1.]
