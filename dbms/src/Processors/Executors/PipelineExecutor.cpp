@@ -498,8 +498,8 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!task_queue.empty() && !threads_queue.empty())
                     {
-                        auto thread_to_wake = threads_queue.top();
-                        threads_queue.pop();
+                        auto thread_to_wake = *threads_queue.begin();
+                        threads_queue.erase(threads_queue.begin());
                         --num_waiting_threads;
                         lock.unlock();
 
@@ -520,7 +520,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     break;
                 }
 
-                threads_queue.push(thread_num);
+                threads_queue.insert(thread_num);
             }
 
             {
