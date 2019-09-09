@@ -205,6 +205,9 @@ endif ()
 include(cmake/dbms_glob_sources.cmake)
 if (OS_LINUX)
     include(cmake/linux/default_libs.cmake)
+elseif (OS_DARWIN)
+    include(cmake/darwin/sdk.cmake)
+    include(cmake/darwin/default_libs.cmake)
 endif ()
 
 ######################################
