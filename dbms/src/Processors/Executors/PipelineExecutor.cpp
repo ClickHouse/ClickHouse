@@ -640,7 +640,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 finish();
 
                 for (auto & thread : threads)
-                    thread.join();
+                    if (thread.joinable())
+                        thread.join();
             }
     );
 
@@ -681,7 +682,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     }
 
     for (auto & thread : threads)
-        thread.join();
+        if (thread.joinable())
+            thread.join();
 
     finished_flag = true;
 }
