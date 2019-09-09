@@ -253,6 +253,9 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
     // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.commit", "false");
 
+    // Update offset automatically - to commit them all at once.
+    conf.set("enable.auto.offset.store", "false");
+
     // Ignore EOF messages
     conf.set("enable.partition.eof", "false");
 
