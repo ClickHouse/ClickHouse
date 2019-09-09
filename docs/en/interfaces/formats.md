@@ -29,6 +29,7 @@ The supported formats are:
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
@@ -680,9 +681,10 @@ For [NULL](../query_language/syntax.md#null-literal) support, an additional byte
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 Similar to [RowBinary](#rowbinary), but with added header:
-* [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
-* N `String`s specifying column names
-* N `String`s specifying column types
+
+ * [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+ * N `String`s specifying column names
+ * N `String`s specifying column types
 
 ## Values {#data-format-values}
 
