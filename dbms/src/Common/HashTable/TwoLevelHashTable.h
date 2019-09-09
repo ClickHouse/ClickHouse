@@ -235,19 +235,22 @@ public:
       * if (inserted)
       *     new(&it->second) Mapped(value);
       */
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, iterator & it, bool & inserted)
     {
-        size_t hash_value = hash(x);
-        emplace(x, it, inserted, hash_value);
+        size_t hash_value = hash(keyHolderGetKey(key_holder));
+        emplace(key_holder, it, inserted, hash_value);
     }
 
 
     /// Same, but with a precalculated values of hash function.
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, iterator & it,
+                                  bool & inserted, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
         typename Impl::iterator impl_it;
-        impls[buck].emplace(x, impl_it, inserted, hash_value);
+        impls[buck].emplace(key_holder, impl_it, inserted, hash_value);
         it = iterator(this, buck, impl_it);
     }
 

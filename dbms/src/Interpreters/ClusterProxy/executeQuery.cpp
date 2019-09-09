@@ -30,7 +30,7 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     /// Set as unchanged to avoid sending to remote server.
     new_settings.max_concurrent_queries_for_user.changed = false;
     new_settings.max_memory_usage_for_user.changed = false;
-    new_settings.max_memory_usage_for_all_queries = false;
+    new_settings.max_memory_usage_for_all_queries.changed = false;
 
     Context new_context(context);
     new_context.setSettings(new_settings);

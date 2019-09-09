@@ -11,9 +11,9 @@ class Query:
         self._token = token
         self._max_page_size = max_page_size
         self._min_page_size = min_page_size
+        self.api_costs = {}
 
     _MEMBERS = '''
-    {{
         organization(login: "{organization}") {{
             team(slug: "{team}") {{
                 members(first: {max_page_size} {next}) {{
@@ -27,7 +27,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_members(self, organization, team):
         '''Get all team members for organization
@@ -58,7 +57,6 @@ class Query:
         return logins
 
     _LABELS = '''
-    {{
         repository(owner: "yandex" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 labels(first: {max_page_size} {next}) {{
@@ -73,7 +71,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_labels(self, pull_request):
         '''Fetchs all labels for given pull-request
@@ -102,7 +99,6 @@ class Query:
         return labels
 
     _TIMELINE = '''
-    {{
         repository(owner: "yandex" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 timeline(first: {max_page_size} {next}) {{
@@ -140,7 +136,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_timeline(self, pull_request):
         '''Fetchs all cross-reference events from pull-request's timeline
@@ -169,7 +164,6 @@ class Query:
         return events
 
     _PULL_REQUESTS = '''
-    {{
         repository(owner: "yandex" name: "ClickHouse") {{
             defaultBranchRef {{
                 name
@@ -248,7 +242,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_pull_requests(self, before_commit, login):
         '''Get all merged pull-requests from the HEAD of default branch to the last commit (excluding)
@@ -294,13 +287,11 @@ class Query:
         return pull_requests
 
     _DEFAULT = '''
-    {
         repository(owner: "yandex", name: "ClickHouse") {
             defaultBranchRef {
                 name
             }
         }
-    }
     '''
     def get_default_branch(self):
         '''Get short name of the default branch
@@ -334,11 +325,27 @@ class Query:
             return session
 
         headers = {'Authorization': f'bearer {self._token}'}
+        query = f'''
+        {{
+            {query}
+            rateLimit {{
+                cost
+                remaining
+            }}
+        }}
+        '''
         request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
         if request.status_code == 200:
             result = request.json()
             if 'errors' in result:
                 raise Exception(f'Errors occured: {result["errors"]}')
+
+            import inspect
+            caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
+            if caller not in self.api_costs.keys():
+                self.api_costs[caller] = 0
+            self.api_costs[caller] += result['data']['rateLimit']['cost']
+
             return result['data']
         else:
             import json
