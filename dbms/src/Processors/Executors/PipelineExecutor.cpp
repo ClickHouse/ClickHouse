@@ -9,6 +9,7 @@
 
 #include <boost/lockfree/queue.hpp>
 #include <Common/Stopwatch.h>
+#include <Processors/ISource.h>
 
 namespace DB
 {
@@ -478,6 +479,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         while (!finished)
         {
             {
+                std::lock_guard lock(executor_contexts[thread_num]->mutex);
+                if (!executor_contexts[thread_num]->pinned_tasks.empty())
+                {
+                    state = executor_contexts[thread_num]->pinned_tasks.front();
+                    executor_contexts[thread_num]->pinned_tasks.pop();
+                }
+            }
+
+            {
                 std::unique_lock lock(task_queue_mutex);
 
                 if (!first)
@@ -569,13 +579,36 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
 
-                if (!state && !queue.empty())
-                {
-                    state = queue.front();
-                    queue.pop();
-                }
+//                if (!state && !queue.empty())
+//                {
+//                    state = queue.front();
+//                    queue.pop();
+//                }
 
                 prepare_all_processors(queue, parents, parents, parents);
+
+                {
+                    Queue tmp_queue;
+                    while (!queue.empty())
+                    {
+                        auto task = queue.front();
+                        queue.pop();
+
+                        auto stream = task->processor->getStream();
+                        if (stream != IProcessor::NO_STREAM && typeid_cast<const ISource *>(task->processor))
+                        {
+                            auto thread_to_wake = stream % num_threads;
+                            std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
+                            executor_contexts[thread_to_wake]->pinned_tasks.push(task);
+                            executor_contexts[thread_to_wake]->wake_flag = true;
+                            executor_contexts[thread_to_wake]->condvar.notify_one();
+                        }
+                        else
+                            tmp_queue.push(task);
+                    }
+
+                    queue.swap(tmp_queue);
+                }
 
                 if (!queue.empty())
                 {
