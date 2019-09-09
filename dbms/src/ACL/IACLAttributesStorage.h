@@ -4,6 +4,7 @@
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <functional>
+#include <optional>
 #include <vector>
 #include <boost/function_types/parameter_types.hpp>
 #include <boost/mpl/at.hpp>
@@ -12,17 +13,10 @@
 namespace DB
 {
 /// Contains the attributes of access control's elements: users, roles, quotas.
-/// The implementations of this class must be thread-safe.
+/// The implementations of this class MUST be thread-safe.
 class IACLAttributesStorage
 {
 public:
-    enum class Status
-    {
-        OK,
-        NOT_FOUND,
-        ALREADY_EXISTS,
-    };
-
     IACLAttributesStorage() {}
     virtual ~IACLAttributesStorage() {}
 
@@ -30,33 +24,52 @@ public:
     virtual const String & getStorageName() const = 0;
 
     /// Returns the identifiers of all the attributes of a specified type contained in the storage.
-    virtual std::vector<UUID> findAll(IACLAttributes::Type type) const = 0;
+    virtual std::vector<UUID> findAll(ACLAttributesType type) const = 0;
 
     /// Searchs for a attributes with specified name and type.
-    /// Returns zero if not found.
-    virtual UUID find(const String & name, IACLAttributes::Type type) const = 0;
+    virtual std::optional<UUID> find(const String & name, ACLAttributesType type) const = 0;
 
     /// Returns whether there are attributes with such ID in the storage.
     virtual bool exists(const UUID & id) const = 0;
 
     /// Inserts attributes to the storage.
-    /// Returns either OK or ALREADY_EXISTS.
-    virtual Status insert(const IACLAttributes & attrs, UUID & id) = 0;
+    /// Throws an exception if such name is already in use and `if_not_exists == false`.
+    /// Returns {id, true} if inserted or {id, false} if already exists.
+    virtual std::pair<UUID, bool> insert(const IACLAttributes & attrs, bool if_not_exists) = 0;
 
-    /// Removes attributes.
-    /// Returns either OK or NOT_FOUND.
-    virtual Status remove(const UUID & id) = 0;
+    /// Reads the attributes. Returns nullptr if not found.
+    ACLAttributesPtr read(const UUID & id) const;
+    ACLAttributesPtr read(const UUID & id, ACLAttributesType desired_type) const;
 
-    /// Reads the attributes.
-    /// Returns either OK or NOT_FOUND.
-    template <typename AttributesType>
-    Status read(const UUID & id, std::shared_ptr<const AttributesType> & attrs) const;
+    /// Reads the attributes. Assigns `attrs` to nullptr if not found.
+    template <typename AttributesT>
+    void read(const UUID & id, std::shared_ptr<const AttributesT> & attrs) const;
 
-    class Operation;
+    /// Reads the attributes. Throws an exception if not found.
+    ACLAttributesPtr readStrict(const UUID & id, ACLAttributesType desired_type) const;
 
-    /// Changes the attributes.
-    /// Returns either OK or NOT_FOUND or ALREADY_EXISTS.
-    Status write(const UUID & id, const Operation & operation);
+    template <typename AttributesT>
+    void readStrict(const UUID & id, std::shared_ptr<const AttributesT> & attrs) const;
+
+    struct Change
+    {
+        enum class Type
+        {
+            UPDATE,
+            REMOVE,
+            REMOVE_REFERENCES,
+        };
+        Type type;
+        UUID id;
+        std::function<void(IACLAttributes &)> update_func; /// used if type == Type::UPDATE
+        bool if_exists; /// used if type == Type::REMOVE
+        ACLAttributesType attributes_type; /// can be used only to format the message to throw an exception
+    };
+
+    using Changes = std::vector<Change>;
+
+    /// Changes the attributes atomically.
+    virtual void write(const Changes & changes) = 0;
 
     class Subscription
     {
@@ -72,100 +85,31 @@ public:
     SubscriptionPtr subscribeForChanges(const UUID & id, const Func & on_changed);
 
 protected:
-    using MakeChangeFunction = std::function<Status(IACLAttributes & attrs)>;
-    virtual Status writeImpl(const UUID & id, const MakeChangeFunction & make_change) = 0;
-
-    virtual Status readImpl(const UUID & id, ACLAttributesPtr & attrs) const = 0;
+    virtual ACLAttributesPtr readImpl(const UUID & id) const = 0;
 
     using OnChangedFunction = std::function<void(const ACLAttributesPtr &)>;
     virtual SubscriptionPtr subscribeForChangesImpl(const UUID & id, const OnChangedFunction & on_changed) const = 0;
+
+    [[noreturn]] static void throwNotFound(const UUID & id, ACLAttributesType type);
+    [[noreturn]] static void throwNotFound(const String & name, ACLAttributesType type);
+    [[noreturn]] static void throwCannotInsertAlreadyExists(const String & name, ACLAttributesType type, ACLAttributesType type_of_existing);
+    [[noreturn]] static void throwCannotRenameNewNameInUse(const String & name, const String & new_name, ACLAttributesType type, ACLAttributesType type_of_existing);
 };
 
 
-class IACLAttributesStorage::Operation
+template <typename AttributesT>
+void IACLAttributesStorage::read(const UUID & id, std::shared_ptr<const AttributesT> & attrs) const
 {
-public:
-    Operation() {}
-    Operation(const Operation & src) { then(src); }
-    Operation & operator =(const Operation & src) { workers.clear(); return then(src); }
-    Operation(Operation && src) { then(src); }
-    Operation & operator =(Operation && src) { workers.clear(); return then(src); }
-
-    template <typename Func>
-    Operation(const Func & func) { then(func); }
-
-    Operation & then(const Operation & other)
-    {
-        workers.insert(workers.end(), other.workers.begin(), other.workers.end());
-        return *this;
-    }
-
-    Operation & then(Operation && other)
-    {
-        if (workers.empty())
-        {
-            std::swap(workers, other.workers);
-            return *this;
-        }
-        workers.insert(workers.end(), std::make_move_iterator(other.workers.begin()), std::make_move_iterator(other.workers.end()));
-        other.workers.clear();
-        return *this;
-    }
-
-    template <typename Func>
-    Operation & then(const Func & func)
-    {
-        using ParamTypes = typename boost::function_types::parameter_types<decltype(&Func::operator())>::type;
-        using ArgType = typename boost::mpl::at<ParamTypes, boost::mpl::int_<1> >::type;
-        using AttributesType = typename std::remove_reference_t<ArgType>;
-
-        workers.emplace_back([func](IACLAttributes & attrs)
-        {
-            auto a = dynamic_cast<AttributesType *>(&attrs);
-            if (!a)
-                return Status::NOT_FOUND;
-            func(*a);
-            return Status::OK;
-        });
-        return *this;
-    }
-
-    Status run(IACLAttributes & attrs) const
-    {
-        for (const auto & fn : workers)
-        {
-            Status status = fn(attrs);
-            if (status != Status::OK)
-                return status;
-        }
-        return Status::OK;
-    }
-
-private:
-    std::vector<std::function<Status(IACLAttributes &)>> workers;
-};
-
-
-template <typename AttributesType>
-IACLAttributesStorage::Status IACLAttributesStorage::read(const UUID & id, std::shared_ptr<const AttributesType> & attrs) const
-{
-    attrs = nullptr;
-
-    ACLAttributesPtr a;
-    Status status = readImpl(id, a);
-    if (status != Status::OK)
-        return status;
-
-    attrs = std::dynamic_pointer_cast<const AttributesType>(a);
-    if (!attrs)
-        return Status::NOT_FOUND;
-    return Status::OK;
+    attrs = std::dynamic_pointer_cast<const AttributesT>(readImpl(id));
 }
 
 
-IACLAttributesStorage::Status IACLAttributesStorage::write(const UUID & id, const Operation & operation)
+template <typename AttributesT>
+void IACLAttributesStorage::readStrict(const UUID & id, std::shared_ptr<const AttributesT> & attrs) const
 {
-    return writeImpl(id, [&operation](IACLAttributes & attrs) { return operation.run(attrs); });
+    read(id, attrs);
+    if (!attrs)
+        throwNotFound(id, AttributesT{}.getType());
 }
 
 
@@ -174,11 +118,11 @@ IACLAttributesStorage::SubscriptionPtr IACLAttributesStorage::subscribeForChange
 {
     using ParamTypes = typename boost::function_types::parameter_types<decltype(&Func::operator())>::type;
     using ArgType = typename boost::mpl::at<ParamTypes, boost::mpl::int_<1> >::type;
-    using AttributesType = typename std::remove_const_t<std::remove_reference_t<ArgType>>::element_type;
+    using AttributesT = typename std::remove_const_t<std::remove_reference_t<ArgType>>::element_type;
 
     return subscribeForChangesImpl(id, [on_changed](const ACLAttributesPtr & attrs)
     {
-        auto a = std::dynamic_pointer_cast<AttributesType>(attrs);
+        auto a = std::dynamic_pointer_cast<AttributesT>(attrs);
         on_changed(a);
     });
 }

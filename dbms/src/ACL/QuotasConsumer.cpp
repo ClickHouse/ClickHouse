@@ -1,4 +1,4 @@
-#include <ACL/QuotaConsumer.h>
+#include <ACL/QuotasConsumer.h>
 #include <ACL/IACLAttributableManager.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -46,7 +46,7 @@ using Attributes = Quota2::Attributes;
 using AttributesPtr = Quota2::AttributesPtr;
 
 
-struct QuotaConsumer::Interval
+struct QuotasConsumer::Interval
 {
     ResourceAmount max[MAX_RESOURCE_TYPE];
     ResourceAmount used[MAX_RESOURCE_TYPE];
@@ -56,7 +56,7 @@ struct QuotaConsumer::Interval
 };
 
 
-struct QuotaConsumer::ExceedInfo
+struct QuotasConsumer::ExceedInfo
 {
     ResourceAmount max;
     std::chrono::seconds duration;
@@ -65,7 +65,7 @@ struct QuotaConsumer::ExceedInfo
 };
 
 
-class QuotaConsumer::Intervals
+class QuotasConsumer::Intervals
 {
 public:
     Intervals()
@@ -232,7 +232,7 @@ private:
 };
 
 
-class QuotaConsumer::ConsumptionMap
+class QuotasConsumer::ConsumptionMap
 {
 public:
     static ConsumptionMap & instance()
@@ -276,45 +276,46 @@ private:
 };
 
 
-QuotaConsumer::QuotaConsumer(const std::vector<UUID> & quotas_, IACLAttributableManager & manager,
-              const String & user_name_, const IPAddress & ip_address_, const String & custom_consumption_key_)
+QuotasConsumer::QuotasConsumer(
+    const std::vector<Quota2> & quotas_, const String & user_name_, const IPAddress & ip_address_, const String & custom_consumption_key_)
     : quotas(quotas_), user_name(user_name_), ip_address(ip_address_), custom_consumption_key(custom_consumption_key_)
 {
     intervals_for_quotas = std::make_unique<std::atomic<Intervals *>[]>(quotas.size());
     subscriptions = std::make_unique<SubscriptionPtr[]>(quotas.size());
     for (size_t index = 0; index != quotas.size(); ++index)
     {
-        const UUID & quota_id = quotas[index];
-        auto * storage = manager.findStorage(quota_id);
+        const Quota2 & quota = quotas[index];
+        const auto id = quota.getID();
+        auto * storage = quota.getStorage();
         if (!storage)
             continue;
 
-        auto on_got_attrs = [quota_id, index, this](const AttributesPtr & attrs)
+        auto on_got_attrs = [id, index, this](const AttributesPtr & attrs)
         {
-            intervals_for_quotas[index].store(ConsumptionMap::instance().get(quota_id, attrs, user_name, ip_address, custom_consumption_key));
+            intervals_for_quotas[index].store(ConsumptionMap::instance().get(id, attrs, user_name, ip_address, custom_consumption_key));
         };
 
-        subscriptions[index] = storage->subscribeForChanges(quota_id, on_got_attrs);
+        subscriptions[index] = storage->subscribeForChanges(id, on_got_attrs);
 
         AttributesPtr attrs;
-        if (storage->read(quota_id, attrs) == IACLAttributesStorage::Status::OK)
-            on_got_attrs(attrs);
+        storage->read(id, attrs);
+        on_got_attrs(attrs);
     }
 }
 
 
-QuotaConsumer::~QuotaConsumer()
+QuotasConsumer::~QuotasConsumer()
 {
 }
 
 
-void QuotaConsumer::consume(ResourceType resource_type, ResourceAmount amount)
+void QuotasConsumer::consume(ResourceType resource_type, ResourceAmount amount)
 {
     consume(resource_type, amount, std::chrono::system_clock::now());
 }
 
 
-void QuotaConsumer::consume(ResourceType resource_type, ResourceAmount amount, std::chrono::system_clock::time_point current_time)
+void QuotasConsumer::consume(ResourceType resource_type, ResourceAmount amount, std::chrono::system_clock::time_point current_time)
 {
     if (!amount)
         return;

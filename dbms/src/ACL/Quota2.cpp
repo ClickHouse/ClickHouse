@@ -1,4 +1,5 @@
 #include <ACL/Quota2.h>
+#include <ACL/ACLAttributesType.h>
 #include <Common/Exception.h>
 #include <limits>
 
@@ -7,13 +8,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int QUOTA_NOT_FOUND;
-    extern const int QUOTA_ALREADY_EXISTS;
     extern const int BAD_ARGUMENT;
 }
 
 
-using Operation = IACLAttributesStorage::Operation;
+using Operation = Quota2::Operation;
 
 
 String Quota2::getResourceName(ResourceType resource_type)
@@ -53,6 +52,12 @@ bool operator ==(const Quota2::Limits & lhs, const Quota2::Limits & rhs)
 }
 
 
+ACLAttributesType Quota2::Attributes::getType() const
+{
+    return ACLAttributesType::QUOTA;
+}
+
+
 std::shared_ptr<IACLAttributes> Quota2::Attributes::clone() const
 {
     auto result = std::make_shared<Attributes>();
@@ -63,7 +68,7 @@ std::shared_ptr<IACLAttributes> Quota2::Attributes::clone() const
 
 bool Quota2::Attributes::equal(const IACLAttributes & other) const
 {
-    if (!IACLAttributable::Attributes::equal(other))
+    if (!ACLAttributable::Attributes::equal(other))
         return false;
     const auto * o = dynamic_cast<const Attributes *>(&other);
     return o && (consumption_key == o->consumption_key) && (allow_custom_consumption_key == o->allow_custom_consumption_key)
@@ -71,12 +76,18 @@ bool Quota2::Attributes::equal(const IACLAttributes & other) const
 }
 
 
-Operation Quota2::setConsumptionKeyOp(ConsumptionKey consumption_key) const
+void Quota2::setConsumptionKey(ConsumptionKey consumption_key)
 {
-    return [consumption_key](Attributes & attrs)
+    setConsumptionKeyOp(consumption_key).execute();
+}
+
+
+Operation Quota2::setConsumptionKeyOp(ConsumptionKey consumption_key)
+{
+    return prepareOperation([consumption_key](Attributes & attrs)
     {
         attrs.consumption_key = consumption_key;
-    };
+    });
 }
 
 
@@ -86,12 +97,18 @@ Quota2::ConsumptionKey Quota2::getConsumptionKey() const
 }
 
 
-Operation Quota2::setAllowCustomConsumptionKeyOp(bool allow) const
+void Quota2::setAllowCustomConsumptionKey(bool allow)
 {
-    return [allow](Attributes & attrs)
+    setAllowCustomConsumptionKeyOp(allow).execute();
+}
+
+
+Operation Quota2::setAllowCustomConsumptionKeyOp(bool allow)
+{
+    return prepareOperation([allow](Attributes & attrs)
     {
         attrs.allow_custom_consumption_key = allow;
-    };
+    });
 }
 
 
@@ -101,19 +118,25 @@ bool Quota2::isCustomConsumptionKeyAllowed() const
 }
 
 
-Operation Quota2::setLimitForDurationOp(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit) const
+void Quota2::setLimitForDuration(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit)
+{
+    setLimitForDurationOp(duration, resource_type, new_limit).execute();
+}
+
+
+Operation Quota2::setLimitForDurationOp(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit)
 {
     if (duration <= std::chrono::seconds::zero())
         throw Exception("The duration of a quota interval should be positive", ErrorCodes::BAD_ARGUMENT);
     if (!new_limit)
         new_limit = NoLimits[resource_type];
-    return [duration, resource_type, new_limit](Attributes & attrs)
+    return prepareOperation([duration, resource_type, new_limit](Attributes & attrs)
     {
         auto & limits = attrs.limits_for_duration[duration];
         limits[resource_type] = new_limit;
         if ((new_limit == NoLimits[resource_type]) && (limits == NoLimits))
             attrs.limits_for_duration.erase(duration);
-    };
+    });
 }
 
 
@@ -130,19 +153,8 @@ std::vector<std::pair<std::chrono::seconds, Quota2::ResourceAmount>> Quota2::get
 }
 
 
-const String & Quota2::getTypeName() const
+ACLAttributesType Quota2::getType() const
 {
-    static const String type_name = "quota";
-    return type_name;
-}
-
-int Quota2::getNotFoundErrorCode() const
-{
-    return ErrorCodes::QUOTA_NOT_FOUND;
-}
-
-int Quota2::getAlreadyExistsErrorCode() const
-{
-    return ErrorCodes::QUOTA_ALREADY_EXISTS;
+    return ACLAttributesType::QUOTA;
 }
 }

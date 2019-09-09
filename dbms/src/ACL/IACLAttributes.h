@@ -7,22 +7,17 @@
 
 namespace DB
 {
+enum class ACLAttributesType;
+
+
 /// Access control attributes.
 /// Attributes are part of the element's data that can be stored and loaded to a file or another storage.
 struct IACLAttributes
 {
-    enum class Type
-    {
-        USER,
-        ROLE,
-        QUOTA,
-        ROW_FILTER_POLICY,
-    };
-
     String name;
 
     virtual ~IACLAttributes() {}
-    virtual Type getType() const = 0;
+    virtual ACLAttributesType getType() const = 0;
     virtual std::shared_ptr<IACLAttributes> clone() const = 0;
     virtual bool hasReferences(UUID) const { return false; }
     virtual void removeReferences(UUID) {}

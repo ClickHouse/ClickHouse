@@ -16,16 +16,24 @@ class IACLAttributableManager;
 
 /// Consumes quotas and stores information how much amount of resources have been consumed and how mush are left.
 /// This class is thread-safe.
-class QuotaConsumer
+class QuotasConsumer
 {
 public:
     using ResourceType = Quota2::ResourceType;
     using ResourceAmount = Quota2::ResourceAmount;
     using IPAddress = Poco::Net::IPAddress;
 
-    QuotaConsumer(const std::vector<UUID> & quotas_, IACLAttributableManager & manager,
-                  const String & user_name_, const IPAddress & ip_address_, const String & custom_consumption_key_);
-    ~QuotaConsumer();
+    QuotasConsumer(
+        const std::vector<Quota2> & quotas_,
+        const String & user_name_,
+        const IPAddress & ip_address_,
+        const String & custom_consumption_key_);
+    ~QuotasConsumer();
+
+    const std::vector<Quota2> & getQuotas() const { return quotas; }
+    const String & getUserName() const { return user_name; }
+    const IPAddress & getIPAddress() const { return ip_address; }
+    const String & getCustomConsumptionKey() const { return custom_consumption_key; }
 
     void consume(ResourceType resource_type, ResourceAmount amount);
     void consume(ResourceType resource_type, ResourceAmount amount, std::chrono::system_clock::time_point current_time);
@@ -36,16 +44,17 @@ private:
     class ConsumptionMap;
     struct ExceedInfo;
 
-    const std::vector<UUID> quotas;
+    const std::vector<Quota2> quotas;
     const String user_name;
     const IPAddress ip_address;
     const String custom_consumption_key;
 
+    using AtomicIntervalPtr = std::atomic<Intervals *>;
     using SubscriptionPtr = IACLAttributesStorage::SubscriptionPtr;
 
-    std::unique_ptr<std::atomic<Intervals *>[]> intervals_for_quotas;
+    std::unique_ptr<AtomicIntervalPtr[]> intervals_for_quotas;
     std::unique_ptr<SubscriptionPtr[]> subscriptions;
 };
 
-using QuotaConsumerPtr = std::shared_ptr<QuotaConsumer>;
+using QuotasConsumerPtr = std::shared_ptr<QuotasConsumer>;
 }

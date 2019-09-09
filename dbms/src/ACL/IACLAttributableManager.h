@@ -17,7 +17,7 @@ public:
     //std::pair<StoragePtr, UUID> findElement(const String & name, ElementType type);
 
     virtual IACLAttributesStorage * findStorage(UUID id) const = 0;
-    virtual String findNameInCache(UUID id) const = 0;
+    virtual const std::vector<IACLAttributesStorage *> & getAllStorages() const = 0;
 
     //void checkNewName(UUID id, const String & new_name, ElementType type);
 };

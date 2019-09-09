@@ -446,13 +446,15 @@ namespace ErrorCodes
     extern const int INVALID_GRANT = 469;
     extern const int NO_SUCH_GRANT = 470;
     extern const int NOT_ENOUGH_PRIVILEGES = 471;
-    extern const int USER_ALREADY_EXISTS = 472;
-    extern const int ROLE_ALREADY_EXISTS = 473;
-    extern const int RLS_POLICY_ALREADY_EXISTS = 474;
-    extern const int USER_NOT_FOUND = 475;
-    extern const int ROLE_NOT_FOUND = 476;
-    extern const int RLS_POLICY_NOT_FOUND = 477;
-    extern const int NOT_GRANTED_ROLE_SET = 479;
+    extern const int USER_NOT_FOUND = 472;
+    extern const int USER_ALREADY_EXISTS = 473;
+    extern const int ROLE_NOT_FOUND = 474;
+    extern const int ROLE_ALREADY_EXISTS = 475;
+    extern const int QUOTA_NOT_FOUND = 476;
+    extern const int QUOTA_ALREADY_EXISTS = 477;
+    extern const int ROW_FILTER_POLICY_NOT_FOUND = 478;
+    extern const int ROW_FILTER_POLICY_ALREADY_EXISTS = 479;
+    extern const int NOT_GRANTED_ROLE_SET = 480;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
