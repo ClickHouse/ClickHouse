@@ -33,7 +33,7 @@ Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub>
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
-## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#function-multisearchany}
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
@@ -86,7 +86,7 @@ Extracts a fragment of a string using a regular expression. If 'haystack' doesn'
 
 Extracts all the fragments of a string using a regular expression. If 'haystack' doesn't match the 'pattern' regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the 'extract' function (it takes the first subpattern, or the entire expression if there isn't a subpattern).
 
-## like(haystack, pattern), haystack LIKE pattern operator
+## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
 
 Checks whether a string matches a simple regular expression.
 The regular expression can contain the metasymbols `%` and `_`.
@@ -100,7 +100,7 @@ Use the backslash (`\`) for escaping metasymbols. See the note on escaping in th
 For regular expressions like `%needle%`, the code is more optimal and works as fast as the `position` function.
 For other regular expressions, the code is the same as for the 'match' function.
 
-## notLike(haystack, pattern), haystack NOT LIKE pattern operator
+## notLike(haystack, pattern), haystack NOT LIKE pattern operator {#function-notlike}
 
 The same thing as 'like', but negative.
 

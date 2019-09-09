@@ -106,6 +106,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READLINE;
     extern const int SYSTEM_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -431,8 +432,14 @@ private:
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
-            else if (!home_path.empty())
-                history_file = home_path + "/.clickhouse-client-history";
+            else
+            {
+                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                if (history_file_from_env)
+                    history_file = history_file_from_env;
+                else if (!home_path.empty())
+                    history_file = home_path + "/.clickhouse-client-history";
+            }
 
             if (!history_file.empty())
             {
@@ -837,9 +844,17 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
-            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-            if (insert && !insert->select)
+            ASTPtr input_function;
+            if (insert && insert->select)
+                insert->tryFindInputFunction(input_function);
+
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+            if (insert && (!insert->select || input_function))
+            {
+                if (input_function && insert->format.empty())
+                    throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
                 processInsertQuery();
+            }
             else
                 processOrdinaryQuery();
         }
