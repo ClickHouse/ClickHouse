@@ -10,6 +10,8 @@
 
 #include <boost/lockfree/stack.hpp>
 
+#include <map>
+
 namespace DB
 {
 
@@ -122,7 +124,7 @@ private:
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
-    std::stack<size_t> threads_queue;
+    std::map<size_t> threads_queue;
     std::mutex task_queue_mutex;
 
     std::atomic_bool cancelled;
