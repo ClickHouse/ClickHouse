@@ -104,7 +104,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
     {
-        return name == "index_granularity" || name == "index_granularity_bytes";
+        return name == "index_granularity" || name == "index_granularity_bytes" || name == "storage_policy_name";
     }
 };
 

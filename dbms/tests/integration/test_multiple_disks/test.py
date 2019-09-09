@@ -33,6 +33,52 @@ def start_cluster():
         cluster.shutdown()
 
 
+def test_query_parser(start_cluster):
+    with pytest.raises(QueryRuntimeException):
+        node1.query("""
+            CREATE TABLE table_with_absent_policy (
+                d UInt64
+            ) ENGINE = MergeTree()
+            ORDER BY d
+            SETTINGS storage_policy_name='very_exciting_policy'
+        """)
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("""
+            CREATE TABLE table_with_absent_policy (
+                d UInt64
+            ) ENGINE = MergeTree()
+            ORDER BY d
+            SETTINGS storage_policy_name='jbod1'
+        """)
+
+
+    node1.query("""
+            CREATE TABLE table_with_normal_policy (
+                d UInt64
+            ) ENGINE = MergeTree()
+            ORDER BY d
+            SETTINGS storage_policy_name='default'
+    """)
+
+    node1.query("INSERT INTO table_with_normal_policy VALUES (5)")
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO VOLUME 'some_volume'")
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'all' TO DISK 'some_volume'")
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("ALTER TABLE table_with_normal_policy MOVE PART 'xxxxx' TO DISK 'jbod1'")
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'yyyy' TO DISK 'jbod1'")
+
+    with pytest.raises(QueryRuntimeException):
+        node1.query("ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy_name='moving_jbod_with_external'")
+
+
 def get_random_string(length):
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(length))
 
