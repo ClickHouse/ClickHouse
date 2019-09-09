@@ -596,6 +596,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 prepare_all_processors(queue, parents, parents, parents);
 
+                if (!state && !queue.empty())
+                {
+                    state = queue.front();
+                    queue.pop();
+                }
+
                 {
                     Queue tmp_queue;
                     while (!queue.empty())
