@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int LOGICAL_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
 }
@@ -38,7 +39,9 @@ private:
     const RE2 regexp;
     const re2::StringPiece replacement;
 
+#ifndef NDEBUG
     mutable std::atomic<std::uint64_t> matches_count = 0;
+#endif
 
 public:
     //* TODO: option with hyperscan? https://software.intel.com/en-us/articles/why-and-how-to-replace-pcre-with-hyperscan
@@ -61,15 +64,37 @@ public:
     uint64_t apply(std::string & data) const
     {
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
+#ifndef NDEBUG
         matches_count += m;
+#endif
         return m;
     }
 
     const std::string & getName() const { return name; }
     const std::string & getReplacementString() const { return replacement_string; }
+#ifndef NDEBUG
     uint64_t getMatchesCount() const { return matches_count; }
+#endif
+
 };
 
+std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
+
+void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
+{
+    if (!sensitive_data_masker_)
+        throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
+
+    if (sensitive_data_masker_->rulesCount() > 0)
+    {
+        sensitive_data_masker = std::move(sensitive_data_masker_);
+    }
+}
+
+SensitiveDataMasker * SensitiveDataMasker::getInstance()
+{
+    return sensitive_data_masker.get();
+}
 
 SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
@@ -90,7 +115,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             if (!used_names.insert(rule_name).second)
             {
                 throw Exception(
-                    "Query_masking_rules configuration contains more than one rule named '" + rule_name + "'.",
+                    "query_masking_rules configuration contains more than one rule named '" + rule_name + "'.",
                     ErrorCodes::INVALID_CONFIG_PARAMETER);
             }
 
@@ -99,7 +124,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             if (regexp.empty())
             {
                 throw Exception(
-                    "Query_masking_rules configuration, rule '" + rule_name + "' has no <regexp> node or <regexp> is empty.",
+                    "query_masking_rules configuration, rule '" + rule_name + "' has no <regexp> node or <regexp> is empty.",
                     ErrorCodes::NO_ELEMENTS_IN_CONFIG);
             }
 

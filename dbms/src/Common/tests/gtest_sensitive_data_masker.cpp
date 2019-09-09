@@ -59,7 +59,6 @@ TEST(Common, SensitiveDataMasker)
         "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', '******') WHERE "
         "ssn='000-00-0000' or email='hidden@hidden.test'");
 
-
 #ifndef NDEBUG
     // simple benchmark
     auto start = std::chrono::high_resolution_clock::now();
@@ -86,7 +85,7 @@ TEST(Common, SensitiveDataMasker)
         maskerbad.addMaskingRule("bad regexp", "**", "");
         ADD_FAILURE() << "addMaskingRule() should throw an error" << std::endl;
     }
-    catch (DB::Exception & e)
+    catch (const DB::Exception & e)
     {
         EXPECT_EQ(
             std::string(e.what()),
@@ -170,14 +169,13 @@ TEST(Common, SensitiveDataMasker)
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
-    catch (DB::Exception & e)
+    catch (const DB::Exception & e)
     {
         EXPECT_EQ(
             std::string(e.what()),
             "query_masking_rules configuration contains more than one rule named 'test'.");
         EXPECT_EQ(e.code(), DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
-
 
     try
     {
@@ -193,14 +191,13 @@ TEST(Common, SensitiveDataMasker)
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
-    catch (DB::Exception & e)
+    catch (const DB::Exception & e)
     {
         EXPECT_EQ(
             std::string(e.what()),
             "query_masking_rules configuration, rule 'test' has no <regexp> node or <regexp> is empty.");
         EXPECT_EQ(e.code(), DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     }
-
 
     try
     {
@@ -216,7 +213,7 @@ TEST(Common, SensitiveDataMasker)
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
-    catch (DB::Exception & e)
+    catch (const DB::Exception & e)
     {
         EXPECT_EQ(
             std::string(e.message()),

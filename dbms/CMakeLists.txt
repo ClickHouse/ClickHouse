@@ -372,8 +372,8 @@ if (USE_PROTOBUF)
 endif ()
 
 if (USE_HDFS)
-    target_link_libraries (clickhouse_common_io PRIVATE ${HDFS3_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
+    target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
 if (USE_BROTLI)

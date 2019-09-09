@@ -20,9 +20,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using NameWithAlias = std::pair<std::string, std::string>;
-using NamesWithAliases = std::vector<NameWithAlias>;
-
 class AnalyzedJoin;
 
 class IPreparedFunction;

@@ -64,6 +64,13 @@ struct QueryState
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
 
+    /// Request requires data from client for function input()
+    bool need_receive_data_for_input = false;
+    /// temporary place for incoming data block for input()
+    Block block_for_input;
+    /// sample block from StorageInput
+    Block input_header;
+
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
 
@@ -147,7 +154,9 @@ private:
     bool receivePacket();
     void receiveQuery();
     bool receiveData();
+    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & global_settings);
+    std::tuple<size_t, int> getReadTimeouts(const Settings & global_settings);
 
     [[noreturn]] void receiveUnexpectedData();
     [[noreturn]] void receiveUnexpectedQuery();

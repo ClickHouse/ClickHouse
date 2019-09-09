@@ -10,7 +10,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
 | [TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
-| [Template](#template) | ✔ | ✔ |
+| [Template](#format-template) | ✔ | ✔ |
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
@@ -120,7 +120,7 @@ world
 
 Этот формат также доступен под именем `TSVWithNamesAndTypes`.
 
-## Template {#template}
+## Template {#format-template}
 
 Этот формат позволяет указать произвольную форматную строку, в которую подставляются значения, сериализованные выбранным способом.
 
@@ -927,7 +927,7 @@ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parq
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Для обмена данными с экосистемой Hadoop можно использовать движки таблиц `HDFS` и `URL`.
+Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [`HDFS`](../../operations/table_engines/hdfs.md) и `URL`.
 
 ## Схема формата {#formatschema}
 
