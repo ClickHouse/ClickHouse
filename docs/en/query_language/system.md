@@ -15,7 +15,7 @@
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Reloads all dictionaries that have been successfully downloaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../operations/server_settings/settings.md#dictionaries-lazy-load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT to ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../operations/server_settings/settings.md#dictionaries-lazy-load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
 ## RELOAD DICTIONARY dictionary_name {#query_language-system-reload-dictionary}
