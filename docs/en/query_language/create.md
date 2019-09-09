@@ -109,7 +109,7 @@ WARNING: This feature is experimental. Correct work is not guaranteed on non-Mer
 
 Along with columns descriptions constraints could be defined:
 
-``sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
