@@ -2756,7 +2756,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     for (const auto & part : parts)
         for (const auto & disk : volume->disks)
             if (part->disk->getName() == disk->getName())
-                throw Exception("Part " + part->name + " already on volume " + name, ErrorCodes::UNKNOWN_DISK);
+                throw Exception("Part " + part->name + " already on volume '" + name + "'", ErrorCodes::UNKNOWN_DISK);
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
         throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
@@ -3438,7 +3438,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
     {
         if (partIsAssignedToBackgroundOperation(part))
         {
-            *reason = "part already assigned to replicated background operation.";
+            *reason = "part already assigned to background operation.";
             return false;
         }
         if (currently_moving_parts.count(part))
@@ -3465,19 +3465,19 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
     {
         auto reservation = space->reserve(part->bytes_on_disk);
         if (!reservation)
-            throw Exception("Move is not possible. Not enough space " + space->getName() + ".", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception("Move is not possible. Not enough space on '" + space->getName() + "'", ErrorCodes::NOT_ENOUGH_SPACE);
 
         auto & reserved_disk = reservation->getDisk();
         String path_to_clone = getFullPathOnDisk(reserved_disk);
 
         if (Poco::File(path_to_clone + part->name).exists())
             throw Exception(
-                "Move is not possible: " + path_to_clone + part->name + " already exists.",
+                "Move is not possible: " + path_to_clone + part->name + " already exists",
                 ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
         if (currently_moving_parts.count(part) || partIsAssignedToBackgroundOperation(part))
             throw Exception(
-                "Cannot move part '" + part->name + "' because it's participating in background process.",
+                "Cannot move part '" + part->name + "' because it's participating in background process",
                 ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
 
         parts_to_move.emplace_back(part, std::move(reservation));

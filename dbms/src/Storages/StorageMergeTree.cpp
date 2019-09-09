@@ -341,7 +341,7 @@ public:
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
 
-        /// if we mutate part, than we should reserver space on the same disk, because mutation create hardlinks
+        /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
         if (is_mutation)
             reserved_space = future_part_.parts[0]->disk->reserve(total_size);
         else
@@ -349,7 +349,7 @@ public:
         if (!reserved_space)
         {
             if (is_mutation)
-                throw Exception("Not enough space for mutating part", ErrorCodes::NOT_ENOUGH_SPACE);
+                throw Exception("Not enough space for mutating part '" + future_part_.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
             else
                 throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
         }

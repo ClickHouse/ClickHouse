@@ -67,14 +67,6 @@ public:
     }
 };
 
-std::unordered_map<std::string, size_t> partsMovingFromDisksSize(MergeTreeData & data)
-{
-    std::unordered_map<std::string, size_t> result;
-    for (const auto & moving_part : data.currently_moving_parts)
-        result[moving_part->disk->getName()] += moving_part->bytes_on_disk;
-    return result;
-}
-
 }
 
 bool MergeTreePartsMover::selectPartsForMove(
@@ -93,11 +85,8 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     /// Do not check if policy has one volume
     if (volumes.size() == 1)
-    {
         return false;
-    }
 
-    auto parts_moving_from_disks = partsMovingFromDisksSize(*data);
     /// Do not check last volume
     for (size_t i = 0; i != volumes.size() - 1; ++i)
     {
@@ -105,13 +94,9 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             auto space_information = disk->getSpaceInformation();
 
-            UInt64  required_available_space = space_information.getTotalSpace() * policy->getMoveFactor();
+            UInt64 required_available_space = space_information.getTotalSpace() * policy->getMoveFactor();
 
-            size_t future_available_space = 0;
-            if (parts_moving_from_disks.count(disk->getName()))
-                future_available_space = parts_moving_from_disks[disk->getName()];
-
-            if (required_available_space > space_information.getAvailableSpace() + future_available_space)
+            if (required_available_space > space_information.getAvailableSpace())
                 need_to_move.emplace(disk,  required_available_space - space_information.getAvailableSpace());
         }
     }
@@ -120,10 +105,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     {
         String reason;
         if (!can_move(part, &reason))
-        {
-            LOG_TRACE(log, "Cannot select part '" << part->name << "' to move, becase " << reason);
             continue;
-        }
 
         auto to_insert = need_to_move.find(part->disk);
         if (to_insert != need_to_move.end())
