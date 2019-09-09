@@ -177,7 +177,7 @@ Changes already made by the mutation are not rolled back.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
-Supported only by `MergeTree` family of table engines, in which this query initializes a non-scheduled merge of data parts.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine of [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines are not supported.
 
 When used with [MergeTree](../operations/table_engines/mergetree.md) family of table engines `OPTIMIZE` forces data parts merges. ClickHouse tries to find data parts for merging and then merge them. If there is nothing to merge, ClickHouse does nothing.
 
