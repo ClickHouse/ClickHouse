@@ -9,6 +9,7 @@
 #include <Common/FieldVisitors.h>
 #include <Core/Block.h>
 #include <Common/typeid_cast.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -188,24 +189,24 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
 
+    /// We need continuous memory containing the expression to use Lexer
+    skipToNextRow(0, 1);
+    buf.makeContinuousMemoryFromCheckpointToPos();
+    buf.rollbackToCheckpoint();
+
     Expected expected;
-    /// TODO use FileSegmentationEngineValues from #6553 to find end of expression and get continuous memory containing expression
     Tokens tokens(buf.position(), buf.buffer().end());
     IParser::Pos token_iterator(tokens);
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);
-    if (parsed)
-    {
-        /// Consider delimiter after value (',' or ')') as part of expression
-        if (column_idx + 1 != num_columns)
-            parsed = token_iterator->type == TokenType::Comma;
-        else
-            parsed = token_iterator->type == TokenType::ClosingRoundBracket;
 
-        ++token_iterator;
-        buf.position() = const_cast<char *>(token_iterator->begin);
-    }
+    /// Consider delimiter after value (',' or ')') as part of expression
+    if (column_idx + 1 != num_columns)
+        parsed &= token_iterator->type == TokenType::Comma;
+    else
+        parsed &= token_iterator->type == TokenType::ClosingRoundBracket;
+
     if (!parsed)
     {
         buf.rollbackToCheckpoint();
@@ -213,6 +214,9 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
                         + String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
                         ErrorCodes::SYNTAX_ERROR);
     }
+
+    ++token_iterator;
+    buf.position() = const_cast<char *>(token_iterator->begin);
 
     if (format_settings.values.deduce_templates_of_expressions && deduce_template)
     {
@@ -250,6 +254,50 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
     }
 
     column.insert(value);
+}
+
+/// Can be used in fileSegmentationEngine for parallel parsing of Values
+bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_size, int balance)
+{
+    skipWhitespaceIfAny(buf);
+    if (buf.eof() || *buf.position() == ';')
+        return false;
+    bool quoted = false;
+
+    size_t chunk_begin_buf_count = buf.count();
+    while (!buf.eof() && (balance || buf.count() - chunk_begin_buf_count < min_chunk_size))
+    {
+        buf.position() = find_first_symbols<'\\', '\'', ')', '('>(buf.position(), buf.buffer().end());
+        if (buf.position() == buf.buffer().end())
+            continue;
+        if (*buf.position() == '\\')
+        {
+            ++buf.position();
+            if (!buf.eof())
+                ++buf.position();
+        }
+        else if (*buf.position() == '\'')
+        {
+            quoted ^= true;
+            ++buf.position();
+        }
+        else if (*buf.position() == ')')
+        {
+            ++buf.position();
+            if (!quoted)
+                --balance;
+        }
+        else if (*buf.position() == '(')
+        {
+            ++buf.position();
+            if (!quoted)
+                ++balance;
+        }
+    }
+
+    if (!buf.eof() && *buf.position() == ',')
+        ++buf.position();
+    return true;
 }
 
 void ValuesBlockInputFormat::assertDelimiterAfterValue(size_t column_idx)

@@ -45,6 +45,8 @@ public:
     /// All pointers (such as this->buffer().end()) may be invalidated
     void rollbackToCheckpoint();
 
+    void makeContinuousMemoryFromCheckpointToPos();
+
     /// If position is in own memory, returns buffer with data, which were extracted from sub-buffer,
     /// but not from this buffer, so the data will not be lost after destruction of this buffer.
     /// If position is in sub-buffer, returns empty buffer.
