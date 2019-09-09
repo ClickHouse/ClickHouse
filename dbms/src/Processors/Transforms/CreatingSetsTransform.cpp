@@ -175,12 +175,7 @@ void CreatingSetsTransform::work()
 
     if (!done_with_join)
     {
-        subquery.renameColumns(block);
-
-        if (subquery.joined_block_actions)
-            subquery.joined_block_actions->execute(block);
-
-        if (!subquery.join->insertFromBlock(block))
+        if (!subquery.insertJoinedBlock(block))
             done_with_join = true;
     }
 

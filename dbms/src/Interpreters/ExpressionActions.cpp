@@ -475,7 +475,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            table_join->joinBlock(block);
+            table_join->getJoin()->joinBlock(block);
             break;
         }
 
@@ -543,7 +543,7 @@ void ExpressionAction::executeOnTotals(Block & block) const
     if (type != JOIN)
         execute(block, false);
     else
-        table_join->joinTotals(block);
+        table_join->getJoin()->joinTotals(block);
 }
 
 
@@ -763,7 +763,7 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 bool ExpressionActions::hasTotalsInJoin() const
 {
     for (const auto & action : actions)
-        if (action.table_join && action.table_join->hasTotals())
+        if (action.table_join && action.table_join->getJoin()->hasTotals())
             return true;
     return false;
 }

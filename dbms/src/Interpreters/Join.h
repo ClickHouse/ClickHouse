@@ -7,6 +7,7 @@
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
 #include <Core/SettingsCommon.h>
@@ -120,30 +121,24 @@ using MappedAsof =      WithFlags<AsofRowRefs, false>;
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
-class Join
+class Join : public IJoin
 {
 public:
-    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
-         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_ = false);
+    Join(const AnalyzedJoin & join_options, const Block & right_sample_block, bool any_take_last_row_ = false);
 
     bool empty() { return type == Type::EMPTY; }
 
     bool isNullUsedAsDefault() const { return use_nulls; }
 
-    /** Set information about structure of right hand of JOIN (joined data).
-      * You must call this method before subsequent calls to insertFromBlock.
-      */
-    void setSampleBlock(const Block & block);
-
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool insertFromBlock(const Block & block);
+    bool addJoinedBlock(const Block & block) override;
 
-    /** Join data from the map (that was previously built by calls to insertFromBlock) to the block with data from "left" table.
+    /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, const AnalyzedJoin & join_params) const;
+    void joinBlock(Block & block) override;
 
     /// Infer the return type for joinGet function
     DataTypePtr joinGetReturnType(const String & column_name) const;
@@ -153,10 +148,10 @@ public:
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
-    void setTotals(const Block & block) { totals = block; }
-    bool hasTotals() const { return totals; }
+    void setTotals(const Block & block) override { totals = block; }
+    bool hasTotals() const override { return totals; }
 
-    void joinTotals(Block & block) const;
+    void joinTotals(Block & block) const override;
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
@@ -167,7 +162,7 @@ public:
                                                       UInt64 max_block_size) const;
 
     /// Number of keys in all built JOIN maps.
-    size_t getTotalRowCount() const;
+    size_t getTotalRowCount() const override;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const;
 
@@ -282,6 +277,7 @@ private:
     friend class NonJoinedBlockInputStream;
     friend class JoinBlockInputStream;
 
+    const AnalyzedJoin & join_options;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
@@ -323,9 +319,6 @@ private:
 
     Poco::Logger * log;
 
-    /// Limits for maximum map size.
-    SizeLimits limits;
-
     Block totals;
 
     /** Protect state for concurrent use in insertFromBlock and joinBlock.
@@ -336,6 +329,10 @@ private:
     mutable std::shared_mutex rwlock;
 
     void init(Type type_);
+
+    /** Set information about structure of right hand of JOIN (joined data).
+      */
+    void setSampleBlock(const Block & block);
 
     /** Take an inserted block and discard everything that does not need to be stored
      *  Example, remove the keys as they come from the LHS block, but do keep the ASOF timestamps
@@ -358,8 +355,5 @@ private:
     template <typename Maps>
     void joinGetImpl(Block & block, const String & column_name, const Maps & maps) const;
 };
-
-using JoinPtr = std::shared_ptr<Join>;
-using Joins = std::vector<JoinPtr>;
 
 }

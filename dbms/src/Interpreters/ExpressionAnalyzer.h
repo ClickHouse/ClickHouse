@@ -58,15 +58,11 @@ private:
     struct ExtractedSettings
     {
         const bool use_index_for_in_with_subqueries;
-        const bool join_use_nulls;
         const SizeLimits size_limits_for_set;
-        const SizeLimits size_limits_for_join;
 
         ExtractedSettings(const Settings & settings_)
         :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
-            join_use_nulls(settings_.join_use_nulls),
-            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode),
-            size_limits_for_join(settings_.max_rows_in_join, settings_.max_bytes_in_join, settings_.join_overflow_mode)
+            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
         {}
     };
 
@@ -220,7 +216,7 @@ private:
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
     void makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
-    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, const ExpressionActionsPtr & joined_block_actions,
+    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
                              SubqueryForSet & subquery_for_set) const;
 
     const ASTSelectQuery * getAggregatingQuery() const;

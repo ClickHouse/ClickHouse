@@ -4,7 +4,9 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsCommon.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/IJoin.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <DataStreams/SizeLimits.h>
 
 #include <utility>
 #include <memory>
@@ -17,8 +19,7 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 
-class Join;
-using JoinPtr = std::shared_ptr<Join>;
+struct Settings;
 
 class AnalyzedJoin
 {
@@ -36,12 +37,15 @@ class AnalyzedJoin
 
     friend class SyntaxAnalyzer;
 
+    const SizeLimits size_limits;
+    const bool join_use_nulls;
+    const bool prefer_merge_join;
+
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
     ASTs key_asts_left;
     ASTs key_asts_right;
     ASTTableJoin table_join;
-    bool join_use_nulls = false;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -53,9 +57,28 @@ class AnalyzedJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    JoinPtr hash_join;
+    JoinPtr join;
 
 public:
+    AnalyzedJoin(const Settings &);
+
+    /// for StorageJoin
+    AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
+                 const Names & key_names_right_)
+        : size_limits(limits)
+        , join_use_nulls(use_nulls)
+        , prefer_merge_join(false)
+        , key_names_right(key_names_right_)
+    {
+        table_join.kind = kind;
+        table_join.strictness = strictness;
+    }
+
+    ASTTableJoin::Kind kind() const { return table_join.kind; }
+    ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
+    const SizeLimits & sizeLimits() const { return size_limits; }
+    bool joinUseNulls() const { return join_use_nulls; }
+
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
@@ -78,15 +101,15 @@ public:
 
     Names requiredJoinedNames() const;
     const Names & keyNamesLeft() const { return key_names_left; }
+    const Names & keyNamesRight() const { return key_names_right; }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
-    void setHashJoin(JoinPtr join) { hash_join = join; }
-    JoinPtr makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const;
+    JoinPtr getJoin() const { return join; }
+    void setJoin(const JoinPtr & join_) { join = join_; }
+
+    JoinPtr makeJoin(const Block & right_sample_block) const;
     BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
-    void joinBlock(Block & block) const;
-    void joinTotals(Block & block) const;
-    bool hasTotals() const;
 
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
 };
