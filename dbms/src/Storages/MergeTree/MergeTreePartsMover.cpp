@@ -97,7 +97,7 @@ bool MergeTreePartsMover::selectPartsForMove(
             UInt64 required_available_space = space_information.getTotalSpace() * policy->getMoveFactor();
 
             if (required_available_space > space_information.getAvailableSpace())
-                need_to_move.emplace(disk,  required_available_space - space_information.getAvailableSpace());
+                need_to_move.emplace(disk, required_available_space - space_information.getAvailableSpace());
         }
     }
 
