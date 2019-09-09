@@ -179,6 +179,9 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     /// Since we can poll more messages than we already processed - commit only processed messages.
     consumer->store_offset(*current);
 
+    /// Since we can poll more messages than we already processed - commit only processed messages.
+    consumer->store_offset(*current);
+
     ++current;
 
     return true;
