@@ -1,11 +1,10 @@
 import pytest
 import os
-import time
 
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
-from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed, SourceMongo
-from external_sources import SourceHTTP, SourceHTTPS
+from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
+from external_sources import SourceMongo, SourceHTTP, SourceHTTPS
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -95,6 +94,7 @@ DICTIONARIES = []
 cluster = None
 node = None
 
+
 def setup_module(module):
     global DICTIONARIES
     global cluster
@@ -123,6 +123,7 @@ def setup_module(module):
     node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True)
     cluster.add_instance('clickhouse1')
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -143,11 +144,11 @@ def test_simple_dictionaries(started_cluster):
     data = [
         Row(fields,
             [1, 22, 333, 4444, 55555, -6, -77,
-            -888, -999, '550e8400-e29b-41d4-a716-446655440003',
+             -888, -999, '550e8400-e29b-41d4-a716-446655440003',
              '1973-06-28', '1985-02-28 23:43:25', 'hello', 22.543, 3332154213.4, 0]),
         Row(fields,
             [2, 3, 4, 5, 6, -7, -8,
-            -9, -10, '550e8400-e29b-41d4-a716-446655440002',
+             -9, -10, '550e8400-e29b-41d4-a716-446655440002',
              '1978-06-28', '1986-02-28 23:42:25', 'hello', 21.543, 3222154213.4, 1]),
     ]
 
@@ -188,18 +189,19 @@ def test_simple_dictionaries(started_cluster):
             answer = str(answer).replace(' ', '')
         assert node.query(query) == str(answer) + '\n'
 
+
 def test_complex_dictionaries(started_cluster):
     fields = FIELDS["complex"]
     data = [
         Row(fields,
             [1, 'world', 22, 333, 4444, 55555, -6,
-            -77, -888, -999, '550e8400-e29b-41d4-a716-446655440003',
-            '1973-06-28', '1985-02-28 23:43:25',
-            'hello', 22.543, 3332154213.4]),
+             -77, -888, -999, '550e8400-e29b-41d4-a716-446655440003',
+             '1973-06-28', '1985-02-28 23:43:25',
+             'hello', 22.543, 3332154213.4]),
         Row(fields,
             [2, 'qwerty2', 52, 2345, 6544, 9191991, -2,
-            -717, -81818, -92929, '550e8400-e29b-41d4-a716-446655440007',
-            '1975-09-28', '2000-02-28 23:33:24',
+             -717, -81818, -92929, '550e8400-e29b-41d4-a716-446655440007',
+             '1975-09-28', '2000-02-28 23:33:24',
              'my', 255.543, 3332221.44]),
     ]
 
@@ -227,21 +229,22 @@ def test_complex_dictionaries(started_cluster):
         print query
         assert node.query(query) == str(answer) + '\n'
 
+
 def test_ranged_dictionaries(started_cluster):
     fields = FIELDS["ranged"]
     data = [
         Row(fields,
             [1, '2019-02-10', '2019-02-01', '2019-02-28',
-            22, 333, 4444, 55555, -6, -77, -888, -999,
-            '550e8400-e29b-41d4-a716-446655440003',
-            '1973-06-28', '1985-02-28 23:43:25', 'hello',
-            22.543, 3332154213.4]),
+             22, 333, 4444, 55555, -6, -77, -888, -999,
+             '550e8400-e29b-41d4-a716-446655440003',
+             '1973-06-28', '1985-02-28 23:43:25', 'hello',
+             22.543, 3332154213.4]),
         Row(fields,
             [2, '2019-04-10', '2019-04-01', '2019-04-28',
-            11, 3223, 41444, 52515, -65, -747, -8388, -9099,
-            '550e8400-e29b-41d4-a716-446655440004',
-            '1973-06-29', '2002-02-28 23:23:25', '!!!!',
-            32.543, 3332543.4]),
+             11, 3223, 41444, 52515, -65, -747, -8388, -9099,
+             '550e8400-e29b-41d4-a716-446655440004',
+             '1973-06-29', '2002-02-28 23:23:25', '!!!!',
+             32.543, 3332543.4]),
     ]
 
     ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
