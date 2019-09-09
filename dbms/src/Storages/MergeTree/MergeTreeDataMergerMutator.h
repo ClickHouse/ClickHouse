@@ -45,12 +45,17 @@ public:
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
       */
-    UInt64 getMaxSourcePartsSize();
+    UInt64 getMaxSourcePartsSizeForMerge();
 
     /** For explicitly passed size of pool and number of used tasks.
       * This method could be used to calculate threshold depending on number of tasks in replication queue.
       */
-    UInt64 getMaxSourcePartsSize(size_t pool_size, size_t pool_used);
+    UInt64 getMaxSourcePartsSizeForMerge(size_t pool_size, size_t pool_used);
+
+    /** Get maximum total size of parts to do mutation, at current moment of time.
+      * It depends only on amount of free space in disk.
+      */
+    UInt64 getMaxSourcePartSizeForMutation();
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
@@ -89,14 +94,14 @@ public:
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
-        MergeListEntry & merge_entry, time_t time_of_merge,
-        DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
+        MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
+        DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication, bool force_ttl);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const std::vector<MutationCommand> & commands,
-        MergeListEntry & merge_entry, const Context & context);
+        MergeListEntry & merge_entry, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
@@ -115,7 +120,8 @@ public:
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
-    ActionBlocker actions_blocker;
+    ActionBlocker merges_blocker;
+    ActionBlocker ttl_merges_blocker;
 
     enum class MergeAlgorithm
     {

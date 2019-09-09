@@ -13,34 +13,44 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 enum class AttributeUnderlyingType
 {
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Float32,
-    Float64,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    String
+    utUInt8,
+    utUInt16,
+    utUInt32,
+    utUInt64,
+    utUInt128,
+    utInt8,
+    utInt16,
+    utInt32,
+    utInt64,
+    utFloat32,
+    utFloat64,
+    utDecimal32,
+    utDecimal64,
+    utDecimal128,
+    utString
 };
 
-
-/** For implicit conversions in dictGet functions.
-  */
-bool isAttributeTypeConvertibleTo(AttributeUnderlyingType from, AttributeUnderlyingType to);
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
 
 std::string toString(const AttributeUnderlyingType type);
 
+/// Implicit conversions in dictGet functions is disabled.
+inline void checkAttributeType(const std::string & dict_name, const std::string & attribute_name,
+                               AttributeUnderlyingType attribute_type, AttributeUnderlyingType to)
+{
+    if (attribute_type != to)
+        throw Exception{dict_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute_type)
+            + ", expected " + toString(to), ErrorCodes::TYPE_MISMATCH};
+}
 
 /// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;

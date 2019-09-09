@@ -6,7 +6,6 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <Storages/StorageMaterializedView.h>
 
-
 namespace DB
 {
 
@@ -22,7 +21,7 @@ public:
         const String & database, const String & table, const StoragePtr & storage_,
         const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
-    Block getHeader() const override { return storage->getSampleBlock(); }
+    Block getHeader() const override;
     void write(const Block & block) override;
 
     void flush() override;

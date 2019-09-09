@@ -47,14 +47,14 @@ parser.add_argument('--login', type=str,
 
 args = parser.parse_args()
 
-github = query.Query(args.token, 50)
+github = query.Query(args.token, 30)
 repo = local.Local(args.repo, args.remote, github.get_default_branch())
 
 stables = repo.get_stables()[-args.number:] # [(branch name, base)]
 if not stables:
-    sys.exit('No stable branches found!')
+    sys.exit('No release branches found!')
 else:
-    print('Found stable branches:')
+    print('Found release branches:')
     for stable in stables:
         print(f'{CHECK_MARK} {stable[0]} forked from {stable[1]}')
 
@@ -171,3 +171,8 @@ print(f'{CHECK_MARK} - good')
 print(f'{CROSS_MARK} - bad')
 print(f'{LABEL_MARK} - backport is detected via label')
 print(f'{CLOCK_MARK} - backport is waiting to merge')
+
+# print API costs
+print('\nGitHub API total costs per query:')
+for name, value in github.api_costs.items():
+    print(f'{name} : {value}')

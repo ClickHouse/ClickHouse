@@ -1,7 +1,5 @@
 #include <Storages/System/StorageSystemGraphite.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/Context.h>
 
 
@@ -37,20 +35,10 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
         for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
         {
             auto & table = iterator->table();
-            const MergeTreeData * table_data = nullptr;
 
-            if (const StorageMergeTree * merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
-            {
-                table_data = &merge_tree->getData();
-            }
-            else if (const StorageReplicatedMergeTree * replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-            {
-                table_data = &replicated_merge_tree->getData();
-            }
-            else
-            {
+            const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
+            if (!table_data)
                 continue;
-            }
 
             if (table_data->merging_params.mode == MergeTreeData::MergingParams::Graphite)
             {

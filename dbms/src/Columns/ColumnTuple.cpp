@@ -5,6 +5,7 @@
 #include <ext/map.h>
 #include <ext/range.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -39,7 +40,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
     columns.reserve(mutable_columns.size());
     for (auto & column : mutable_columns)
     {
-        if (column->isColumnConst())
+        if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
         columns.push_back(std::move(column));
@@ -49,7 +50,7 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
 ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
     for (const auto & column : columns)
-        if (column->isColumnConst())
+        if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
     auto column_tuple = ColumnTuple::create(MutableColumns());
@@ -61,7 +62,7 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 {
     for (const auto & column : columns)
-        if (column->isColumnConst())
+        if (isColumnConst(*column))
             throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 
     auto column_tuple = ColumnTuple::create(MutableColumns());
@@ -76,6 +77,16 @@ MutableColumnPtr ColumnTuple::cloneEmpty() const
     MutableColumns new_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->cloneEmpty();
+
+    return ColumnTuple::create(std::move(new_columns));
+}
+
+MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
+{
+    const size_t tuple_size = columns.size();
+    MutableColumns new_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->cloneResized(new_size);
 
     return ColumnTuple::create(std::move(new_columns));
 }
@@ -118,7 +129,7 @@ void ColumnTuple::insert(const Field & x)
 
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 {
-    const ColumnTuple & src = static_cast<const ColumnTuple &>(src_);
+    const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
 
     const size_t tuple_size = columns.size();
     if (src.columns.size() != tuple_size)
@@ -142,11 +153,15 @@ void ColumnTuple::popBack(size_t n)
 
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    size_t values_size = 0;
+    StringRef res(begin, 0);
     for (auto & column : columns)
-        values_size += column->serializeValueIntoArena(n, arena, begin).size;
+    {
+        auto value_ref = column->serializeValueIntoArena(n, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
 
-    return StringRef(begin, values_size);
+    return res;
 }
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
@@ -168,7 +183,7 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertRangeFrom(
-            *static_cast<const ColumnTuple &>(src).columns[i],
+            *assert_cast<const ColumnTuple &>(src).columns[i],
             start, length);
 }
 
@@ -241,7 +256,7 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        if (int res = columns[i]->compareAt(n, m, *static_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
+        if (int res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
             return res;
 
     return 0;
@@ -253,8 +268,8 @@ struct ColumnTuple::Less
     TupleColumns columns;
     int nan_direction_hint;
 
-    Less(const TupleColumns & columns, int nan_direction_hint_)
-        : columns(columns), nan_direction_hint(nan_direction_hint_)
+    Less(const TupleColumns & columns_, int nan_direction_hint_)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_)
     {
     }
 

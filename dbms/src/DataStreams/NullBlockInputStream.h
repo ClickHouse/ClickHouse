@@ -21,4 +21,4 @@ private:
     Block readImpl() override { return {}; }
 };
 
-}  /// namespace DB
+}

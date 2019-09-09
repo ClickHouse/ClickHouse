@@ -109,5 +109,4 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
             Settings::getDescription(index).data)));
     }
 }
-
 }

@@ -65,7 +65,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b) function.`
 
-## Operator for Working With Dates and Times
+## Operator for Working With Dates and Times {#operators-datetime}
 
 ``` sql
 EXTRACT(part FROM date);
@@ -94,13 +94,13 @@ SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 ```
 
-In the following example we create a table and insert into it a value with the `DateTime` type. 
+In the following example we create a table and insert into it a value with the `DateTime` type.
 
 ``` sql
 CREATE TABLE test.Orders
 (
-    OrderId UInt64, 
-    OrderName String, 
+    OrderId UInt64,
+    OrderName String,
     OrderDate DateTime
 )
 ENGINE = Log;
@@ -110,11 +110,11 @@ ENGINE = Log;
 INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
 ```
 ``` sql
-SELECT 
-    toYear(OrderDate) AS OrderYear, 
-    toMonth(OrderDate) AS OrderMonth, 
-    toDayOfMonth(OrderDate) AS OrderDay, 
-    toHour(OrderDate) AS OrderHour, 
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
     toMinute(OrderDate) AS OrderMinute,
     toSecond(OrderDate) AS OrderSecond
 FROM test.Orders;

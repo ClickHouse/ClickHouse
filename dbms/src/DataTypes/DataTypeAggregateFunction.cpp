@@ -6,6 +6,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
 
 #include <Formats/FormatSettings.h>
@@ -30,6 +31,7 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -76,12 +78,12 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
 
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    function->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr);
+    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr);
 }
 
 void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    ColumnAggregateFunction & column_concrete = static_cast<ColumnAggregateFunction &>(column);
+    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
     Arena & arena = column_concrete.createOrGetArena();
     size_t size_of_state = function->sizeOfData();
@@ -154,13 +156,13 @@ void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuff
 static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num)
 {
     WriteBufferFromOwnString buffer;
-    function->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
+    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
     return buffer.str();
 }
 
 static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s)
 {
-    ColumnAggregateFunction & column_concrete = static_cast<ColumnAggregateFunction &>(column);
+    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
     Arena & arena = column_concrete.createOrGetArena();
     size_t size_of_state = function->sizeOfData();
@@ -216,6 +218,14 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
+void DataTypeAggregateFunction::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    String s;
+    readStringUntilEOF(s, istr);
+    deserializeFromString(function, column, s);
+}
+
+
 void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeJSONString(serializeToString(function, column, row_num), ostr, settings);
@@ -255,13 +265,13 @@ void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t
     if (value_index)
         return;
     value_index = static_cast<bool>(
-        protobuf.writeAggregateFunction(function, static_cast<const ColumnAggregateFunction &>(column).getData()[row_num]));
+        protobuf.writeAggregateFunction(function, assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num]));
 }
 
 void DataTypeAggregateFunction::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     row_added = false;
-    ColumnAggregateFunction & column_concrete = static_cast<ColumnAggregateFunction &>(column);
+    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
     Arena & arena = column_concrete.createOrGetArena();
     size_t size_of_state = function->sizeOfData();
     AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
@@ -359,7 +369,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row[i] = literal->value;
         }
     }
-    else if (auto opt_name = getIdentifierName(arguments->children[0]))
+    else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
     {
         function_name = *opt_name;
     }

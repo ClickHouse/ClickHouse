@@ -21,16 +21,16 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->default_expression);
     }
 
-    if (codec)
-    {
-        res->codec = codec->clone();
-        res->children.push_back(res->codec);
-    }
-
     if (comment)
     {
         res->comment = comment->clone();
         res->children.push_back(res->comment);
+    }
+
+    if (codec)
+    {
+        res->codec = codec->clone();
+        res->children.push_back(res->codec);
     }
 
     if (ttl)

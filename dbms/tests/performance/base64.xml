@@ -1,5 +1,4 @@
 <test>
-    <name>base64</name>
     <type>once</type>
 
     <stop_conditions>

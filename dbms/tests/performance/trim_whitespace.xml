@@ -1,5 +1,4 @@
 <test>
-    <name>trim_whitespaces</name>
     <type>loop</type>
 
     <create_query>CREATE TABLE IF NOT EXISTS whitespaces(value String) ENGINE = MergeTree() PARTITION BY tuple() ORDER BY tuple()</create_query>

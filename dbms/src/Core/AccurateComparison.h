@@ -430,6 +430,13 @@ inline bool_if_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 template <typename From, typename To>
 inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
 {
+    /// If the type is actually the same it's not necessary to do any checks.
+    if constexpr (std::is_same_v<From, To>)
+    {
+        result = value;
+        return true;
+    }
+
     /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
     if (isNaN(value) && std::is_floating_point_v<To>)
     {

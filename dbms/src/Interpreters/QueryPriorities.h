@@ -49,50 +49,36 @@ private:
 
 
     /** If there are higher priority queries - sleep until they are finish or timeout happens.
-      * Returns true, if higher priority queries has finished at return of function, false, if timout exceeded.
       */
     template <typename Duration>
-    bool waitIfNeed(Priority priority, Duration timeout)
+    void waitIfNeed(Priority priority, Duration timeout)
     {
         if (0 == priority)
-            return true;
-
-        std::chrono::nanoseconds cur_timeout = timeout;
-        Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+            return;
 
         std::unique_lock lock(mutex);
 
-        while (true)
+        /// Is there at least one more priority query?
+        bool found = false;
+        for (const auto & value : container)
         {
-            /// Is there at least one more priority query?
-            bool found = false;
-            for (const auto & value : container)
+            if (value.first >= priority)
+                break;
+
+            if (value.second > 0)
             {
-                if (value.first >= priority)
-                    break;
-
-                if (value.second > 0)
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-                return true;
-
-            CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
-            if (std::cv_status::timeout == condvar.wait_for(lock, cur_timeout))
-                return false;
-            else
-            {
-                /// False awakening, check and update time limit
-                auto elapsed = std::chrono::nanoseconds(watch.elapsed());
-                if (elapsed >= timeout)
-                    return false;
-                cur_timeout = timeout - elapsed;
+                found = true;
+                break;
             }
         }
+
+        if (!found)
+            return;
+
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
+
+        /// Spurious wakeups are Ok. We allow to wait less than requested.
+        condvar.wait_for(lock, timeout);
     }
 
 public:
@@ -116,9 +102,9 @@ public:
         }
 
         template <typename Duration>
-        bool waitIfNeed(Duration timeout)
+        void waitIfNeed(Duration timeout)
         {
-            return parent.waitIfNeed(value.first, timeout);
+            parent.waitIfNeed(value.first, timeout);
         }
     };
 

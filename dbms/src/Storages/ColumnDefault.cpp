@@ -31,7 +31,10 @@ ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
     };
 
     const auto it = map.find(str);
-    return it != std::end(map) ? it->second : throw Exception{"Unknown column default specifier: " + str, ErrorCodes::LOGICAL_ERROR};
+    if (it != std::end(map))
+        return it->second;
+
+    throw Exception{"Unknown column default specifier: " + str, ErrorCodes::LOGICAL_ERROR};
 }
 
 
@@ -44,7 +47,10 @@ std::string toString(const ColumnDefaultKind kind)
     };
 
     const auto it = map.find(kind);
-    return it != std::end(map) ? it->second : throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
+    if (it != std::end(map))
+        return it->second;
+
+    throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
 }
 
 

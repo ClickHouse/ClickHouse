@@ -4,6 +4,7 @@
 
 #include <common/DateLUT.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
@@ -84,7 +85,7 @@ template<typename NumberBase>
 void DataTypeDateTimeBase<NumberBase>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     using TG = TypeGetter<NumberBase>;
-    writeDateTimeText(typename TG::Convertor(static_cast<const typename TG::Column &>(column).getData()[row_num]), ostr, time_zone);
+    writeDateTimeText(typename TG::Convertor(assert_cast<const typename TG::Column &>(column).getData()[row_num]), ostr, time_zone);
 }
 
 template<typename NumberBase>
@@ -120,11 +121,18 @@ static inline void readText(DateTime64 & x, ReadBuffer & istr, const FormatSetti
 }
 
 template<typename NumberBase>
+void DataTypeDateTimeBase<NumberBase>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextEscaped(column, istr, settings);
+}
+
+template<typename NumberBase>
 void DataTypeDateTimeBase<NumberBase>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     typename TypeGetter<NumberBase>::Type x = 0;
     readText(x, istr, settings, time_zone, utc_time_zone);
-    static_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);
+
+    assert_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);
 }
 
 template<typename NumberBase>
@@ -148,7 +156,8 @@ void DataTypeDateTimeBase<NumberBase>::deserializeTextQuoted(IColumn & column, R
     {
         readIntText(x, istr);
     }
-    static_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+
+    assert_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 template<typename NumberBase>
@@ -172,7 +181,8 @@ void DataTypeDateTimeBase<NumberBase>::deserializeTextJSON(IColumn & column, Rea
     {
         readIntText(x, istr);
     }
-    static_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);
+
+    assert_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);
 }
 
 template<typename NumberBase>
@@ -201,7 +211,7 @@ void DataTypeDateTimeBase<NumberBase>::deserializeTextCSV(IColumn & column, Read
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
 
-    static_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);
+    assert_cast<typename TypeGetter<NumberBase>::Column &>(column).getData().push_back(x);
 }
 
 template<typename NumberBase>
@@ -209,8 +219,9 @@ void DataTypeDateTimeBase<NumberBase>::serializeProtobuf(const IColumn & column,
 {
     if (value_index)
         return;
-    typename TypeGetter<NumberBase>::Type t = static_cast<const typename TypeGetter<NumberBase>::Column &>(column).getData()[row_num];
-    value_index = static_cast<bool>(protobuf.writeDateTime(t));
+
+    typename TypeGetter<NumberBase>::Type t = assert_cast<const typename TypeGetter<NumberBase>::Column &>(column).getData()[row_num];
+    value_index = assert_cast<bool>(protobuf.writeDateTime(t));
 }
 
 template<typename NumberBase>
@@ -221,7 +232,7 @@ void DataTypeDateTimeBase<NumberBase>::deserializeProtobuf(IColumn & column, Pro
     if (!protobuf.readDateTime(t))
         return;
 
-    auto & container = static_cast<typename TypeGetter<NumberBase>::Column &>(column).getData();
+    auto & container = assert_cast<typename TypeGetter<NumberBase>::Column &>(column).getData();
     if (allow_add_row)
     {
         container.emplace_back(t);

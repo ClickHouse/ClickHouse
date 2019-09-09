@@ -1,27 +1,28 @@
 #include <iomanip>
 
-#include <Poco/Event.h>
-#include <Poco/DirectoryIterator.h>
-#include <common/logger_useful.h>
-
-#include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseMemory.h>
-#include <Databases/DatabasesCommon.h>
-#include <Common/typeid_cast.h>
-#include <Common/escapeForFileName.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <IO/WriteBufferFromFile.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabasesCommon.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
+
+#include <Poco/DirectoryIterator.h>
+#include <Poco/Event.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
+#include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 
 
@@ -118,7 +119,6 @@ DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, 
 
 void DatabaseOrdinary::loadTables(
     Context & context,
-    ThreadPool * thread_pool,
     bool has_force_restore_data_flag)
 {
     using FileNames = std::vector<std::string>;
@@ -135,7 +135,25 @@ void DatabaseOrdinary::loadTables(
         if (endsWith(dir_it.name(), ".sql.bak"))
             continue;
 
-        /// There are files .sql.tmp - delete.
+        // There are files that we tried to delete previously
+        static const char * tmp_drop_ext = ".sql.tmp_drop";
+        if (endsWith(dir_it.name(), tmp_drop_ext))
+        {
+            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+            if (Poco::File(data_path + '/' + table_name).exists())
+            {
+                Poco::File(dir_it->path()).renameTo(table_name + ".sql");
+                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
+            }
+            else
+            {
+                LOG_INFO(log, "Removing file " << dir_it->path());
+                Poco::File(dir_it->path()).remove();
+            }
+            continue;
+        }
+
+        /// There are files .sql.tmp - delete
         if (endsWith(dir_it.name(), ".sql.tmp"))
         {
             LOG_INFO(log, "Removing file " << dir_it->path());
@@ -160,96 +178,68 @@ void DatabaseOrdinary::loadTables(
       */
     std::sort(file_names.begin(), file_names.end());
 
-    size_t total_tables = file_names.size();
+    const size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
-    Poco::Event all_tables_processed;
-    ExceptionHandler exception_handler;
 
-    auto task_function = [&](const String & table)
+    auto loadOneTable = [&](const String & table)
     {
-        SCOPE_EXIT(
-            if (++tables_processed == total_tables)
-                all_tables_processed.set()
-        );
+        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
-        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
             LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
             watch.restart();
         }
-
-        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
     };
 
-    for (const auto & filename : file_names)
-    {
-        auto task = createExceptionHandledJob(std::bind(task_function, filename), exception_handler);
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
 
-        if (thread_pool)
-            thread_pool->schedule(task);
-        else
-            task();
+    for (const auto & file_name : file_names)
+    {
+        pool.schedule([&]() { loadOneTable(file_name); });
     }
 
-    if (thread_pool)
-        all_tables_processed.wait();
-
-    exception_handler.throwIfException();
+    pool.wait();
 
     /// After all tables was basically initialized, startup them.
-    startupTables(thread_pool);
+    startupTables(pool);
 }
 
 
-void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
+void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
 
-    AtomicStopwatch watch;
-    std::atomic<size_t> tables_processed {0};
-    size_t total_tables = tables.size();
-    Poco::Event all_tables_processed;
-    ExceptionHandler exception_handler;
-
+    const size_t total_tables = tables.size();
     if (!total_tables)
         return;
 
-    auto task_function = [&](const StoragePtr & table)
-    {
-        SCOPE_EXIT(
-            if (++tables_processed == total_tables)
-                all_tables_processed.set()
-        );
+    AtomicStopwatch watch;
+    std::atomic<size_t> tables_processed {0};
 
-        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+    auto startupOneTable = [&](const StoragePtr & table)
+    {
+        table->startup();
+
+        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
             LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
             watch.restart();
         }
-
-        table->startup();
     };
 
-    for (const auto & name_storage : tables)
+    for (const auto & table : tables)
     {
-        auto task = createExceptionHandledJob(std::bind(task_function, name_storage.second), exception_handler);
-
-        if (thread_pool)
-            thread_pool->schedule(task);
-        else
-            task();
+        thread_pool.schedule([&]() { startupOneTable(table.second); });
     }
 
-    if (thread_pool)
-        all_tables_processed.wait();
-
-    exception_handler.throwIfException();
+    thread_pool.wait();
 }
 
 
@@ -330,6 +320,15 @@ void DatabaseOrdinary::removeTable(
     }
     catch (...)
     {
+        try
+        {
+            Poco::File(table_metadata_path + ".tmp_drop").remove();
+            return;
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        }
         attachTable(table_name, res);
         throw;
     }
@@ -383,7 +382,8 @@ void DatabaseOrdinary::renameTable(
     const Context & context,
     const String & table_name,
     IDatabase & to_database,
-    const String & to_table_name)
+    const String & to_table_name,
+    TableStructureWriteLockHolder & lock)
 {
     DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
@@ -400,7 +400,7 @@ void DatabaseOrdinary::renameTable(
     {
         table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
             to_database_concrete->name,
-            to_table_name);
+            to_table_name, lock);
     }
     catch (const Exception &)
     {
@@ -515,6 +515,7 @@ void DatabaseOrdinary::alterTable(
     const String & table_name,
     const ColumnsDescription & columns,
     const IndicesDescription & indices,
+    const ConstraintsDescription & constraints,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -537,6 +538,7 @@ void DatabaseOrdinary::alterTable(
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
 
@@ -544,6 +546,11 @@ void DatabaseOrdinary::alterTable(
         ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
     else
         ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
+
+    if (ast_create_query.columns_list->constraints)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->constraints, new_constraints);
+    else
+        ast_create_query.columns_list->set(ast_create_query.columns_list->constraints, new_constraints);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);

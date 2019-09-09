@@ -2,7 +2,7 @@
 #include <mysqlxx/mysqlxx.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     try
     {
@@ -25,10 +25,10 @@ int main(int argc, char ** argv)
                     << ", " << row[1].getDate()
                     << ", " << row[1].getDateTime()
                     << std::endl
-                    << mysqlxx::escape << row[1].getDate() << ", " << mysqlxx::escape << row[1].getDateTime() << std::endl
-                    << mysqlxx::quote << row[1].getDate() << ", " << mysqlxx::quote << row[1].getDateTime() << std::endl
-                    << mysqlxx::escape << row[1].getDate() << ", " << mysqlxx::escape << row[1].getDateTime() << std::endl
-                    << mysqlxx::quote << row[1].getDate() << ", " << mysqlxx::quote << row[1].getDateTime() << std::endl
+                    << row[1].getDate() << ", " << row[1].getDateTime() << std::endl
+                    << row[1].getDate() << ", " << row[1].getDateTime() << std::endl
+                    << row[1].getDate() << ", " << row[1].getDateTime() << std::endl
+                    << row[1].getDate() << ", " << row[1].getDateTime() << std::endl
                     ;
 
                 time_t t1 = row[0];
@@ -51,7 +51,7 @@ int main(int argc, char ** argv)
             mysqlxx::UseQueryResult result = connection.query("SELECT 'abc\\\\def' x").use();
             mysqlxx::Row row = result.fetch();
             std::cerr << row << std::endl;
-            std::cerr << mysqlxx::escape << row << std::endl;
+            std::cerr << row << std::endl;
         }
 
         {
@@ -71,7 +71,7 @@ int main(int argc, char ** argv)
             for (Queries::iterator it = queries.begin(); it != queries.end(); ++it)
             {
                 std::cerr << it->str() << std::endl;
-                std::cerr << mysqlxx::escape << it->store().at(0) << std::endl;
+                std::cerr << it->store().at(0) << std::endl;
             }
         }
 
@@ -95,7 +95,7 @@ int main(int argc, char ** argv)
             for (Queries::iterator it = queries.begin(); it != queries.end(); ++it)
             {
                 std::cerr << it->str() << std::endl;
-                std::cerr << mysqlxx::escape << it->store().at(0) << std::endl;
+                std::cerr << it->store().at(0) << std::endl;
             }
         }
 

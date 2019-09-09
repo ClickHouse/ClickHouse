@@ -1,3 +1,4 @@
+set allow_suspicious_low_cardinality_types = 1;
 SELECT CAST(NULL, 'LowCardinality(Nullable(Int8))');
 
 drop table if exists lc_null_int8_defnull;

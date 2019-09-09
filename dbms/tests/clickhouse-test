@@ -16,10 +16,13 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
-import termcolor
+try:
+    import termcolor
+except ImportError:
+    termcolor = None
 from random import random
 import commands
-from multiprocessing import Pool
+import multiprocessing
 from contextlib import closing
 
 
@@ -52,6 +55,10 @@ def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr
     start_time = datetime.now()
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
+
+    # Normalize randomized database names in stdout, stderr files.
+    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
+    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
 
     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
     stdout = unicode(stdout, errors='replace', encoding='utf-8')
@@ -89,11 +96,10 @@ def get_server_pid(server_tcp_port):
         return None
 
 def colored(text, args, color=None, on_color=None, attrs=None):
-       if sys.stdout.isatty() or args.force_color:
+       if termcolor and (sys.stdout.isatty() or args.force_color):
            return termcolor.colored(text, color, on_color, attrs)
        else:
            return text
-
 
 SERVER_DIED = False
 exit_code = 0
@@ -140,7 +146,9 @@ def run_tests_array(all_tests_with_params):
             elif not args.zookeeper and 'zookeeper' in name:
                 print(MSG_SKIPPED + " - no zookeeper")
                 skipped_total += 1
-            elif not args.shard and 'shard' in name:
+            elif not args.shard and ('shard' in name
+                    or 'distributed' in name
+                    or 'global' in name):
                 print(MSG_SKIPPED + " - no shard")
                 skipped_total += 1
             elif not args.no_long and 'long' in name:
@@ -368,6 +376,8 @@ def main(args):
                 continue
 
             jobs = args.jobs
+            if jobs > tests_n:
+                jobs = tests_n
             if jobs > run_total:
                 run_total = jobs
 
@@ -378,7 +388,7 @@ def main(args):
                 all_tests_array.append([all_tests[start : end], suite, suite_dir, suite_tmp_dir, run_total])
 
             if jobs > 1:
-                with closing(Pool(processes=jobs)) as pool:
+                with closing(multiprocessing.Pool(processes=jobs)) as pool:
                     pool.map(run_tests_array, all_tests_array)
                     pool.terminate()
             else:
@@ -409,7 +419,12 @@ def find_binary(name):
             return True
 
     # maybe it wasn't in PATH
-    return os.access(os.path.join('/usr/bin', name), os.X_OK)
+    if os.access(os.path.join('/usr/local/bin', name), os.X_OK):
+        return True
+    if os.access(os.path.join('/usr/bin', name), os.X_OK):
+        return True
+    return False
+
 
 if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
@@ -429,9 +444,9 @@ if __name__ == '__main__':
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
-    parser.add_argument('--database', default='test', help='Default database for tests')
+    parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
-    parser.add_argument('-j', '--jobs', default=1, help='Run all tests in parallel', type=int)
+    parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -455,6 +470,9 @@ if __name__ == '__main__':
             args.queries = '/usr/share/clickhouse-test/queries'
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
+    if args.queries is None:
+        print_err("Failed to detect path to the queries directory. Please specify it with '--queries' option.")
+        exit(1)
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:
@@ -477,13 +495,22 @@ if __name__ == '__main__':
             args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
 
     args.client_with_database = args.client
-    if args.database:
-        args.client_with_database += ' --database=' + args.database
+    if not args.database:
+        def random_str(length=6):
+            import random
+            import string
+            alphabet = string.ascii_lowercase + string.digits
+            return ''.join(random.choice(alphabet) for _ in range(length))
+        args.database = 'test_{suffix}'.format(suffix=random_str())
+    args.client_with_database += ' --database=' + args.database
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):
             args.extract_from_config = args.binary + '-extract-from-config'
         else:
             args.extract_from_config = args.binary + ' extract-from-config'
+
+    if args.jobs is None:
+        args.jobs=multiprocessing.cpu_count()
 
     main(args)

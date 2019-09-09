@@ -131,11 +131,10 @@ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Вы можете использовать внутренний формат сжатия Clickhouse при передаче данных. Формат сжатых данных нестандартный, и вам придётся использовать для работы с ним специальную программу `clickhouse-compressor` (устанавливается вместе с пакетом `clickhouse-client`). Для повышения эффективности вставки данных можно отключить проверку контрольной суммы на стороне сервера с помощью настройки[http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress).
 
-Если вы указали `compress=1` в URL, то сервер сжимает данные, которые он отправляет.
-Если вы указали `decompress=1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
+Если вы указали `compress = 1` в URL, то сервер сжимает данные, которые он отправляет.
+Если вы указали `decompress = 1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
 
-Также можно использовать стандартное [HTTP сжатие](https://en.wikipedia.org/wiki/HTTP_compression) с помощью `gzip`. Чтобы отправить запрос `POST`, сжатый с помощью `gzip`, добавьте к запросу заголовок `Content-Encoding: gzip`.
-Чтобы ClickHouse сжимал ответ на запрос с помощью `gzip`, необходимо добавить `Accept-Encoding: gzip`  к заголовкам запроса, и включить настройку ClickHouse  [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression). Вы можете настроить уровень сжатия данных с помощью настройки [http_zlib_compression_level](#settings-http_zlib_compression_level).
+Также, можно использовать [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). Для отправки сжатого запроса `POST`, добавьте заголовок `Content-Encoding: compression_method`. Чтобы ClickHouse сжимал ответ, добавьте заголовок `Accept-Encoding: compression_method`. ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens): `gzip`, `br`, and `deflate`. Чтобы включить HTTP compression, используйте настройку ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression). Уровень сжатия данных для всех методов сжатия можно настроить с помощью настройки [http_zlib_compression_level](#settings-http_zlib_compression_level).
 
 Это может быть использовано для уменьшения трафика по сети при передаче большого количества данных, а также для создания сразу сжатых дампов.
 
@@ -184,9 +183,8 @@ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-Если имя пользователя не указано, то используется `default`. Если пароль не указан, то используется пустой пароль.
-Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:
-http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+Если пользователь не задан,то используется `default`. Если пароль не задан, то используется пустой пароль.
+Также в параметрах URL вы можете указать любые настройки, которые будут использованы для обработки одного запроса, или целые профили настроек. Пример:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 Подробнее смотрите в разделе [Настройки](../operations/settings/index.md).
 
@@ -208,7 +206,21 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 Аналогично можно использовать ClickHouse-сессии в HTTP-протоколе. Для этого необходимо добавить к запросу GET параметр `session_id`. В качестве идентификатора сессии можно использовать произвольную строку. По умолчанию через 60 секунд бездействия сессия будет прервана. Можно изменить этот таймаут, изменяя настройку `default_session_timeout` в конфигурации сервера, или добавив к запросу GET параметр `session_timeout`. Статус сессии можно проверить с помощью параметра `session_check=1`. В рамках одной сессии одновременно может исполняться только один запрос.
 
-Имеется возможность получать информацию о прогрессе выполнения запроса в залоголвках X-ClickHouse-Progress. Для этого нужно включить настройку send_progress_in_http_headers.
+Прогресс выполнения запроса можно отслеживать с помощью заголовков ответа `X-ClickHouse-Progress`. Для этого включите [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Пример последовательности заголовков:
+
+```
+X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
+```
+
+Возможные поля заголовка:
+
+- `read_rows` — количество прочитанных строк.
+- `read_bytes` — объем прочитанных данных в байтах.
+- `total_rows_to_read` — общее количество строк для чтения.
+- `written_rows` — количество записанных строк.
+- `written_bytes` — объем прочитанных данных в байтах.
 
 Запущенные запросы не останавливаются автоматически при разрыве HTTP соединения. Парсинг и форматирование данных производится на стороне сервера и использование сети может быть неэффективным.
 Может быть передан необязательный параметр query_id - идентификатор запроса, произвольная строка. Подробнее смотрите раздел "Настройки, replace_running_query".
@@ -233,4 +245,15 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 
 Буферизация позволяет избежать ситуации когда код ответа и HTTP-заголовки были отправлены клиенту, после чего возникла ошибка выполнения запроса. В такой ситуации сообщение об ошибке записывается в конце тела ответа, и на стороне клиента ошибка может быть обнаружена только на этапе парсинга.
 
+### Запросы с параметрами {#cli-queries-with-parameters}
+
+Можно создать запрос с параметрами и передать для них значения из соответствующих параметров HTTP-запроса. Дополнительную информацию смотрите в [Запросы с параметрами для консольного клиента](cli.md#cli-queries-with-parameters).
+
+### Пример
+
+```bash
+curl -sS "<address>?param_id=2¶m_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+```
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/http_interface/) <!--hide-->
+

@@ -2,6 +2,7 @@
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -27,7 +28,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     if (!getNestedColumn().canBeInsideNullable())
         throw Exception{getNestedColumn().getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
 
-    if (null_map->isColumnConst())
+    if (isColumnConst(*null_map))
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
 }
 
@@ -81,9 +82,18 @@ StringRef ColumnNullable::getDataAt(size_t /*n*/) const
     throw Exception{"Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
 }
 
-void ColumnNullable::insertData(const char * /*pos*/, size_t /*length*/)
+void ColumnNullable::insertData(const char * pos, size_t length)
 {
-    throw Exception{"Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
+    if (pos == nullptr)
+    {
+        getNestedColumn().insertDefault();
+        getNullMapData().push_back(1);
+    }
+    else
+    {
+        getNestedColumn().insertData(pos, length);
+        getNullMapData().push_back(0);
+    }
 }
 
 StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -94,12 +104,13 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
     auto pos = arena.allocContinue(s, begin);
     memcpy(pos, &arr[n], s);
 
-    size_t nested_size = 0;
+    if (arr[n])
+        return StringRef(pos, s);
 
-    if (arr[n] == 0)
-        nested_size = getNestedColumn().serializeValueIntoArena(n, arena, begin).size;
+    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
-    return StringRef{begin, s + nested_size};
+    /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+    return StringRef(nested_ref.data - s, nested_ref.size + s);
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
@@ -119,7 +130,7 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(src);
+    const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
 }
@@ -140,7 +151,7 @@ void ColumnNullable::insert(const Field & x)
 
 void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 {
-    const ColumnNullable & src_concrete = static_cast<const ColumnNullable &>(src);
+    const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
     getNullMapData().push_back(src_concrete.getNullMapData()[n]);
 }
@@ -180,7 +191,7 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
     /// the ordering specified by either NULLS FIRST or NULLS LAST in the
     /// ORDER BY construction.
 
-    const ColumnNullable & nullable_rhs = static_cast<const ColumnNullable &>(rhs_);
+    const ColumnNullable & nullable_rhs = assert_cast<const ColumnNullable &>(rhs_);
 
     bool lval_is_null = isNullAt(n);
     bool rval_is_null = nullable_rhs.isNullAt(m);
@@ -442,14 +453,13 @@ void ColumnNullable::checkConsistency() const
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
-
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
-    if (column->isColumnNullable())
+    if (isColumnNullable(*column))
         return column;
 
-    if (column->isColumnConst())
-        return ColumnConst::create(makeNullable(static_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
 }

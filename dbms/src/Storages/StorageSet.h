@@ -20,8 +20,9 @@ class StorageSetOrJoinBase : public IStorage
 
 public:
     String getTableName() const override { return table_name; }
+    String getDatabaseName() const override { return database_name; }
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -30,11 +31,14 @@ public:
 protected:
     StorageSetOrJoinBase(
         const String & path_,
+        const String & database_name_,
         const String & table_name_,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_);
 
     String path;
     String table_name;
+    String database_name;
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
@@ -65,7 +69,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
 private:
     SetPtr set;
@@ -76,8 +80,10 @@ private:
 protected:
     StorageSet(
         const String & path_,
-        const String & name_,
-        const ColumnsDescription & columns_);
+        const String & database_name_,
+        const String & table_name_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_);
 };
 
 }

@@ -8,18 +8,10 @@
 #include <Common/ThreadPool.h>
 
 
-int x = 0;
+int value = 0;
 
-void     f()         { ++x; }
-
-/*void f()
-{
-    std::vector<std::string> vec;
-    for (size_t i = 0; i < 100; ++i)
-        vec.push_back(std::string(rand() % 10, ' '));
-}*/
-
-void *     g(void *)     { f(); return {}; }
+void f() { ++value; }
+void * g(void *) { f(); return {}; }
 
 
 namespace DB
@@ -34,7 +26,7 @@ namespace DB
 template <typename F>
 void test(size_t n, const char * name, F && kernel)
 {
-    x = 0;
+    value = 0;
 
     Stopwatch watch;
     Stopwatch watch_one;
@@ -62,7 +54,7 @@ void test(size_t n, const char * name, F && kernel)
         << n / watch.elapsedSeconds() << " ops/sec., "
         << "avg latency: " << watch.elapsedSeconds() / n * 1000000 << " μs, "
         << "max latency: " << max_seconds * 1000000 << " μs "
-        << "(res = " << x << ")"
+        << "(res = " << value << ")"
         << std::endl;
 }
 
@@ -70,13 +62,6 @@ void test(size_t n, const char * name, F && kernel)
 int main(int argc, char ** argv)
 {
     size_t n = argc == 2 ? DB::parse<UInt64>(argv[1]) : 100000;
-
-/*    test(n, "Create and destroy boost::threadpool each iteration", []
-    {
-        boost::threadpool::pool tp(1);
-        tp.schedule(f);
-        tp.wait();
-    });*/
 
     test(n, "Create and destroy ThreadPool each iteration", []
     {
@@ -100,16 +85,6 @@ int main(int argc, char ** argv)
         thread.join();
     });
 
-/*    {
-        boost::threadpool::pool tp(1);
-
-        test(n, "Schedule job for boost::threadpool each iteration", [&tp]
-        {
-            tp.schedule(f);
-            tp.wait();
-        });
-    }*/
-
     {
         ThreadPool tp(1);
 
@@ -119,16 +94,6 @@ int main(int argc, char ** argv)
             tp.wait();
         });
     }
-
-/*    {
-        boost::threadpool::pool tp(128);
-
-        test(n, "Schedule job for boost::threadpool with 128 threads each iteration", [&tp]
-        {
-            tp.schedule(f);
-            tp.wait();
-        });
-    }*/
 
     {
         ThreadPool tp(128);

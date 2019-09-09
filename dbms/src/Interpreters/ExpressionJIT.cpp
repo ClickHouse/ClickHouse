@@ -9,6 +9,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/LRUCache.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,38 +20,30 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
-/** Y_IGNORE marker means that this header is not analyzed by Arcadia build system.
-  * "Arcadia" is the name of internal Yandex source code repository.
-  * ClickHouse have limited support for build in Arcadia
-  * (ClickHouse source code is used in another Yandex products as a library).
-  * Some libraries are not enabled when build inside Arcadia is used,
-  *  that what does Y_IGNORE indicate.
-  */
-
-#include <llvm/Analysis/TargetTransformInfo.h> // Y_IGNORE
-#include <llvm/Config/llvm-config.h> // Y_IGNORE
-#include <llvm/IR/BasicBlock.h> // Y_IGNORE
-#include <llvm/IR/DataLayout.h> // Y_IGNORE
-#include <llvm/IR/DerivedTypes.h> // Y_IGNORE
-#include <llvm/IR/Function.h> // Y_IGNORE
-#include <llvm/IR/IRBuilder.h> // Y_IGNORE
-#include <llvm/IR/LLVMContext.h> // Y_IGNORE
-#include <llvm/IR/Mangler.h> // Y_IGNORE
-#include <llvm/IR/Module.h> // Y_IGNORE
-#include <llvm/IR/Type.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/ExecutionEngine.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/JITSymbol.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/SectionMemoryManager.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/Orc/CompileUtils.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h> // Y_IGNORE
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h> // Y_IGNORE
-#include <llvm/Target/TargetMachine.h> // Y_IGNORE
-#include <llvm/MC/SubtargetFeature.h> // Y_IGNORE
-#include <llvm/Support/DynamicLibrary.h> // Y_IGNORE
-#include <llvm/Support/Host.h> // Y_IGNORE
-#include <llvm/Support/TargetRegistry.h> // Y_IGNORE
-#include <llvm/Support/TargetSelect.h> // Y_IGNORE
-#include <llvm/Transforms/IPO/PassManagerBuilder.h> // Y_IGNORE
+#include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/Config/llvm-config.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Mangler.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/JITSymbol.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
+#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/Support/DynamicLibrary.h>
+#include <llvm/Support/Host.h>
+#include <llvm/Support/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #pragma GCC diagnostic pop
 
@@ -93,7 +86,7 @@ namespace
 static ColumnData getColumnData(const IColumn * column)
 {
     ColumnData result;
-    const bool is_const = column->isColumnConst();
+    const bool is_const = isColumnConst(*column);
     if (is_const)
         column = &reinterpret_cast<const ColumnConst *>(column)->getDataColumn();
     if (auto * nullable = typeid_cast<const ColumnNullable *>(column))
@@ -426,9 +419,9 @@ static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column
         return value ? llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null) : nullptr;
     }
     if (type->isFloatTy())
-        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float32> &>(column).getElement(i));
+        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float32> &>(column).getElement(i));
     if (type->isDoubleTy())
-        return llvm::ConstantFP::get(type, static_cast<const ColumnVector<Float64> &>(column).getElement(i));
+        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float64> &>(column).getElement(i));
     if (type->isIntegerTy())
         return llvm::ConstantInt::get(type, column.getUInt(i));
     /// TODO: if (type->isVectorTy())

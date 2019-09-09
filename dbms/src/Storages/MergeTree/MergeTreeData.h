@@ -3,10 +3,11 @@
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ITableDeclaration.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -89,7 +90,7 @@ namespace ErrorCodes
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public ITableDeclaration
+class MergeTreeData : public IStorage
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -226,17 +227,17 @@ public:
         const NamesAndTypesList & getNewColumns() const { return new_columns; }
         const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
 
+        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+        const DataPartPtr & getDataPart() const { return data_part; }
+        bool isValid() const;
+
     private:
         friend class MergeTreeData;
+        void clear();
 
-        AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
+        bool valid = true;
 
-        void clear()
-        {
-            alter_lock.unlock();
-            data_part = nullptr;
-        }
-
+        //don't interchange order of data_part & alter_lock
         DataPartPtr data_part;
         DataPartsLock alter_lock;
 
@@ -248,6 +249,23 @@ public:
 
     using AlterDataPartTransactionPtr = std::unique_ptr<AlterDataPartTransaction>;
 
+    struct PartsTemporaryRename : private boost::noncopyable
+    {
+        PartsTemporaryRename(const MergeTreeData & storage_, const String & base_dir_) : storage(storage_), base_dir(base_dir_) {}
+
+        void addPart(const String & old_name, const String & new_name);
+
+        /// Renames part from old_name to new_name
+        void tryRenameAll();
+
+        /// Renames all added parts from new_name to old_name if old name is not empty
+        ~PartsTemporaryRename();
+
+        const MergeTreeData & storage;
+        String base_dir;
+        std::vector<std::pair<String, String>> old_and_new_names;
+        bool renamed = false;
+    };
 
     /// Parameters for various modes.
     struct MergingParams
@@ -284,33 +302,6 @@ public:
         String getModeName() const;
     };
 
-    /// Meta information about index granularity
-    struct IndexGranularityInfo
-    {
-        /// Marks file extension '.mrk' or '.mrk2'
-        String marks_file_extension;
-
-        /// Size of one mark in file two or three size_t numbers
-        UInt8 mark_size_in_bytes;
-
-        /// Is stride in rows between marks non fixed?
-        bool is_adaptive;
-
-        /// Fixed size in rows of one granule if index_granularity_bytes is zero
-        size_t fixed_index_granularity;
-
-        /// Approximate bytes size of one granule
-        size_t index_granularity_bytes;
-
-        IndexGranularityInfo(const MergeTreeSettings & settings);
-
-        String getMarksFilePath(const String & column_path) const
-        {
-            return column_path + marks_file_extension;
-        }
-    };
-
-
     /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
@@ -331,6 +322,7 @@ public:
                   const String & full_path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
+                  const ConstraintsDescription & constraints_,
                   Context & context_,
                   const String & date_column_name,
                   const ASTPtr & partition_by_ast_,
@@ -339,17 +331,27 @@ public:
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
                   const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
-                  const MergeTreeSettings & settings_,
+                  std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-    /// Load the set of data parts from disk. Call once - immediately after the object is created.
-    void loadDataParts(bool skip_sanity_checks);
+    ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
+    ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
+    ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
+    ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
 
-    bool supportsPrewhere() const { return true; }
+    Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
+    Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
+    Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
+    Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
+    Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
+    Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
-    bool supportsFinal() const
+    bool supportsPrewhere() const override { return true; }
+    bool supportsSampling() const override { return sample_by_ast != nullptr; }
+
+    bool supportsFinal() const override
     {
         return merging_params.mode == MergingParams::Collapsing
             || merging_params.mode == MergingParams::Summing
@@ -358,9 +360,9 @@ public:
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const;
+    bool supportsSettings() const override { return true; }
 
-    Int64 getMaxBlockNumber();
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -385,13 +387,16 @@ public:
             || column_name == "_sample_factor";
     }
 
-    String getDatabaseName() const { return database_name; }
+    String getDatabaseName() const override { return database_name; }
+    String getTableName() const override { return table_name; }
 
-    String getTableName() const { return table_name; }
+    /// Load the set of data parts from disk. Call once - immediately after the object is created.
+    void loadDataParts(bool skip_sanity_checks);
 
     String getFullPath() const { return full_path; }
-
     String getLogName() const { return log_name; }
+
+    Int64 getMaxBlockNumber() const;
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
@@ -401,6 +406,16 @@ public:
 
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
+
+    /// Returns all detached parts
+    DetachedPartsInfo getDetachedParts() const;
+
+    void validateDetachedPartName(const String & name) const;
+
+    void dropDetached(const ASTPtr & partition, bool part, const Context & context);
+
+    MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
+            const Context & context, PartsTemporaryRename & renamed_parts);
 
     /// Returns Committed parts
     DataParts getDataParts() const;
@@ -489,6 +504,7 @@ public:
 
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
+    void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
@@ -515,17 +531,25 @@ public:
     /// Returns an object allowing to rename temporary files to permanent files.
     /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
     /// If no data transformations are necessary, returns nullptr.
-    AlterDataPartTransactionPtr alterDataPart(
-        const DataPartPtr & part,
+    void alterDataPart(
         const NamesAndTypesList & new_columns,
         const IndicesASTs & new_indices,
-        bool skip_sanity_checks);
+        bool skip_sanity_checks,
+        AlterDataPartTransactionPtr& transaction);
+
+    /// Change MergeTreeSettings
+    void changeSettings(
+           const SettingsChanges & new_changes,
+           TableStructureWriteLockHolder & table_lock_holder);
+
+    /// All MergeTreeData children have settings.
+    void checkSettingCanBeChanged(const String & setting_name) const override;
 
     /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
     /// Freezes all parts.
-    void freezeAll(const String & with_name, const Context & context);
+    void freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -539,31 +563,21 @@ public:
       */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    Names getColumnsRequiredForPartitionKey() const { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
-
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
     bool hasTableTTL() const { return ttl_table_ast != nullptr; }
-
-    ASTPtr getSortingKeyAST() const { return sorting_key_expr_ast; }
-    ASTPtr getPrimaryKeyAST() const { return primary_key_expr_ast; }
-
-    Names getColumnsRequiredForSortingKey() const { return sorting_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForPrimaryKey() const { return primary_key_expr->getRequiredColumns(); }
-
-    bool supportsSampling() const { return sample_by_ast != nullptr; }
-    ASTPtr getSamplingExpression() const { return sample_by_ast; }
-    Names getColumnsRequiredForSampling() const { return columns_required_for_sampling; }
+    bool hasAnyColumnTTL() const { return !ttl_entries_by_name.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
+    void loadPartAndFixMetadata(MutableDataPartPtr part);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context, TableStructureReadLockHolder & table_lock_holder);
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -572,8 +586,7 @@ public:
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
 
-    using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
-    ColumnSizeByName getColumnSizes() const
+    ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
         return column_sizes;
@@ -592,15 +605,33 @@ public:
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
     /// Tables structure should be locked.
-    MergeTreeData * checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
+    MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
 
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
                                                            const MergeTreePartInfo & dst_part_info);
 
+    virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
+
+    /// Returns true if table can create new parts with adaptive granularity
+    /// Has additional constraint in replicated version
+    virtual bool canUseAdaptiveGranularity() const
+    {
+        const auto settings = getSettings();
+        return settings->index_granularity_bytes != 0 &&
+            (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
+    }
+
+    /// Get constant pointer to storage settings.
+    /// Copy this pointer into your scope and you will
+    /// get consistent settings.
+    MergeTreeSettingsPtr getSettings() const
+    {
+        return storage_settings.get();
+    }
+
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
-    IndexGranularityInfo index_granularity_info;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
@@ -647,21 +678,22 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    const MergeTreeSettings settings;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
 
-private:
+    bool has_non_adaptive_index_granularity_parts = false;
+
+
+protected:
+
     friend struct MergeTreeDataPart;
-    friend class StorageMergeTree;
-    friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataMergerMutator;
     friend class ReplicatedMergeTreeAlterThread;
     friend struct ReplicatedMergeTreeTableMetadata;
+    friend class StorageReplicatedMergeTree;
 
     ASTPtr partition_by_ast;
     ASTPtr order_by_ast;
@@ -684,6 +716,9 @@ private:
     String log_name;
     Logger * log;
 
+    /// Storage settings.
+    /// Use get and set to receive readonly versions.
+    MultiVersion<MergeTreeSettings> storage_settings;
 
     /// Work with data parts
 
@@ -771,10 +806,12 @@ private:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
+    /// Mutex for settings usage
 
-    void setPrimaryKeyIndicesAndColumns(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
+    void setProperties(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
                                         const ColumnsDescription & new_columns,
-                                        const IndicesDescription & indices_description, bool only_check = false);
+                                        const IndicesDescription & indices_description,
+                                        const ConstraintsDescription & constraints_description, bool only_check = false);
 
     void initPartitionKey();
 
@@ -815,6 +852,9 @@ private:
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
     void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
+
+    bool canReplacePartition(const DataPartPtr & data_part) const;
+
 };
 
 }

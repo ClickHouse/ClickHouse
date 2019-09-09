@@ -24,6 +24,7 @@ LOG_DIR="$(dirname $LOG_PATH || true)"
 ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=logger.errorlog || true)"
 ERROR_LOG_DIR="$(dirname $ERROR_LOG_PATH || true)"
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=format_schema_path || true)"
+CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 
 for dir in "$DATA_DIR" \
   "$ERROR_LOG_DIR" \
@@ -62,7 +63,12 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
         exit 1
     fi
 
-    clickhouseclient=( clickhouse-client --multiquery )
+    if [ ! -z "$CLICKHOUSE_PASSWORD" ]; then
+        printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
+    fi
+
+    clickhouseclient=( clickhouse-client --multiquery -u $CLICKHOUSE_USER $WITH_PASSWORD )
+
     echo
     for f in /docker-entrypoint-initdb.d/*; do
         case "$f" in

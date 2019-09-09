@@ -10,7 +10,7 @@ endif ()
 
 if (ENABLE_RDKAFKA)
 
-if (OS_LINUX AND NOT ARCH_ARM)
+if (OS_LINUX AND NOT ARCH_ARM AND USE_LIBGSASL)
     option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
 endif ()
 

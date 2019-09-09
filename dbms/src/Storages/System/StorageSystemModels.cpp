@@ -2,9 +2,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModels.h>
 #include <Interpreters/CatBoostModel.h>
+
+
 namespace DB
 {
 
@@ -12,9 +15,12 @@ NamesAndTypesList StorageSystemModels::getNamesAndTypes()
 {
     return {
         { "name", std::make_shared<DataTypeString>() },
+        { "status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues()) },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
-        { "creation_time", std::make_shared<DataTypeDateTime>() },
+        { "loading_start_time", std::make_shared<DataTypeDateTime>() },
+        { "loading_duration", std::make_shared<DataTypeFloat32>() },
+        //{ "creation_time", std::make_shared<DataTypeDateTime>() },
         { "last_exception", std::make_shared<DataTypeString>() },
     };
 }
@@ -22,40 +28,31 @@ NamesAndTypesList StorageSystemModels::getNamesAndTypes()
 void StorageSystemModels::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     const auto & external_models = context.getExternalModels();
-    auto objects_map = external_models.getObjectsMap();
-    const auto & models = objects_map.get();
+    auto load_results = external_models.getCurrentLoadResults();
 
-    for (const auto & model_info : models)
+    for (const auto & [model_name, load_result] : load_results)
     {
-        res_columns[0]->insert(model_info.first);
-        res_columns[1]->insert(model_info.second.origin);
+        res_columns[0]->insert(model_name);
+        res_columns[1]->insert(static_cast<Int8>(load_result.status));
+        res_columns[2]->insert(load_result.origin);
 
-        if (model_info.second.loadable)
+        if (load_result.object)
         {
-            const auto model_ptr = std::static_pointer_cast<IModel>(model_info.second.loadable);
-
-            res_columns[2]->insert(model_ptr->getTypeName());
-            res_columns[3]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(model_ptr->getCreationTime())));
+            const auto model_ptr = std::static_pointer_cast<const IModel>(load_result.object);
+            res_columns[3]->insert(model_ptr->getTypeName());
         }
         else
         {
-            res_columns[2]->insertDefault();
             res_columns[3]->insertDefault();
         }
 
-        if (model_info.second.exception)
-        {
-            try
-            {
-                std::rethrow_exception(model_info.second.exception);
-            }
-            catch (...)
-            {
-                res_columns[4]->insert(getCurrentExceptionMessage(false));
-            }
-        }
+        res_columns[4]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.loading_start_time)));
+        res_columns[5]->insert(std::chrono::duration_cast<std::chrono::duration<float>>(load_result.loading_duration).count());
+
+        if (load_result.exception)
+            res_columns[6]->insert(getExceptionMessage(load_result.exception, false));
         else
-            res_columns[4]->insertDefault();
+            res_columns[6]->insertDefault();
     }
 }
 

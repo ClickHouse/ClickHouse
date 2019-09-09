@@ -42,11 +42,8 @@ public:
         const ColumnPtr & col = block.getByPosition(arguments[0]).column;
         ColumnPtr & res_col = block.getByPosition(result).column;
 
-        if (col->isColumnNullable())
-        {
-            const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-            res_col = nullable_col.getNestedColumnPtr();
-        }
+        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
+            res_col = nullable_col->getNestedColumnPtr();
         else
             res_col = col;
     }

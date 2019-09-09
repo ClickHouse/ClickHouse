@@ -262,8 +262,9 @@ public:
     iterator end() { return iterator(this, buf + BUFFER_SIZE); }
 
 
-protected:
-    void ALWAYS_INLINE emplaceImpl(Key x, iterator & it, bool & inserted)
+public:
+    /// The last parameter is unused but exists for compatibility with HashTable interface.
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t /* hash */ = 0)
     {
         it = iterator(this, &buf[x]);
 
@@ -278,42 +279,32 @@ protected:
         ++m_size;
     }
 
-
-public:
     std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
     {
         std::pair<iterator, bool> res;
-        emplaceImpl(Cell::getKey(x), res.first, res.second);
+        emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
             res.first.ptr->setMapped(x);
 
         return res;
     }
 
-
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted) { emplaceImpl(x, it, inserted); }
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t) { emplaceImpl(x, it, inserted); }
-
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith x)
+    iterator ALWAYS_INLINE find(Key x)
     {
         return !buf[x].isZero(*this) ? iterator(this, &buf[x]) : end();
     }
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x) const
+    const_iterator ALWAYS_INLINE find(Key x) const
     {
         return !buf[x].isZero(*this) ? const_iterator(this, &buf[x]) : end();
     }
 
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith, size_t hash_value)
+    iterator ALWAYS_INLINE find(Key, size_t hash_value)
     {
         return !buf[hash_value].isZero(*this) ? iterator(this, &buf[hash_value]) : end();
     }
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith, size_t hash_value) const
+    const_iterator ALWAYS_INLINE find(Key, size_t hash_value) const
     {
         return !buf[hash_value].isZero(*this) ? const_iterator(this, &buf[hash_value]) : end();
     }

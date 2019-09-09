@@ -87,16 +87,16 @@ private:
 
 template <typename DictionaryType, typename RangeType, typename Key>
 RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::RangeDictionaryBlockInputStream(
-    DictionaryPtr dictionary,
-    size_t max_block_size,
-    const Names & column_names,
-    PaddedPODArray<Key> && ids,
+    DictionaryPtr dictionary_,
+    size_t max_block_size_,
+    const Names & column_names_,
+    PaddedPODArray<Key> && ids_,
     PaddedPODArray<RangeType> && block_start_dates,
     PaddedPODArray<RangeType> && block_end_dates)
-    : DictionaryBlockInputStreamBase(ids.size(), max_block_size)
-    , dictionary(dictionary)
-    , column_names(column_names)
-    , ids(std::move(ids))
+    : DictionaryBlockInputStreamBase(ids_.size(), max_block_size_)
+    , dictionary(dictionary_)
+    , column_names(column_names_)
+    , ids(std::move(ids_))
     , start_dates(std::move(block_start_dates))
     , end_dates(std::move(block_end_dates))
 {
@@ -231,49 +231,49 @@ Block RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::fillBlock
     column = getColumnFromAttribute<TYPE>(&DictionaryType::get##TYPE, ids_to_fill, date_key, attribute, *dictionary)
             switch (attribute.underlying_type)
             {
-                case AttributeUnderlyingType::UInt8:
+                case AttributeUnderlyingType::utUInt8:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt8);
                     break;
-                case AttributeUnderlyingType::UInt16:
+                case AttributeUnderlyingType::utUInt16:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt16);
                     break;
-                case AttributeUnderlyingType::UInt32:
+                case AttributeUnderlyingType::utUInt32:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt32);
                     break;
-                case AttributeUnderlyingType::UInt64:
+                case AttributeUnderlyingType::utUInt64:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt64);
                     break;
-                case AttributeUnderlyingType::UInt128:
+                case AttributeUnderlyingType::utUInt128:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt128);
                     break;
-                case AttributeUnderlyingType::Int8:
+                case AttributeUnderlyingType::utInt8:
                     GET_COLUMN_FORM_ATTRIBUTE(Int8);
                     break;
-                case AttributeUnderlyingType::Int16:
+                case AttributeUnderlyingType::utInt16:
                     GET_COLUMN_FORM_ATTRIBUTE(Int16);
                     break;
-                case AttributeUnderlyingType::Int32:
+                case AttributeUnderlyingType::utInt32:
                     GET_COLUMN_FORM_ATTRIBUTE(Int32);
                     break;
-                case AttributeUnderlyingType::Int64:
+                case AttributeUnderlyingType::utInt64:
                     GET_COLUMN_FORM_ATTRIBUTE(Int64);
                     break;
-                case AttributeUnderlyingType::Float32:
+                case AttributeUnderlyingType::utFloat32:
                     GET_COLUMN_FORM_ATTRIBUTE(Float32);
                     break;
-                case AttributeUnderlyingType::Float64:
+                case AttributeUnderlyingType::utFloat64:
                     GET_COLUMN_FORM_ATTRIBUTE(Float64);
                     break;
-                case AttributeUnderlyingType::Decimal32:
+                case AttributeUnderlyingType::utDecimal32:
                     GET_COLUMN_FORM_ATTRIBUTE(Decimal32);
                     break;
-                case AttributeUnderlyingType::Decimal64:
+                case AttributeUnderlyingType::utDecimal64:
                     GET_COLUMN_FORM_ATTRIBUTE(Decimal64);
                     break;
-                case AttributeUnderlyingType::Decimal128:
+                case AttributeUnderlyingType::utDecimal128:
                     GET_COLUMN_FORM_ATTRIBUTE(Decimal128);
                     break;
-                case AttributeUnderlyingType::String:
+                case AttributeUnderlyingType::utString:
                     column = getColumnFromAttributeString(ids_to_fill, date_key, attribute, *dictionary);
                     break;
             }

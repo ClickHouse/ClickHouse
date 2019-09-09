@@ -4,6 +4,7 @@
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeCustom.h>
 
 
 namespace DB
@@ -12,7 +13,6 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-class IDataTypeDomain;
 class IDataType;
 struct FormatSettings;
 
@@ -98,7 +98,7 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
-        Substream(Type type) : type(type) {}
+        Substream(Type type_) : type(type_) {}
     };
 
     using SubstreamPath = std::vector<Substream>;
@@ -222,76 +222,60 @@ public:
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
 
-    /** Text serialization with escaping but without quoting.
-      */
-    virtual void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    virtual void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization as a literal that may be inserted into a query.
-      */
-    virtual void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    virtual void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for the CSV format.
-      */
-    virtual void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    virtual void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for displaying on a terminal or saving into a text file, and the like.
-      * Without escaping or quoting.
-      */
-    virtual void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-
-    /** Text serialization intended for using in JSON format.
-      */
-    virtual void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
-    virtual void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-
-    /** Text serialization for putting into the XML format.
-      */
-    virtual void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
-
     /** Serialize to a protobuf. */
     virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
     virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
 
-protected:
-    virtual String doGetName() const;
-
     /** Text serialization with escaping but without quoting.
       */
-public: // used somewhere in arcadia
-    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    void serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-protected:
-    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
-    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    void serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
-    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for the CSV format.
       */
-    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    void serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+
+    /** Text deserialization in case when buffer contains only one value, without any escaping and delimiters.
+      */
+    void deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization intended for using in JSON format.
-      * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
       */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
-    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    void serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
+    void deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
 
     /** Text serialization for putting into the XML format.
       */
+    void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+
+protected:
+    virtual String doGetName() const;
+
+    /// Default implementations of text serialization in case of 'custom_text_serialization' is not set.
+
+    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
+    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
     {
         serializeText(column, row_num, ostr, settings);
@@ -459,18 +443,18 @@ public:
 
 private:
     friend class DataTypeFactory;
-    /** Sets domain on existing DataType, can be considered as second phase
-      * of construction explicitly done by DataTypeFactory.
-      * Will throw an exception if domain is already set.
+    /** Customize this DataType
       */
-    void setDomain(const IDataTypeDomain* newDomain) const;
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
 private:
-    /** This is mutable to allow setting domain on `const IDataType` post construction,
-     * simplifying creation of domains for all types, without them even knowing
-     * of domain existence.
+    /** This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
      */
-    mutable IDataTypeDomain const* domain;
+    mutable DataTypeCustomNamePtr custom_name;
+    mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
+
+public:
+    const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
 };
 
 
@@ -479,9 +463,8 @@ struct WhichDataType
 {
     TypeIndex idx;
 
-    /// For late initialization.
-    WhichDataType()
-        : idx(TypeIndex::Nothing)
+    WhichDataType(TypeIndex idx_ = TypeIndex::Nothing)
+        : idx(idx_)
     {}
 
     WhichDataType(const IDataType & data_type)
@@ -575,10 +558,24 @@ inline bool isInteger(const T & data_type)
 }
 
 template <typename T>
+inline bool isFloat(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isFloat();
+}
+
+template <typename T>
+inline bool isNativeNumber(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNativeInt() || which.isNativeUInt() || which.isFloat();
+}
+
+template <typename T>
 inline bool isNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal();
 }
 
 template <typename T>

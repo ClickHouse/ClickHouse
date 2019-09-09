@@ -74,9 +74,11 @@ private:
 };
 
 
-StorageMemory::StorageMemory(String table_name_, ColumnsDescription columns_description_)
-    : IStorage{std::move(columns_description_)}, table_name(std::move(table_name_))
+StorageMemory::StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
+    : database_name(std::move(database_name_)), table_name(std::move(table_name_))
 {
+    setColumns(std::move(columns_description_));
+    setConstraints(std::move(constraints_));
 }
 
 
@@ -121,13 +123,13 @@ BlockOutputStreamPtr StorageMemory::write(
 }
 
 
-void StorageMemory::drop()
+void StorageMemory::drop(TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(mutex);
     data.clear();
 }
 
-void StorageMemory::truncate(const ASTPtr &, const Context &)
+void StorageMemory::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(mutex);
     data.clear();
@@ -143,7 +145,7 @@ void registerStorageMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageMemory::create(args.table_name, args.columns);
+        return StorageMemory::create(args.database_name, args.table_name, args.columns, args.constraints);
     });
 }
 

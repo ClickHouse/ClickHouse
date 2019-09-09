@@ -1,16 +1,17 @@
 #pragma once
 
+#include <Core/SettingsCommon.h>
+#include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
+
 #include <string>
 #include <memory>
-#include <Core/Types.h>
-#include <Core/SettingsCommon.h>
-#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
-class IStorage;
 class ASTSelectQuery;
 class Context;
 
@@ -45,8 +46,8 @@ public:
         virtual ~CheckShardsAndTables() {}
     };
 
-    InJoinSubqueriesPreprocessor(const Context & context, CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
-        : context(context)
+    InJoinSubqueriesPreprocessor(const Context & context_, CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
+        : context(context_)
         , checker(std::move(_checker))
     {}
 

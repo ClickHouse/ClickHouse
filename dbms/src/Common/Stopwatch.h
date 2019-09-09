@@ -86,7 +86,7 @@ public:
 
         operator bool() const { return parent != nullptr; }
 
-        Lock(AtomicStopwatch * parent) : parent(parent) {}
+        Lock(AtomicStopwatch * parent_) : parent(parent_) {}
 
         Lock(Lock &&) = default;
 
@@ -188,4 +188,17 @@ private:
     Timestamp start_ts;
     Timestamp stop_ts;
     bool is_running = false;
+};
+
+
+template <typename TStopwatch>
+class StopwatchGuard : public TStopwatch
+{
+public:
+    explicit StopwatchGuard(UInt64 & elapsed_ns_) : elapsed_ns(elapsed_ns_) {}
+
+    ~StopwatchGuard() { elapsed_ns += TStopwatch::elapsedNanoseconds(); }
+
+private:
+    UInt64 & elapsed_ns;
 };

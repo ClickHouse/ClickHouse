@@ -13,28 +13,29 @@
 
 Для поиска без учета регистра используйте функцию `positionCaseInsensitiveUTF8`.
 
-## multiSearchAllPositions(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchAllPositions(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 Так же, как и `position`, только возвращает `Array` первых вхождений.
 
 Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
 
-## multiSearchFirstPosition(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
 Так же, как и `position`, только возвращает оффсет первого вхождения любого из needles.
 
 Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchFirstPositionCaseInsensitive, multiSearchFirstPositionUTF8, multiSearchFirstPositionCaseInsensitiveUTF8`.
 
-## multiSearchFirstIndex(haystack, [needle_1, needle_2, ..., needle_n])
-Возвращает индекс `i` (нумерация с единицы) первой найденной строки `needle_i` в строке `haystack` и 0 иначе.
+## multiSearchFirstIndex(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+Возвращает индекс `i` (нумерация с единицы) первой найденной строки needle<sub>i</sub> в строке `haystack` и 0 иначе.
 
 Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
-## multiSearchAny(haystack, [needle_1, needle_2, ..., needle_n])
-Возвращает 1, если хотя бы одна подстрока `needle_i` нашлась в строке `haystack` и 0 иначе.
+## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#function-multisearchany}
+Возвращает 1, если хотя бы одна подстрока needle<sub>i</sub> нашлась в строке `haystack` и 0 иначе.
 
 Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
-**Примечание: во всех функциях `multiSearch*` количество needles должно быть меньше 2<sup>8</sup> из-за внутренностей реализации.**
+!!! note "Примечание"
+    Во всех функциях `multiSearch*` количество needles должно быть меньше 2<sup>8</sup> из-за особенностей реализации.
 
 ## match(haystack, pattern)
 Проверка строки на соответствие регулярному выражению pattern. Регулярное выражение **re2**. Синтаксис регулярных выражений **re2** является более ограниченным по сравнению с регулярными выражениями **Perl** ([подробнее](https://github.com/google/re2/wiki/Syntax)).
@@ -45,25 +46,30 @@
 Регулярное выражение работает со строкой как с набором байт. Регулярное выражение не может содержать нулевые байты.
 Для шаблонов на поиск подстроки в строке, лучше используйте LIKE или position, так как они работают существенно быстрее.
 
-## multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
+## multiMatchAny(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 То же, что и `match`, но возвращает ноль, если ни одно регулярное выражение не подошло и один, если хотя бы одно. Используется библиотека [hyperscan](https://github.com/intel/hyperscan) для соответствия регулярных выражений. Для шаблонов на поиск многих подстрок в строке, лучше используйте `multiSearchAny`, так как она работает существенно быстрее.
 
-**Примечание: длина любой строки из `haystack` должна быть меньше 2<sup>32</sup> байт, иначе бросается исключение. Это ограничение связано с ограничением hyperscan API.**
+!!! note "Примечание"
+    Длина любой строки из `haystack` должна быть меньше 2<sup>32</sup> байт, иначе бросается исключение. Это ограничение связано с ограничением hyperscan API.
 
-## multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
+## multiMatchAnyIndex(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 То же, что и `multiMatchAny`, только возвращает любой индекс подходящего регулярного выражения.
 
-## multiFuzzyMatchAny(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
+## multiFuzzyMatchAny(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 То же, что и `multiMatchAny`, но возвращает 1 если любой pattern соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция также находится в экспериментальном режиме и может быть очень медленной. За подробностями обращайтесь к [документации hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
 
-## multiFuzzyMatchAnyIndex(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
+## multiFuzzyMatchAnyIndex(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 То же, что и `multiFuzzyMatchAny`, только возвращает любой индекс подходящего регулярного выражения в пределах константного редакционного расстояния.
 
-**Примечание: чтобы выключить все функции, использующие hyperscan, используйте настройку `SET allow_hyperscan = 0;`.**
+!!! note "Примечание"
+    `multiFuzzyMatch*` функции не поддерживают UTF-8 закодированные регулярные выражения, и такие выражения рассматриваются как байтовые из-за ограничения hyperscan.
+
+!!! note "Примечание"
+    Чтобы выключить все функции, использующие hyperscan, используйте настройку `SET allow_hyperscan = 0;`.
 
 ## extract(haystack, pattern)
 Извлечение фрагмента строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Если регулярное выражение не содержит subpattern-ов, то вынимается фрагмент, который подпадает под всё регулярное выражение. Иначе вынимается фрагмент, который подпадает под первый subpattern.
@@ -71,7 +77,7 @@
 ## extractAll(haystack, pattern)
 Извлечение всех фрагментов строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Возвращается массив строк, состоящий из всех соответствий регулярному выражению. В остальном, поведение аналогично функции extract (по прежнему, вынимается первый subpattern, или всё выражение, если subpattern-а нет).
 
-## like(haystack, pattern), оператор haystack LIKE pattern
+## like(haystack, pattern), оператор haystack LIKE pattern {#function-like}
 Проверка строки на соответствие простому регулярному выражению.
 Регулярное выражение может содержать метасимволы `%` и `_`.
 
@@ -84,15 +90,23 @@
 Для регулярных выражений вида `%needle%` действует более оптимальный код, который работает также быстро, как функция `position`.
 Для остальных регулярных выражений, код аналогичен функции match.
 
-## notLike(haystack, pattern), оператор haystack NOT LIKE pattern
+## notLike(haystack, pattern), оператор haystack NOT LIKE pattern {#function-notlike}
 То же, что like, но с отрицанием.
 
 ## ngramDistance(haystack, needle)
 
-Вычисление 4-граммного расстояния между `haystack` и `needle`: считается симметрическая разность между двумя мультимножествами 4-грамм и нормализается на сумму их мощностей. Возвращает число float от 0 до 1 -- чем ближе к нулю, тем больше строки похожи друг на друга. Если `needle` больше чем 32КБ, кидается исключение. Если некоторые строки из `haystack` больше 32КБ, расстояние всегда равно единице.
+Вычисление 4-граммного расстояния между `haystack` и `needle`: считается симметрическая разность между двумя мультимножествами 4-грамм и нормализается на сумму их мощностей. Возвращает число float от 0 до 1 -- чем ближе к нулю, тем больше строки похожи друг на друга. Если константный `needle` или `haystack` больше чем 32КБ, кидается исключение. Если некоторые строки из неконстантного `haystack` или `needle` больше 32КБ, расстояние всегда равно единице.
 
 Для поиска без учета регистра и/или в формате UTF-8 используйте функции `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
 
-**Примечание: для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем симметричную разность между хэш таблицами -- могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` -- мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки -- это работает для латиницы и почти для всех кириллических букв.**
+## ngramSearch(haystack, needle)
+
+То же, что и `ngramDistance`, но вычисляет несимметричную разность между `needle` и `haystack` -- количество n-грамм из `needle` минус количество общих n-грамм, нормированное на количество n-грамм из `needle`. Чем ближе результат к единице, тем вероятнее, что `needle` внутри `haystack`. Может быть использовано для приближенного поиска.
+
+Для поиска без учета регистра и/или в формате UTF-8 используйте функции `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8`.
+
+
+!!! note "Примечание"
+    Для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем (не)симметрическую разность между хэш таблицами -- могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` -- мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки, а также первый бит нулевого байта, если байтов больше 1 -- это работает для латиницы и почти для всех кириллических букв.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_search_functions/) <!--hide-->

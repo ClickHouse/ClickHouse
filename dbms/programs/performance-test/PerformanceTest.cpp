@@ -1,14 +1,20 @@
 #include "PerformanceTest.h"
 
 #include <Core/Types.h>
+#include <Common/CpuId.h>
 #include <common/getMemoryAmount.h>
+#include <DataStreams/copyData.h>
+#include <DataStreams/NullBlockOutputStream.h>
+#include <DataStreams/RemoteBlockInputStream.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include "executeQuery.h"
+
 
 namespace DB
 {
@@ -23,6 +29,7 @@ namespace
 void waitQuery(Connection & connection)
 {
     bool finished = false;
+
     while (true)
     {
         if (!connection.poll(1000000))
@@ -44,17 +51,19 @@ void waitQuery(Connection & connection)
 }
 }
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
     Connection & connection_,
+    const ConnectionTimeouts & timeouts_,
     InterruptListener & interrupt_listener_,
     const PerformanceTestInfo & test_info_,
     Context & context_,
     const std::vector<size_t> & queries_to_run_)
     : config(config_)
     , connection(connection_)
+    , timeouts(timeouts_)
     , interrupt_listener(interrupt_listener_)
     , test_info(test_info_)
     , context(context_)
@@ -71,6 +80,7 @@ bool PerformanceTest::checkPreconditions() const
     Strings preconditions;
     config->keys("preconditions", preconditions);
     size_t table_precondition_index = 0;
+    size_t cpu_precondition_index = 0;
 
     for (const std::string & precondition : preconditions)
     {
@@ -106,7 +116,7 @@ bool PerformanceTest::checkPreconditions() const
 
             size_t exist = 0;
 
-            connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+            connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
 
             while (true)
             {
@@ -136,6 +146,30 @@ bool PerformanceTest::checkPreconditions() const
                 return false;
             }
         }
+
+        if (precondition == "cpu")
+        {
+            std::string precondition_key = "preconditions.cpu[" + std::to_string(cpu_precondition_index++) + "]";
+            std::string flag_to_check = config->getString(precondition_key);
+
+            #define CHECK_CPU_PRECONDITION(OP) \
+            if (flag_to_check == #OP) \
+            { \
+                if (!Cpu::CpuFlagsCache::have_##OP) \
+                { \
+                    LOG_WARNING(log, "CPU doesn't support " << #OP); \
+                    return false; \
+                } \
+            } else
+
+            CPU_ID_ENUMERATE(CHECK_CPU_PRECONDITION)
+            {
+                LOG_WARNING(log, "CPU doesn't support " << flag_to_check);
+                return false;
+            }
+
+            #undef CHECK_CPU_PRECONDITION
+        }
     }
 
     return true;
@@ -159,18 +193,10 @@ UInt64 PerformanceTest::calculateMaxExecTime() const
 
 void PerformanceTest::prepare() const
 {
-    for (const auto & query : test_info.create_queries)
+    for (const auto & query : test_info.create_and_fill_queries)
     {
-        LOG_INFO(log, "Executing create query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
-        waitQuery(connection);
-        LOG_INFO(log, "Query finished");
-    }
-
-    for (const auto & query : test_info.fill_queries)
-    {
-        LOG_INFO(log, "Executing fill query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        LOG_INFO(log, "Executing create or fill query \"" << query << '\"');
+        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");
     }
@@ -182,7 +208,7 @@ void PerformanceTest::finish() const
     for (const auto & query : test_info.drop_queries)
     {
         LOG_INFO(log, "Executing drop query \"" << query << '\"');
-        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
         waitQuery(connection);
         LOG_INFO(log, "Query finished");
     }
@@ -225,6 +251,54 @@ std::vector<TestStats> PerformanceTest::execute()
 
         runQueries(queries_with_indexes, statistics_by_run);
     }
+
+    if (got_SIGINT)
+    {
+        return statistics_by_run;
+    }
+
+    // Pull memory usage data from query log. The log is normally filled in
+    // background, so we have to flush it synchronously here to see all the
+    // previous queries.
+    {
+        NullBlockOutputStream null_output(Block{});
+        RemoteBlockInputStream flush_log(connection, "system flush logs",
+            {} /* header */, context);
+        copyData(flush_log, null_output);
+    }
+
+    for (auto & statistics : statistics_by_run)
+    {
+        if (statistics.query_id.empty())
+        {
+            // We have statistics structs for skipped queries as well, so we
+            // have to filter them out.
+            continue;
+        }
+
+        // We run some test queries several times, specifying the same query id,
+        // so this query to the log may return several records. Choose the
+        // last one, because this is when the query performance has stabilized.
+        RemoteBlockInputStream log_reader(connection,
+            "select memory_usage, query_start_time from system.query_log "
+            "where type = 2 and query_id = '" + statistics.query_id + "' "
+            "order by query_start_time desc",
+            {} /* header */, context);
+
+        log_reader.readPrefix();
+        Block block = log_reader.read();
+        if (block.columns() == 0)
+        {
+            LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
+            continue;
+        }
+
+        auto column = block.getByName("memory_usage").column;
+        statistics.memory_usage = column->get64(0);
+
+        log_reader.readSuffix();
+    }
+
     return statistics_by_run;
 }
 

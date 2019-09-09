@@ -1,5 +1,4 @@
 <test>
-    <name>set_lookup_random</name>
     <type>once</type>
     <tags>
         <tag>long</tag>

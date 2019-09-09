@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -19,6 +20,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 {
     return {
         { "name", std::make_shared<DataTypeString>() },
+        { "status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues()) },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
         { "key", std::make_shared<DataTypeString>() },
@@ -29,8 +31,10 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         { "hit_rate", std::make_shared<DataTypeFloat64>() },
         { "element_count", std::make_shared<DataTypeUInt64>() },
         { "load_factor", std::make_shared<DataTypeFloat64>() },
-        { "creation_time", std::make_shared<DataTypeDateTime>() },
         { "source", std::make_shared<DataTypeString>() },
+        { "loading_start_time", std::make_shared<DataTypeDateTime>() },
+        { "loading_duration", std::make_shared<DataTypeFloat32>() },
+        //{ "creation_time", std::make_shared<DataTypeDateTime>() },
         { "last_exception", std::make_shared<DataTypeString>() },
     };
 }
@@ -38,19 +42,19 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     const auto & external_dictionaries = context.getExternalDictionaries();
-    auto objects_map = external_dictionaries.getObjectsMap();
-    const auto & dictionaries = objects_map.get();
-    for (const auto & dict_info : dictionaries)
+    for (const auto & [dict_name, load_result] : external_dictionaries.getCurrentLoadResults())
     {
         size_t i = 0;
 
-        res_columns[i++]->insert(dict_info.first);
-        res_columns[i++]->insert(dict_info.second.origin);
+        res_columns[i++]->insert(dict_name);
+        res_columns[i++]->insert(static_cast<Int8>(load_result.status));
+        res_columns[i++]->insert(load_result.origin);
 
-        if (dict_info.second.loadable)
+        std::exception_ptr last_exception = load_result.exception;
+
+        const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
+        if (dict_ptr)
         {
-            const auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(dict_info.second.loadable);
-
             res_columns[i++]->insert(dict_ptr->getTypeName());
 
             const auto & dict_struct = dict_ptr->getStructure();
@@ -62,26 +66,22 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
             res_columns[i++]->insert(dict_ptr->getHitRate());
             res_columns[i++]->insert(dict_ptr->getElementCount());
             res_columns[i++]->insert(dict_ptr->getLoadFactor());
-            res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime())));
             res_columns[i++]->insert(dict_ptr->getSource()->toString());
+
+            if (!last_exception)
+                last_exception = dict_ptr->getLastException();
         }
         else
         {
-            while (i < 13)
+            for (size_t j = 0; j != 10; ++j)
                 res_columns[i++]->insertDefault();
         }
 
-        if (dict_info.second.exception)
-        {
-            try
-            {
-                std::rethrow_exception(dict_info.second.exception);
-            }
-            catch (...)
-            {
-                res_columns[i++]->insert(getCurrentExceptionMessage(false));
-            }
-        }
+        res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.loading_start_time)));
+        res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::duration<float>>(load_result.loading_duration).count());
+
+        if (last_exception)
+            res_columns[i++]->insert(getExceptionMessage(last_exception, false));
         else
             res_columns[i++]->insertDefault();
     }

@@ -309,19 +309,19 @@ SOFTWARE.
             res[i] = isValidUTF8(data.data() + i * n, n);
     }
 
-    static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
     {
         throw Exception("Cannot apply function isValidUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
-struct NameValidUTF8
+struct NameIsValidUTF8
 {
     static constexpr auto name = "isValidUTF8";
 };
-using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameValidUTF8, UInt8>;
+using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
 
-void registerFunctionValidUTF8(FunctionFactory & factory)
+void registerFunctionIsValidUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidUTF8>();
 }

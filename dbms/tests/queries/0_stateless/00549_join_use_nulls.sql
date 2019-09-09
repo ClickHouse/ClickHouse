@@ -1,9 +1,9 @@
 SET join_use_nulls = 1;
 
-DROP TABLE IF EXISTS null;
-CREATE TABLE null (k UInt64, a String, b Nullable(String)) ENGINE = Log;
+DROP TABLE IF EXISTS null_00549;
+CREATE TABLE null_00549 (k UInt64, a String, b Nullable(String)) ENGINE = Log;
 
-INSERT INTO null SELECT
+INSERT INTO null_00549 SELECT
     k,
     a,
     b
@@ -14,7 +14,7 @@ FROM
         toString(number) AS a
     FROM system.numbers
     LIMIT 2
-)
+) js1
 ANY LEFT JOIN
 (
     SELECT
@@ -22,9 +22,9 @@ ANY LEFT JOIN
         toString(number) AS b
     FROM system.numbers
     LIMIT 1, 2
-) USING (k)
+) js2 USING (k)
 ORDER BY k ASC;
 
-SELECT * FROM null ORDER BY k, a, b;
+SELECT * FROM null_00549 ORDER BY k, a, b;
 
-DROP TABLE null;
+DROP TABLE null_00549;

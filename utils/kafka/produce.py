@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import enum
 import multiprocessing
 import sys
+import time
 
 
 class Sync(enum.Enum):
@@ -45,6 +46,12 @@ def main():
     parser.add_argument('--repeat', type=int, default=1,
         help='send same (multiplied) message many times')
 
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument('--jobs', type=int, default=multiprocessing.cpu_count(),
+        help='number of concurrent jobs')
+    mode_group.add_argument('--delay', type=int, metavar='SECONDS', default=0,
+        help='delay before sending next message')
+
     args = parser.parse_args()
     config = {
         'bootstrap_servers': f'{args.server}:{args.port}',
@@ -56,10 +63,14 @@ def main():
     message = sys.stdin.buffer.read() * args.multiply
 
     def send(num):
+        if args.delay > 0:
+            time.sleep(args.delay)
         client.send(topic=args.topic, value=message)
         print(f'iteration {num}: sent a message multiplied {args.multiply} times')
 
-    pool = ThreadPoolExecutor(max_workers=multiprocessing.cpu_count())
+    if args.delay > 0:
+        args.jobs = 1
+    pool = ThreadPoolExecutor(max_workers=args.jobs)
     for num in range(args.repeat):
         pool.submit(send, num)
     pool.shutdown()

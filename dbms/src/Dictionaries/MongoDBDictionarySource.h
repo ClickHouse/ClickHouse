@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/config.h>
+#include <Core/Block.h>
+#include "config_core.h"
 #if USE_POCO_MONGODB
 
 #    include "DictionaryStructure.h"
@@ -26,15 +27,15 @@ namespace DB
 class MongoDBDictionarySource final : public IDictionarySource
 {
     MongoDBDictionarySource(
-        const DictionaryStructure & dict_struct,
-        const std::string & host,
-        UInt16 port,
-        const std::string & user,
-        const std::string & password,
-        const std::string & method,
-        const std::string & db,
-        const std::string & collection,
-        const Block & sample_block);
+        const DictionaryStructure & dict_struct_,
+        const std::string & host_,
+        UInt16 port_,
+        const std::string & user_,
+        const std::string & password_,
+        const std::string & method_,
+        const std::string & db_,
+        const std::string & collection_,
+        const Block & sample_block_);
 
 public:
     MongoDBDictionarySource(

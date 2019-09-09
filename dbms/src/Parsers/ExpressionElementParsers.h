@@ -56,7 +56,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-
 /// Just *
 class ParserAsterisk : public IParserBase
 {
@@ -64,7 +63,6 @@ protected:
     const char * getName() const { return "asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
-
 
 /** Something like t.* or db.table.*
   */
@@ -75,6 +73,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** COLUMNS('<regular expression>')
+  */
+class ParserColumnsMatcher : public IParserBase
+{
+protected:
+    const char * getName() const { return "COLUMNS matcher"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
 
 /** A function, for example, f(x, y + 1, g(z)).
   * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.
@@ -242,6 +248,17 @@ private:
 };
 
 
+/** Prepared statements.
+  * Parse query with parameter expression {name:type}.
+  */
+class ParserSubstitution : public IParserBase
+{
+protected:
+    const char * getName() const { return "substitution"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
 /** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
   */
 class ParserExpressionElement : public IParserBase
@@ -257,13 +274,12 @@ protected:
 class ParserWithOptionalAlias : public IParserBase
 {
 public:
-    ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
-    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_),
-      prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
+    ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
+    {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
-    bool prefer_alias_to_column_name;
 
     const char * getName() const { return "element of expression with optional alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
@@ -273,6 +289,7 @@ protected:
 /** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
   *  and optionally, NULLS LAST|FIRST
   *  and optionally, COLLATE 'locale'.
+  *  and optionally, WITH FILL [FROM x] [TO y] [STEP z]
   */
 class ParserOrderByElement : public IParserBase
 {

@@ -15,32 +15,22 @@ namespace ErrorCodes
 }
 
 ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
-    const std::string & name,
-    const DictionaryStructure & dict_struct,
-    DictionarySourcePtr source_ptr,
-    const DictionaryLifetime dict_lifetime,
-    bool require_nonempty,
-    BlockPtr saved_block)
-    : name{name}
-    , dict_struct(dict_struct)
-    , source_ptr{std::move(source_ptr)}
-    , dict_lifetime(dict_lifetime)
-    , require_nonempty(require_nonempty)
-    , saved_block{std::move(saved_block)}
+    const std::string & name_,
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_,
+    bool require_nonempty_,
+    BlockPtr saved_block_)
+    : name{name_}
+    , dict_struct(dict_struct_)
+    , source_ptr{std::move(source_ptr_)}
+    , dict_lifetime(dict_lifetime_)
+    , require_nonempty(require_nonempty_)
+    , saved_block{std::move(saved_block_)}
 {
     createAttributes();
-
-    try
-    {
-        loadData();
-        calculateBytesAllocated();
-    }
-    catch (...)
-    {
-        creation_exception = std::current_exception();
-    }
-
-    creation_time = std::chrono::system_clock::now();
+    loadData();
+    calculateBytesAllocated();
 }
 
 #define DECLARE(TYPE) \
@@ -50,13 +40,11 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
         dict_struct.validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, \
             key_columns, \
             [&](const size_t row, const auto value) { out[row] = value; }, \
@@ -84,9 +72,7 @@ void ComplexKeyHashedDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -108,11 +94,9 @@ void ComplexKeyHashedDictionary::getString(
         dict_struct.validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, \
             key_columns, \
             [&](const size_t row, const auto value) { out[row] = value; }, \
@@ -144,9 +128,7 @@ void ComplexKeyHashedDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -166,11 +148,9 @@ void ComplexKeyHashedDictionary::getString(
         dict_struct.validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH}; \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
-        getItemsNumber<TYPE>( \
+        getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
     }
 DECLARE(UInt8)
@@ -199,9 +179,7 @@ void ComplexKeyHashedDictionary::getString(
     dict_struct.validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -218,50 +196,50 @@ void ComplexKeyHashedDictionary::has(const Columns & key_columns, const DataType
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             has<UInt8>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             has<UInt16>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             has<UInt32>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             has<UInt64>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             has<UInt128>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             has<Int8>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             has<Int16>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             has<Int32>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             has<Int64>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             has<Float32>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             has<Float64>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
             has<StringRef>(attribute, key_columns, out);
             break;
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             has<Decimal32>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             has<Decimal64>(attribute, key_columns, out);
             break;
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             has<Decimal128>(attribute, key_columns, out);
             break;
     }
@@ -438,51 +416,51 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
     {
         switch (attribute.type)
         {
-            case AttributeUnderlyingType::UInt8:
+            case AttributeUnderlyingType::utUInt8:
                 addAttributeSize<UInt8>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt16:
+            case AttributeUnderlyingType::utUInt16:
                 addAttributeSize<UInt16>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt32:
+            case AttributeUnderlyingType::utUInt32:
                 addAttributeSize<UInt32>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt64:
+            case AttributeUnderlyingType::utUInt64:
                 addAttributeSize<UInt64>(attribute);
                 break;
-            case AttributeUnderlyingType::UInt128:
+            case AttributeUnderlyingType::utUInt128:
                 addAttributeSize<UInt128>(attribute);
                 break;
-            case AttributeUnderlyingType::Int8:
+            case AttributeUnderlyingType::utInt8:
                 addAttributeSize<Int8>(attribute);
                 break;
-            case AttributeUnderlyingType::Int16:
+            case AttributeUnderlyingType::utInt16:
                 addAttributeSize<Int16>(attribute);
                 break;
-            case AttributeUnderlyingType::Int32:
+            case AttributeUnderlyingType::utInt32:
                 addAttributeSize<Int32>(attribute);
                 break;
-            case AttributeUnderlyingType::Int64:
+            case AttributeUnderlyingType::utInt64:
                 addAttributeSize<Int64>(attribute);
                 break;
-            case AttributeUnderlyingType::Float32:
+            case AttributeUnderlyingType::utFloat32:
                 addAttributeSize<Float32>(attribute);
                 break;
-            case AttributeUnderlyingType::Float64:
+            case AttributeUnderlyingType::utFloat64:
                 addAttributeSize<Float64>(attribute);
                 break;
 
-            case AttributeUnderlyingType::Decimal32:
+            case AttributeUnderlyingType::utDecimal32:
                 addAttributeSize<Decimal32>(attribute);
                 break;
-            case AttributeUnderlyingType::Decimal64:
+            case AttributeUnderlyingType::utDecimal64:
                 addAttributeSize<Decimal64>(attribute);
                 break;
-            case AttributeUnderlyingType::Decimal128:
+            case AttributeUnderlyingType::utDecimal128:
                 addAttributeSize<Decimal128>(attribute);
                 break;
 
-            case AttributeUnderlyingType::String:
+            case AttributeUnderlyingType::utString:
             {
                 addAttributeSize<StringRef>(attribute);
                 bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
@@ -509,51 +487,51 @@ ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingTyp
 
     switch (type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             createAttributeImpl<UInt8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             createAttributeImpl<UInt16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             createAttributeImpl<UInt32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             createAttributeImpl<UInt64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             createAttributeImpl<UInt128>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             createAttributeImpl<Int8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             createAttributeImpl<Int16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             createAttributeImpl<Int32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             createAttributeImpl<Int64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             createAttributeImpl<Float32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             createAttributeImpl<Float64>(attr, null_value);
             break;
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             createAttributeImpl<Decimal32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             createAttributeImpl<Decimal64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             createAttributeImpl<Decimal128>(attr, null_value);
             break;
 
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
         {
             attr.null_values = null_value.get<String>();
             attr.maps.emplace<ContainerType<StringRef>>();
@@ -565,34 +543,6 @@ ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingTyp
     return attr;
 }
 
-
-template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-void ComplexKeyHashedDictionary::getItemsNumber(
-    const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const
-{
-    if (false)
-    {
-    }
-#define DISPATCH(TYPE) \
-    else if (attribute.type == AttributeUnderlyingType::TYPE) getItemsImpl<TYPE, OutputType>( \
-        attribute, key_columns, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
-    DISPATCH(UInt8)
-    DISPATCH(UInt16)
-    DISPATCH(UInt32)
-    DISPATCH(UInt64)
-    DISPATCH(UInt128)
-    DISPATCH(Int8)
-    DISPATCH(Int16)
-    DISPATCH(Int32)
-    DISPATCH(Int64)
-    DISPATCH(Float32)
-    DISPATCH(Float64)
-    DISPATCH(Decimal32)
-    DISPATCH(Decimal64)
-    DISPATCH(Decimal128)
-#undef DISPATCH
-    else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-}
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void ComplexKeyHashedDictionary::getItemsImpl(
@@ -633,37 +583,37 @@ bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const 
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             return setAttributeValueImpl<UInt8>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             return setAttributeValueImpl<UInt16>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             return setAttributeValueImpl<UInt32>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             return setAttributeValueImpl<UInt64>(attribute, key, value.get<UInt64>());
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             return setAttributeValueImpl<UInt128>(attribute, key, value.get<UInt128>());
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             return setAttributeValueImpl<Int8>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             return setAttributeValueImpl<Int16>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             return setAttributeValueImpl<Int32>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             return setAttributeValueImpl<Int64>(attribute, key, value.get<Int64>());
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             return setAttributeValueImpl<Float32>(attribute, key, value.get<Float64>());
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             return setAttributeValueImpl<Float64>(attribute, key, value.get<Float64>());
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             return setAttributeValueImpl<Decimal32>(attribute, key, value.get<Decimal32>());
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             return setAttributeValueImpl<Decimal64>(attribute, key, value.get<Decimal64>());
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             return setAttributeValueImpl<Decimal128>(attribute, key, value.get<Decimal128>());
 
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
         {
             auto & map = std::get<ContainerType<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
@@ -737,36 +687,36 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8:
+        case AttributeUnderlyingType::utUInt8:
             return getKeys<UInt8>(attribute);
-        case AttributeUnderlyingType::UInt16:
+        case AttributeUnderlyingType::utUInt16:
             return getKeys<UInt16>(attribute);
-        case AttributeUnderlyingType::UInt32:
+        case AttributeUnderlyingType::utUInt32:
             return getKeys<UInt32>(attribute);
-        case AttributeUnderlyingType::UInt64:
+        case AttributeUnderlyingType::utUInt64:
             return getKeys<UInt64>(attribute);
-        case AttributeUnderlyingType::UInt128:
+        case AttributeUnderlyingType::utUInt128:
             return getKeys<UInt128>(attribute);
-        case AttributeUnderlyingType::Int8:
+        case AttributeUnderlyingType::utInt8:
             return getKeys<Int8>(attribute);
-        case AttributeUnderlyingType::Int16:
+        case AttributeUnderlyingType::utInt16:
             return getKeys<Int16>(attribute);
-        case AttributeUnderlyingType::Int32:
+        case AttributeUnderlyingType::utInt32:
             return getKeys<Int32>(attribute);
-        case AttributeUnderlyingType::Int64:
+        case AttributeUnderlyingType::utInt64:
             return getKeys<Int64>(attribute);
-        case AttributeUnderlyingType::Float32:
+        case AttributeUnderlyingType::utFloat32:
             return getKeys<Float32>(attribute);
-        case AttributeUnderlyingType::Float64:
+        case AttributeUnderlyingType::utFloat64:
             return getKeys<Float64>(attribute);
-        case AttributeUnderlyingType::String:
+        case AttributeUnderlyingType::utString:
             return getKeys<StringRef>(attribute);
 
-        case AttributeUnderlyingType::Decimal32:
+        case AttributeUnderlyingType::utDecimal32:
             return getKeys<Decimal32>(attribute);
-        case AttributeUnderlyingType::Decimal64:
+        case AttributeUnderlyingType::utDecimal64:
             return getKeys<Decimal64>(attribute);
-        case AttributeUnderlyingType::Decimal128:
+        case AttributeUnderlyingType::utDecimal128:
             return getKeys<Decimal128>(attribute);
     }
     return {};

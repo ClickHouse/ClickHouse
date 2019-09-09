@@ -5,6 +5,9 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <common/likely.h>
+#if __has_include(<sanitizer/asan_interface.h>)
+#   include <sanitizer/asan_interface.h>
+#endif
 #include <Core/Defines.h>
 #include <Common/memcpySmall.h>
 #include <Common/ProfileEvents.h>
@@ -53,10 +56,18 @@ private:
             pos = begin;
             end = begin + size_ - pad_right;
             prev = prev_;
+
+            ASAN_POISON_MEMORY_REGION(begin, size_);
         }
 
         ~Chunk()
         {
+            /// We must unpoison the memory before returning to the allocator,
+            /// because the allocator might not have asan integration, and the
+            /// memory would stay poisoned forever. If the allocator supports
+            /// asan, it will correctly poison the memory by itself.
+            ASAN_UNPOISON_MEMORY_REGION(begin, size());
+
             Allocator<false>::free(begin, size());
 
             if (prev)
@@ -126,6 +137,7 @@ public:
 
         char * res = head->pos;
         head->pos += size;
+        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
         return res;
     }
 
@@ -142,6 +154,7 @@ public:
             {
                 head->pos = static_cast<char *>(head_pos);
                 head->pos += size;
+                ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
                 return res;
             }
 
@@ -157,10 +170,14 @@ public:
 
     /** Rollback just performed allocation.
       * Must pass size not more that was just allocated.
+	  * Return the resulting head pointer, so that the caller can assert that
+	  * the allocation it intended to roll back was indeed the last one.
       */
-    void rollback(size_t size)
+    void * rollback(size_t size)
     {
         head->pos -= size;
+        ASAN_POISON_MEMORY_REGION(head->pos, size + pad_right);
+        return head->pos;
     }
 
     /** Begin or expand allocation of contiguous piece of memory without alignment.
@@ -187,6 +204,7 @@ public:
         if (!begin)
             begin = res;
 
+        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
         return res;
     }
 
@@ -218,6 +236,8 @@ public:
 
         if (!begin)
             begin = res;
+
+        ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
         return res;
     }
 
@@ -226,7 +246,10 @@ public:
     {
         char * res = alloc(new_size);
         if (old_data)
+        {
             memcpy(res, old_data, old_size);
+            ASAN_POISON_MEMORY_REGION(old_data, old_size);
+        }
         return res;
     }
 
@@ -234,7 +257,10 @@ public:
     {
         char * res = alignedAlloc(new_size, alignment);
         if (old_data)
+        {
             memcpy(res, old_data, old_size);
+            ASAN_POISON_MEMORY_REGION(old_data, old_size);
+        }
         return res;
     }
 

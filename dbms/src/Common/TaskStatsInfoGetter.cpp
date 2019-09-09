@@ -34,6 +34,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+// Replace NLMSG_OK with explicit casts since that system macro contains signedness bugs which are not going to be fixed.
+static inline bool is_nlmsg_ok(const struct nlmsghdr * const nlh, const ssize_t len)
+{
+    return len >= static_cast<ssize_t>(sizeof(*nlh)) && nlh->nlmsg_len >= sizeof(*nlh) && static_cast<size_t>(len) >= nlh->nlmsg_len;
+}
 
 namespace
 {
@@ -90,12 +95,17 @@ struct NetlinkMessage
         const char * request_buf = reinterpret_cast<const char *>(this);
         ssize_t request_size = header.nlmsg_len;
 
-        ::sockaddr_nl nladdr{};
+        union
+        {
+            ::sockaddr_nl nladdr{};
+            ::sockaddr sockaddr;
+        };
+
         nladdr.nl_family = AF_NETLINK;
 
         while (true)
         {
-            ssize_t bytes_sent = ::sendto(fd, request_buf, request_size, 0, reinterpret_cast<const ::sockaddr *>(&nladdr), sizeof(nladdr));
+            ssize_t bytes_sent = ::sendto(fd, request_buf, request_size, 0, &sockaddr, sizeof(nladdr));
 
             if (bytes_sent <= 0)
             {
@@ -123,7 +133,7 @@ struct NetlinkMessage
         if (header.nlmsg_type == NLMSG_ERROR)
             throw Exception("Can't receive Netlink response: error " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
 
-        if (!NLMSG_OK((&header), bytes_received))
+        if (!is_nlmsg_ok(&header, bytes_received))
             throw Exception("Can't receive Netlink response: wrong number of bytes received", ErrorCodes::NETLINK_ERROR);
     }
 };
@@ -236,10 +246,14 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
     if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
         throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-    ::sockaddr_nl addr{};
+    union
+    {
+        ::sockaddr_nl addr{};
+        ::sockaddr sockaddr;
+    };
     addr.nl_family = AF_NETLINK;
 
-    if (::bind(netlink_socket_fd, reinterpret_cast<const ::sockaddr *>(&addr), sizeof(addr)) < 0)
+    if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
         throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
     taskstats_family_id = getFamilyId(netlink_socket_fd);

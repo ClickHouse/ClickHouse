@@ -5,13 +5,12 @@ set(CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/IdentifierQuoteHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MainHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBlockInputStream.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/odbc-bridge.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBridge.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PingHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/validateODBCConnectionString.cpp
 )
 
-set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE dbms clickhouse_common_io PUBLIC daemon)
+set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE dbms clickhouse_parsers PUBLIC daemon)
 set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 if (USE_POCO_SQLODBC)

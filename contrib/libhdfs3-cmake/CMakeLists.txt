@@ -9,7 +9,7 @@ endif()
 
 SET(WITH_KERBEROS false)
 # project and source dir
-set(HDFS3_ROOT_DIR ${CMAKE_SOURCE_DIR}/contrib/libhdfs3)
+set(HDFS3_ROOT_DIR ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3)
 set(HDFS3_SOURCE_DIR ${HDFS3_ROOT_DIR}/src)
 set(HDFS3_COMMON_DIR ${HDFS3_SOURCE_DIR}/common)
 

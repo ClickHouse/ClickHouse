@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
-#include <Storages/IStorage.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <ext/singleton.h>
 #include <unordered_map>
 
@@ -33,6 +36,7 @@ public:
         Context & local_context;
         Context & context;
         const ColumnsDescription & columns;
+        const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
     };
@@ -47,6 +51,7 @@ public:
         Context & local_context,
         Context & context,
         const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints,
         bool attach,
         bool has_force_restore_data_flag) const;
 

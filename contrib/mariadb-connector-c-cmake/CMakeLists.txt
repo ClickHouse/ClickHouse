@@ -1,5 +1,5 @@
-set(MARIADB_CLIENT_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/mariadb-connector-c)
-set(MARIADB_CLIENT_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/mariadb-connector-c)
+set(MARIADB_CLIENT_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c)
+set(MARIADB_CLIENT_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c)
 
 set(SRCS
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/bmove_upp.c
@@ -31,6 +31,7 @@ ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_stmt_codec.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_string.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_time.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_tls.c
+${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/gnutls.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/ma_schannel.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/schannel.c
@@ -42,6 +43,7 @@ ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/mariadb_cleartext.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/my_auth.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/old_password.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sha256_pw.c
+${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/caching_sha2_pw.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sspi_client.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/sspi_errmsg.c
 ${MARIADB_CLIENT_SOURCE_DIR}/plugins/connection/aurora.c

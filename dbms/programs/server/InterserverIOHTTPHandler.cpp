@@ -1,17 +1,16 @@
+#include "InterserverIOHTTPHandler.h"
+
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-
 #include <common/logger_useful.h>
-
 #include <Common/HTMLForm.h>
 #include <Common/setThreadName.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <Interpreters/InterserverIOHandler.h>
-
-#include "InterserverIOHTTPHandler.h"
+#include "IServer.h"
 
 namespace DB
 {
@@ -50,7 +49,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net:
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output)
 {
     HTMLForm params(request);
 
@@ -61,24 +60,17 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     ReadBufferFromIStream body(request.stream());
 
-    const auto & config = server.config();
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
-
-    WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
-
     auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
 
     if (compress)
     {
-        CompressedWriteBuffer compressed_out(out);
+        CompressedWriteBuffer compressed_out(*used_output.out.get());
         endpoint->processQuery(params, body, compressed_out, response);
     }
     else
     {
-        endpoint->processQuery(params, body, out, response);
+        endpoint->processQuery(params, body, *used_output.out.get(), response);
     }
-
-    out.finalize();
 }
 
 
@@ -90,30 +82,30 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
     if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
+    Output used_output;
+    const auto & config = server.config();
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive_timeout);
+
     try
     {
-        if (auto [msg, success] = checkAuthentication(request); success)
+        if (auto [message, success] = checkAuthentication(request); success)
         {
-            processQuery(request, response);
+            processQuery(request, response, used_output);
             LOG_INFO(log, "Done processing query");
         }
         else
         {
             response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
-                response.send() << msg << std::endl;
+                writeString(message, *used_output.out);
             LOG_WARNING(log, "Query processing failed request: '" << request.getURI() << "' authentification failed");
         }
     }
     catch (Exception & e)
     {
-
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
-        {
-            if (!response.sent())
-                response.send();
             return;
-        }
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
@@ -122,7 +114,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
 
         std::string message = getCurrentExceptionMessage(is_real_error);
         if (!response.sent())
-            response.send() << message << std::endl;
+            writeString(message, *used_output.out);
 
         if (is_real_error)
             LOG_ERROR(log, message);
@@ -134,7 +126,8 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         std::string message = getCurrentExceptionMessage(false);
         if (!response.sent())
-            response.send() << message << std::endl;
+            writeString(message, *used_output.out);
+
         LOG_ERROR(log, message);
     }
 }

@@ -10,24 +10,28 @@ struct ASTExistsQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsQuery";
     static constexpr auto Query = "EXISTS TABLE";
+    static constexpr auto QueryTemporary = "EXISTS TEMPORARY TABLE";
 };
 
 struct ASTShowCreateTableQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateTableQuery";
     static constexpr auto Query = "SHOW CREATE TABLE";
+    static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY TABLE";
 };
 
 struct ASTShowCreateDatabaseQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateDatabaseQuery";
     static constexpr auto Query = "SHOW CREATE DATABASE";
+    static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY DATABASE";
 };
 
 struct ASTDescribeQueryExistsQueryIDAndQueryNames
 {
     static constexpr auto ID = "DescribeQuery";
     static constexpr auto Query = "DESCRIBE TABLE";
+    static constexpr auto QueryTemporary = "DESCRIBE TEMPORARY TABLE";
 };
 
 using ASTExistsQuery = ASTQueryWithTableAndOutputImpl<ASTExistsQueryIDAndQueryNames>;

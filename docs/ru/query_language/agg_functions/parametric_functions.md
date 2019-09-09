@@ -60,7 +60,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 **Параметры**
 
 - `window` — ширина скользящего окна по времени в секундах.
-- `timestamp` — имя столбца, содержащего отметки времени. Тип данных [DateTime](../../data_types/datetime.md#data_type-datetime) или [UInt32](../../data_types/int_uint.md).
+- `timestamp` — имя столбца, содержащего отметки времени. Тип данных [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime) или [UInt*](../../data_types/int_uint.md). Заметьте, что в случает хранения меток времени в столбцах с типом `UInt64`, максимально допустимое значение соответствует ограничению для типа `Int64`, т.е. равно `2^63-1`.
 - `cond1`, `cond2`... — условия или данные, описывающие цепочку событий. Тип данных — `UInt8`. Значения могут быть 0 или 1.
 
 **Алгоритм**

@@ -1,5 +1,4 @@
 <test>
-    <name>uniq</name>
     <type>loop</type>
 
     <preconditions>
@@ -8,12 +7,9 @@
     </preconditions>
 
     <stop_conditions>
-        <all_of>
-            <total_time_ms>8000</total_time_ms>
-        </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
-            <total_time_ms>15000</total_time_ms>
+            <min_time_not_changing_for_ms>5000</min_time_not_changing_for_ms>
+            <total_time_ms>20000</total_time_ms>
         </any_of>
     </stop_conditions>
 
@@ -50,8 +46,6 @@
                <value>uniqCombined(16)</value>
                <value>uniqCombined(17)</value>
                <value>uniqCombined(18)</value>
-               <value>uniqCombined(19)</value>
-               <value>uniqCombined(20)</value>
                <value>uniqUpTo(3)</value>
                <value>uniqUpTo(5)</value>
                <value>uniqUpTo(10)</value>

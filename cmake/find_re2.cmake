@@ -1,5 +1,13 @@
 option (USE_INTERNAL_RE2_LIBRARY "Set to FALSE to use system re2 library instead of bundled [slower]" ${NOT_UNBUNDLED})
 
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/re2/CMakeLists.txt")
+    if(USE_INTERNAL_RE2_LIBRARY)
+        message(WARNING "submodule contrib/re2 is missing. to fix try run: \n git submodule update --init --recursive")
+    endif()
+    set(USE_INTERNAL_RE2_LIBRARY 0)
+    set(MISSING_INTERNAL_RE2_LIBRARY 1)
+endif()
+
 if (NOT USE_INTERNAL_RE2_LIBRARY)
     find_library (RE2_LIBRARY re2)
     find_path (RE2_INCLUDE_DIR NAMES re2/re2.h PATHS ${RE2_INCLUDE_PATHS})

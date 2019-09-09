@@ -67,6 +67,12 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
+[submodule "contrib/libcxx"]
+	path = contrib/libcxx
+	url = https://github.com/llvm-mirror/libcxx.git
+[submodule "contrib/libcxxabi"]
+	path = contrib/libcxxabi
+	url = https://github.com/llvm-mirror/libcxxabi.git
 [submodule "contrib/snappy"]
 	path = contrib/snappy
 	url = https://github.com/google/snappy
@@ -76,6 +82,24 @@
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli.git
+[submodule "contrib/h3"]
+	path = contrib/h3
+	url = https://github.com/uber/h3
 [submodule "contrib/hyperscan"]
 	path = contrib/hyperscan
 	url = https://github.com/ClickHouse-Extras/hyperscan.git
+[submodule "contrib/libunwind"]
+	path = contrib/libunwind
+	url = https://github.com/ClickHouse-Extras/libunwind.git
+[submodule "contrib/simdjson"]
+	path = contrib/simdjson
+	url = https://github.com/lemire/simdjson.git
+[submodule "contrib/rapidjson"]
+	path = contrib/rapidjson
+	url = https://github.com/Tencent/rapidjson
+[submodule "contrib/fastops"]
+	path = contrib/fastops
+	url = https://github.com/ClickHouse-Extras/fastops
+[submodule "contrib/orc"]
+	path = contrib/orc
+	url = https://github.com/apache/orc

@@ -27,28 +27,33 @@ DatabaseDictionary::DatabaseDictionary(const String & name_)
 {
 }
 
-void DatabaseDictionary::loadTables(Context &, ThreadPool *, bool)
+void DatabaseDictionary::loadTables(Context &, bool)
 {
 }
 
-Tables DatabaseDictionary::listTables(const Context & context)
+Tables DatabaseDictionary::listTables(const Context & context, const FilterByNameFunction & filter_by_name)
 {
-    auto objects_map = context.getExternalDictionaries().getObjectsMap();
-    const auto & dictionaries = objects_map.get();
-
     Tables tables;
-    for (const auto & pair : dictionaries)
+    ExternalLoader::Loadables loadables;
+    if (filter_by_name)
     {
-        auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(pair.second.loadable);
-        if (dict_ptr)
-        {
-            const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
-            auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            const std::string & dict_name = pair.first;
-            tables[dict_name] = StorageDictionary::create(dict_name, ColumnsDescription{columns}, context, true, dict_name);
-        }
+        /// If `filter_by_name` is set, we iterate through all dictionaries with such names. That's why we need to load all of them.
+        loadables = context.getExternalDictionaries().loadAndGet(filter_by_name);
+    }
+    else
+    {
+        /// If `filter_by_name` isn't set, we iterate through only already loaded dictionaries. We don't try to load all dictionaries in this case.
+        loadables = context.getExternalDictionaries().getCurrentlyLoadedObjects();
     }
 
+    for (const auto & loadable : loadables)
+    {
+        auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(loadable);
+        auto dict_name = dict_ptr->getName();
+        const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
+        auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
+        tables[dict_name] = StorageDictionary::create(getDatabaseName(), dict_name, ColumnsDescription{columns}, context, true, dict_name);
+    }
     return tables;
 }
 
@@ -56,9 +61,7 @@ bool DatabaseDictionary::isTableExist(
     const Context & context,
     const String & table_name) const
 {
-    auto objects_map = context.getExternalDictionaries().getObjectsMap();
-    const auto & dictionaries = objects_map.get();
-    return dictionaries.count(table_name);
+    return context.getExternalDictionaries().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
 }
 
 StoragePtr DatabaseDictionary::tryGetTable(
@@ -70,25 +73,20 @@ StoragePtr DatabaseDictionary::tryGetTable(
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
         auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        return StorageDictionary::create(table_name, ColumnsDescription{columns}, context, true, table_name);
+        return StorageDictionary::create(getDatabaseName(), table_name, ColumnsDescription{columns}, context, true, table_name);
     }
 
     return {};
 }
 
-DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context)
+DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context, const FilterByNameFunction & filter_by_name)
 {
-    return std::make_unique<DatabaseSnapshotIterator>(listTables(context));
+    return std::make_unique<DatabaseSnapshotIterator>(listTables(context, filter_by_name));
 }
 
 bool DatabaseDictionary::empty(const Context & context) const
 {
-    auto objects_map = context.getExternalDictionaries().getObjectsMap();
-    const auto & dictionaries = objects_map.get();
-    for (const auto & pair : dictionaries)
-        if (pair.second.loadable)
-            return false;
-    return true;
+    return !context.getExternalDictionaries().hasCurrentlyLoadedObjects();
 }
 
 StoragePtr DatabaseDictionary::detachTable(const String & /*table_name*/)
@@ -115,25 +113,6 @@ void DatabaseDictionary::removeTable(
     const String &)
 {
     throw Exception("DatabaseDictionary: removeTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DatabaseDictionary::renameTable(
-    const Context &,
-    const String &,
-    IDatabase &,
-    const String &)
-{
-    throw Exception("DatabaseDictionary: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void DatabaseDictionary::alterTable(
-    const Context &,
-    const String &,
-    const ColumnsDescription &,
-    const IndicesDescription &,
-    const ASTModifier &)
-{
-    throw Exception("DatabaseDictionary: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 time_t DatabaseDictionary::getTableMetadataModificationTime(

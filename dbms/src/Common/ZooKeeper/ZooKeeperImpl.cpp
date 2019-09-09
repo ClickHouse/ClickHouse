@@ -758,17 +758,17 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
         {
             ZooKeeper::OpNum op_num;
             bool done;
-            int32_t error;
+            int32_t error_;
 
             Coordination::read(op_num, in);
             Coordination::read(done, in);
-            Coordination::read(error, in);
+            Coordination::read(error_, in);
 
             if (!done)
                 throw Exception("Too many results received for multi transaction", ZMARSHALLINGERROR);
             if (op_num != -1)
                 throw Exception("Unexpected op_num received at the end of results for multi transaction", ZMARSHALLINGERROR);
-            if (error != -1)
+            if (error_ != -1)
                 throw Exception("Unexpected error value received at the end of results for multi transaction", ZMARSHALLINGERROR);
         }
     }
@@ -821,12 +821,12 @@ ZooKeeper::ZooKeeper(
     const String & root_path_,
     const String & auth_scheme,
     const String & auth_data,
-    Poco::Timespan session_timeout,
+    Poco::Timespan session_timeout_,
     Poco::Timespan connection_timeout,
-    Poco::Timespan operation_timeout)
+    Poco::Timespan operation_timeout_)
     : root_path(root_path_),
-    session_timeout(session_timeout),
-    operation_timeout(std::min(operation_timeout, session_timeout))
+    session_timeout(session_timeout_),
+    operation_timeout(std::min(operation_timeout_, session_timeout_))
 {
     if (!root_path.empty())
     {
@@ -1430,6 +1430,8 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
+            if (info.request->xid == close_xid)
+                throw Exception("xid equal to close_xid", ZSESSIONEXPIRED);
             if (info.request->xid < 0)
                 throw Exception("XID overflow", ZSESSIONEXPIRED);
         }

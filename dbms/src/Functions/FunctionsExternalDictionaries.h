@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -9,6 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -73,7 +75,7 @@ public:
         return std::make_shared<FunctionDictHas>(context.getExternalDictionaries());
     }
 
-    FunctionDictHas(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictHas(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -167,7 +169,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnUInt8::create(key_col_with_type.column->size());
@@ -218,7 +220,7 @@ public:
         return std::make_shared<FunctionDictGetString>(context.getExternalDictionaries());
     }
 
-    FunctionDictGetString(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGetString(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -353,7 +355,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnString::create();
@@ -413,7 +415,7 @@ public:
         return std::make_shared<FunctionDictGetStringOrDefault>(context.getExternalDictionaries());
     }
 
-    FunctionDictGetStringOrDefault(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGetStringOrDefault(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -661,21 +663,77 @@ DECLARE_DICT_GET_TRAITS(UInt32, DataTypeDateTime)
 DECLARE_DICT_GET_TRAITS(UInt128, DataTypeUUID)
 #undef DECLARE_DICT_GET_TRAITS
 
+template <typename T> struct DictGetTraits<DataTypeDecimal<T>>
+{
+    static constexpr bool is_dec32 = std::is_same_v<T, Decimal32>;
+    static constexpr bool is_dec64 = std::is_same_v<T, Decimal64>;
+    static constexpr bool is_dec128 = std::is_same_v<T, Decimal128>;
+
+    template <typename DictionaryType>
+    static void get(const DictionaryType * dict, const std::string & name, const PaddedPODArray<UInt64> & ids,
+                    DecimalPaddedPODArray<T> & out)
+    {
+        if constexpr (is_dec32) dict->getDecimal32(name, ids, out);
+        if constexpr (is_dec64) dict->getDecimal64(name, ids, out);
+        if constexpr (is_dec128) dict->getDecimal128(name, ids, out);
+    }
+
+    template <typename DictionaryType>
+    static void get(const DictionaryType * dict, const std::string & name, const Columns & key_columns, const DataTypes & key_types,
+                    DecimalPaddedPODArray<T> & out)
+    {
+        if constexpr (is_dec32) dict->getDecimal32(name, key_columns, key_types, out);
+        if constexpr (is_dec64) dict->getDecimal64(name, key_columns, key_types, out);
+        if constexpr (is_dec128) dict->getDecimal128(name, key_columns, key_types, out);
+    }
+
+    template <typename DictionaryType>
+    static void get(const DictionaryType * dict, const std::string & name, const PaddedPODArray<UInt64> & ids,
+                    const PaddedPODArray<Int64> & dates, DecimalPaddedPODArray<T> & out)
+    {
+        if constexpr (is_dec32) dict->getDecimal32(name, ids, dates, out);
+        if constexpr (is_dec64) dict->getDecimal64(name, ids, dates, out);
+        if constexpr (is_dec128) dict->getDecimal128(name, ids, dates, out);
+    }
+
+    template <typename DictionaryType, typename DefaultsType>
+    static void getOrDefault(const DictionaryType * dict, const std::string & name, const PaddedPODArray<UInt64> & ids,
+                    const DefaultsType & def, DecimalPaddedPODArray<T> & out)
+    {
+        if constexpr (is_dec32) dict->getDecimal32(name, ids, def, out);
+        if constexpr (is_dec64) dict->getDecimal64(name, ids, def, out);
+        if constexpr (is_dec128) dict->getDecimal128(name, ids, def, out);
+    }
+
+    template <typename DictionaryType, typename DefaultsType>
+    static void getOrDefault(const DictionaryType * dict, const std::string & name, const Columns & key_columns,
+                    const DataTypes & key_types, const DefaultsType & def, DecimalPaddedPODArray<T> & out)
+    {
+        if constexpr (is_dec32) dict->getDecimal32(name, key_columns, key_types, def, out);
+        if constexpr (is_dec64) dict->getDecimal64(name, key_columns, key_types, def, out);
+        if constexpr (is_dec128) dict->getDecimal128(name, key_columns, key_types, def, out);
+    }
+};
+
 
 template <typename DataType, typename Name>
 class FunctionDictGet final : public IFunction
 {
     using Type = typename DataType::FieldType;
+    using ColVec = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context & context, UInt32 dec_scale = 0)
     {
-        return std::make_shared<FunctionDictGet>(context.getExternalDictionaries());
+        return std::make_shared<FunctionDictGet>(context.getExternalDictionaries(), dec_scale);
     }
 
-    FunctionDictGet(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGet(const ExternalDictionaries & dictionaries_, UInt32 dec_scale = 0)
+        : dictionaries(dictionaries_)
+        , decimal_scale(dec_scale)
+    {}
 
     String getName() const override { return name; }
 
@@ -719,7 +777,10 @@ private:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        return std::make_shared<DataType>();
+        if constexpr (IsDataTypeDecimal<DataType>)
+            return std::make_shared<DataType>(DataType::maxPrecision(), decimal_scale);
+        else
+            return std::make_shared<DataType>();
     }
 
     bool isDeterministic() const override { return false; }
@@ -771,7 +832,11 @@ private:
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
         {
-            auto out = ColumnVector<Type>::create(id_col->size());
+            typename ColVec::MutablePtr out;
+            if constexpr (IsDataTypeDecimal<DataType>)
+                out = ColVec::create(id_col->size(), decimal_scale);
+            else
+                out = ColVec::create(id_col->size());
             const auto & ids = id_col->getData();
             auto & data = out->getData();
             DictGetTraits<DataType>::get(dict, attr_name, ids, data);
@@ -780,9 +845,21 @@ private:
         else if (const auto id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(id_col_untyped))
         {
             const PaddedPODArray<UInt64> ids(1, id_col_const->getValue<UInt64>());
-            PaddedPODArray<Type> data(1);
-            DictGetTraits<DataType>::get(dict, attr_name, ids, data);
-            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col_const->size(), toField(data.front()));
+
+            if constexpr (IsDataTypeDecimal<DataType>)
+            {
+                DecimalPaddedPODArray<Type> data(1, decimal_scale);
+                DictGetTraits<DataType>::get(dict, attr_name, ids, data);
+                block.getByPosition(result).column =
+                    DataType(DataType::maxPrecision(), decimal_scale).createColumnConst(
+                        id_col_const->size(), toField(data.front(), decimal_scale));
+            }
+            else
+            {
+                PaddedPODArray<Type> data(1);
+                DictGetTraits<DataType>::get(dict, attr_name, ids, data);
+                block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col_const->size(), toField(data.front()));
+            }
         }
         else
             throw Exception{"Third argument of function " + getName() + " must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
@@ -815,10 +892,14 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-            auto out = ColumnVector<Type>::create(key_columns.front()->size());
+            typename ColVec::MutablePtr out;
+            if constexpr (IsDataTypeDecimal<DataType>)
+                out = ColVec::create(key_columns.front()->size(), decimal_scale);
+            else
+                out = ColVec::create(key_columns.front()->size());
             auto & data = out->getData();
             DictGetTraits<DataType>::get(dict, attr_name, key_columns, key_types, data);
             block.getByPosition(result).column = std::move(out);
@@ -855,7 +936,11 @@ private:
         const auto & id_col_values = getColumnDataAsPaddedPODArray(*id_col_untyped, id_col_values_storage);
         const auto & range_col_values = getColumnDataAsPaddedPODArray(*range_col_untyped, range_col_values_storage);
 
-        auto out = ColumnVector<Type>::create(id_col_untyped->size());
+        typename ColVec::MutablePtr out;
+        if constexpr (IsDataTypeDecimal<DataType>)
+            out = ColVec::create(id_col_untyped->size(), decimal_scale);
+        else
+            out = ColVec::create(id_col_untyped->size());
         auto & data = out->getData();
         DictGetTraits<DataType>::get(dict, attr_name, id_col_values, range_col_values, data);
         block.getByPosition(result).column = std::move(out);
@@ -864,6 +949,7 @@ private:
     }
 
     const ExternalDictionaries & dictionaries;
+    UInt32 decimal_scale;
 };
 
 struct NameDictGetUInt8 { static constexpr auto name = "dictGetUInt8"; };
@@ -879,6 +965,9 @@ struct NameDictGetFloat64 { static constexpr auto name = "dictGetFloat64"; };
 struct NameDictGetDate { static constexpr auto name = "dictGetDate"; };
 struct NameDictGetDateTime { static constexpr auto name = "dictGetDateTime"; };
 struct NameDictGetUUID { static constexpr auto name = "dictGetUUID"; };
+struct NameDictGetDecimal32 { static constexpr auto name = "dictGetDecimal32"; };
+struct NameDictGetDecimal64 { static constexpr auto name = "dictGetDecimal64"; };
+struct NameDictGetDecimal128 { static constexpr auto name = "dictGetDecimal128"; };
 
 using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8>;
 using FunctionDictGetUInt16 = FunctionDictGet<DataTypeUInt16, NameDictGetUInt16>;
@@ -893,22 +982,29 @@ using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64, NameDictGetFloat
 using FunctionDictGetDate = FunctionDictGet<DataTypeDate, NameDictGetDate>;
 using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime, NameDictGetDateTime>;
 using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID, NameDictGetUUID>;
+using FunctionDictGetDecimal32 = FunctionDictGet<DataTypeDecimal<Decimal32>, NameDictGetDecimal32>;
+using FunctionDictGetDecimal64 = FunctionDictGet<DataTypeDecimal<Decimal64>, NameDictGetDecimal64>;
+using FunctionDictGetDecimal128 = FunctionDictGet<DataTypeDecimal<Decimal128>, NameDictGetDecimal128>;
 
 
 template <typename DataType, typename Name>
 class FunctionDictGetOrDefault final : public IFunction
 {
     using Type = typename DataType::FieldType;
+    using ColVec = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context & context, UInt32 dec_scale = 0)
     {
-        return std::make_shared<FunctionDictGetOrDefault>(context.getExternalDictionaries());
+        return std::make_shared<FunctionDictGetOrDefault>(context.getExternalDictionaries(), dec_scale);
     }
 
-    FunctionDictGetOrDefault(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGetOrDefault(const ExternalDictionaries & dictionaries_, UInt32 dec_scale = 0)
+        : dictionaries(dictionaries_)
+        , decimal_scale(dec_scale)
+    {}
 
     String getName() const override { return name; }
 
@@ -935,9 +1031,12 @@ private:
 
         if (!checkAndGetDataType<DataType>(arguments[3].get()))
             throw Exception{"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
-                + ", must be " + String(DataType{}.getFamilyName()) + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                + ", must be " + TypeName<Type>::get() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        return std::make_shared<DataType>();
+        if constexpr (IsDataTypeDecimal<DataType>)
+            return std::make_shared<DataType>(DataType::maxPrecision(), decimal_scale);
+        else
+            return std::make_shared<DataType>();
     }
 
     bool isDeterministic() const override { return false; }
@@ -999,20 +1098,28 @@ private:
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
-        if (const auto default_col = checkAndGetColumn<ColumnVector<Type>>(default_col_untyped))
+        if (const auto default_col = checkAndGetColumn<ColVec>(default_col_untyped))
         {
             /// vector ids, vector defaults
-            auto out = ColumnVector<Type>::create(id_col->size());
+            typename ColVec::MutablePtr out;
+            if constexpr (IsDataTypeDecimal<DataType>)
+                out = ColVec::create(id_col->size(), decimal_scale);
+            else
+                out = ColVec::create(id_col->size());
             const auto & ids = id_col->getData();
             auto & data = out->getData();
             const auto & defs = default_col->getData();
             DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, defs, data);
             block.getByPosition(result).column = std::move(out);
         }
-        else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<Type>>(default_col_untyped))
+        else if (const auto default_col_const = checkAndGetColumnConst<ColVec>(default_col_untyped))
         {
             /// vector ids, const defaults
-            auto out = ColumnVector<Type>::create(id_col->size());
+            typename ColVec::MutablePtr out;
+            if constexpr (IsDataTypeDecimal<DataType>)
+                out = ColVec::create(id_col->size(), decimal_scale);
+            else
+                out = ColVec::create(id_col->size());
             const auto & ids = id_col->getData();
             auto & data = out->getData();
             const auto def = default_col_const->template getValue<Type>();
@@ -1020,7 +1127,7 @@ private:
             block.getByPosition(result).column = std::move(out);
         }
         else
-            throw Exception{"Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Fourth argument of function " + getName() + " must be " + TypeName<Type>::get(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
     template <typename DictionaryType>
@@ -1030,7 +1137,7 @@ private:
     {
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
 
-        if (const auto default_col = checkAndGetColumn<ColumnVector<Type>>(default_col_untyped))
+        if (const auto default_col = checkAndGetColumn<ColVec>(default_col_untyped))
         {
             /// const ids, vector defaults
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
@@ -1038,24 +1145,48 @@ private:
             dictionary->has(ids, flags);
             if (flags.front())
             {
-                PaddedPODArray<Type> data(1);
-                DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, Type(), data);
-                block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
+                if constexpr (IsDataTypeDecimal<DataType>)
+                {
+                    DecimalPaddedPODArray<Type> data(1, decimal_scale);
+                    DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, Type(), data);
+                    block.getByPosition(result).column =
+                        DataType(DataType::maxPrecision(), decimal_scale).createColumnConst(
+                            id_col->size(), toField(data.front(), decimal_scale));
+                }
+                else
+                {
+                    PaddedPODArray<Type> data(1);
+                    DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, Type(), data);
+                    block.getByPosition(result).column = DataType().createColumnConst(id_col->size(), toField(data.front()));
+                }
             }
             else
                 block.getByPosition(result).column = block.getByPosition(arguments[3]).column; // reuse the default column
         }
-        else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<Type>>(default_col_untyped))
+        else if (const auto default_col_const = checkAndGetColumnConst<ColVec>(default_col_untyped))
         {
             /// const ids, const defaults
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
-            PaddedPODArray<Type> data(1);
-            const auto & def = default_col_const->template getValue<Type>();
-            DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
-            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
+
+            if constexpr (IsDataTypeDecimal<DataType>)
+            {
+                DecimalPaddedPODArray<Type> data(1, decimal_scale);
+                const auto & def = default_col_const->template getValue<Type>();
+                DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
+                block.getByPosition(result).column =
+                    DataType(DataType::maxPrecision(), decimal_scale).createColumnConst(
+                        id_col->size(), toField(data.front(), decimal_scale));
+            }
+            else
+            {
+                PaddedPODArray<Type> data(1);
+                const auto & def = default_col_const->template getValue<Type>();
+                DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
+                block.getByPosition(result).column = DataType().createColumnConst(id_col->size(), toField(data.front()));
+            }
         }
         else
-            throw Exception{"Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Fourth argument of function " + getName() + " must be " + TypeName<Type>::get(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
     template <typename DictionaryType>
@@ -1082,31 +1213,36 @@ private:
 
         /// @todo detect when all key columns are constant
         const auto rows = key_col->size();
-        auto out = ColumnVector<Type>::create(rows);
+        typename ColVec::MutablePtr out;
+        if constexpr (IsDataTypeDecimal<DataType>)
+            out = ColVec::create(rows, decimal_scale);
+        else
+            out = ColVec::create(rows);
         auto & data = out->getData();
 
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
-        if (const auto default_col = checkAndGetColumn<ColumnVector<Type>>(default_col_untyped))
+        if (const auto default_col = checkAndGetColumn<ColVec>(default_col_untyped))
         {
             /// const defaults
             const auto & defs = default_col->getData();
 
             DictGetTraits<DataType>::getOrDefault(dict, attr_name, key_columns, key_types, defs, data);
         }
-        else if (const auto default_col_const = checkAndGetColumnConst<ColumnVector<Type>>(default_col_untyped))
+        else if (const auto default_col_const = checkAndGetColumnConst<ColVec>(default_col_untyped))
         {
             const auto def = default_col_const->template getValue<Type>();
 
             DictGetTraits<DataType>::getOrDefault(dict, attr_name, key_columns, key_types, def, data);
         }
         else
-            throw Exception{"Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Fourth argument of function " + getName() + " must be " + TypeName<Type>::get(), ErrorCodes::ILLEGAL_COLUMN};
 
         block.getByPosition(result).column = std::move(out);
         return true;
     }
 
     const ExternalDictionaries & dictionaries;
+    UInt32 decimal_scale;
 };
 
 struct NameDictGetUInt8OrDefault { static constexpr auto name = "dictGetUInt8OrDefault"; };
@@ -1122,6 +1258,9 @@ struct NameDictGetFloat64OrDefault { static constexpr auto name = "dictGetFloat6
 struct NameDictGetDateOrDefault { static constexpr auto name = "dictGetDateOrDefault"; };
 struct NameDictGetDateTimeOrDefault { static constexpr auto name = "dictGetDateTimeOrDefault"; };
 struct NameDictGetUUIDOrDefault { static constexpr auto name = "dictGetUUIDOrDefault"; };
+struct NameDictGetDecimal32OrDefault { static constexpr auto name = "dictGetDecimal32OrDefault"; };
+struct NameDictGetDecimal64OrDefault { static constexpr auto name = "dictGetDecimal64OrDefault"; };
+struct NameDictGetDecimal128OrDefault { static constexpr auto name = "dictGetDecimal128OrDefault"; };
 
 using FunctionDictGetUInt8OrDefault = FunctionDictGetOrDefault<DataTypeUInt8, NameDictGetUInt8OrDefault>;
 using FunctionDictGetUInt16OrDefault = FunctionDictGetOrDefault<DataTypeUInt16, NameDictGetUInt16OrDefault>;
@@ -1136,21 +1275,10 @@ using FunctionDictGetFloat64OrDefault = FunctionDictGetOrDefault<DataTypeFloat64
 using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate, NameDictGetDateOrDefault>;
 using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
 using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID, NameDictGetUUIDOrDefault>;
+using FunctionDictGetDecimal32OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal32>, NameDictGetDecimal32OrDefault>;
+using FunctionDictGetDecimal64OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal64>, NameDictGetDecimal64OrDefault>;
+using FunctionDictGetDecimal128OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal128>, NameDictGetDecimal128OrDefault>;
 
-#define FOR_DICT_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Float32) \
-    M(Float64) \
-    M(Date) \
-    M(DateTime) \
-    M(UUID)
 
 /// This variant of function derives the result type automatically.
 class FunctionDictGetNoType final : public IFunction
@@ -1163,7 +1291,7 @@ public:
         return std::make_shared<FunctionDictGetNoType>(context.getExternalDictionaries(), context);
     }
 
-    FunctionDictGetNoType(const ExternalDictionaries & dictionaries, const Context & context) : dictionaries(dictionaries), context(context) {}
+    FunctionDictGetNoType(const ExternalDictionaries & dictionaries_, const Context & context_) : dictionaries(dictionaries_), context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1225,15 +1353,63 @@ private:
             if (attribute.name == attr_name)
             {
                 WhichDataType dt = attribute.type;
-                if (dt.idx == TypeIndex::String)
-                    impl = FunctionDictGetString::create(context);
-#define DISPATCH(TYPE) \
-                else if (dt.idx == TypeIndex::TYPE) \
-                    impl = FunctionDictGet<DataType##TYPE, NameDictGet##TYPE>::create(context);
-                FOR_DICT_TYPES(DISPATCH)
-#undef DISPATCH
-                else
-                    throw Exception("Unknown dictGet type", ErrorCodes::UNKNOWN_TYPE);
+                switch (dt.idx)
+                {
+                    case TypeIndex::String:
+                    case TypeIndex::FixedString:
+                        impl = FunctionDictGetString::create(context);
+                        break;
+                    case TypeIndex::UInt8:
+                        impl = FunctionDictGetUInt8::create(context);
+                        break;
+                    case TypeIndex::UInt16:
+                        impl = FunctionDictGetUInt16::create(context);
+                        break;
+                    case TypeIndex::UInt32:
+                        impl = FunctionDictGetUInt32::create(context);
+                        break;
+                    case TypeIndex::UInt64:
+                        impl = FunctionDictGetUInt64::create(context);
+                        break;
+                    case TypeIndex::Int8:
+                        impl = FunctionDictGetInt8::create(context);
+                        break;
+                    case TypeIndex::Int16:
+                        impl = FunctionDictGetInt16::create(context);
+                        break;
+                    case TypeIndex::Int32:
+                        impl = FunctionDictGetInt32::create(context);
+                        break;
+                    case TypeIndex::Int64:
+                        impl = FunctionDictGetInt64::create(context);
+                        break;
+                    case TypeIndex::Float32:
+                        impl = FunctionDictGetFloat32::create(context);
+                        break;
+                    case TypeIndex::Float64:
+                        impl = FunctionDictGetFloat64::create(context);
+                        break;
+                    case TypeIndex::Date:
+                        impl = FunctionDictGetDate::create(context);
+                        break;
+                    case TypeIndex::DateTime:
+                        impl = FunctionDictGetDateTime::create(context);
+                        break;
+                    case TypeIndex::UUID:
+                        impl = FunctionDictGetUUID::create(context);
+                        break;
+                    case TypeIndex::Decimal32:
+                        impl = FunctionDictGetDecimal32::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    case TypeIndex::Decimal64:
+                        impl = FunctionDictGetDecimal64::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    case TypeIndex::Decimal128:
+                        impl = FunctionDictGetDecimal128::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    default:
+                        throw Exception("Unknown dictGet type", ErrorCodes::UNKNOWN_TYPE);
+                }
                 return attribute.type;
             }
         }
@@ -1264,7 +1440,7 @@ public:
         return std::make_shared<FunctionDictGetNoTypeOrDefault>(context.getExternalDictionaries(), context);
     }
 
-    FunctionDictGetNoTypeOrDefault(const ExternalDictionaries & dictionaries, const Context & context) : dictionaries(dictionaries), context(context) {}
+    FunctionDictGetNoTypeOrDefault(const ExternalDictionaries & dictionaries_, const Context & context_) : dictionaries(dictionaries_), context(context_) {}
 
     String getName() const override { return name; }
 
@@ -1312,26 +1488,70 @@ private:
             const DictionaryAttribute & attribute = structure.attributes[idx];
             if (attribute.name == attr_name)
             {
+                auto arg_type = arguments[3].type;
                 WhichDataType dt = attribute.type;
-                if (dt.idx == TypeIndex::String)
+
+                if ((arg_type->getTypeId() != dt.idx) || (dt.isStringOrFixedString() && !isString(arg_type)))
+                    throw Exception{"Illegal type " + arg_type->getName() + " of fourth argument of function " + getName() +
+                        ", must be " + getTypeName(dt.idx) + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+                switch (dt.idx)
                 {
-                    if (!isString(arguments[3].type))
-                        throw Exception{"Illegal type " + arguments[3].type->getName() + " of fourth argument of function " + getName() +
-                            ", must be String.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-                    impl = FunctionDictGetStringOrDefault::create(context);
+                    case TypeIndex::String:
+                        impl = FunctionDictGetStringOrDefault::create(context);
+                        break;
+                    case TypeIndex::UInt8:
+                        impl = FunctionDictGetUInt8OrDefault::create(context);
+                        break;
+                    case TypeIndex::UInt16:
+                        impl = FunctionDictGetUInt16OrDefault::create(context);
+                        break;
+                    case TypeIndex::UInt32:
+                        impl = FunctionDictGetUInt32OrDefault::create(context);
+                        break;
+                    case TypeIndex::UInt64:
+                        impl = FunctionDictGetUInt64OrDefault::create(context);
+                        break;
+                    case TypeIndex::Int8:
+                        impl = FunctionDictGetInt8OrDefault::create(context);
+                        break;
+                    case TypeIndex::Int16:
+                        impl = FunctionDictGetInt16OrDefault::create(context);
+                        break;
+                    case TypeIndex::Int32:
+                        impl = FunctionDictGetInt32OrDefault::create(context);
+                        break;
+                    case TypeIndex::Int64:
+                        impl = FunctionDictGetInt64OrDefault::create(context);
+                        break;
+                    case TypeIndex::Float32:
+                        impl = FunctionDictGetFloat32OrDefault::create(context);
+                        break;
+                    case TypeIndex::Float64:
+                        impl = FunctionDictGetFloat64OrDefault::create(context);
+                        break;
+                    case TypeIndex::Date:
+                        impl = FunctionDictGetDateOrDefault::create(context);
+                        break;
+                    case TypeIndex::DateTime:
+                        impl = FunctionDictGetDateTimeOrDefault::create(context);
+                        break;
+                    case TypeIndex::UUID:
+                        impl = FunctionDictGetUUIDOrDefault::create(context);
+                        break;
+                    case TypeIndex::Decimal32:
+                        impl = FunctionDictGetDecimal32OrDefault::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    case TypeIndex::Decimal64:
+                        impl = FunctionDictGetDecimal64OrDefault::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    case TypeIndex::Decimal128:
+                        impl = FunctionDictGetDecimal128OrDefault::create(context, getDecimalScale(*attribute.type));
+                        break;
+                    default:
+                        throw Exception("Unknown dictGetOrDefault type", ErrorCodes::UNKNOWN_TYPE);
                 }
-#define DISPATCH(TYPE) \
-                else if (dt.idx == TypeIndex::TYPE) \
-                { \
-                    if (!checkAndGetDataType<DataType##TYPE>(arguments[3].type.get())) \
-                        throw Exception{"Illegal type " + arguments[3].type->getName() + " of fourth argument of function " + getName() \
-                            + ", must be " + String(DataType##TYPE{}.getFamilyName()) + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT}; \
-                    impl = FunctionDictGetOrDefault<DataType##TYPE, NameDictGet##TYPE ## OrDefault>::create(context); \
-                }
-                FOR_DICT_TYPES(DISPATCH)
-#undef DISPATCH
-                else
-                    throw Exception("Unknown dictGetOrDefault type", ErrorCodes::UNKNOWN_TYPE);
+
                 return attribute.type;
             }
         }
@@ -1363,7 +1583,7 @@ public:
         return std::make_shared<FunctionDictGetHierarchy>(context.getExternalDictionaries());
     }
 
-    FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -1520,7 +1740,7 @@ public:
         return std::make_shared<FunctionDictIsIn>(context.getExternalDictionaries());
     }
 
-    FunctionDictIsIn(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
+    FunctionDictIsIn(const ExternalDictionaries & dictionaries_) : dictionaries(dictionaries_) {}
 
     String getName() const override { return name; }
 
@@ -1675,7 +1895,7 @@ private:
 template <typename T>
 static const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage)
 {
-    if (!column.isColumnConst())
+    if (!isColumnConst(column))
     {
         if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(&column))
         {

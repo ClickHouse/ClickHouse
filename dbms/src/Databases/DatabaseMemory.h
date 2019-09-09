@@ -25,7 +25,6 @@ public:
 
     void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
     void createTable(
@@ -37,19 +36,6 @@ public:
     void removeTable(
         const Context & context,
         const String & table_name) override;
-
-    void renameTable(
-        const Context & context,
-        const String & table_name,
-        IDatabase & to_database,
-        const String & to_table_name) override;
-
-    void alterTable(
-        const Context & context,
-        const String & name,
-        const ColumnsDescription & columns,
-        const IndicesDescription & indices,
-        const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(
         const Context & context,

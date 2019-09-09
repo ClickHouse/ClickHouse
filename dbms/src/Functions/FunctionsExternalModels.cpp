@@ -14,6 +14,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Common/assert_cast.h>
+
 
 namespace DB
 {
@@ -92,7 +94,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
             materialized_columns.push_back(full_column);
             columns.back() = full_column.get();
         }
-        if (auto * col_nullable = typeid_cast<const ColumnNullable *>(columns.back()))
+        if (auto * col_nullable = checkAndGetColumn<ColumnNullable>(*columns.back()))
         {
             if (!null_map)
                 null_map = col_nullable->getNullMapColumnPtr();
@@ -100,7 +102,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
             {
                 auto mut_null_map = (*std::move(null_map)).mutate();
 
-                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mut_null_map).getData();
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mut_null_map).getData();
                 const NullMap & src_null_map = col_nullable->getNullMapColumn().getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)

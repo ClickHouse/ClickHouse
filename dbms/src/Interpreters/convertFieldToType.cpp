@@ -72,30 +72,33 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 }
 
 
-template <typename From, typename To>
-static Field convertIntToDecimalType(const Field & from, const To & type)
+template <typename From, typename T>
+static Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    using FieldType = typename To::FieldType;
-
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
         throw Exception("Number is too much to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    FieldType scaled_value = type.getScaleMultiplier() * value;
-    return DecimalField<FieldType>(scaled_value, type.getScale());
+    T scaled_value = type.getScaleMultiplier() * value;
+    return DecimalField<T>(scaled_value, type.getScale());
 }
 
 
 template <typename T>
 static Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    using FieldType = typename DataTypeDecimal<T>::FieldType;
-
     const String & str_value = from.get<String>();
     T value = type.parseFromString(str_value);
-    return DecimalField<FieldType>(value, type.getScale());
+    return DecimalField<T>(value, type.getScale());
 }
 
+template <typename From, typename T>
+static Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+{
+    auto field = from.get<DecimalField<From>>();
+    T value = convertDecimals<DataTypeDecimal<From>, DataTypeDecimal<T>>(field.getValue(), field.getScale(), type.getScale());
+    return DecimalField<T>(value, type.getScale());
+}
 
 template <typename To>
 static Field convertDecimalType(const Field & from, const To & type)
@@ -106,6 +109,13 @@ static Field convertDecimalType(const Field & from, const To & type)
         return convertIntToDecimalType<Int64>(from, type);
     if (from.getType() == Field::Types::String)
         return convertStringToDecimalType(from, type);
+
+    if (from.getType() == Field::Types::Decimal32)
+        return convertDecimalToDecimalType<Decimal32>(from, type);
+    if (from.getType() == Field::Types::Decimal64)
+        return convertDecimalToDecimalType<Decimal64>(from, type);
+    if (from.getType() == Field::Types::Decimal128)
+        return convertDecimalToDecimalType<Decimal128>(from, type);
 
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
@@ -301,7 +311,12 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
         return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint);
     else if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
-        return convertFieldToTypeImpl(from_value, *nullable_type->getNestedType(), from_type_hint);
+    {
+        const IDataType & nested_type = *nullable_type->getNestedType();
+        if (from_type_hint && from_type_hint->equals(nested_type))
+            return from_value;
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint);
+    }
     else
         return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
 }

@@ -40,7 +40,7 @@ sudo apt-get install git cmake ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-## Install GCC 7
+## Install GCC 9
 
 There are several ways to do this.
 
@@ -50,24 +50,24 @@ There are several ways to do this.
 sudo apt-get install software-properties-common
 sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 sudo apt-get update
-sudo apt-get install gcc-7 g++-7
+sudo apt-get install gcc-9 g++-9
 ```
 
 ### Install from Sources
 
-Look at [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
+Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Use GCC 7 for Builds
+## Use GCC 9 for Builds
 
 ```bash
-export CC=gcc-7
-export CXX=g++-7
+export CC=gcc-9
+export CXX=g++-9
 ```
 
 ## Install Required Libraries from Packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev
+sudo apt-get install libicu-dev libreadline-dev gperf
 ```
 
 ## Checkout ClickHouse Sources

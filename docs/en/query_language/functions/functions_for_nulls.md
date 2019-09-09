@@ -241,7 +241,7 @@ SHOW CREATE TABLE t_null
 └───┴──────┘
 ```
 
-Apply the `resumenotnull` function to the `y` column.
+Apply the `assumeNotNull` function to the `y` column.
 
 ```
 SELECT assumeNotNull(y) FROM t_null
@@ -275,7 +275,7 @@ toNullable(x)
 
 **Returned value**
 
-- The input value with a non-`Nullable` type.
+- The input value with a `Nullable` type.
 
 **Example**
 

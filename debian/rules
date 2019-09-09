@@ -32,11 +32,6 @@ endif
 
 CMAKE_FLAGS += -DENABLE_UTILS=0
 
-#DEB_CLANG ?= $(shell which clang-6.0 || which clang-5.0 || which clang-4.0 || which clang || which clang-3.9 || which clang-3.8)
-
-#DEB_CC ?= gcc-7
-#DEB_CXX ?= g++-7
-
 ifdef DEB_CXX
     DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
     DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
@@ -88,12 +83,8 @@ override_dh_auto_configure:
 override_dh_auto_build:
 	# Fix for ninja. Do not add -O.
 	$(MAKE) $(THREADS_COUNT) -C $(BUILDDIR) $(MAKE_TARGET)
-#	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:
-#	#TODO, use ENABLE_TESTS=1
-#	#./debian/tests_wrapper.sh
-#	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -R GLIBC_required_version
 	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -E with_server
 
 override_dh_clean:
@@ -116,11 +107,6 @@ override_dh_install:
 	# systemd compatibility
 	mkdir -p $(DESTDIR)/etc/systemd/system/
 	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/
-
-	# fake metrika files when private dir is empty
-	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika
-	touch $(DESTDIR)/etc/clickhouse-server/metrika/config.xml
-	touch $(DESTDIR)/etc/clickhouse-server/metrika/users.xml
 
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 

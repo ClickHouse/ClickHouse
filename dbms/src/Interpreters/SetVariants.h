@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
-
+#include <Common/assert_cast.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/ClearableHashSet.h>
@@ -78,11 +78,10 @@ protected:
 
         for (const auto & col : key_columns)
         {
-            if (col->isColumnNullable())
+            if (auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
             {
-                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                actual_columns.push_back(&nullable_col.getNestedColumn());
-                null_maps.push_back(&nullable_col.getNullMapColumn());
+                actual_columns.push_back(&nullable->getNestedColumn());
+                null_maps.push_back(&nullable->getNullMapColumn());
             }
             else
             {
@@ -110,7 +109,7 @@ protected:
         {
             if (null_maps[k] != nullptr)
             {
-                const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
                 if (null_map[row] == 1)
                 {
                     size_t bucket = k / 8;

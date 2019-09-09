@@ -4,7 +4,6 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
-#include <Columns/ColumnString.h>
 #include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
@@ -188,8 +187,8 @@ namespace VolnitskyTraits
 
                             /// put ngram for uppercase
                             utf8.convert(u_u32, seq, sizeof(seq));
-                            chars.c0 = seq[seq_ngram_offset];
-                            chars.c1 = seq[seq_ngram_offset + 1];
+                            chars.c0 = seq[seq_ngram_offset]; //-V519
+                            chars.c1 = seq[seq_ngram_offset + 1]; //-V519
                             putNGramBase(n, offset);
                         }
                     }
@@ -328,15 +327,17 @@ protected:
     FallbackSearcher fallback_searcher;
 
 public:
+    using Searcher = FallbackSearcher;
+
     /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
       * If you specify it small enough, the fallback algorithm will be used,
       *  since it is considered that it's useless to waste time initializing the hash table.
       */
-    VolnitskyBase(const char * const needle, const size_t needle_size, size_t haystack_size_hint = 0)
-        : needle{reinterpret_cast<const UInt8 *>(needle)}
-        , needle_size{needle_size}
+    VolnitskyBase(const char * const needle_, const size_t needle_size_, size_t haystack_size_hint = 0)
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}
+        , needle_size{needle_size_}
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
-        , fallback_searcher{needle, needle_size}
+        , fallback_searcher{needle_, needle_size}
     {
         if (fallback)
             return;
@@ -345,6 +346,7 @@ public:
 
         auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
         /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
+        /// And also adding from the end guarantees that we will find first occurence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
             VolnitskyTraits::putNGram<CaseSensitive, ASCII>(this->needle + i, i + 1, this->needle, callback);
     }
@@ -373,7 +375,7 @@ public:
                 const auto res = pos - (hash[cell_num] - 1);
 
                 /// pointer in the code is always padded array so we can use pagesafe semantics
-                if (fallback_searcher.compare(res))
+                if (fallback_searcher.compare(haystack, haystack_end, res))
                     return res;
             }
         }
@@ -436,94 +438,6 @@ public:
         fallback_searchers.reserve(needles.size());
     }
 
-    template <typename ResultType, typename AnsCallback>
-    void searchAllPositions(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
-        const AnsCallback & ans_callback,
-        ResultType & ans)
-    {
-        const size_t haystack_string_size = haystack_offsets.size();
-        const size_t needles_size = needles.size();
-
-        /// something can be uninitialized after
-        std::fill(ans.begin(), ans.end(), 0);
-
-        while (!reset())
-        {
-            size_t fallback_size = fallback_needles.size();
-            size_t prev_offset = 0;
-            for (size_t j = 0, from = 0; j < haystack_string_size; ++j, from += needles_size)
-            {
-                const auto * haystack = &haystack_data[prev_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                for (size_t i = 0; i < fallback_size; ++i)
-                {
-                    const UInt8 * ptr = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end);
-                    if (ptr != haystack_end)
-                        ans[from + fallback_needles[i]] = ans_callback(haystack, ptr);
-                }
-
-                /// check if we have one non empty volnitsky searcher
-                if (step != std::numeric_limits<size_t>::max())
-                {
-                    const auto * pos = haystack + step - sizeof(VolnitskyTraits::Ngram);
-                    for (; pos <= haystack_end - sizeof(VolnitskyTraits::Ngram); pos += step)
-                    {
-                        for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num].off;
-                             cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
-                        {
-                            if (pos >= haystack + hash[cell_num].off - 1)
-                            {
-                                const auto * res = pos - (hash[cell_num].off - 1);
-                                const size_t ind = hash[cell_num].id;
-                                if (ans[from + ind] == 0 && res + needles[ind].size <= haystack_end)
-                                {
-                                    if (fallback_searchers[ind].compare(res))
-                                    {
-                                        ans[from + ind] = ans_callback(haystack, res);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                prev_offset = haystack_offsets[j];
-            }
-        }
-    }
-
-    template <typename ResultType>
-    void search(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets, ResultType & ans)
-    {
-        auto callback = [this](const UInt8 * haystack, const UInt8 * haystack_end) -> bool
-        {
-            return this->searchOne(haystack, haystack_end);
-        };
-        searchInternal(haystack_data, haystack_offsets, callback, ans);
-    }
-
-    template <typename ResultType>
-    void searchIndex(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets, ResultType & ans)
-    {
-        auto callback = [this](const UInt8 * haystack, const UInt8 * haystack_end) -> size_t
-        {
-            return this->searchOneIndex(haystack, haystack_end);
-        };
-        searchInternal(haystack_data, haystack_offsets, callback, ans);
-    }
-
-    template <typename ResultType, typename CountCharsCallback>
-    void searchFirstPosition(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets, const CountCharsCallback & count_chars_callback, ResultType & ans)
-    {
-        auto callback = [this, &count_chars_callback](const UInt8 * haystack, const UInt8 * haystack_end) -> UInt64
-        {
-            return this->searchOneFirstPosition(haystack, haystack_end, count_chars_callback);
-        };
-        searchInternal(haystack_data, haystack_offsets, callback, ans);
-    }
-
-private:
     /**
      * This function is needed to initialize hash table
      * Returns `true` if there is nothing to initialize
@@ -532,15 +446,15 @@ private:
      * We actually destroy the hash table and initialize it with uninitialized needles
      * and search through the haystack again.
      * The actual usage of this function is like this:
-     * while (!reset())
+     * while (hasMoreToSearch())
      * {
      *     search inside the haystack with the known needles
      * }
      */
-    bool reset()
+    bool hasMoreToSearch()
     {
         if (last == needles.size())
-            return true;
+            return false;
 
         memset(hash, 0, sizeof(hash));
         fallback_needles.clear();
@@ -585,28 +499,7 @@ private:
             }
             fallback_searchers.emplace_back(cur_needle_data, cur_needle_size);
         }
-        return false;
-    }
-
-    template <typename OneSearcher, typename ResultType>
-    inline void searchInternal(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
-        const OneSearcher & search_fallback,
-        ResultType & ans)
-    {
-        const size_t haystack_string_size = haystack_offsets.size();
-        while (!reset())
-        {
-            size_t prev_offset = 0;
-            for (size_t j = 0; j < haystack_string_size; ++j)
-            {
-                const auto * haystack = &haystack_data[prev_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                ans[j] = search_fallback(haystack, haystack_end);
-                prev_offset = haystack_offsets[j];
-            }
-        }
+        return true;
     }
 
     inline bool searchOne(const UInt8 * haystack, const UInt8 * haystack_end) const
@@ -629,7 +522,7 @@ private:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             return true;
                     }
                 }
@@ -638,7 +531,7 @@ private:
         return false;
     }
 
-    inline size_t searchOneIndex(const UInt8 * haystack, const UInt8 * haystack_end) const
+    inline size_t searchOneFirstIndex(const UInt8 * haystack, const UInt8 * haystack_end) const
     {
         const size_t fallback_size = fallback_needles.size();
 
@@ -661,7 +554,7 @@ private:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             ans = std::min(ans, ind);
                     }
                 }
@@ -676,7 +569,7 @@ private:
     }
 
     template <typename CountCharsCallback>
-    inline UInt64 searchOneFirstPosition(const UInt8 * haystack, const UInt8 * haystack_end, const CountCharsCallback & callback) const
+    inline UInt64 searchOneFirstPosition(const UInt8 * haystack, const UInt8 * haystack_end, const CountCharsCallback & count_chars) const
     {
         const size_t fallback_size = fallback_needles.size();
 
@@ -684,7 +577,7 @@ private:
 
         for (size_t i = 0; i < fallback_size; ++i)
             if (auto pos = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end); pos != haystack_end)
-                ans = std::min(ans, callback(haystack, pos));
+                ans = std::min<UInt64>(ans, pos - haystack);
 
         /// check if we have one non empty volnitsky searcher
         if (step != std::numeric_limits<size_t>::max())
@@ -699,15 +592,47 @@ private:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
-                            ans = std::min(ans, callback(haystack, res));
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                            ans = std::min<UInt64>(ans, res - haystack);
                     }
                 }
             }
         }
         if (ans == std::numeric_limits<UInt64>::max())
             return 0;
-        return ans;
+        return count_chars(haystack, haystack + ans);
+    }
+
+    template <typename CountCharsCallback, typename AnsType>
+    inline void searchOneAll(const UInt8 * haystack, const UInt8 * haystack_end, AnsType * ans, const CountCharsCallback & count_chars) const
+    {
+        const size_t fallback_size = fallback_needles.size();
+        for (size_t i = 0; i < fallback_size; ++i)
+        {
+            const UInt8 * ptr = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end);
+            if (ptr != haystack_end)
+                ans[fallback_needles[i]] = count_chars(haystack, ptr);
+        }
+
+        /// check if we have one non empty volnitsky searcher
+        if (step != std::numeric_limits<size_t>::max())
+        {
+            const auto * pos = haystack + step - sizeof(VolnitskyTraits::Ngram);
+            for (; pos <= haystack_end - sizeof(VolnitskyTraits::Ngram); pos += step)
+            {
+                for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num].off;
+                     cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
+                {
+                    if (pos >= haystack + hash[cell_num].off - 1)
+                    {
+                        const auto * res = pos - (hash[cell_num].off - 1);
+                        const size_t ind = hash[cell_num].id;
+                        if (ans[ind] == 0 && res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                            ans[ind] = count_chars(haystack, res);
+                    }
+                }
+            }
+        }
     }
 
     void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset, const size_t num)
@@ -726,6 +651,9 @@ using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using VolnitskyUTF8 = VolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>; /// exactly same as Volnitsky
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
+
+using VolnitskyCaseSensitiveToken = VolnitskyBase<true, true, ASCIICaseSensitiveTokenSearcher>;
+using VolnitskyCaseInsensitiveToken = VolnitskyBase<false, true, ASCIICaseInsensitiveTokenSearcher>;
 
 using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>;

@@ -1,12 +1,69 @@
+# Function Reference
 
-# Function reference
+## count {#agg_function-count}
 
-## count() {#agg_function-count}
+Counts the number of rows or not-NULL values.
 
-Counts the number of rows. Accepts zero arguments and returns UInt64.
-The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate function exists for this purpose.
+ClickHouse supports the following syntaxes for `count`:
+- `count(expr)` or `COUNT(DISTINCT expr)`.
+- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
 
-A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
+**Parameters**
+
+The function can take:
+
+- Zero parameters.
+- One [expression](../syntax.md#syntax-expressions).
+
+
+**Returned value**
+
+- If the function is called without parameters it counts the number of rows.
+- If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../data_types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+
+In both cases the type of the returned value is [UInt64](../../data_types/int_uint.md).
+
+**Details**
+
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq*](#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](#agg_function-uniqexact) function.
+
+The `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses a small column from the table and counts the number of values in it.
+
+
+**Examples**
+
+Example 1:
+
+```sql
+SELECT count() FROM t
+```
+```text
+┌─count()─┐
+│       5 │
+└─────────┘
+```
+
+Example 2:
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation'
+```
+```text
+┌─name──────────────────────────┬─value─────┐
+│ count_distinct_implementation │ uniqExact │
+└───────────────────────────────┴───────────┘
+```
+```sql
+SELECT count(DISTINCT num) FROM t
+```
+```text
+┌─uniqExact(num)─┐
+│              3 │
+└────────────────┘
+```
+
+This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
+
 
 ## any(x) {#agg_function-any}
 
@@ -180,7 +237,7 @@ binary     decimal
 ```
 
 
-##groupBitmap
+## groupBitmap
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
 
@@ -201,7 +258,7 @@ Value of the `UInt64` type.
 Test data:
 
 ```
-userid
+UserID
 1
 1
 2
@@ -211,7 +268,7 @@ userid
 Query:
 
 ```
-SELECT groupBitmap(userid) as num FROM t
+SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Result:
@@ -301,53 +358,299 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
+## skewPop
+
+Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+
+```
+skewPop(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The skewness of the given distribution. Type — [Float64](../../data_types/float.md)
+
+**Example**
+
+```sql
+SELECT skewPop(value) FROM series_with_value_column
+```
+
+## skewSamp
+
+Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+
+It represents an unbiased estimate of the skewness of a random variable if passed values form its sample.
+
+```
+skewSamp(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The skewness of the given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is the size of the sample), then the function returns `nan`.
+
+**Example**
+
+```sql
+SELECT skewSamp(value) FROM series_with_value_column
+```
+
+## kurtPop
+
+Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+
+```
+kurtPop(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The kurtosis of the given distribution. Type — [Float64](../../data_types/float.md)
+
+**Example**
+
+```sql
+SELECT kurtPop(value) FROM series_with_value_column
+```
+
+## kurtSamp
+
+Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+
+It represents an unbiased estimate of the kurtosis of a random variable if passed values form its sample.
+
+```
+kurtSamp(expr)
+```
+
+**Parameters**
+
+`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+
+**Returned value**
+
+The kurtosis of the given distribution. Type — [Float64](../../data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+
+**Example**
+
+```sql
+SELECT kurtSamp(value) FROM series_with_value_column
+```
+
+## timeSeriesGroupSum(uid, timestamp, value) {#agg_function-timeseriesgroupsum}
+`timeSeriesGroupSum` can aggregate different time series that sample timestamp not alignment.
+It will use linear interpolation between two sample timestamp and then sum time-series together.
+
+- `uid` is the time series unique id, `UInt64`.
+- `timestamp` is Int64 type in order to support millisecond or microsecond.
+- `value` is the metric.
+
+The function returns array of tuples with `(timestamp, aggregated_value)` pairs.
+
+Before using this function make sure `timestamp` is in ascending order.
+
+Example:
+```
+┌─uid─┬─timestamp─┬─value─┐
+│ 1   │     2     │   0.2 │
+│ 1   │     7     │   0.7 │
+│ 1   │    12     │   1.2 │
+│ 1   │    17     │   1.7 │
+│ 1   │    25     │   2.5 │
+│ 2   │     3     │   0.6 │
+│ 2   │     8     │   1.6 │
+│ 2   │    12     │   2.4 │
+│ 2   │    18     │   3.6 │
+│ 2   │    24     │   4.8 │
+└─────┴───────────┴───────┘
+```
+```
+CREATE TABLE time_series(
+    uid       UInt64,
+    timestamp Int64,
+    value     Float64
+) ENGINE = Memory;
+INSERT INTO time_series VALUES
+    (1,2,0.2),(1,7,0.7),(1,12,1.2),(1,17,1.7),(1,25,2.5),
+    (2,3,0.6),(2,8,1.6),(2,12,2.4),(2,18,3.6),(2,24,4.8);
+
+SELECT timeSeriesGroupSum(uid, timestamp, value)
+FROM (
+    SELECT * FROM time_series order by timestamp ASC
+);
+```
+And the result will be:
+```
+[(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
+```
+
+## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
+Similarly timeSeriesGroupRateSum, timeSeriesGroupRateSum will Calculate the rate of time-series and then sum rates together.
+Also, timestamp should be in ascend order before use this function.
+
+Use this function, the result above case will be:
+```
+[(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
+```
+
 ## avg(x) {#agg_function-avg}
 
 Calculates the average.
 Only works for numbers.
 The result is always Float64.
 
-## uniq(x) {#agg_function-uniq}
+## uniq {#agg_function-uniq}
 
-Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
+Calculates the approximate number of different values of the argument.
 
-Uses an adaptive sampling algorithm: for the calculation state, it uses a sample of element hash values with a size up to 65536.
-This algorithm is also very accurate for data sets with low cardinality (up to 65536) and very efficient on CPU (when computing not too many of these functions, using `uniq` is almost as fast as using other aggregate functions).
+```
+uniq(x[, ...])
+```
 
-The result is determinate (it doesn't depend on the order of query processing).
+**Parameters**
 
-This function provides excellent accuracy even for data sets with extremely high cardinality (over 10 billion elements). It is recommended for default use.
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 
-## uniqCombined(HLL_precision)(x)
+**Returned value**
 
-Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
+- A [UInt64](../../data_types/int_uint.md)-type number.
 
-A combination of three algorithms is used: array, hash table and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table. For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
+**Implementation details**
 
-The parameter "HLL_precision" is the base-2 logarithm of the number of cells in HyperLogLog. You can omit the parameter (omit first parens). The default value is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each). The memory consumption is several times smaller than for the `uniq` function, and the accuracy is several times higher. Performance is slightly lower than for the `uniq` function, but sometimes it can be even higher than it, such as with distributed queries that transmit a large number of aggregation states over the network.
+Function:
 
-The result is deterministic (it doesn't depend on the order of query processing).
+- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
 
-The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
+    This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-## uniqHLL12(x)
+- Provides the result deterministically (it doesn't depend on the query processing order).
 
-Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the number of different values of the argument.
-212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+We recommend using this function in almost all scenarios.
 
-The result is determinate (it doesn't depend on the order of query processing).
+**See Also**
 
-We don't recommend using this function. In most cases, use the `uniq` or `uniqCombined` function.
+- [uniqCombined](#agg_function-uniqcombined)
+- [uniqHLL12](#agg_function-uniqhll12)
+- [uniqExact](#agg_function-uniqexact)
 
-## uniqExact(x)
+## uniqCombined {#agg_function-uniqcombined}
 
-Calculates the number of different values of the argument, exactly.
-There is no reason to fear approximations. It's better to use the `uniq` function.
-Use the `uniqExact` function if you definitely need an exact result.
+Calculates the approximate number of different argument values.
 
-The `uniqExact` function uses more memory than the `uniq` function, because the size of the state has unbounded growth as the number of different values increases.
+```
+uniqCombined(HLL_precision)(x[, ...])
+```
 
-## groupArray(x), groupArray(max_size)(x)
+The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will be larger than the theoretical value due to the poor hash function choice.
+
+**Parameters**
+
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+
+`HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, which is effectively 96 KiB of space (2^17 cells, 6 bits each).
+
+**Returned value**
+
+- A number [UInt64](../../data_types/int_uint.md)-type number.
+
+**Implementation details**
+
+Function:
+
+- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
+
+    For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
+
+- Provides the result deterministically (it doesn't depend on the query processing order).
+
+Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
+
+- Consumes several times less memory.
+- Calculates with several times higher accuracy.
+- Usually has slightly lower performance. In some scenarios, `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+
+**See Also**
+
+- [uniq](#agg_function-uniq)
+- [uniqHLL12](#agg_function-uniqhll12)
+- [uniqExact](#agg_function-uniqexact)
+
+
+## uniqHLL12 {#agg_function-uniqhll12}
+
+Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
+
+```
+uniqHLL12(x[, ...])
+```
+
+**Parameters**
+
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+
+**Returned value**
+
+- A [UInt64](../../data_types/int_uint.md)-type number.
+
+**Implementation details**
+
+Function:
+
+- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Uses the HyperLogLog algorithm to approximate the number of different argument values.
+
+    212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+
+- Provides the determinate result (it doesn't depend on the query processing order).
+
+We don't recommend using this function. In most cases, use the [uniq](#agg_function-uniq) or [uniqCombined](#agg_function-uniqcombined) function.
+
+**See Also**
+
+- [uniq](#agg_function-uniq)
+- [uniqCombined](#agg_function-uniqcombined)
+- [uniqExact](#agg_function-uniqexact)
+
+
+## uniqExact {#agg_function-uniqexact}
+
+Calculates the exact number of different argument values.
+
+```
+uniqExact(x[, ...])
+```
+
+Use the `uniqExact` function if you absolutely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
+
+The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
+
+**Parameters**
+
+The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+
+**See Also**
+
+- [uniq](#agg_function-uniq)
+- [uniqCombined](#agg_function-uniqcombined)
+- [uniqHLL12](#agg_function-uniqhll12)
+
+
+## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
 
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
@@ -369,14 +672,154 @@ Optional parameters:
 - The default value for substituting in empty positions.
 - The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
+## groupArrayMovingSum {#agg_function-grouparraymovingsum}
+
+Calculates the moving sum of input values.
+
+```
+groupArrayMovingSum(numbers_for_summing)
+groupArrayMovingSum(window_size)(numbers_for_summing)
+```
+
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+
+**Parameters**
+
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+- `window_size` — Size of the calculation window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+**Example**
+
+The sample table:
+
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
+```text
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
+```
+
+The queries:
+
+```sql
+SELECT
+    groupArrayMovingSum(int) AS I,
+    groupArrayMovingSum(float) AS F,
+    groupArrayMovingSum(dec) AS D
+FROM t
+```
+```text
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,7,14] │ [1.1,3.3000002,7.7000003,15.47] │ [1.10,3.30,7.70,15.47] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
+```
+```sql
+SELECT
+    groupArrayMovingSum(2)(int) AS I,
+    groupArrayMovingSum(2)(float) AS F,
+    groupArrayMovingSum(2)(dec) AS D
+FROM t
+```
+```text
+┌─I──────────┬─F───────────────────────────────┬─D──────────────────────┐
+│ [1,3,6,11] │ [1.1,3.3000002,6.6000004,12.17] │ [1.10,3.30,6.60,12.17] │
+└────────────┴─────────────────────────────────┴────────────────────────┘
+```
+
+## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
+
+Calculates the moving average of input values.
+
+```
+groupArrayMovingAvg(numbers_for_summing)
+groupArrayMovingAvg(window_size)(numbers_for_summing)
+```
+
+The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+
+**Parameters**
+
+- `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+- `window_size` — Size of the calculation window.
+
+**Returned values**
+
+- Array of the same size and type as the input data.
+
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
+
+**Example**
+
+The sample table `b`:
+
+```sql
+CREATE TABLE t
+(
+    `int` UInt8,
+    `float` Float32,
+    `dec` Decimal32(2)
+)
+ENGINE = TinyLog
+```
+```text
+┌─int─┬─float─┬──dec─┐
+│   1 │   1.1 │ 1.10 │
+│   2 │   2.2 │ 2.20 │
+│   4 │   4.4 │ 4.40 │
+│   7 │  7.77 │ 7.77 │
+└─────┴───────┴──────┘
+```
+
+The queries:
+
+```sql
+SELECT
+    groupArrayMovingAvg(int) AS I,
+    groupArrayMovingAvg(float) AS F,
+    groupArrayMovingAvg(dec) AS D
+FROM t
+```
+```text
+┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
+│ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
+└───────────┴─────────────────────────────────────┴───────────────────────┘
+```
+```sql
+SELECT
+    groupArrayMovingAvg(2)(int) AS I,
+    groupArrayMovingAvg(2)(float) AS F,
+    groupArrayMovingAvg(2)(dec) AS D
+FROM t
+```
+```text
+┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
+│ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
+└───────────┴──────────────────────────────────┴───────────────────────┘
+```
+
 ## groupUniqArray(x), groupUniqArray(max_size)(x)
 
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
 
 The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
-For example, `groupUniqArray (1) (x)` is equivalent to `[any (x)]`.
+For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
 
-## quantile(level)(x)
+## quantile(level)(x) {#agg_function-quantile}
 
 Approximates the `level` quantile. `level` is a constant, a floating-point number from 0 to 1.
 We recommend using a `level` value in the range of `[0.01, 0.99]`
@@ -403,27 +846,55 @@ To achieve this, the function takes a second argument – the "determinator". Th
 
 Don't use this function for calculating timings. There is a more suitable function for this purpose: `quantileTiming`.
 
-## quantileTiming(level)(x)
+## quantileTiming {#agg_function-quantiletiming}
 
-Computes the quantile of 'level' with a fixed precision.
-Works for numbers. Intended for calculating quantiles of page loading time in milliseconds.
+Computes the quantile of the specified level with determined precision. The function intended for calculating quantiles of page loading time in milliseconds. 
 
-If the value is greater than 30,000 (a page loading time of more than 30 seconds), the result is equated to 30,000.
+```
+quantileTiming(level)(expr)
+```
 
-If the total value is not more than about 5670, then the calculation is accurate.
+**Parameters**
 
-Otherwise:
+- `level` — Quantile level. Range: [0, 1].
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning number in the [Float*](../../data_types/float.md) type. The function expects input values in unix timestamp format in milliseconds, but it doesn't validate format.
+    
+    - If negative values are passed to the function, the behavior is undefined.
+    - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
-- if the time is less than 1024 ms, then the calculation is accurate.
-- otherwise the calculation is rounded to a multiple of 16 ms.
+**Accuracy**
 
-When passing negative values to the function, the behavior is undefined.
+The calculation is accurate if:
 
-The returned value has the Float32 type. If no values were passed to the function (when using `quantileTimingIf`), 'nan' is returned. The purpose of this is to differentiate these instances from zeros. See the note on sorting NaNs in "ORDER BY clause".
+- Total number of values is not more than about 5670.
+- Total number of values is more than about 5670, but the times of page loading is less than 1024ms.
 
-The result is determinate (it doesn't depend on the order of query processing).
+Otherwise, the result of a calculation is rounded to the value, multiple of 16 ms.
 
-For its purpose (calculating quantiles of page loading times), using this function is more effective and the result is more accurate than for the `quantile` function.
+!! note "Note"
+    For calculating quantiles of page loading times, this function is more effective and accurate compared to [quantile](#agg_function-quantile).
+
+**Returned value**
+
+- Quantile of the specified level.
+
+Type: `Float32`.
+
+!!! note "Note"
+    If no values were passed to the function (when using `quantileTimingIf`), [NaN](../../data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from the cases which result in zero. See [ORDER BY clause](../select.md#select-order-by) for the note on sorting `NaN` values.
+
+The result is deterministic (it doesn't depend on the order of query processing).
+
+**Example**
+
+```sql
+SELECT quantileTiming(0.5)(number / 2) FROM numbers(10)
+```
+```text
+┌─quantileTiming(0.5)(divide(number, 2))─┐
+│                                      2 │
+└────────────────────────────────────────┘
+```
 
 ## quantileTimingWeighted(level)(x, weight)
 
@@ -460,7 +931,7 @@ All the quantile functions also have corresponding quantiles functions: `quantil
 
 Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
 
-It represents an unbiased estimate of the variance of a random variable, if the values passed to the function are a sample of this random amount.
+It represents an unbiased estimate of the variance of a random variable if passed values form its sample.
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
@@ -525,6 +996,171 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 ## corr(x, y)
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+## simpleLinearRegression
+
+Performs simple (unidimensional) linear regression.
+
+```
+simpleLinearRegression(x, y)
+```
+
+Parameters:
+
+- `x` — Column with dependent variable values.
+- `y` — Column with explanatory variable values.
+
+Returned values:
+
+Constants `(a, b)` of the resulting line `y = a*x + b`.
+
+**Examples**
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
+```
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
+```
+```text
+┌─arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
+
+
+This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+
+### Parameters {#agg_functions-stochasticlinearregression-parameters}
+
+There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
+
+```text
+stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
+```
+
+1. `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.00001`.
+2. `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.1`.
+3. `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
+4. `method for updating weights`, they are: `Adam` (by default), `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
+
+
+### Usage {#agg_functions-stochasticlinearregression-usage}
+
+`stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
+To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
+
+<a name="stochasticlinearregression-usage-fitting"></a>
+1. Fitting
+
+    Such query may be used.
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS train_data
+    (
+        param1 Float64,
+        param2 Float64,
+        target Float64
+    ) ENGINE = Memory;
+
+    CREATE TABLE your_model ENGINE = Memory AS SELECT
+    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+    AS state FROM train_data;
+
+    ```
+
+    Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
+    Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+
+2. Predicting
+
+    After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+
+    ```sql
+    WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) FROM test_data
+    ```
+
+    The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+    `test_data` is a table like `train_data` but may not contain target value.
+
+### Notes {#agg_functions-stochasticlinearregression-notes}
+
+1. To merge two models user may create such query:
+    ```sql
+    SELECT state1 + state2 FROM your_models
+    ```
+    where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
+
+2. User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
+    ```sql
+    SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
+    ```
+    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
+
+**See Also**
+
+- [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
+- [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+
+
+## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
+
+
+This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
+
+### Parameters {#agg_functions-stochasticlogisticregression-parameters}
+
+Parameters are exactly the same as in stochasticLinearRegression:
+`learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
+For more information see [parameters](#agg_functions-stochasticlinearregression-parameters).
+
+```text
+stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
+```
+
+1. Fitting
+
+    See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
+
+    Predicted labels have to be in [-1, 1].
+
+2. Predicting
+
+    Using saved state we can predict probability of object having label `1`.
+
+    ```sql
+    WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) FROM test_data
+    ```
+
+    The query will return a column of probabilities. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+    We can also set a bound of probability, which assigns elements to different labels.
+
+    ```sql
+    SELECT ans < 1.1 AND ans > 0.5 FROM
+    (WITH (SELECT state FROM your_model) AS model SELECT
+    evalMLMethod(model, param1, param2) AS ans FROM test_data)
+    ```
+
+    Then the result will be labels.
+
+    `test_data` is a table like `train_data` but may not contain target value.
+
+**See Also**
+
+- [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
+- [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

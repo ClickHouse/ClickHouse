@@ -40,3 +40,5 @@ SELECT cityHash64(groupArray(d)) FROM enum_pk WHERE d IN ('0', '1');
 
 SELECT cityHash64(groupArray(x)) FROM enum_pk WHERE (x != '0' AND x != '1');
 SELECT cityHash64(groupArray(d)) FROM enum_pk WHERE (d != '0' AND d != '1');
+
+DROP TABLE enum_pk;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Arena.h>
 #include <Common/RadixSort.h>
 #include <Columns/IColumn.h>
 
@@ -27,10 +28,99 @@ struct RowRef
 /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
 struct RowRefList : RowRef
 {
-    RowRefList * next = nullptr;
+    /// Portion of RowRefs, 16 * (MAX_SIZE + 1) bytes sized.
+    struct Batch
+    {
+        static constexpr size_t MAX_SIZE = 7; /// Adequate values are 3, 7, 15, 31.
+
+        size_t size = 0;
+        Batch * next;
+        RowRef row_refs[MAX_SIZE];
+
+        Batch(Batch * parent)
+            : next(parent)
+        {}
+
+        bool full() const { return size == MAX_SIZE; }
+
+        Batch * insert(RowRef && row_ref, Arena & pool)
+        {
+            if (full())
+            {
+                auto batch = pool.alloc<Batch>();
+                *batch = Batch(this);
+                batch->insert(std::move(row_ref), pool);
+                return batch;
+            }
+
+            row_refs[size++] = std::move(row_ref);
+            return this;
+        }
+    };
+
+    class ForwardIterator
+    {
+    public:
+        ForwardIterator(const RowRefList * begin)
+            : root(begin)
+            , first(true)
+            , batch(root->next)
+            , position(0)
+        {}
+
+        const RowRef * operator -> () const
+        {
+            if (first)
+                return root;
+            return &batch->row_refs[position];
+        }
+
+        void operator ++ ()
+        {
+            if (first)
+            {
+                first = false;
+                return;
+            }
+
+            if (batch)
+            {
+                ++position;
+                if (position >= batch->size)
+                {
+                    batch = batch->next;
+                    position = 0;
+                }
+            }
+        }
+
+        bool ok() const { return first || (batch && position < batch->size); }
+
+    private:
+        const RowRefList * root;
+        bool first;
+        Batch * batch;
+        size_t position;
+    };
 
     RowRefList() {}
     RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
+
+    ForwardIterator begin() const { return ForwardIterator(this); }
+
+    /// insert element after current one
+    void insert(RowRef && row_ref, Arena & pool)
+    {
+        if (!next)
+        {
+            next = pool.alloc<Batch>();
+            *next = Batch(nullptr);
+        }
+        next = next->insert(std::move(row_ref), pool);
+    }
+
+private:
+    Batch * next = nullptr;
 };
 
 /**

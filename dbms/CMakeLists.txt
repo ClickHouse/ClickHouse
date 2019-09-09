@@ -2,6 +2,10 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
 
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+endif ()
+
 if(COMPILER_PIPE)
     set(MAX_COMPILER_MEMORY 2500)
 else()
@@ -23,6 +27,7 @@ include (cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 configure_file (src/Common/config.h.in ${CONFIG_COMMON})
 configure_file (src/Common/config_version.h.in ${CONFIG_VERSION})
+configure_file (src/Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include/config_core.h)
 
 if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
@@ -43,29 +48,32 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow -Wshadow-uncaptured-local -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wcovered-switch-default -Wold-style-cast -Wrange-loop-analysis -Wunused-member-function -Wunreachable-code -Wunreachable-code-return -Wnewline-eof -Wembedded-directive -Wgnu-case-range -Wunused-macros -Wconditional-uninitialized -Wdeprecated -Wundef -Wreserved-id-macro -Wredundant-parens -Wzero-as-null-pointer-constant")
 
     if (WEVERYTHING)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-missing-noreturn -Wno-padded -Wno-switch-enum -Wno-shadow-field-in-constructor -Wno-deprecated-dynamic-exception-spec -Wno-float-equal -Wno-weak-vtables -Wno-shift-sign-overflow -Wno-sign-conversion -Wno-conversion -Wno-exit-time-destructors -Wno-undefined-func-template -Wno-documentation-unknown-command -Wno-missing-variable-declarations -Wno-unused-template -Wno-global-constructors -Wno-c99-extensions -Wno-missing-prototypes -Wno-weak-template-vtables -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-double-promotion -Wno-disabled-macro-expansion -Wno-used-but-marked-unused -Wno-vla-extension -Wno-vla -Wno-packed")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-padded -Wno-switch-enum -Wno-deprecated-dynamic-exception-spec -Wno-float-equal -Wno-weak-vtables -Wno-shift-sign-overflow -Wno-sign-conversion -Wno-conversion -Wno-exit-time-destructors -Wno-undefined-func-template -Wno-documentation-unknown-command -Wno-missing-variable-declarations -Wno-unused-template -Wno-global-constructors -Wno-c99-extensions -Wno-missing-prototypes -Wno-weak-template-vtables -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-double-promotion -Wno-disabled-macro-expansion -Wno-vla-extension -Wno-vla -Wno-packed")
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-
         if (WEVERYTHING)
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-std-move-in-c++11")
         endif ()
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int -Wempty-init-stmt")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow-field -Wstring-plus-int")
+        if(NOT APPLE)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wempty-init-stmt")
+        endif()
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-        if (WEVERYTHING)
+        if (WEVERYTHING AND NOT APPLE)
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
         endif ()
     endif ()
-endif ()
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow")
+endif()
 
 if (USE_DEBUG_HELPERS)
     set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/iostream_debug_helpers.h")
@@ -89,13 +97,12 @@ add_subdirectory (src)
 set(dbms_headers)
 set(dbms_sources)
 
-include(../cmake/dbms_glob_sources.cmake)
-
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
 add_headers_and_sources(dbms src/Core)
+add_headers_and_sources(dbms src/Compression/)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
@@ -105,8 +112,21 @@ add_headers_and_sources(dbms src/Columns)
 add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)
+add_headers_and_sources(dbms src/Storages/LiveView)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
+add_headers_and_sources(dbms src/Processors)
+add_headers_and_sources(dbms src/Processors/Executors)
+add_headers_and_sources(dbms src/Processors/Formats)
+add_headers_and_sources(dbms src/Processors/Formats/Impl)
+add_headers_and_sources(dbms src/Processors/Transforms)
+add_headers_and_sources(dbms src/Processors/Sources)
+add_headers_only(dbms src/Server)
+
+if(USE_RDKAFKA)
+    add_headers_and_sources(dbms src/Storages/Kafka)
+endif()
+
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -138,6 +158,10 @@ add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_co
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
+endif ()
+
+if (USE_UNWIND)
+    target_link_libraries (clickhouse_common_io PRIVATE ${UNWIND_LIBRARIES})
 endif ()
 
 add_subdirectory(src/Common/ZooKeeper)
@@ -176,6 +200,13 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
+# Otherwise it will slow down stack traces printing too much.
+set_source_files_properties(
+        src/Common/Elf.cpp
+        src/Common/Dwarf.cpp
+        src/Common/SymbolIndex.cpp
+        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
+
 target_link_libraries (clickhouse_common_io
         PUBLIC
     common
@@ -189,30 +220,41 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
-    ${RE2_LIBRARY}
-    ${RE2_ST_LIBRARY}
+)
+
+if(RE2_LIBRARY)
+    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
+endif()
+if(RE2_ST_LIBRARY)
+    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_ST_LIBRARY})
+endif()
+
+target_link_libraries(clickhouse_common_io
+        PUBLIC
     ${CITYHASH_LIBRARIES}
         PRIVATE
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+    ${Boost_PROGRAM_OPTIONS_LIBRARY}
         PRIVATE
     apple_rt
-        PUBLIC
-    Threads::Threads
-        PRIVATE
-    ${CMAKE_DL_LIBS}
         PUBLIC
     roaring
 )
 
+if (USE_RDKAFKA)
+    target_link_libraries(dbms PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
+    if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
+        target_include_directories(dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
+    endif()
+endif()
 
-target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 
-if (USE_LFALLOC)
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LFALLOC_INCLUDE_DIR})
-endif ()
+if(RE2_INCLUDE_DIR)
+    target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+endif()
 
 if(CPUID_LIBRARY)
     target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
@@ -223,26 +265,41 @@ if(CPUINFO_LIBRARY)
 endif()
 
 target_link_libraries (dbms
-        PUBLIC
-    clickhouse_compression
         PRIVATE
     clickhouse_parsers
     clickhouse_common_config
+    clickhouse_common_zookeeper
+    string_utils # FIXME: not sure if it's private
         PUBLIC
     clickhouse_common_io
         PRIVATE
     clickhouse_dictionaries_embedded
+    ${LZ4_LIBRARY}
         PUBLIC
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
+    ${Boost_FILESYSTEM_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
-    Threads::Threads
 )
 
+target_include_directories(dbms PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include)
+target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/src/Core/include) # uses some includes from core
 target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
+target_include_directories(dbms SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+
+if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    target_include_directories(dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif ()
+
+if (ZSTD_LIBRARY)
+    target_link_libraries(dbms PRIVATE ${ZSTD_LIBRARY})
+endif()
+if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
+    target_include_directories(dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -292,14 +349,7 @@ if (USE_ICU)
 endif ()
 
 if (USE_CAPNP)
-    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARY})
-    if (NOT USE_INTERNAL_CAPNP_LIBRARY)
-        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
-    endif ()
-endif ()
-
-if (USE_RDKAFKA)
-    target_link_libraries (dbms PRIVATE clickhouse_storage_kafka)
+    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARIES})
 endif ()
 
 if (USE_PARQUET)
@@ -312,7 +362,6 @@ endif ()
 if(OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
-target_link_libraries(dbms PRIVATE Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
@@ -323,8 +372,8 @@ if (USE_PROTOBUF)
 endif ()
 
 if (USE_HDFS)
-    target_link_libraries (clickhouse_common_io PRIVATE ${HDFS3_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
+    target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
 if (USE_BROTLI)
@@ -334,9 +383,10 @@ endif()
 
 if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # new_delete.cpp
 endif ()
 
-target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
+target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
@@ -356,6 +406,10 @@ if (ENABLE_TESTS AND USE_GTEST)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} dbms clickhouse_common_zookeeper)
+
+    # gtest framework has substandard code
+    target_compile_options(unit_tests_dbms PRIVATE -Wno-zero-as-null-pointer-constant -Wno-undef -Wno-sign-compare -Wno-used-but-marked-unused -Wno-missing-noreturn)
+
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
     add_check(unit_tests_dbms)
 endif ()

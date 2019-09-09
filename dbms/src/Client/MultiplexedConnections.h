@@ -1,9 +1,10 @@
 #pragma once
 
+#include <mutex>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <mutex>
+#include <IO/ConnectionTimeouts.h>
 
 namespace DB
 {
@@ -31,6 +32,7 @@ public:
 
     /// Send request to replicas.
     void sendQuery(
+        const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id = "",
         UInt64 stage = QueryProcessingStage::Complete,

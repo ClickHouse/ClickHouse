@@ -20,9 +20,11 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
     {
         for (auto it = partitions[i].begin(); it != partitions[i].end(); ++it)
         {
-            if (it->min_ttl && (partition_to_merge_index == -1 || it->min_ttl < partition_to_merge_min_ttl))
+            time_t ttl = only_drop_parts ? it->max_ttl : it->min_ttl;
+
+            if (ttl && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
-                partition_to_merge_min_ttl = it->min_ttl;
+                partition_to_merge_min_ttl = ttl;
                 partition_to_merge_index = i;
                 best_begin = it;
             }
@@ -38,7 +40,9 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
 
     while (true)
     {
-        if (!best_begin->min_ttl || best_begin->min_ttl > current_time
+        time_t ttl = only_drop_parts ? best_begin->max_ttl : best_begin->min_ttl;
+
+        if (!ttl || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
         {
             ++best_begin;
@@ -54,7 +58,9 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
 
     while (best_end != best_partition.end())
     {
-        if (!best_end->min_ttl || best_end->min_ttl > current_time
+        time_t ttl = only_drop_parts ? best_end->max_ttl : best_end->min_ttl;
+
+        if (!ttl || ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
             break;
 

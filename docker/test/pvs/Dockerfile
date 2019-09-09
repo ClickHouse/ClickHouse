@@ -1,3 +1,5 @@
+# docker build -t yandex/clickhouse-pvs-test .
+
 FROM yandex/clickhouse-binary-builder
 
 RUN apt-get --allow-unauthenticated update -y \
@@ -7,15 +9,21 @@ RUN apt-get --allow-unauthenticated update -y \
             sudo \
             wget \
             software-properties-common \
-            gpg-agent
+            gpg-agent \
+            strace
 
-RUN wget -q -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
-RUN sudo wget -O /etc/apt/sources.list.d/viva64.list http://files.viva64.com/etc/viva64.list
+#RUN wget -q -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
+#RUN sudo wget -O /etc/apt/sources.list.d/viva64.list http://files.viva64.com/etc/viva64.list
+#
+#RUN apt-get --allow-unauthenticated update -y \
+#    && env DEBIAN_FRONTEND=noninteractive \
+#        apt-get --allow-unauthenticated install --yes --no-install-recommends \
+#            pvs-studio
 
-RUN apt-get --allow-unauthenticated update -y \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get --allow-unauthenticated install --yes --no-install-recommends \
-            pvs-studio
+ENV PKG_VERSION="pvs-studio-7.04.34029.84-amd64.deb"
+
+RUN wget -q http://files.viva64.com/beta/$PKG_VERSION
+RUN sudo dpkg -i $PKG_VERSION
 
 CMD cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
     && cmake . && ninja re2_st && \

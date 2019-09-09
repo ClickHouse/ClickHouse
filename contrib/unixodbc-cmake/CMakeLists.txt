@@ -1,5 +1,5 @@
-set(ODBC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/unixodbc)
-set(ODBC_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/unixodbc)
+set(ODBC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/unixodbc)
+set(ODBC_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/unixodbc)
 
 
 set(SRCS
@@ -32,6 +32,7 @@ target_include_directories(ltdl PUBLIC ${ODBC_SOURCE_DIR}/libltdl/libltdl)
 target_compile_definitions(ltdl PRIVATE -DHAVE_CONFIG_H -DLTDL -DLTDLOPEN=libltdlc)
 
 target_compile_options(ltdl PRIVATE -Wno-constant-logical-operand -Wno-unknown-warning-option -O2)
+target_link_libraries(ltdl PRIVATE ${CMAKE_DL_LIBS})
 
 
 set(SRCS

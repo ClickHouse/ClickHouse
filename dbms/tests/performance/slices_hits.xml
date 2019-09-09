@@ -1,5 +1,4 @@
 <test>
-    <name>slices_hits</name>
     <type>loop</type>
 
     <stop_conditions>

@@ -16,13 +16,12 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/FileChannel.h>
-#include <Poco/SyslogChannel.h>
 #include <Poco/Version.h>
 #include <common/Types.h>
 #include <common/logger_useful.h>
 #include <daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <loggers/Loggers.h>
 
 namespace Poco { class TaskManager; }
 
@@ -40,7 +39,7 @@ namespace Poco { class TaskManager; }
 ///
 /// You can configure different log options for different loggers used inside program
 ///  by providing subsections to "logger" in configuration file.
-class BaseDaemon : public Poco::Util::ServerApplication
+class BaseDaemon : public Poco::Util::ServerApplication, public Loggers
 {
     friend class SignalListener;
 
@@ -55,9 +54,6 @@ public:
 
     /// Читает конфигурацию
     void reloadConfiguration();
-
-    /// Строит необходимые логгеры
-    void buildLoggers(Poco::Util::AbstractConfiguration & config);
 
     /// Определяет параметр командной строки
     void defineOptions(Poco::Util::OptionSet & _options) override;
@@ -92,9 +88,6 @@ public:
     /// Разбудить
     void wakeup();
 
-    /// Закрыть файлы с логами. При следующей записи, будут созданы новые файлы.
-    void closeLogs();
-
     /// В Graphite компоненты пути(папки) разделяются точкой.
     /// У нас принят путь формата root_path.hostname_yandex_ru.key
     /// root_path по умолчанию one_min
@@ -128,11 +121,6 @@ public:
         if (graphite_writers.count(config_name))
             return graphite_writers[config_name].get();
         return nullptr;
-    }
-
-    std::optional<size_t> getLayer() const
-    {
-        return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
     }
 
     /// close all process FDs except
@@ -209,14 +197,7 @@ protected:
     Poco::Thread signal_listener_thread;
     std::unique_ptr<Poco::Runnable> signal_listener;
 
-    /// Файлы с логами.
-    Poco::AutoPtr<Poco::FileChannel> log_file;
-    Poco::AutoPtr<Poco::FileChannel> error_log_file;
-    Poco::AutoPtr<Poco::Channel> syslog_channel;
-
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
-
-    std::optional<size_t> layer;
 
     std::mutex signal_handler_mutex;
     std::condition_variable signal_event;
@@ -228,9 +209,6 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
 private:
-
-    /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
-    std::string config_logger;
 
     /// Check SSE and others instructions availability
     /// Calls exit on fail

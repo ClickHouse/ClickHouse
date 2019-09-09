@@ -2,7 +2,6 @@
 
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Transaction.h>
-#include <mysqlxx/Manip.h>
 #include <mysqlxx/Pool.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>

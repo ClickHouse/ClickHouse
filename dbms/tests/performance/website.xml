@@ -1,5 +1,4 @@
 <test>
-    <name>website</name>
     <type>loop</type>
 
     <preconditions>

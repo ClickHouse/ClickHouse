@@ -1,5 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <Core/Defines.h>
+
 
 namespace DB
 {
@@ -10,7 +12,7 @@ struct BitTestImpl
     using ResultType = UInt8;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    NO_SANITIZE_UNDEFINED static inline Result apply(A a, B b)
     {
         return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
     }

@@ -1,39 +1,16 @@
 #pragma once
 
-#include <common/logger_useful.h>
-#include <Poco/Event.h>
-#include <mutex>
-#include <thread>
-#include <unordered_map>
-#include <unordered_set>
 #include <chrono>
-#include <tuple>
+#include <functional>
+#include <unordered_map>
+#include <Core/Types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
-#include <Core/Types.h>
-#include <pcg_random.hpp>
-#include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
 {
-
-struct ExternalLoaderUpdateSettings
-{
-    UInt64 check_period_sec = 5;
-    UInt64 backoff_initial_sec = 5;
-    /// 10 minutes
-    UInt64 backoff_max_sec = 10 * 60;
-
-    ExternalLoaderUpdateSettings() = default;
-    ExternalLoaderUpdateSettings(UInt64 check_period_sec, UInt64 backoff_initial_sec, UInt64 backoff_max_sec)
-            : check_period_sec(check_period_sec),
-              backoff_initial_sec(backoff_initial_sec),
-              backoff_max_sec(backoff_max_sec) {}
-};
-
-
 /* External configuration structure.
  *
  * <external_group>
@@ -51,154 +28,168 @@ struct ExternalLoaderConfigSettings
     std::string path_setting_name;
 };
 
+
 /** Manages user-defined objects.
-*    Monitors configuration file and automatically reloads objects in a separate thread.
-*    The monitoring thread wakes up every 'check_period_sec' seconds and checks
-*    modification time of objects' configuration file. If said time is greater than
-*    'config_last_modified', the objects are created from scratch using configuration file,
-*    possibly overriding currently existing objects with the same name (previous versions of
-*    overridden objects will live as long as there are any users retaining them).
-*
-*    Apart from checking configuration file for modifications, each object
-*    has a lifetime of its own and may be updated if it supportUpdates.
-*    The time of next update is calculated by choosing uniformly a random number
-*    distributed between lifetime.min_sec and lifetime.max_sec.
-*    If either of lifetime.min_sec and lifetime.max_sec is zero, such object is never updated.
-*/
+  * Monitors configuration file and automatically reloads objects in separate threads.
+  * The monitoring thread wakes up every 'check_period_sec' seconds and checks
+  * modification time of objects' configuration file. If said time is greater than
+  * 'config_last_modified', the objects are created from scratch using configuration file,
+  * possibly overriding currently existing objects with the same name (previous versions of
+  * overridden objects will live as long as there are any users retaining them).
+  *
+  * Apart from checking configuration file for modifications, each object
+  * has a lifetime of its own and may be updated if it supportUpdates.
+  * The time of next update is calculated by choosing uniformly a random number
+  * distributed between lifetime.min_sec and lifetime.max_sec.
+  * If either of lifetime.min_sec and lifetime.max_sec is zero, such object is never updated.
+  */
 class ExternalLoader
 {
 public:
-    using LoadablePtr = std::shared_ptr<IExternalLoadable>;
+    using LoadablePtr = std::shared_ptr<const IExternalLoadable>;
+    using Loadables = std::vector<LoadablePtr>;
 
-private:
-    struct LoadableInfo final
+    enum class Status
     {
-        LoadablePtr loadable;
-        std::string origin;
+        NOT_LOADED, /// Object hasn't been tried to load. This is an initial state.
+        LOADED, /// Object has been loaded successfully.
+        FAILED, /// Object has been failed to load.
+        LOADING, /// Object is being loaded right now for the first time.
+        FAILED_AND_RELOADING, /// Object was failed to load before and it's being reloaded right now.
+        LOADED_AND_RELOADING, /// Object was loaded successfully before and it's being reloaded right now.
+        NOT_EXIST, /// Object with this name wasn't found in the configuration.
+    };
+
+    static std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues();
+
+    using Duration = std::chrono::milliseconds;
+    using TimePoint = std::chrono::system_clock::time_point;
+
+    struct LoadResult
+    {
+        LoadResult(Status status_) : status(status_) {}
+        Status status;
+        LoadablePtr object;
+        String origin;
+        TimePoint loading_start_time;
+        Duration loading_duration;
         std::exception_ptr exception;
     };
 
-    struct FailedLoadableInfo final
-    {
-        std::unique_ptr<IExternalLoadable> loadable;
-        std::chrono::system_clock::time_point next_attempt_time;
-        UInt64 error_count;
-    };
+    using LoadResults = std::vector<std::pair<String, LoadResult>>;
 
-public:
-    using Configuration = Poco::Util::AbstractConfiguration;
-    using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
-
-    /// Call init() after constructing the instance of any derived class.
-    ExternalLoader(const Configuration & config_main,
-                   const ExternalLoaderUpdateSettings & update_settings,
-                   const ExternalLoaderConfigSettings & config_settings,
-                   std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
-                   Logger * log, const std::string & loadable_object_name);
+    ExternalLoader(const Poco::Util::AbstractConfiguration & main_config, const String & type_name_, Logger * log);
     virtual ~ExternalLoader();
 
-    /// Should be called after creating an instance of a derived class.
-    /// Loads the objects immediately and starts a separate thread to update them once in each 'reload_period' seconds.
-    /// This function does nothing if called again.
-    void init(bool throw_on_error);
+    /// Adds a repository which will be used to read configurations from.
+    void addConfigRepository(
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings);
 
-    /// Forcibly reloads all loadable objects.
-    void reload();
+    /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
+    void enableAlwaysLoadEverything(bool enable);
 
-    /// Forcibly reloads specified loadable object.
-    void reload(const std::string & name);
+    /// Sets whether the objects should be loaded asynchronously, each loading in a new thread (from the thread pool).
+    void enableAsyncLoading(bool enable);
 
-    LoadablePtr getLoadable(const std::string & name) const;
-    LoadablePtr tryGetLoadable(const std::string & name) const;
+    /// Sets settings for periodic updates.
+    void enablePeriodicUpdates(bool enable);
+
+    /// Returns the status of the object.
+    /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
+    /// If the specified name isn't found in the configuration then the function returns Status::NOT_EXIST.
+    Status getCurrentStatus(const String & name) const;
+
+    /// Returns the result of loading the object.
+    /// The function doesn't load anything, it just returns the current load result as is.
+    LoadResult getCurrentLoadResult(const String & name) const;
+
+    using FilterByNameFunction = std::function<bool(const String &)>;
+
+    /// Returns all the load results as a map.
+    /// The function doesn't load anything, it just returns the current load results as is.
+    LoadResults getCurrentLoadResults() const;
+    LoadResults getCurrentLoadResults(const FilterByNameFunction & filter_by_name) const;
+
+    /// Returns all loaded objects as a map.
+    /// The function doesn't load anything, it just returns the current load results as is.
+    Loadables getCurrentlyLoadedObjects() const;
+    Loadables getCurrentlyLoadedObjects(const FilterByNameFunction & filter_by_name) const;
+    size_t getNumberOfCurrentlyLoadedObjects() const;
+
+    /// Returns true if any object was loaded.
+    bool hasCurrentlyLoadedObjects() const;
+
+    static constexpr Duration NO_TIMEOUT = Duration::max();
+
+    /// Starts loading of a specified object.
+    void load(const String & name) const;
+
+    /// Tries to finish loading of a specified object during the timeout.
+    /// Returns nullptr if the loading is unsuccessful or if there is no such object.
+    void load(const String & name, LoadablePtr & loaded_object, Duration timeout = NO_TIMEOUT) const;
+    void load(const String & name, LoadResult & load_result, Duration timeout = NO_TIMEOUT) const;
+    LoadablePtr loadAndGet(const String & name, Duration timeout = NO_TIMEOUT) const { LoadablePtr object; load(name, object, timeout); return object; }
+    LoadablePtr tryGetLoadable(const String & name) const { return loadAndGet(name); }
+
+    /// Tries to finish loading of a specified object during the timeout.
+    /// Throws an exception if the loading is unsuccessful or if there is no such object.
+    void loadStrict(const String & name, LoadablePtr & loaded_object) const;
+    void loadStrict(const String & name, LoadResult & load_result) const;
+    LoadablePtr loadAndGetStrict(const String & name) const { LoadablePtr object; loadStrict(name, object); return object; }
+    LoadablePtr getLoadable(const String & name) const { return loadAndGetStrict(name); }
+
+    /// Tries to start loading of the objects for which the specified function returns true.
+    void load(const FilterByNameFunction & filter_by_name) const;
+
+    /// Tries to finish loading of the objects for which the specified function returns true.
+    void load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
+    void load(const FilterByNameFunction & filter_by_name, LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
+    Loadables loadAndGet(const FilterByNameFunction & filter_by_name, Duration timeout = NO_TIMEOUT) const { Loadables loaded_objects; load(filter_by_name, loaded_objects, timeout); return loaded_objects; }
+
+    /// Starts loading of all the objects.
+    void load() const;
+
+    /// Tries to finish loading of all the objects during the timeout.
+    void load(Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
+    void load(LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
+
+    /// Starts reloading of a specified object.
+    /// `load_never_loading` specifies what to do if the object has never been loading before.
+    /// The function can either skip it (false) or load for the first time (true).
+    void reload(const String & name, bool load_never_loading = false);
+
+    /// Starts reloading of the objects for which the specified function returns true.
+    /// `load_never_loading` specifies what to do with the objects which have never been loading before.
+    /// The function can either skip them (false) or load for the first time (true).
+    void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false);
+
+    /// Starts reloading of all the objects.
+    /// `load_never_loading` specifies what to do with the objects which have never been loading before.
+    /// The function can either skip them (false) or load for the first time (true).
+    void reload(bool load_never_loading = false);
 
 protected:
-    virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
-                                                      const std::string & config_prefix) const = 0;
-
-    class LockedObjectsMap
-    {
-    public:
-        LockedObjectsMap(std::mutex & mutex, const ObjectsMap & objects_map) : lock(mutex), objects_map(objects_map) {}
-        const ObjectsMap & get() { return objects_map; }
-    private:
-        std::unique_lock<std::mutex> lock;
-        const ObjectsMap & objects_map;
-    };
-
-    /// Direct access to objects.
-    LockedObjectsMap getObjectsMap() const;
+    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;
 
 private:
-    std::once_flag is_initialized_flag;
+    struct ObjectConfig;
 
-    /// Protects only objects map.
-    /** Reading and assignment of "loadable" should be done under mutex.
-      * Creating new versions of "loadable" should not be done under mutex.
-      */
-    mutable std::mutex map_mutex;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
+    TimePoint calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const;
 
-    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries.
-    /// The mutex is recursive because creating of objects might be recursive, i.e.
-    /// creating objects might cause creating other objects.
-    mutable std::recursive_mutex all_mutex;
+    class ConfigFilesReader;
+    std::unique_ptr<ConfigFilesReader> config_files_reader;
 
-    /// name -> loadable.
-    mutable ObjectsMap loadable_objects;
+    class LoadingDispatcher;
+    std::unique_ptr<LoadingDispatcher> loading_dispatcher;
 
-    struct LoadableCreationInfo
-    {
-        std::string name;
-        Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
-        std::string config_path;
-        std::string config_prefix;
-    };
+    class PeriodicUpdater;
+    std::unique_ptr<PeriodicUpdater> periodic_updater;
 
-    /// Objects which should be reloaded soon.
-    mutable std::unordered_map<std::string, LoadableCreationInfo> objects_to_reload;
-
-    /// Here are loadable objects, that has been never loaded successfully.
-    /// They are also in 'loadable_objects', but with nullptr as 'loadable'.
-    mutable std::unordered_map<std::string, FailedLoadableInfo> failed_loadable_objects;
-
-    /// Both for loadable_objects and failed_loadable_objects.
-    mutable std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
-
-    std::unordered_map<std::string, std::unordered_set<std::string>> loadable_objects_defined_in_config;
-
-    mutable pcg64 rnd_engine{randomSeed()};
-
-    const Configuration & config_main;
-    const ExternalLoaderUpdateSettings & update_settings;
-    const ExternalLoaderConfigSettings & config_settings;
-
-    std::unique_ptr<IExternalLoaderConfigRepository> config_repository;
-
-    ThreadFromGlobalPool reloading_thread;
-    Poco::Event destroy;
-
-    Logger * log;
-    /// Loadable object name to use in log messages.
-    std::string object_name;
-
-    std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
-
-    void initImpl(bool throw_on_error);
-
-    /// Check objects definitions in config files and reload or/and add new ones if the definition is changed
-    /// If loadable_name is not empty, load only loadable object with name loadable_name
-    void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
-    void reloadFromConfigFile(const std::string & config_path, const bool force_reload, const std::string & loadable_name);
-
-    /// Check config files and update expired loadable objects
-    void reloadAndUpdate(bool throw_on_error = false);
-
-    void reloadPeriodically();
-
-    void finishReload(const std::string & loadable_name, bool throw_on_error) const;
-    void finishAllReloads(bool throw_on_error) const;
-    void finishReloadImpl(const LoadableCreationInfo & creation_info, bool throw_on_error) const;
-
-    LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
+    const String type_name;
 };
+
+String toString(ExternalLoader::Status status);
+std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status);
 
 }

@@ -31,7 +31,7 @@ static bool parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expec
     if (!value_p.parse(pos, value, expected))
         return false;
 
-    getIdentifierName(name, change.name);
+    tryGetIdentifierNameInto(name, change.name);
     change.value = value->as<ASTLiteral &>().value;
 
     return true;

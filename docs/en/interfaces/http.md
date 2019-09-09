@@ -133,18 +133,17 @@ You can use the internal ClickHouse compression format when transmitting data. T
 If you specified `compress=1` in the URL, the server compresses the data it sends you.
 If you specified `decompress=1` in the URL, the server decompresses the same data that you pass in the `POST` method.
 
-It is also possible to use standard `gzip`-based [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a `POST` request compressed using `gzip`, append the request header `Content-Encoding: gzip`.
-In order for ClickHouse to compress the response using `gzip`, you must append `Accept-Encoding: gzip` to the request headers, and enable the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the compression level of the data with the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting.
+You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`. In order for ClickHouse to compress the response, you must append `Accept-Encoding: compression_method`. ClickHouse supports `gzip`, `br`, and `deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). To enable HTTP compression, you must use the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the data compression level in the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting for all the compression methods.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
 
-Examples of sending the data with compression:
+Examples of sending data with compression:
 
 ```bash
-#Sending the data to the server:
+#Sending data to the server:
 curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
 
-#Sending the data to the client:
+#Sending data to the client:
 echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 
@@ -206,7 +205,21 @@ For information about other parameters, see the section "SET".
 
 Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
-You have the option to receive information about the progress of query execution in X-ClickHouse-Progress headers. To do this, enable the setting send_progress_in_http_headers.
+You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
+
+```
+X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
+```
+
+Possible header fields:
+
+- `read_rows` — Number of rows read.
+- `read_bytes` — Volume of data read in bytes.
+- `total_rows_to_read` — Total number of rows to be read.
+- `written_rows` — Number of rows written.
+- `written_bytes` — Volume of data written in bytes.
 
 Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
 The optional 'query_id' parameter can be passed as the query ID (any string). For more information, see the section "Settings, replace_running_query".
@@ -231,5 +244,14 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
 
+### Queries with Parameters {#cli-queries-with-parameters}
+
+You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](cli.md#cli-queries-with-parameters).
+
+### Example
+
+```bash
+curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+```
 
 [Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->

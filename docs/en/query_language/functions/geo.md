@@ -98,5 +98,121 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
+## geohashEncode
+
+Encodes latitude and longitude as a geohash-string, please see (http://geohash.org/, https://en.wikipedia.org/wiki/Geohash).
+```
+geohashEncode(longitude, latitude, [precision])
+```
+
+**Input values**
+
+- longitude - longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`
+- latitude - latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`
+- precision - Optional, length of the resulting encoded string, defaults to `12`. Integer in range `[1, 12]`. Any value less than `1` or greater than `12` is silently converted to `12`.
+
+**Returned values**
+
+- alphanumeric `String` of encoded coordinate (modified version of the base32-encoding alphabet is used).
+
+**Example**
+
+``` sql
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
+```
+
+```
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+## geohashDecode
+
+Decodes any geohash-encoded string into longitude and latitude.
+
+**Input values**
+
+- encoded string - geohash-encoded string.
+
+**Returned values**
+
+- (longitude, latitude) - 2-tuple of `Float64` values of longitude and latitude.
+
+**Example**
+
+``` sql
+SELECT geohashDecode('ezs42') AS res
+```
+
+```
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
+
+## geoToH3
+
+Calculates [H3](https://uber.github.io/h3/#/documentation/overview/introduction) point index `(lon, lat)` with specified resolution.
+
+```
+geoToH3(lon, lat, resolution)
+```
+
+**Input values**
+
+- `lon` — Longitude. Type: [Float64](../../data_types/float.md).
+- `lat` — Latitude. Type: [Float64](../../data_types/float.md).
+- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+
+**Returned values**
+
+- Hexagon index number.
+- 0 in case of error.
+
+Type: [UInt64](../../data_types/int_uint.md).
+
+**Example**
+
+``` sql
+SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
+```
+```
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+```
+
+## geohashesInBox
+
+Returns an array of geohash-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
+
+**Input values**
+
+- longitude_min - min longitude, floating value in range `[-180°, 180°]`
+- latitude_min - min latitude, floating value in range `[-90°, 90°]`
+- longitude_max - max longitude, floating value in range `[-180°, 180°]`
+- latitude_max - max latitude, floating value in range `[-90°, 90°]`
+- precision - geohash precision, `UInt8` in range `[1, 12]`
+
+Please note that all coordinate parameters should be of the same type: either `Float32` or `Float64`.
+
+**Returned values**
+
+- array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
+- [] - empty array if *min* values of *latitude* and *longitude* aren't less than corresponding *max* values.
+
+Please note that function will throw an exception if resulting array is over 10'000'000 items long.
+
+**Example**
+
+```
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
+```
+```
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/geo/) <!--hide-->
