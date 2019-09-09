@@ -791,7 +791,7 @@ public:
 
         const size_t min_free_disk_space;
 	
-	size_t max_arena_chunk_size;
+        const size_t max_arena_chunk_size;
 
         Params(
             const Block & src_header_,

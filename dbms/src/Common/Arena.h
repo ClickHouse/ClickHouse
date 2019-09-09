@@ -193,8 +193,8 @@ public:
     {
         while (unlikely(head->pos + size > head->end))
         {
-	    if (begin && (head->pos - begin + size) > (roundUpToPageSize(linear_growth_threshold) - pad_right))
-                throw Exception("cannot allocate memory, If you are using aggregate functions, set the large aggregation_max_size_for_arena_chunk.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            if (begin && (head->pos - begin + size) > (roundUpToPageSize(linear_growth_threshold) - pad_right))
+                throw Exception("Cannot allocate memory because a data state is too large. If you are using aggregate functions, please set the large aggregation_max_size_for_arena_chunk.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
             char * prev_end = head->pos;
             addChunk(size);
 
