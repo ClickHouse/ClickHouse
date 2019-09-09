@@ -159,6 +159,8 @@ private:
         std::condition_variable condvar;
         std::mutex mutex;
         bool wake_flag = false;
+
+        std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
