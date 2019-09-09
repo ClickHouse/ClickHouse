@@ -193,10 +193,6 @@ public:
 
     const DiskPtr & operator[](const String & name) const;
 
-    bool hasDisk(const String & name) const;
-
-    void add(const DiskPtr & disk);
-
     const auto & getDisksMap() const { return disks; }
 
 private:
@@ -262,6 +258,9 @@ public:
     /// Returns disks ordered by volumes priority
     Disks getDisks() const;
 
+    /// Returns any disk
+    /// Used when it's not important, for example for
+    /// mutations files
     DiskPtr getAnyDisk() const;
 
     DiskPtr getDiskByName(const String & disk_name) const;
@@ -311,7 +310,7 @@ private:
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
 /// Parse .xml configuration and store information about policies
-/// Mostly used for introspection
+/// Mostly used for introspection.
 class StoragePolicySelector
 {
 public:

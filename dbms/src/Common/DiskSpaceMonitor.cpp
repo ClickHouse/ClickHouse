@@ -231,19 +231,6 @@ const DiskPtr & DiskSelector::operator[](const String & name) const
 }
 
 
-bool DiskSelector::hasDisk(const String & name) const
-{
-    auto it = disks.find(name);
-    return it != disks.end();
-}
-
-
-void DiskSelector::add(const DiskPtr & disk)
-{
-    disks.emplace(disk->getName(), disk);
-}
-
-
 Volume::Volume(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
@@ -523,6 +510,7 @@ StoragePolicySelector::StoragePolicySelector(
     constexpr auto default_volume_name = "default";
     constexpr auto default_disk_name = "default";
 
+    /// Add default if it's not specified explicetly
     if (policies.find(default_storage_policy_name) == policies.end())
     {
         auto default_volume = std::make_shared<Volume>(
