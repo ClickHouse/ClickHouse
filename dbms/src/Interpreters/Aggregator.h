@@ -523,7 +523,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     };
     Type type = Type::EMPTY;
 
-    AggregatedDataVariants(size_t max_arena_chunk_size_ = DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA) : aggregates_pools(1, std::make_shared<Arena>(4096, 2, max_arena_chunk_size_)), aggregates_pool(aggregates_pools.back().get()) {}
+    AggregatedDataVariants(size_t max_arena_chunk_size_ = DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA) : aggregates_pools(1, std::make_shared<Arena>(4096, 2, max_arena_chunk_size_ > DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA ? max_arena_chunk_size_ : DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA)), aggregates_pool(aggregates_pools.back().get()) {}
     bool empty() const { return type == Type::EMPTY; }
     void invalidate() { type = Type::EMPTY; }
 

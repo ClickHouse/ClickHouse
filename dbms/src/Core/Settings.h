@@ -362,7 +362,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13") \
     M(SettingBool, compile, false, "Whether query compilation is enabled. Will be removed after 2020-03-13") \
     \
-    M(SettingUInt64, aggregation_max_size_for_arena_chunk, DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA, "The maximum length of the chunk in the arena during aggregation. For example, if you have some large objects in groupArray, you can set the large aggregation_max_size_for_arena_chunk value.")
+    M(SettingUInt64, aggregation_max_size_for_arena_chunk, DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA, "The maximum length of the chunk in the arena during aggregation. For example, if you have some large objects in groupArray, you can set the large aggregation_max_size_for_arena_chunk value. The chunk default value is 128MB. If the aggregation_max_size_for_arena_chunk is set larger than 128MB, the parameter will be applied, otherwise it will be 128MB.")
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
