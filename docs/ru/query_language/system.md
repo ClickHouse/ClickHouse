@@ -25,7 +25,7 @@
 Состояние словаря можно проверить запросом к `system.dictionaries`.
 
 ```sql
-SELECT name, status FROM system.dictionaries
+SELECT name, status FROM system.dictionaries;
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
