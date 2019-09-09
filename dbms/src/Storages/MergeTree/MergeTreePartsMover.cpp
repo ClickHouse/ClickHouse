@@ -111,7 +111,7 @@ bool MergeTreePartsMover::selectPartsForMove(
             if (parts_moving_from_disks.count(disk->getName()))
                 future_available_space = parts_moving_from_disks[disk->getName()];
 
-            if ( required_available_space > space_information.getAvailableSpace() + future_available_space)
+            if (required_available_space > space_information.getAvailableSpace() + future_available_space)
                 need_to_move.emplace(disk,  required_available_space - space_information.getAvailableSpace());
         }
     }

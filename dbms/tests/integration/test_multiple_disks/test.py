@@ -4,7 +4,6 @@ import random
 import string
 from multiprocessing.dummy import Pool
 from helpers.client import QueryRuntimeException
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -629,3 +628,35 @@ def test_simple_replication_and_moves(start_cluster):
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS replicated_table_for_moves")
+
+def test_download_appropriate_disk(start_cluster):
+    try:
+        for i, node in enumerate([node1, node2]):
+            node.query("""
+                CREATE TABLE replicated_table_for_download (
+                    s1 String
+                ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_download', '{}')
+                ORDER BY tuple()
+                SETTINGS storage_policy_name='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
+            """.format(i + 1))
+
+        data = []
+        for i in range(50):
+            data.append(get_random_string(1024 * 1024)) # 1MB value
+        node1.query("INSERT INTO replicated_table_for_download VALUES {}".format(','.join(["('" + x + "')" for x in data])))
+
+        for _ in range(10):
+            try:
+                print "Syncing replica"
+                node2.query("SYSTEM SYNC REPLICA replicated_table_for_download")
+                break
+            except:
+                time.sleep(0.5)
+
+        disks2 = get_used_disks_for_table(node2, "replicated_table_for_download")
+
+        assert set(disks2) == set(["external"])
+
+    finally:
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS replicated_table_for_download")

@@ -89,9 +89,11 @@ bool Disk::tryReserve(UInt64 bytes) const
     }
 
     available_space -= std::min(available_space, reserved_bytes);
-    LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving " << bytes << " bytes on disk " << name << " having available " << available_space << " bytes.");
     if (available_space >= bytes)
     {
+        LOG_DEBUG(
+            &Logger::get("DiskSpaceMonitor"),
+            "Reserving " << bytes << " bytes on disk " << name << " having available " << available_space << " bytes.");
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
