@@ -3401,10 +3401,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     {
         /// Something went completely wrong
         if (!data.currently_moving_parts.count(moving_part.part))
-        {
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "TERMINATING ON PART:" << moving_part.part->name);
             std::terminate();
-        }
         data.currently_moving_parts.erase(moving_part.part);
     }
 }

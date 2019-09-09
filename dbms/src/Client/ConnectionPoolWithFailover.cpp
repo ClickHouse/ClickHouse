@@ -31,8 +31,9 @@ namespace ErrorCodes
 ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         ConnectionPoolPtrs nested_pools_,
         LoadBalancing load_balancing,
-        time_t decrease_error_period_)
-    : Base(std::move(nested_pools_), decrease_error_period_, &Logger::get("ConnectionPoolWithFailover"))
+        time_t decrease_error_period_,
+        size_t max_error_cap_)
+    : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Logger::get("ConnectionPoolWithFailover"))
     , default_load_balancing(load_balancing)
 {
     const std::string & local_hostname = getFQDNOrHostName();
@@ -71,6 +72,31 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     }
 
     return Base::get(try_get_entry, get_priority);
+}
+
+ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
+{
+    const Base::PoolStates states = getPoolStates();
+    const Base::NestedPools pools = nested_pools;
+    assert(states.size() == pools.size());
+
+    ConnectionPoolWithFailover::Status result;
+    result.reserve(states.size());
+    const time_t since_last_error_decrease = time(nullptr) - last_error_decrease_time;
+
+    for (size_t i = 0; i < states.size(); ++i)
+    {
+        const auto rounds_to_zero_errors = states[i].error_count ? bitScanReverse(states[i].error_count) + 1 : 0;
+        const auto seconds_to_zero_errors = std::max(static_cast<time_t>(0), rounds_to_zero_errors * decrease_error_period - since_last_error_decrease);
+
+        result.emplace_back(NestedPoolStatus{
+            pools[i].get(),
+            states[i].error_count,
+            std::chrono::seconds{seconds_to_zero_errors}
+        });
+    }
+
+    return result;
 }
 
 std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const ConnectionTimeouts & timeouts,

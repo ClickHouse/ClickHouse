@@ -15,6 +15,7 @@
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include <ext/range.h>
+#include <Common/SensitiveDataMasker.h>
 
 namespace DB
 {
@@ -165,8 +166,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 
     if (config().has("query_masking_rules"))
     {
-        context->setSensitiveDataMasker(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
-        setLoggerSensitiveDataMasker(logger(), context->getSensitiveDataMasker());
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
     auto server = Poco::Net::HTTPServer(

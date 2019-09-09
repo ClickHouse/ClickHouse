@@ -22,6 +22,8 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
         {"is_local", std::make_shared<DataTypeUInt8>()},
         {"user", std::make_shared<DataTypeString>()},
         {"default_database", std::make_shared<DataTypeString>()},
+        {"errors_count", std::make_shared<DataTypeUInt32>()},
+        {"estimated_recovery_time", std::make_shared<DataTypeUInt32>()}
     };
 }
 
@@ -38,6 +40,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
         {
             const auto & shard_info = shards_info[shard_index];
             const auto & shard_addresses = addresses_with_failover[shard_index];
+            const auto pool_status = shard_info.pool->getStatus();
 
             for (size_t replica_index = 0; replica_index < shard_addresses.size(); ++replica_index)
             {
@@ -55,6 +58,8 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
                 res_columns[i++]->insert(shard_info.isLocal());
                 res_columns[i++]->insert(address.user);
                 res_columns[i++]->insert(address.default_database);
+                res_columns[i++]->insert(pool_status[replica_index].error_count);
+                res_columns[i++]->insert(pool_status[replica_index].estimated_recovery_time.count());
             }
         }
     }

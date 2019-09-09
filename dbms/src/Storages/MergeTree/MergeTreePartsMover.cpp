@@ -71,10 +71,7 @@ std::unordered_map<std::string, size_t> partsMovingFromDisksSize(MergeTreeData &
 {
     std::unordered_map<std::string, size_t> result;
     for (const auto & moving_part : data.currently_moving_parts)
-    {
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "MOVING PART:" << moving_part->name);
         result[moving_part->disk->getName()] += moving_part->bytes_on_disk;
-    }
     return result;
 }
 
@@ -101,8 +98,6 @@ bool MergeTreePartsMover::selectPartsForMove(
     }
 
     auto parts_moving_from_disks = partsMovingFromDisksSize(*data);
-    if (parts_moving_from_disks.empty())
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "NOTHING IS MOVING");
     /// Do not check last volume
     for (size_t i = 0; i != volumes.size() - 1; ++i)
     {
@@ -116,18 +111,8 @@ bool MergeTreePartsMover::selectPartsForMove(
             if (parts_moving_from_disks.count(disk->getName()))
                 future_available_space = parts_moving_from_disks[disk->getName()];
 
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Disk:" << disk->getName());
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Total space:" << disk->getTotalSpace());
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "UNRESERVED SPACE:" << disk->getUnreservedSpace());
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Available space:" << space_information.getAvailableSpace());
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Required available space:" << required_available_space);
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Future space:" << future_available_space);
-
             if ( required_available_space > space_information.getAvailableSpace() + future_available_space)
-            {
-                LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Need to move something from disk:" << disk->getName());
                 need_to_move.emplace(disk,  required_available_space - space_information.getAvailableSpace());
-            }
         }
     }
 
@@ -158,7 +143,6 @@ bool MergeTreePartsMover::selectPartsForMove(
                 /// But it can be possible to move data from other disks
                 break;
             }
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Moving part " << part->name << " to disk " << reservation->getDisk()->getName());
             parts_to_move.emplace_back(part, std::move(reservation));
         }
     }

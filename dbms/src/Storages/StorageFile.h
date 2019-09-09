@@ -70,10 +70,10 @@ private:
 
     int table_fd = -1;
 
-    std::vector<std::string> paths{""};
+    std::vector<std::string> paths;
 
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
-    bool use_table_fd = false;                    /// Use table_fd insted of path
+    bool use_table_fd = false;                    /// Use table_fd instead of path
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
     off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 

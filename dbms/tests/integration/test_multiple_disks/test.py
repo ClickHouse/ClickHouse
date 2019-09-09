@@ -580,7 +580,7 @@ def test_simple_replication_and_moves(start_cluster):
                     s1 String
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_moves', '{}')
                 ORDER BY tuple()
-                SETTINGS storage_policy_name='moving_jbod_with_external', old_parts_lifetime=5
+                SETTINGS storage_policy_name='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
             """.format(i + 1))
 
         def insert(num):
@@ -614,7 +614,7 @@ def test_simple_replication_and_moves(start_cluster):
         for i in range(2):
             data.append(get_random_string(512 * 1024)) # 500KB value
 
-        time.sleep(5) # wait until old parts will be deleted
+        time.sleep(3) # wait until old parts will be deleted
 
         node1.query("INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
         node2.query("INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
@@ -629,5 +629,3 @@ def test_simple_replication_and_moves(start_cluster):
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS replicated_table_for_moves")
-
-#def test_replica_download_to_appropriate_disk(start_cluster):
