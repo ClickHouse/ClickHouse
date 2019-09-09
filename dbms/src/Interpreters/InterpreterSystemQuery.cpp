@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
@@ -14,7 +14,11 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/TraceLog.h>
+#include <Interpreters/TextLog.h>
+#include <Interpreters/MetricLog.h>
 #include <Databases/IDatabase.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -22,6 +26,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
 #include <algorithm>
+#include "InterpreterSystemQuery.h"
 
 
 namespace DB
@@ -42,6 +47,8 @@ namespace ActionLocks
     extern StorageActionBlockType PartsFetch;
     extern StorageActionBlockType PartsSend;
     extern StorageActionBlockType ReplicationQueue;
+    extern StorageActionBlockType DistributedSend;
+    extern StorageActionBlockType PartsTTLMerge;
 }
 
 
@@ -156,7 +163,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
+            system_context.getExternalDictionaries().reload(query.target_dictionary, true /* load the dictionary even if it wasn't loading before */);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
@@ -176,6 +183,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_MERGES:
             startStopAction(context, query, ActionLocks::PartsMerge, true);
             break;
+        case Type::STOP_TTL_MERGES:
+            startStopAction(context, query, ActionLocks::PartsTTLMerge, false);
+            break;
+        case Type::START_TTL_MERGES:
+            startStopAction(context, query, ActionLocks::PartsTTLMerge, true);
+            break;
         case Type::STOP_FETCHES:
             startStopAction(context, query, ActionLocks::PartsFetch, false);
             break;
@@ -194,8 +207,17 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, true);
             break;
+        case Type::STOP_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, false);
+            break;
+        case Type::START_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, true);
+            break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
+            break;
+        case Type::FLUSH_DISTRIBUTED:
+            flushDistributed(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
@@ -209,7 +231,10 @@ BlockIO InterpreterSystemQuery::execute()
             executeCommandsAndThrowIfError(
                     [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); }
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); },
+                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); },
+                    [&] () { if (auto text_log = context.getTextLog()) text_log->flush(); },
+                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -253,6 +278,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         std::string data_path = database->getDataPath();
         auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+        auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
@@ -261,6 +287,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
             system_context,
             system_context.getGlobalContext(),
             columns,
+            constraints,
             create.attach,
             false);
 
@@ -303,11 +330,21 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 
     StoragePtr table = context.getTable(database_name, table_name);
 
-    auto table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
-    if (!table_replicated)
+    if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+    else
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+}
 
-    table_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
+{
+    String database_name = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
+    String & table_name = query.target_table;
+
+    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
+        storage_distributed->flushClusterNodesAllData();
+    else
+        throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

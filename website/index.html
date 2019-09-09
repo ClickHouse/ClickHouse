@@ -94,7 +94,6 @@
 </div>
 <div id="announcement" class="colored-block">
      <div class="page">
-         Upcoming ClickHouse Meetups: <a class="announcement-link" href="https://www.facebook.com/events/386638262181785/" rel="external nofollow" target="_blank">Limassol</a> on May 7 and <a class="announcement-link" href="https://www.huodongxing.com/event/2483759276200" rel="external nofollow" target="_blank">Beijing</a> on June 8
      </div>
 </div>
 <div class="page">
@@ -399,12 +398,12 @@
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-    <p>Install packages for Ubuntu/Debian:</p>
+    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span> or <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span>:</p>
 
     <code id="packages-install">
-<pre>
-sudo apt-get install dirmngr    # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
+<pre id="instruction_deb">
+sudo apt-get install dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
 
 echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
@@ -412,6 +411,15 @@ sudo apt-get update
 sudo apt-get install -y clickhouse-server clickhouse-client
 
 sudo service clickhouse-server start
+clickhouse-client
+</pre>
+<pre id="instruction_rpm" style="display: none;">
+sudo yum install yum-utils
+sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+sudo yum install clickhouse-server clickhouse-client
+
+sudo /etc/init.d/clickhouse-server start
 clickhouse-client
 </pre>
     </code>
@@ -444,6 +452,8 @@ clickhouse-client
                rel="external nofollow" target="_blank">English</a> or in
             <a href="https://telegram.me/clickhouse_ru"
                rel="external nofollow" target="_blank">Russian</a>.</li>
+        <li>Watch video content on <a href="https://www.youtube.com/c/ClickHouseDB"
+                              rel="external nofollow" target="_blank">YouTube channel</a>.</li>
         <li>Follow official <a
                href="https://twitter.com/ClickHouseDB"
                rel="external nofollow" target="_blank">Twitter account</a>.</li>
@@ -481,9 +491,41 @@ clickhouse-client
    target="_blank"
 ><div id="github">Fork me on GitHub</div></a>
 
-<script type="text/javascript" src="//yastatic.net/jquery/3.1.1/jquery.min.js"></script>
+<script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
 <script type="text/javascript">
     $(document).ready(function () {
+        $.get('https://raw.githubusercontent.com/yandex/ClickHouse/master/README.md', function(e) {
+            var skip = true;
+            var lines = e.split('\n');
+            var result = [];
+            $.each(lines, function(idx) {
+                var line = lines[idx];
+                if (skip) {
+                    if (line.includes('Upcoming Events')) {
+                        skip = false;
+                    }
+                } else {
+                    if (!line) { return; };
+                    line = line.split('](');
+                    var tail = line[1].split(') ');
+                    result.push(
+                        '<a class="announcement-link" rel="external nofollow" target="_blank" href="' + 
+                        tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') + 
+                        '</a> ' + tail[1].slice(0, -1)
+                    );
+                }
+            });
+            if (result.length) {
+                if (result.length == 1) {
+                    result = 'Upcoming Meetup: ' + result[0]; 
+                } else {
+                    result = 'Upcoming Meetups: ' + result.join(', ');
+                    var offset = result.lastIndexOf(', ');
+                    result = result.slice(0, offset) + result.slice(offset).replace(', ', ' and ');
+                }
+                $('#announcement>.page').html(result);
+            }
+        });
         var name = $('#main-title').text().trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
@@ -508,6 +550,30 @@ clickhouse-client
         if (hostParts.length > 2 && hostParts[0] != 'test') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
+
+        var available_distributives = ['deb', 'rpm'];
+        var selected_distributive = 'deb';
+
+        function refresh_distributives() {
+            available_distributives.forEach(function (name) {
+                if (name == selected_distributive) {
+                    $('#repo_' + name).attr("class", "distributive_selected");
+                    $('#instruction_' + name).show();
+                } else {
+                    $('#repo_' + name).attr("class", "distributive_not_selected");
+                    $('#instruction_' + name).hide();
+                }
+            });
+        };
+
+        refresh_distributives();
+
+        available_distributives.forEach(function (name) {
+            $('#repo_' + name).on('click', function () {
+                selected_distributive = name;
+                refresh_distributives();
+            });
+        });
     });
 </script>
 

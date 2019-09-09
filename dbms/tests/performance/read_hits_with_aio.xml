@@ -1,5 +1,4 @@
 <test>
-    <name>read_from_hits_with_aio</name>
     <stop_conditions>
         <any_of>
             <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
@@ -7,13 +6,6 @@
         </any_of>
     </stop_conditions>
     <type>once</type>
-    <metrics>
-        <!-- For running one inifinite query -->
-        <max_rows_per_second />
-        <max_bytes_per_second />
-        <avg_rows_per_second />
-        <avg_bytes_per_second />
-    </metrics>
 
     <preconditions>
         <table_exists>hits_1000m_single</table_exists>

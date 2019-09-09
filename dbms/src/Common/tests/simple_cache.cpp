@@ -1,5 +1,5 @@
 #include <iostream>
-#include <Common/SimpleCache.h>
+#include <common/SimpleCache.h>
 
 
 int func(int x, int y)

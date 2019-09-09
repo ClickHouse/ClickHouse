@@ -8,6 +8,8 @@
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 
+#include <IO/ConnectionTimeouts.h>
+
 
 namespace ProfileEvents
 {
@@ -29,9 +31,9 @@ namespace ErrorCodes
 ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         ConnectionPoolPtrs nested_pools_,
         LoadBalancing load_balancing,
-        size_t max_tries_,
-        time_t decrease_error_period_)
-    : Base(std::move(nested_pools_), max_tries_, decrease_error_period_, &Logger::get("ConnectionPoolWithFailover"))
+        time_t decrease_error_period_,
+        size_t max_error_cap_)
+    : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Logger::get("ConnectionPoolWithFailover"))
     , default_load_balancing(load_balancing)
 {
     const std::string & local_hostname = getFQDNOrHostName();
@@ -44,11 +46,13 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     }
 }
 
-IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings, bool /*force_connected*/)
+IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts,
+                                                       const Settings * settings,
+                                                       bool /*force_connected*/)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, fail_message, settings);
+        return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
     GetPriorityFunc get_priority;
@@ -70,11 +74,38 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings
     return Base::get(try_get_entry, get_priority);
 }
 
-std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Settings * settings, PoolMode pool_mode)
+ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
+{
+    const Base::PoolStates states = getPoolStates();
+    const Base::NestedPools pools = nested_pools;
+    assert(states.size() == pools.size());
+
+    ConnectionPoolWithFailover::Status result;
+    result.reserve(states.size());
+    const time_t since_last_error_decrease = time(nullptr) - last_error_decrease_time;
+
+    for (size_t i = 0; i < states.size(); ++i)
+    {
+        const auto rounds_to_zero_errors = states[i].error_count ? bitScanReverse(states[i].error_count) + 1 : 0;
+        const auto seconds_to_zero_errors = std::max(static_cast<time_t>(0), rounds_to_zero_errors * decrease_error_period - since_last_error_decrease);
+
+        result.emplace_back(NestedPoolStatus{
+            pools[i].get(),
+            states[i].error_count,
+            std::chrono::seconds{seconds_to_zero_errors}
+        });
+    }
+
+    return result;
+}
+
+std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const ConnectionTimeouts & timeouts,
+                                                                        const Settings * settings,
+                                                                        PoolMode pool_mode)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, fail_message, settings);
+        return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
     std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry);
@@ -86,22 +117,27 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Se
     return entries;
 }
 
-std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyForTableFunction(const Settings * settings, PoolMode pool_mode)
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyForTableFunction(
+    const ConnectionTimeouts & timeouts,
+    const Settings * settings,
+    PoolMode pool_mode)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, fail_message, settings);
+        return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
     return getManyImpl(settings, pool_mode, try_get_entry);
 }
 
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyChecked(
-        const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check)
+    const ConnectionTimeouts & timeouts,
+    const Settings * settings, PoolMode pool_mode,
+    const QualifiedTableName & table_to_check)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, fail_message, settings, &table_to_check);
+        return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check);
     };
 
     return getManyImpl(settings, pool_mode, try_get_entry);
@@ -113,6 +149,9 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         const TryGetEntryFunc & try_get_entry)
 {
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
+    size_t max_tries = (settings ?
+        size_t{settings->connections_with_failover_max_tries} :
+        size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});
     size_t max_entries;
     if (pool_mode == PoolMode::GET_ALL)
     {
@@ -144,12 +183,13 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 
     bool fallback_to_stale_replicas = settings ? bool(settings->fallback_to_stale_replicas_for_distributed_queries) : true;
 
-    return Base::getMany(min_entries, max_entries, try_get_entry, get_priority, fallback_to_stale_replicas);
+    return Base::getMany(min_entries, max_entries, max_tries, try_get_entry, get_priority, fallback_to_stale_replicas);
 }
 
 ConnectionPoolWithFailover::TryResult
 ConnectionPoolWithFailover::tryGetEntry(
         IConnectionPool & pool,
+        const ConnectionTimeouts & timeouts,
         std::string & fail_message,
         const Settings * settings,
         const QualifiedTableName * table_to_check)
@@ -157,15 +197,15 @@ ConnectionPoolWithFailover::tryGetEntry(
     TryResult result;
     try
     {
-        result.entry = pool.get(settings, /* force_connected = */ false);
+        result.entry = pool.get(timeouts, settings, /* force_connected = */ false);
 
         UInt64 server_revision = 0;
         if (table_to_check)
-            server_revision = result.entry->getServerRevision();
+            server_revision = result.entry->getServerRevision(timeouts);
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
-            result.entry->forceConnected();
+            result.entry->forceConnected(timeouts);
             result.is_usable = true;
             result.is_up_to_date = true;
             return result;
@@ -176,7 +216,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         TablesStatusRequest status_request;
         status_request.tables.emplace(*table_to_check);
 
-        TablesStatusResponse status_response = result.entry->getTablesStatus(status_request);
+        TablesStatusResponse status_response = result.entry->getTablesStatus(timeouts, status_request);
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {

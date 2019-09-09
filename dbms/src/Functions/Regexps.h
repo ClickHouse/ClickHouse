@@ -11,10 +11,11 @@
 #include <Common/ObjectPool.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Exception.h>
 #include <common/StringRef.h>
 
 
-#include <Common/config.h>
+#include "config_functions.h"
 #if USE_HYPERSCAN
 #    if __has_include(<hs/hs.h>)
 #        include <hs/hs.h>
@@ -135,9 +136,10 @@ namespace MultiRegexps
         for (const StringRef ref : str_patterns)
         {
             ptrns.push_back(ref.data);
-            flags.push_back(HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_SINGLEMATCH);
+            flags.push_back(HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_SINGLEMATCH | HS_FLAG_UTF8);
             if constexpr (CompileForEditDistance)
             {
+                flags.back() &= ~HS_FLAG_UTF8;
                 ext_exprs.emplace_back();
                 ext_exprs.back().flags = HS_EXT_FLAG_EDIT_DISTANCE;
                 ext_exprs.back().edit_distance = edit_distance.value();

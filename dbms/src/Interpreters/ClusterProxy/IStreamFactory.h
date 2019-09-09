@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Client/ConnectionPool.h>
 #include <Interpreters/Cluster.h>
 #include <Parsers/IAST.h>
-#include <Storages/IStorage.h>
-#include <Client/ConnectionPool.h>
 
 namespace DB
 {

@@ -1,14 +1,9 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/IndicesDescription.h>
-#include <Poco/File.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
+#include <Storages/IStorage_fwd.h>
+#include <Common/Exception.h>
 
 #include <ctime>
 #include <functional>
@@ -19,11 +14,16 @@ namespace DB
 {
 
 class Context;
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-
 struct Settings;
+struct ConstraintsDescription;
+class ColumnsDescription;
+struct IndicesDescription;
+struct TableStructureWriteLockHolder;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 
 /** Allows to iterate over tables.
@@ -58,11 +58,10 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Load a set of existing tables. If thread_pool is specified, use it.
+    /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
     /// Check the existence of the table.
@@ -75,9 +74,11 @@ public:
         const Context & context,
         const String & name) const = 0;
 
+    using FilterByNameFunction = std::function<bool(const String &)>;
+
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseIteratorPtr getIterator(const Context & context) = 0;
+    virtual DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Is the database empty.
     virtual bool empty(const Context & context) const = 0;
@@ -102,21 +103,29 @@ public:
 
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
-        const Context & context,
-        const String & name,
-        IDatabase & to_database,
-        const String & to_name) = 0;
+        const Context & /*context*/,
+        const String & /*name*/,
+        IDatabase & /*to_database*/,
+        const String & /*to_name*/,
+        TableStructureWriteLockHolder &)
+    {
+        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     using ASTModifier = std::function<void(IAST &)>;
 
     /// Change the table structure in metadata.
     /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
-        const Context & context,
-        const String & name,
-        const ColumnsDescription & columns,
-        const IndicesDescription & indices,
-        const ASTModifier & engine_modifier) = 0;
+        const Context & /*context*/,
+        const String & /*name*/,
+        const ColumnsDescription & /*columns*/,
+        const IndicesDescription & /*indices*/,
+        const ConstraintsDescription & /*constraints*/,
+        const ASTModifier & /*engine_modifier*/)
+    {
+        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
     virtual time_t getTableMetadataModificationTime(

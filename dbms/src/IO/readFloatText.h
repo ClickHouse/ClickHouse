@@ -312,7 +312,7 @@ template <typename T, typename ReturnType>
 ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
 {
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextImpl must be float or double");
-    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V501
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII"); //-V590
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -551,121 +551,6 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
         x = -x;
 
     return ReturnType(true);
-}
-
-
-template <typename T>
-inline void readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
-{
-    x = 0;
-    exponent = 0;
-    unsigned int max_digits = digits;
-    digits = 0;
-    unsigned int places = 0;
-    typename T::NativeType sign = 1;
-    bool leading_zeroes = true;
-    bool after_point = false;
-
-    if (buf.eof())
-        throwReadAfterEOF();
-
-    if (!buf.eof())
-    {
-        switch (*buf.position())
-        {
-            case '-':
-                sign = -1;
-                [[fallthrough]];
-            case '+':
-                ++buf.position();
-                break;
-        }
-    }
-
-    bool stop = false;
-    while (!buf.eof() && !stop)
-    {
-        const char & byte = *buf.position();
-        switch (byte)
-        {
-            case '.':
-                after_point = true;
-                leading_zeroes = false;
-                break;
-            case '0':
-            {
-                if (leading_zeroes)
-                    break;
-
-                if (after_point)
-                {
-                    ++places; /// Count trailing zeroes. They would be used only if there's some other digit after them.
-                    break;
-                }
-                [[fallthrough]];
-            }
-            case '1': [[fallthrough]];
-            case '2': [[fallthrough]];
-            case '3': [[fallthrough]];
-            case '4': [[fallthrough]];
-            case '5': [[fallthrough]];
-            case '6': [[fallthrough]];
-            case '7': [[fallthrough]];
-            case '8': [[fallthrough]];
-            case '9':
-            {
-                leading_zeroes = false;
-
-                ++places; // num zeroes before + current digit
-                if (digits + places > max_digits)
-                    throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits) + ") in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-                digits += places;
-                if (after_point)
-                    exponent -= places;
-
-                // TODO: accurate shift10 for big integers
-                for (; places; --places)
-                    x *= 10;
-                x += (byte - '0');
-                break;
-            }
-            case 'e': [[fallthrough]];
-            case 'E':
-            {
-                ++buf.position();
-                Int32 addition_exp = 0;
-                readIntText(addition_exp, buf);
-                exponent += addition_exp;
-                stop = true;
-                continue;
-            }
-
-            default:
-                if (digits_only)
-                    throw Exception("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
-                stop = true;
-                continue;
-        }
-        ++buf.position();
-    }
-
-    x *= sign;
-}
-
-template <typename T>
-inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale, bool digits_only = false)
-{
-    unsigned int digits = precision;
-    int exponent;
-    readDigits(buf, x, digits, exponent, digits_only);
-
-    if (static_cast<int>(digits) + exponent > static_cast<int>(precision - scale))
-        throw Exception("Decimal value is too big", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-    if (static_cast<int>(scale) + exponent < 0)
-        throw Exception("Decimal value is too small", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-    scale += exponent;
 }
 
 

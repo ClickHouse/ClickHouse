@@ -27,13 +27,16 @@ private:
     VectorType & vector;
     bool is_finished = false;
 
+    static constexpr size_t initial_size = 32;
+    static constexpr size_t size_multiplier = 2;
+
     void nextImpl() override
     {
         if (is_finished)
             throw Exception("WriteBufferFromVector is finished", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
 
         size_t old_size = vector.size();
-        vector.resize(old_size * 2);
+        vector.resize(old_size * size_multiplier);
         internal_buffer = Buffer(reinterpret_cast<Position>(vector.data() + old_size), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
     }
@@ -44,10 +47,22 @@ public:
     {
         if (vector.empty())
         {
-            static constexpr size_t initial_size = 32;
             vector.resize(initial_size);
             set(reinterpret_cast<Position>(vector.data()), vector.size());
         }
+    }
+
+    /// Append to vector instead of rewrite.
+    struct AppendModeTag {};
+    WriteBufferFromVector(VectorType & vector_, AppendModeTag)
+        : WriteBuffer(nullptr, 0), vector(vector_)
+    {
+        size_t old_size = vector.size();
+        size_t size = (old_size < initial_size) ? initial_size
+                                                : ((old_size < vector.capacity()) ? vector.capacity()
+                                                                                  : vector.capacity() * size_multiplier);
+        vector.resize(size);
+        set(reinterpret_cast<Position>(vector.data() + old_size), (size - old_size) * sizeof(typename VectorType::value_type));
     }
 
     void finish()

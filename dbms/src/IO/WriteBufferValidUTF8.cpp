@@ -12,32 +12,29 @@ namespace DB
 
 const size_t WriteBufferValidUTF8::DEFAULT_SIZE = 4096;
 
-namespace
+/** Index into the table below with the first byte of a UTF-8 sequence to
+  * get the number of trailing bytes that are supposed to follow it.
+  * Note that *legal* UTF-8 values can't have 4 or 5-bytes. The table is
+  * left as-is for anyone who may want to do such conversion, which was
+  * allowed in earlier algorithms.
+  */
+extern const UInt8 length_of_utf8_sequence[256] =
 {
-    /** Index into the table below with the first byte of a UTF-8 sequence to
-      * get the number of trailing bytes that are supposed to follow it.
-      * Note that *legal* UTF-8 values can't have 4 or 5-bytes. The table is
-      * left as-is for anyone who may want to do such conversion, which was
-      * allowed in earlier algorithms.
-      */
-    const UInt8 length_of_utf8_sequence[256] =
-    {
-        1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-        1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-        1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-        1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-        1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-        1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-        2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-        3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,5,5,5,5,6,6,6,6
-    };
-}
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, 4,4,4,4,4,4,4,4,5,5,5,5,6,6,6,6
+};
 
 
 WriteBufferValidUTF8::WriteBufferValidUTF8(
-    WriteBuffer & output_buffer, bool group_replacements, const char * replacement, size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(std::max(static_cast<size_t>(32), size)), output_buffer(output_buffer),
-    group_replacements(group_replacements), replacement(replacement)
+    WriteBuffer & output_buffer_, bool group_replacements_, const char * replacement_, size_t size)
+    : BufferWithOwnMemory<WriteBuffer>(std::max(static_cast<size_t>(32), size)), output_buffer(output_buffer_),
+    group_replacements(group_replacements_), replacement(replacement_)
 {
 }
 
@@ -120,6 +117,9 @@ void WriteBufferValidUTF8::nextImpl()
         memory[i] = p[i];
 
     working_buffer = Buffer(&memory[cnt], memory.data() + memory.size());
+
+    /// Propagate next() to the output buffer
+    output_buffer.next();
 }
 
 

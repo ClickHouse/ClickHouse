@@ -9,8 +9,11 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
+#include <Interpreters/addTypeConversionToAST.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+
 
 namespace DB
 {
@@ -21,22 +24,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
 }
 
-
-static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String & type_name)
-{
-    auto func = std::make_shared<ASTFunction>();
-    ASTPtr res = func;
-    func->alias = ast->alias;
-    func->prefer_alias_to_column_name = ast->prefer_alias_to_column_name;
-    ast->alias.clear();
-    func->name = "CAST";
-    auto exp_list = std::make_shared<ASTExpressionList>();
-    func->arguments = exp_list;
-    func->children.push_back(func->arguments);
-    exp_list->children.emplace_back(ast.release());
-    exp_list->children.emplace_back(std::make_shared<ASTLiteral>(type_name));
-    return res;
-}
 
 bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
@@ -109,7 +96,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
         lit->alias = subquery.alias;
         lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
-        ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
+        ast = addTypeConversionToAST(std::move(lit), block.safeGetByPosition(0).type->getName());
     }
     else
     {
@@ -124,7 +111,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         exp_list->children.resize(columns);
         for (size_t i = 0; i < columns; ++i)
         {
-            exp_list->children[i] = addTypeConversion(
+            exp_list->children[i] = addTypeConversionToAST(
                 std::make_unique<ASTLiteral>((*block.safeGetByPosition(i).column)[0]),
                 block.safeGetByPosition(i).type->getName());
         }

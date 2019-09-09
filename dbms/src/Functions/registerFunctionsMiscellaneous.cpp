@@ -1,9 +1,12 @@
+#include "config_core.h"
+
 namespace DB
 {
 
 class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
+void registerFunctionCurrentUser(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
 void registerFunctionToTypeName(FunctionFactory &);
@@ -15,10 +18,12 @@ void registerFunctionBlockSize(FunctionFactory &);
 void registerFunctionBlockNumber(FunctionFactory &);
 void registerFunctionRowNumberInBlock(FunctionFactory &);
 void registerFunctionRowNumberInAllBlocks(FunctionFactory &);
+void registerFunctionNeighbor(FunctionFactory &);
 void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
 void registerFunctionIgnore(FunctionFactory &);
+void registerFunctionIgnoreExceptNull(FunctionFactory &);
 void registerFunctionIndexHint(FunctionFactory &);
 void registerFunctionIdentity(FunctionFactory &);
 void registerFunctionArrayJoin(FunctionFactory &);
@@ -42,11 +47,18 @@ void registerFunctionLowCardinalityKeys(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
 void registerFunctionJoinGet(FunctionFactory &);
 void registerFunctionFilesystem(FunctionFactory &);
+void registerFunctionEvalMLMethod(FunctionFactory &);
 void registerFunctionBasename(FunctionFactory &);
+void registerFunctionTransform(FunctionFactory &);
+
+#if USE_ICU
+void registerFunctionConvertCharset(FunctionFactory &);
+#endif
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
+    registerFunctionCurrentUser(factory);
     registerFunctionHostName(factory);
     registerFunctionVisibleWidth(factory);
     registerFunctionToTypeName(factory);
@@ -58,10 +70,12 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionBlockNumber(factory);
     registerFunctionRowNumberInBlock(factory);
     registerFunctionRowNumberInAllBlocks(factory);
+    registerFunctionNeighbor(factory);
     registerFunctionSleep(factory);
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
     registerFunctionIgnore(factory);
+    registerFunctionIgnoreExceptNull(factory);
     registerFunctionIndexHint(factory);
     registerFunctionIdentity(factory);
     registerFunctionArrayJoin(factory);
@@ -85,7 +99,13 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionsIn(factory);
     registerFunctionJoinGet(factory);
     registerFunctionFilesystem(factory);
+    registerFunctionEvalMLMethod(factory);
     registerFunctionBasename(factory);
+    registerFunctionTransform(factory);
+
+#if USE_ICU
+    registerFunctionConvertCharset(factory);
+#endif
 }
 
 }

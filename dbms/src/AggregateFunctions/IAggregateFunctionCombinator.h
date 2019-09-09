@@ -38,7 +38,19 @@ public:
       *  get the arguments for nested function (ex: UInt64 for sum).
       * If arguments are not suitable for combined function, throw an exception.
       */
-    virtual DataTypes transformArguments(const DataTypes & arguments) const = 0;
+    virtual DataTypes transformArguments(const DataTypes & arguments) const
+    {
+        return arguments;
+    }
+
+    /** From the parameters for combined function,
+      *  get the parameters for nested function.
+      * If arguments are not suitable for combined function, throw an exception.
+      */
+    virtual Array transformParameters(const Array & parameters) const
+    {
+        return parameters;
+    }
 
     /** Create combined aggregate function (ex: sumIf)
       *  from nested function (ex: sum)

@@ -3,11 +3,10 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/AnalyzedJoin.h>
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
@@ -20,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int TOO_DEEP_AST;
     extern const int CYCLIC_ALIASES;
+    extern const int UNKNOWN_QUERY_PARAMETER;
 }
 
 
@@ -73,7 +73,7 @@ void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
     if (functionIsInOrGlobalInOperator(func_name))
     {
         auto & ast = func_arguments->children.at(1);
-        if (auto opt_name = getIdentifierName(ast))
+        if (auto opt_name = tryGetIdentifierName(ast))
             if (!aliases.count(*opt_name))
                 setIdentifierSpecial(ast);
     }
@@ -101,8 +101,24 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name);
-    if (IdentifierSemantic::canBeAlias(node) && it_alias != data.aliases.end() && current_alias != node.name)
+    if (it_alias != data.aliases.end() && current_alias != node.name)
     {
+        if (!IdentifierSemantic::canBeAlias(node))
+        {
+            /// This means that column had qualified name, which was translated (so, canBeAlias() returns false).
+            /// But there is an alias with the same name. So, let's use original name for that column.
+            /// If alias wasn't set, use original column name as alias.
+            /// That helps to avoid result set with columns which have same names but different values.
+            if (node.alias.empty())
+            {
+                node.name.swap(node.alias);
+                node.restoreCompoundName();
+                node.name.swap(node.alias);
+            }
+
+            return;
+        }
+
         auto & alias_node = it_alias->second;
 
         /// Let's replace it with the corresponding tree node.
@@ -227,14 +243,16 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
             data.current_alias = my_alias;
     }
 
-    if (auto * node = ast->as<ASTFunction>())
-        visit(*node, ast, data);
-    if (auto * node = ast->as<ASTIdentifier>())
-        visit(*node, ast, data);
-    if (auto * node = ast->as<ASTTablesInSelectQueryElement>())
-        visit(*node, ast, data);
-    if (auto * node = ast->as<ASTSelectQuery>())
-        visit(*node, ast, data);
+    if (auto * node_func = ast->as<ASTFunction>())
+        visit(*node_func, ast, data);
+    else if (auto * node_id = ast->as<ASTIdentifier>())
+        visit(*node_id, ast, data);
+    else if (auto * node_tables = ast->as<ASTTablesInSelectQueryElement>())
+        visit(*node_tables, ast, data);
+    else if (auto * node_select = ast->as<ASTSelectQuery>())
+        visit(*node_select, ast, data);
+    else if (auto * node_param = ast->as<ASTQueryParameter>())
+        throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
 
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
     if (ast.get() != initial_ast.get())

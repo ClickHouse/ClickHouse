@@ -1,7 +1,6 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsHashing.h>
-#include <Common/config.h>
+#include "FunctionsHashing.h"
 
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {

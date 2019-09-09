@@ -1,10 +1,11 @@
 #pragma once
 
-#include <roaring.h>
+#include <algorithm>
+#include <roaring/roaring.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/noncopyable.hpp>
-#include <roaring.hh>
+#include <roaring/roaring.hh>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 
@@ -308,16 +309,88 @@ public:
 
     /**
      * Check whether two bitmaps intersect.
+     * Intersection with an empty set is always 0 (consistent with hasAny).
      */
-    UInt8 rb_intersect(const RoaringBitmapWithSmallSet & r1)
+    UInt8 rb_intersect(const RoaringBitmapWithSmallSet & r1) const
     {
         if (isSmall())
-            toLarge();
-        roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-        UInt8 is_true = roaring_bitmap_intersect(rb, rb1);
-        if (r1.isSmall())
-            roaring_bitmap_free(rb1);
-        return is_true;
+        {
+            if (r1.isSmall())
+            {
+                for (const auto & x : r1.small)
+                    if (small.find(x.getValue()) != small.end())
+                        return 1;
+            }
+            else
+            {
+                for (const auto & x : small)
+                    if (roaring_bitmap_contains(r1.rb, x.getValue()))
+                        return 1;
+            }
+        }
+        else if (r1.isSmall())
+        {
+            for (const auto & x : r1.small)
+                if (roaring_bitmap_contains(rb, x.getValue()))
+                    return 1;
+        }
+        else if (roaring_bitmap_intersect(rb, r1.rb))
+            return 1;
+
+        return 0;
+    }
+
+    /**
+     * Check whether the argument is the subset of this set.
+     * Empty set is a subset of any other set (consistent with hasAll).
+     */
+    UInt8 rb_is_subset(const RoaringBitmapWithSmallSet & r1) const
+    {
+        if (isSmall())
+        {
+            if (r1.isSmall())
+            {
+                for (const auto & x : r1.small)
+                    if (small.find(x.getValue()) == small.end())
+                        return 0;
+            }
+            else
+            {
+                UInt64 r1_size = r1.size();
+
+                if (r1_size > small.size())
+                    return 0; // A bigger set can not be a subset of ours.
+
+                // This is a rare case with a small number of elements on
+                // both sides: r1 was promoted to large for some reason and
+                // it is still not larger than our small set.
+                // If r1 is our subset then our size must be equal to
+                // r1_size + number of not found elements, if this sum becomes
+                // greater then r1 is not a subset.
+                for (const auto & x : small)
+                    if (!roaring_bitmap_contains(r1.rb, x.getValue()) && ++r1_size > small.size())
+                        return 0;
+            }
+        }
+        else if (r1.isSmall())
+        {
+            for (const auto & x : r1.small)
+                if (!roaring_bitmap_contains(rb, x.getValue()))
+                    return 0;
+        }
+        else if (!roaring_bitmap_is_subset(r1.rb, rb))
+            return 0;
+
+        return 1;
+    }
+
+    /**
+     * Check whether this bitmap contains the argument.
+     */
+    UInt8 rb_contains(const UInt32 x) const
+    {
+        return isSmall() ? small.find(x) != small.end() :
+            roaring_bitmap_contains(rb, x);
     }
 
     /**
@@ -375,6 +448,44 @@ public:
             while (iterator.has_value)
             {
                 res_data.emplace_back(iterator.current_value);
+                roaring_advance_uint32_iterator(&iterator);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Return new set with specified range (not include the range_end)
+     */
+    UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet& r1) const
+    {
+        UInt64 count = 0;
+        if (range_start >= range_end)
+            return count;
+        if (isSmall())
+        {
+            std::vector<T> ans;
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if ((UInt32)val >= range_start && (UInt32)val < range_end)
+                {
+                    r1.add(val);
+                    count++;
+                }
+            }
+        }
+        else
+        {
+            roaring_uint32_iterator_t iterator;
+            roaring_init_iterator(rb, &iterator);
+            roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
+            while (iterator.has_value)
+            {
+                if ((UInt32)iterator.current_value >= range_end)
+                    break;
+                r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
                 count++;
             }

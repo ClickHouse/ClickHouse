@@ -1,13 +1,13 @@
 #include <Columns/Collator.h>
 
-#include <Common/config.h>
+#include "config_core.h"
 
 #if USE_ICU
     #include <unicode/ucol.h>
 #else
     #ifdef __clang__
-        #pragma clang diagnostic push
         #pragma clang diagnostic ignored "-Wunused-private-field"
+        #pragma clang diagnostic ignored "-Wmissing-noreturn"
     #endif
 #endif
 
@@ -25,7 +25,6 @@ namespace DB
         extern const int SUPPORT_IS_DISABLED;
     }
 }
-
 
 Collator::Collator(const std::string & locale_) : locale(Poco::toLower(locale_))
 {

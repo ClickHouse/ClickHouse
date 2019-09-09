@@ -11,32 +11,28 @@
   */
 
 
-struct NoInitTag {};
+struct NoInitTag
+{
+};
 
 /// A pair that does not initialize the elements, if not needed.
 template <typename First, typename Second>
-class PairNoInit
+struct PairNoInit
 {
     First first;
     Second second;
-    template <typename, typename, typename, typename>
-    friend class HashMapCell;
 
-public:
     PairNoInit() {}
 
     template <typename First_>
-    PairNoInit(First_ && first_, NoInitTag)
-        : first(std::forward<First_>(first_)) {}
+    PairNoInit(First_ && first_, NoInitTag) : first(std::forward<First_>(first_))
+    {
+    }
 
     template <typename First_, typename Second_>
-    PairNoInit(First_ && first_, Second_ && second_)
-        : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_)) {}
-
-    First & getFirstMutable() { return first; }
-    const First & getFirst() const { return first; }
-    Second & getSecond() { return second; }
-    const Second & getSecond() const { return second; }
+    PairNoInit(First_ && first_, Second_ && second_) : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_))
+    {
+    }
 };
 
 
@@ -123,8 +119,8 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 
     using Base::Base;
 
-    bool keyEquals(const Key & key_) const { return this->value.getFirst() == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.getFirst() == key_; }
+    bool keyEquals(const Key & key_) const { return this->value.first == key_; }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.first == key_; }
     bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
@@ -132,14 +128,12 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 };
 
 
-template
-<
+template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
 public:
@@ -177,23 +171,19 @@ public:
 };
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;

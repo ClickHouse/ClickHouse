@@ -1,26 +1,26 @@
 #pragma once
 
-#include <chrono>
-#include <memory>
+
 #include <Core/Field.h>
 #include <Core/Names.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <common/StringRef.h>
 #include "IDictionarySource.h"
 
+#include <chrono>
+#include <memory>
+
 namespace DB
 {
+
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
 struct DictionaryStructure;
 class ColumnString;
-
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-
 
 struct IDictionaryBase : public IExternalLoadable
 {
@@ -55,6 +55,8 @@ struct IDictionaryBase : public IExternalLoadable
         auto source = getSource();
         return source && source->isModified();
     }
+
+    virtual std::exception_ptr getLastException() const { return {}; }
 
     std::shared_ptr<IDictionaryBase> shared_from_this()
     {

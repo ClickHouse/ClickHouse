@@ -1,11 +1,11 @@
 #pragma once
+
 #include <Core/Types.h>
-#include <boost/core/noncopyable.hpp>
+
 #include <list>
 #include <vector>
 #include <mutex>
 #include <condition_variable>
-#include <thread>
 #include <map>
 #include <string>
 
@@ -18,7 +18,7 @@ using RWLock = std::shared_ptr<RWLockImpl>;
 
 
 /// Implements shared lock with FIFO service
-/// Can be acquired recursively (several calls for the same query or the same OS thread) in Read mode
+/// Can be acquired recursively (several calls for the same query) in Read mode
 ///
 /// NOTE: it is important to allow acquiring the same lock in Read mode without waiting if it is already
 /// acquired by another thread of the same query. Otherwise the following deadlock is possible:
@@ -54,7 +54,6 @@ private:
     struct Group;
     using GroupsContainer = std::list<Group>;
     using ClientsContainer = std::list<Type>;
-    using ThreadToHolder = std::map<std::thread::id, std::weak_ptr<LockHolderImpl>>;
     using QueryIdToHolder = std::map<String, std::weak_ptr<LockHolderImpl>>;
 
     /// Group of clients that should be executed concurrently
@@ -67,12 +66,11 @@ private:
 
         std::condition_variable cv; /// all clients of the group wait group condvar
 
-        explicit Group(Type type) : type{type} {}
+        explicit Group(Type type_) : type{type_} {}
     };
 
     mutable std::mutex mutex;
     GroupsContainer queue;
-    ThreadToHolder thread_to_holder;
     QueryIdToHolder query_id_to_holder;
 };
 

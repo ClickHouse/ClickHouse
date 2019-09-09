@@ -28,6 +28,7 @@ def test_single_page(input_path, lang):
             if href and href.startswith('#'):
                 if href[1:] not in anchor_points:
                     links_to_nowhere += 1
+                    logging.info("Tag %s", tag)
                     logging.info('Link to nowhere: %s' % href)
 
         if duplicate_anchor_points:
@@ -37,7 +38,7 @@ def test_single_page(input_path, lang):
             sys.exit(10)
 
         assert len(anchor_points) > 10, 'Html parsing is probably broken'
-                
+
 
 if __name__ == '__main__':
     logging.basicConfig(

@@ -1,3 +1,4 @@
+set allow_suspicious_low_cardinality_types = 1;
 drop table if exists lc_00800_2;
 create table lc_00800_2 (val LowCardinality(UInt64)) engine = MergeTree order by val;
 insert into lc_00800_2 select number % 123 from system.numbers limit 100000;

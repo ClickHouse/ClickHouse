@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <Common/config.h>
+#include "config_core.h"
 #include <Core/Names.h>
 #include <Core/Field.h>
 #include <Core/Block.h>
@@ -158,6 +158,13 @@ public:
       * If we will call it during query analysis, we will sleep extra amount of time.
       */
     virtual bool isSuitableForConstantFolding() const { return true; }
+
+    /** Some functions like ignore(...) or toTypeName(...) always return constant result which doesn't depend on arguments.
+      * In this case we can calculate result and assume that it's constant in stream header.
+      * There is no need to implement function if it has zero arguments.
+      * Must return ColumnConst with single row or nullptr.
+      */
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -408,7 +415,7 @@ protected:
 class DefaultExecutable final : public PreparedFunctionImpl
 {
 public:
-    explicit DefaultExecutable(std::shared_ptr<IFunction> function) : function(std::move(function)) {}
+    explicit DefaultExecutable(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
     String getName() const override { return function->getName(); }
 
@@ -434,8 +441,8 @@ private:
 class DefaultFunction final : public IFunctionBase
 {
 public:
-    DefaultFunction(std::shared_ptr<IFunction> function, DataTypes arguments, DataTypePtr return_type)
-            : function(std::move(function)), arguments(std::move(arguments)), return_type(std::move(return_type)) {}
+    DefaultFunction(std::shared_ptr<IFunction> function_, DataTypes arguments_, DataTypePtr return_type_)
+            : function(std::move(function_)), arguments(std::move(arguments_)), return_type(std::move(return_type_)) {}
 
     String getName() const override { return function->getName(); }
 
@@ -456,6 +463,10 @@ public:
     }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments_) const override
+    {
+        return function->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments_);
+    }
 
     bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
 
@@ -478,7 +489,7 @@ private:
 class DefaultFunctionBuilder : public FunctionBuilderImpl
 {
 public:
-    explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function) : function(std::move(function)) {}
+    explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
 
     void checkNumberOfArguments(size_t number_of_arguments) const override
     {

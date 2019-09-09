@@ -8,6 +8,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getFQDNOrHostName.h>
 #include <common/getMemoryAmount.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include "JSONString.h"
 
@@ -28,6 +29,10 @@ std::string getMainMetric(const PerformanceTestInfo & test_info)
     else
         main_metric = test_info.main_metric;
     return main_metric;
+}
+bool isASCIIString(const std::string & str)
+{
+    return std::all_of(str.begin(), str.end(), isASCII);
 }
 }
 
@@ -109,7 +114,12 @@ std::string ReportBuilder::buildFullReport(
             runJSON.set("query", query);
             runJSON.set("query_index", query_index);
             if (!statistics.exception.empty())
-                runJSON.set("exception", statistics.exception);
+            {
+                if (isASCIIString(statistics.exception))
+                    runJSON.set("exception", std::regex_replace(statistics.exception, QUOTE_REGEX, "\\\""));
+                else
+                    runJSON.set("exception", "Some exception occured with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
+            }
 
             if (test_info.exec_type == ExecutionType::Loop)
             {
@@ -156,6 +166,8 @@ std::string ReportBuilder::buildFullReport(
                 runJSON.set("avg_rows_per_second", statistics.avg_rows_speed_value);
                 runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
             }
+
+            runJSON.set("memory_usage", statistics.memory_usage);
 
             run_infos.push_back(runJSON);
         }

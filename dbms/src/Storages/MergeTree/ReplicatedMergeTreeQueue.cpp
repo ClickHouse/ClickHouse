@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , format_version(storage.data.format_version)
+    , format_version(storage.format_version)
     , current_parts(format_version)
     , virtual_parts(format_version)
 {}
@@ -62,14 +62,14 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         Strings children = zookeeper->getChildren(queue_path);
 
         auto to_remove_it = std::remove_if(
-                children.begin(), children.end(), [&](const String & path)
-                {
-                    return already_loaded_paths.count(path);
-                });
+            children.begin(), children.end(), [&](const String & path)
+            {
+                return already_loaded_paths.count(path);
+            });
 
         LOG_DEBUG(log,
-                  "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
-                            << (children.end() - to_remove_it) << " entries already loaded.");
+            "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
+                    << (children.end() - to_remove_it) << " entries already loaded.");
         children.erase(to_remove_it, children.end());
 
         std::sort(children.begin(), children.end());
@@ -948,7 +948,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 sum_parts_size_in_bytes += part->bytes_on_disk;
         }
 
-        if (merger_mutator.actions_blocker.isCancelled())
+        if (merger_mutator.merges_blocker.isCancelled())
         {
             String reason = "Not executing log entry for part " + entry.new_part_name + " because merges and mutations are cancelled now.";
             LOG_DEBUG(log, reason);
@@ -956,15 +956,20 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
-        /** Execute merge only if there are enough free threads in background pool to do merges of that size.
-          * But if all threads are free (maximal size of merge is allowed) then execute any merge,
-          *  (because it may be ordered by OPTIMIZE or early with differrent settings).
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? merger_mutator.getMaxSourcePartsSizeForMerge()
+                                                                           : merger_mutator.getMaxSourcePartSizeForMutation();
+        /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
+          * then ignore value returned by getMaxSourcePartsSizeForMerge() and execute merge of any size,
+          * because it may be ordered by OPTIMIZE or early with different settings.
+          * Setting max_bytes_to_merge_at_max_space_in_pool still working for regular merges,
+          * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
-        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
-        if (max_source_parts_size != data.settings.max_bytes_to_merge_at_max_space_in_pool
-            && sum_parts_size_in_bytes > max_source_parts_size)
+        const auto data_settings = data.getSettings();
+        bool ignore_max_size = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool);
+
+        if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
-            String reason = "Not executing log entry for part " + entry.new_part_name
+            String reason = "Not executing log entry " + entry.typeToString() + " for part " + entry.new_part_name
                 + " because source parts size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
                 + ") is greater than the current maximum (" + formatReadableSizeWithBinarySuffix(max_source_parts_size) + ").";
             LOG_DEBUG(log, reason);
@@ -1014,8 +1019,8 @@ Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const String & partiti
 }
 
 
-ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue)
-    : entry(entry_), queue(queue)
+ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_)
+    : entry(entry_), queue(queue_)
 {
     entry->currently_executing = true;
     ++entry->num_tries;
@@ -1154,17 +1159,21 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-size_t ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
+std::pair<size_t, size_t> ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
 {
     std::lock_guard lock(state_mutex);
 
-    size_t count = 0;
+    size_t count_merges = 0;
+    size_t count_mutations = 0;
     for (const auto & entry : queue)
-        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
-            || entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
-            ++count;
+    {
+        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS)
+            ++count_merges;
+        else if (entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
+            ++count_mutations;
+    }
 
-    return count;
+    return std::make_pair(count_merges, count_mutations);
 }
 
 
@@ -1281,9 +1290,9 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     }
 
     if (!finished.empty())
+    {
         zookeeper->set(replica_path + "/mutation_pointer", finished.back()->znode_name);
 
-    {
         std::lock_guard lock(state_mutex);
 
         mutation_pointer = finished.back()->znode_name;
@@ -1452,7 +1461,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         for (const String & partition : partitions)
             lock_futures.push_back(zookeeper->asyncGetChildren(queue.zookeeper_path + "/block_numbers/" + partition));
 
-        struct BlockInfo
+        struct BlockInfo_
         {
             String partition;
             Int64 number;
@@ -1460,7 +1469,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
             std::future<Coordination::GetResponse> contents_future;
         };
 
-        std::vector<BlockInfo> block_infos;
+        std::vector<BlockInfo_> block_infos;
         for (size_t i = 0; i < partitions.size(); ++i)
         {
             Strings partition_block_numbers = lock_futures[i].get().names;
@@ -1472,13 +1481,13 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
                 {
                     Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
                     String zk_path = queue.zookeeper_path + "/block_numbers/" + partitions[i] + "/" + entry;
-                    block_infos.push_back(
-                        BlockInfo{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
+                    block_infos.emplace_back(
+                        BlockInfo_{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
                 }
             }
         }
 
-        for (BlockInfo & block : block_infos)
+        for (auto & block : block_infos)
         {
             Coordination::GetResponse resp = block.contents_future.get();
             if (!resp.error && lock_holder_paths.count(resp.data))
@@ -1655,7 +1664,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
     /// Assigning mutations is easier than assigning merges because mutations appear in the same order as
-    /// the order of their version numbers (see StorageReplicatedMergeTree::mutate()).
+    /// the order of their version numbers (see StorageReplicatedMergeTree::mutate).
     /// This means that if we have loaded the mutation with version number X then all mutations with
     /// the version numbers less than X are also loaded and if there is no merge or mutation assigned to
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to

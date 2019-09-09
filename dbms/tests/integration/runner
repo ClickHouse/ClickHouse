@@ -7,6 +7,7 @@ import argparse
 import logging
 import signal
 import subprocess
+import sys
 
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../../"))
@@ -29,15 +30,8 @@ def check_args_and_update_paths(args):
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exists".format(path))
 
-def try_rm_image():
-    try:
-        subprocess.check_call('docker rm {name}'.format(name=CONTAINER_NAME), shell=True)
-    except:
-        pass
-
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call('docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(name=CONTAINER_NAME), shell=True)
-    try_rm_image()
     raise KeyboardInterrupt("Killed by Ctrl+C")
 
 signal.signal(signal.SIGINT, docker_kill_handler_handler)
@@ -67,6 +61,11 @@ if __name__ == "__main__":
         help="Path to repository root folder")
 
     parser.add_argument(
+        "--command",
+        default='',
+        help="Set it to run some other command in container (for example bash)")
+
+    parser.add_argument(
         "--disable-net-host",
         action='store_true',
         default=False,
@@ -82,20 +81,30 @@ if __name__ == "__main__":
     if not args.disable_net_host:
         net = "--net=host"
 
-    cmd = "docker run {net} --name {name} --user={user} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
-        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse -e PYTEST_OPTS='{opts}' {img} ".format(
+    # create named volume which will be used inside to store images and other docker related files,
+    # to avoid redownloading it every time
+    #
+    # should be removed manually when not needed
+    subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
+
+    # enable tty mode & interactive for docker if we have real tty
+    tty = ""
+    if sys.stdout.isatty() and sys.stdin.isatty():
+        tty = "-it"
+
+    cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
+        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse --volume={name}_volume:/var/lib/docker -e PYTEST_OPTS='{opts}' {img} {command}".format(
         net=net,
+        tty=tty,
         bin=args.binary,
         bridge_bin=args.bridge_binary,
         cfg=args.configs_dir,
         pth=args.clickhouse_root,
         opts=' '.join(args.pytest_args),
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME,
-        user=getpass.getuser(),
         name=CONTAINER_NAME,
+        command=args.command
     )
 
-    try:
-        subprocess.check_call(cmd, shell=True)
-    finally:
-        try_rm_image()
+    #print(cmd)
+    subprocess.check_call(cmd, shell=True)

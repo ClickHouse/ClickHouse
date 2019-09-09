@@ -4,8 +4,8 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
@@ -38,19 +38,10 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
     /// Collect a set of *MergeTree tables.
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
     for (const auto & db : context.getDatabases())
-    {
         if (context.hasDatabaseAccessRights(db.first))
-        {
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
-            {
-                if (dynamic_cast<const StorageMergeTree *>(iterator->table().get())
-                    || dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                {
+                if (dynamic_cast<const MergeTreeData *>(iterator->table().get()))
                     merge_tree_tables[db.first][iterator->name()] = iterator->table();
-                }
-            }
-        }
-    }
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
@@ -92,10 +83,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
         std::vector<MergeTreeMutationStatus> statuses;
         {
             const IStorage * storage = merge_tree_tables[database][table].get();
-            if (const auto * merge_tree = dynamic_cast<const StorageMergeTree *>(storage))
+            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage))
                 statuses = merge_tree->getMutationsStatus();
-            else if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(storage))
-                statuses = replicated->getMutationsStatus();
         }
 
         for (const MergeTreeMutationStatus & status : statuses)

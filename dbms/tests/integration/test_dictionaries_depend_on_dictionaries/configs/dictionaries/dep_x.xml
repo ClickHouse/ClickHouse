@@ -1,0 +1,29 @@
+<yandex>
+    <dictionary>
+        <name>dep_x</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>9000</port>
+                <user>default</user>
+                <password></password>
+                <db>dict</db>
+                <table>dep_z</table>
+            </clickhouse>
+        </source>
+        <lifetime>5</lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>a</name>
+                <type>String</type>
+                <null_value>XX</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</yandex>

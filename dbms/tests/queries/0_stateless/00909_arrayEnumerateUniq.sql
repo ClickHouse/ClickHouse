@@ -1,3 +1,4 @@
+-- env SQL_FUZZY_FUNCTIONS=arrayEnumerateUniqRanked,arrayEnumerateDenseRanked SQL_FUZZY_RUNS=1000 clickhouse-test fuzzy
 
 SELECT arrayEnumerateUniq(         [1,1,2,2,1,1],    [1,2,1,2,2,2]);
 SELECT arrayEnumerateUniqRanked(1, [1,1,2,2,1,1], 1, [1,2,1,2,2,2],1);
@@ -140,6 +141,16 @@ SELECT '2,a3,1,a4,2', arrayEnumerateUniqRanked(2,a3,1,a4,2) FROM arrays_test ORD
 select '---------END';
 DROP TABLE arrays_test;
 
+CREATE TABLE arrays_test (a3 Array(Array(UInt8)), a4 Array(Array(UInt32)) ) ENGINE = Memory;
+INSERT INTO arrays_test VALUES ([[]], [[]]), ([[1,2]], [[3,4]]), ([[5,6]], [[7,8]]), ([[]], [[]]), ([[9,10]], [[11,12]]), ([[13,14]], [[15,16]]);
+SELECT 'a3,a4 1..n', arrayEnumerateUniqRanked(a3,a4) FROM arrays_test ORDER BY a3, a4;
+TRUNCATE TABLE arrays_test;
+INSERT INTO arrays_test VALUES ([[]], [[]]), ([[1,1]], [[1,1]]), ([[1,1]], [[1,1]]), ([[]], [[]]), ([[1,1]], [[1,1]]), ([[1,1]], [[1,1]]);
+SELECT 'a3,a4 1..1', arrayEnumerateUniqRanked(a3,a4) FROM arrays_test ORDER BY a3, a4;
+DROP TABLE arrays_test;
+
+
+
 select '---------BAD';
 SELECT arrayEnumerateUniqRanked(); -- { serverError 42 }
 SELECT arrayEnumerateUniqRanked([]);
@@ -180,3 +191,125 @@ SELECT arrayEnumerateDenseRanked(1.1, [10,20,10,30]); -- { serverError 170 }
 SELECT arrayEnumerateDenseRanked([10,20,10,30], 0.4); -- { serverError 170 }
 SELECT arrayEnumerateDenseRanked([10,20,10,30], 1.8); -- { serverError 170 }
 SELECT arrayEnumerateUniqRanked(1, [], 1000000000); -- { serverError 36 }
+
+
+-- skipping empty arrays
+SELECT arrayEnumerateUniqRanked(2, [[3], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [3], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [], [], [3], [], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [], [], [], [3], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[3], [], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[3], [], [], [3]]);
+SELECT arrayEnumerateUniqRanked(2, [[3], [], [], [3], [3]]);
+
+
+select '-- no order';
+SELECT * FROM (SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ) ) ORDER BY a ASC;
+select '-- order no arr';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- order two arr';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[], [3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- order non empt';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[6], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- order';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT arrayEnumerateUniqRanked(2,[[1, 2, 3, 4], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [1, 2, 3, 4], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [1, 2, 3, 4], [], [], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2, [[1, 2, 3, 4], [], [], [3, 4, 5, 6]]);
+SELECT arrayEnumerateUniqRanked(2,[[1], [1]]);
+SELECT arrayEnumerateUniqRanked(2, [[], [1], [1]]);
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [4]] AS a UNION ALL SELECT [[4]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[], [3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [], [1, 2, 3, 4]] AS a UNION ALL SELECT [[3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [], [1, 2, 3, 4]] AS a UNION ALL SELECT [[], [], [3, 4, 5]] AS a ) ORDER BY a ASC );
+select '-- ';
+SELECT a, arrayEnumerateUniqRanked(a) FROM ( SELECT * FROM ( SELECT [[], [], [1, 2, 1, 4]] AS a UNION ALL SELECT [[], [], [3, 4, 5, 4]] AS a ) ORDER BY a ASC );
+select '-- ';
+
+
+DROP TABLE IF EXISTS arrays_test;
+CREATE TABLE arrays_test (a1 Array(UInt8), a2 Array(UInt32) ) ENGINE = Memory;
+INSERT INTO arrays_test VALUES ([], []),([10], [11]), ([], []), ([12], [13]);
+SELECT 'a1,a2 n', arrayEnumerateUniqRanked(a1,a2) FROM arrays_test ORDER BY a1, a2;
+
+TRUNCATE TABLE arrays_test;
+INSERT INTO arrays_test VALUES ([], []),([1], [1]), ([], []), ([1], [1]);
+SELECT 'a1,a2 1', arrayEnumerateUniqRanked(a1,a2) FROM arrays_test ORDER BY a1, a2;
+
+TRUNCATE TABLE arrays_test;
+INSERT INTO arrays_test VALUES ([], []), ([1,2], [3,4]), ([5,6], [7,8]), ([], []), ([9,10], [11,12]), ([13,14], [15,16]);
+SELECT 'a1,a2 n2', arrayEnumerateUniqRanked(a1,a2) FROM arrays_test ORDER BY a1, a2;
+
+TRUNCATE TABLE arrays_test;
+INSERT INTO arrays_test VALUES ([], []), ([1,1], [1,1]), ([1,1], [1,1]), ([], []), ([1,1], [1,1]), ([1,1], [1,1]);
+SELECT 'a1,a2 12', arrayEnumerateUniqRanked(a1,a2) FROM arrays_test ORDER BY a1, a2;
+
+DROP TABLE arrays_test;
+
+
+
+DROP TABLE IF EXISTS arr_tests_visits;
+
+CREATE TABLE arr_tests_visits
+(
+    CounterID        UInt32,
+    StartDate        Date,
+    Sign             Int8,
+    VisitID          UInt64,
+    UserID           UInt64,
+    VisitVersion     UInt16,
+    `Test.BannerID` Array(UInt64),
+    `Test.Load`     Array(UInt8),
+    `Test.PuidKey`  Array(Array(UInt8)),
+    `Test.PuidVal`  Array(Array(UInt32))
+) ENGINE = MergeTree() PARTITION BY toMonday(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192;
+
+truncate table arr_tests_visits;
+insert into arr_tests_visits (CounterID, StartDate, Sign, VisitID, UserID, VisitVersion, `Test.BannerID`, `Test.Load`, `Test.PuidKey`, `Test.PuidVal`)
+values (1, toDate('2019-06-06'), 1, 1, 1, 1, [1], [1], [[]], [[]]),       (1, toDate('2019-06-06'), -1, 1, 1, 1, [1], [1], [[]], [[]]),       (1, toDate('2019-06-06'), 1, 1, 1, 2, [1,2], [1,1], [[],[1,2,3,4]], [[],[1001, 1002, 1003, 1004]]),       (1, toDate('2019-06-06'), 1, 2, 1, 1, [3], [1], [[3,4,5]], [[2001, 2002, 2003]]),       (1, toDate('2019-06-06'), 1, 3, 2, 1, [4, 5], [1, 0], [[5,6],[]], [[3001, 3002],[]]),       (1, toDate('2019-06-06'), 1, 4, 2, 1, [5, 5, 6], [1, 0, 0], [[1,2], [1, 2], [3]], [[1001, 1002],[1002, 1003], [2001]]);
+
+select CounterID, StartDate, Sign, VisitID, UserID, VisitVersion, BannerID, Load, PuidKeyArr, PuidValArr, arrayEnumerateUniqRanked(PuidKeyArr, PuidValArr) as uniqTestPuid
+    from arr_tests_visits
+    array join
+         Test.BannerID as BannerID,
+         Test.Load as Load,
+         Test.PuidKey as PuidKeyArr,
+         Test.PuidVal as PuidValArr;
+
+select '--';
+
+SELECT
+    CounterID,
+    StartDate,
+    Sign,
+    VisitID,
+    UserID,
+    VisitVersion,
+    BannerID,
+    Load,
+    PuidKeyArr,
+    PuidValArr,
+    arrayEnumerateUniqRanked(PuidKeyArr, PuidValArr) AS uniqTestPuid
+FROM arr_tests_visits
+ARRAY JOIN
+    Test.BannerID AS BannerID,
+    Test.Load AS Load,
+    Test.PuidKey AS PuidKeyArr,
+    Test.PuidVal AS PuidValArr;
+
+DROP TABLE arr_tests_visits;
+
+
+select '-- empty';
+SELECT arrayEnumerateUniqRanked([['a'], [], ['a']]);
+SELECT arrayEnumerateUniqRanked([[1], [], [1]]);
+SELECT arrayEnumerateUniqRanked([[1], [], [1], [], [1], [], [1], [], [1], [], [1], [], [1], [], [1], [], [1]]);
+SELECT arrayEnumerateUniqRanked([[], [1], [], [1], [], [1], [], [1], [], [1], [], [1], [], [1], [], [1]]);
+SELECT arrayEnumerateUniqRanked([[1], [1], [], [1]]);

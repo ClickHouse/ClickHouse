@@ -288,7 +288,7 @@ namespace std
 
 namespace ZeroTraits
 {
-    inline bool check(StringRef x) { return 0 == x.size; }
+    inline bool check(const StringRef & x) { return 0 == x.size; }
     inline void set(StringRef & x) { x.size = 0; }
 }
 

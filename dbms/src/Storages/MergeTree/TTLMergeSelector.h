@@ -14,13 +14,14 @@ namespace DB
 class TTLMergeSelector : public IMergeSelector
 {
 public:
-    explicit TTLMergeSelector(time_t current_time_) : current_time(current_time_) {}
+    explicit TTLMergeSelector(time_t current_time_, bool only_drop_parts_) : current_time(current_time_), only_drop_parts(only_drop_parts_) {}
 
     PartsInPartition select(
         const Partitions & partitions,
         const size_t max_total_size_to_merge) override;
 private:
     time_t current_time;
+    bool only_drop_parts;
 };
 
 }

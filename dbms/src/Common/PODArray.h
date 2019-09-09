@@ -45,7 +45,7 @@ inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
   * Only part of the std::vector interface is supported.
   *
   * The default constructor creates an empty object that does not allocate memory.
-  * Then the memory is allocated at least INITIAL_SIZE bytes.
+  * Then the memory is allocated at least initial_bytes bytes.
   *
   * If you insert elements with push_back, without making a `reserve`, then PODArray is about 2.5 times faster than std::vector.
   *
@@ -74,7 +74,7 @@ extern const char EmptyPODArray[EmptyPODArraySize];
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
-template <size_t ELEMENT_SIZE, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_, size_t pad_left_>
+template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
 protected:
@@ -161,7 +161,8 @@ protected:
         {
             // The allocated memory should be multiplication of ELEMENT_SIZE to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
-            realloc(std::max(((INITIAL_SIZE - 1) / ELEMENT_SIZE + 1) * ELEMENT_SIZE, minimum_memory_for_elements(1)),
+            realloc(std::max(integerRoundUp(initial_bytes, ELEMENT_SIZE),
+                             minimum_memory_for_elements(1)),
                     std::forward<TAllocatorParams>(allocator_params)...);
         }
         else
@@ -257,11 +258,11 @@ public:
     }
 };
 
-template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0, size_t pad_left_ = 0>
-class PODArray : public PODArrayBase<sizeof(T), INITIAL_SIZE, TAllocator, pad_right_, pad_left_>
+template <typename T, size_t initial_bytes = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0, size_t pad_left_ = 0>
+class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
 protected:
-    using Base = PODArrayBase<sizeof(T), INITIAL_SIZE, TAllocator, pad_right_, pad_left_>;
+    using Base = PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>;
 
     T * t_start()                      { return reinterpret_cast<T *>(this->c_start); }
     T * t_end()                        { return reinterpret_cast<T *>(this->c_end); }
@@ -618,17 +619,23 @@ public:
     }
 };
 
-template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
-void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & rhs)
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_>
+void swap(PODArray<T, initial_bytes, TAllocator, pad_right_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_> & rhs)
 {
     lhs.swap(rhs);
 }
 
 /** For columns. Padding is enough to read and write xmm-register at the address of the last element. */
-template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
-using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15, 16>;
+template <typename T, size_t initial_bytes = 4096, typename TAllocator = Allocator<false>>
+using PaddedPODArray = PODArray<T, initial_bytes, TAllocator, 15, 16>;
 
-template <typename T, size_t stack_size_in_bytes>
-using PODArrayWithStackMemory = PODArray<T, 0, AllocatorWithStackMemory<Allocator<false>, integerRoundUp(stack_size_in_bytes, sizeof(T))>>;
+/** A helper for declaring PODArray that uses inline memory.
+  * The initial size is set to use all the inline bytes, since using less would
+  * only add some extra allocation calls.
+  */
+template <typename T, size_t inline_bytes,
+          size_t rounded_bytes = integerRoundUp(inline_bytes, sizeof(T))>
+using PODArrayWithStackMemory = PODArray<T, rounded_bytes,
+    AllocatorWithStackMemory<Allocator<false>, rounded_bytes, alignof(T)>>;
 
 }

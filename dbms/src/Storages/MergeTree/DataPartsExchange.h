@@ -2,7 +2,7 @@
 
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>

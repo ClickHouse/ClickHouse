@@ -1,5 +1,4 @@
 <test>
-    <name>entropy</name>
     <type>loop</type>
 
     <preconditions>

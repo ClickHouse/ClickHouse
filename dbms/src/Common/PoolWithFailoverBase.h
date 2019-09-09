@@ -55,12 +55,12 @@ public:
 
     PoolWithFailoverBase(
             NestedPools nested_pools_,
-            size_t max_tries_,
             time_t decrease_error_period_,
+            size_t max_error_cap_,
             Logger * log_)
         : nested_pools(std::move(nested_pools_))
-        , max_tries(max_tries_)
         , decrease_error_period(decrease_error_period_)
+        , max_error_cap(max_error_cap_)
         , shared_pool_states(nested_pools.size())
         , log(log_)
     {
@@ -108,7 +108,7 @@ public:
     /// The method will throw if it is unable to get min_entries alive connections or
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
     std::vector<TryResult> getMany(
-            size_t min_entries, size_t max_entries,
+            size_t min_entries, size_t max_entries, size_t max_tries,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority = GetPriorityFunc(),
             bool fallback_to_stale_replicas = true);
@@ -122,14 +122,14 @@ protected:
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates();
+    PoolStates getPoolStates() const;
 
     NestedPools nested_pools;
 
-    const size_t max_tries;
-
     const time_t decrease_error_period;
+    const size_t max_error_cap;
 
-    std::mutex pool_states_mutex;
+    mutable std::mutex pool_states_mutex;
     PoolStates shared_pool_states;
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
@@ -141,7 +141,7 @@ template <typename TNestedPool>
 typename TNestedPool::Entry
 PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
-    std::vector<TryResult> results = getMany(1, 1, try_get_entry, get_priority);
+    std::vector<TryResult> results = getMany(1, 1, 1, try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
@@ -152,7 +152,7 @@ PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, co
 template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::TryResult>
 PoolWithFailoverBase<TNestedPool>::getMany(
-        size_t min_entries, size_t max_entries,
+        size_t min_entries, size_t max_entries, size_t max_tries,
         const TryGetEntryFunc & try_get_entry,
         const GetPriorityFunc & get_priority,
         bool fallback_to_stale_replicas)
@@ -167,9 +167,9 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
     struct ShuffledPool
     {
-        NestedPool * pool;
-        const PoolState * state;
-        size_t index;
+        NestedPool * pool{};
+        const PoolState * state{};
+        size_t index = 0;
         size_t error_count = 0;
     };
 
@@ -192,12 +192,15 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     size_t up_to_date_count = 0;
     size_t failed_pools_count = 0;
 
-    /// At exit update shared error counts with error counts occured during this call.
+    /// At exit update shared error counts with error counts occurred during this call.
     SCOPE_EXIT(
     {
         std::lock_guard lock(pool_states_mutex);
         for (const ShuffledPool & pool: shuffled_pools)
-            shared_pool_states[pool.index].error_count += pool.error_count;
+        {
+            auto & pool_state = shared_pool_states[pool.index];
+            pool_state.error_count = std::min(max_error_cap, pool_state.error_count + pool.error_count);
+        }
     });
 
     std::string fail_messages;
@@ -240,7 +243,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                             << (shuffled_pool.error_count + 1) << ", reason: " << fail_message);
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-                ++shuffled_pool.error_count;
+                shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 
                 if (shuffled_pool.error_count >= max_tries)
                 {
@@ -301,7 +304,8 @@ void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
         if (nested_pools[i]->contains(entry))
         {
             std::lock_guard lock(pool_states_mutex);
-            ++shared_pool_states[i].error_count;
+            auto & pool_state = shared_pool_states[i];
+            pool_state.error_count = std::min(max_error_cap, pool_state.error_count + 1);
             return;
         }
     }
@@ -376,4 +380,12 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates()
         result.assign(shared_pool_states.begin(), shared_pool_states.end());
     }
     return result;
+}
+
+template <typename TNestedPool>
+typename PoolWithFailoverBase<TNestedPool>::PoolStates
+PoolWithFailoverBase<TNestedPool>::getPoolStates() const
+{
+    std::lock_guard lock(pool_states_mutex);
+    return shared_pool_states;
 }

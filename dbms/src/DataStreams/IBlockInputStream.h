@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/SizeLimits.h>
 #include <IO/Progress.h>
@@ -21,13 +22,9 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
-class IBlockInputStream;
 class ProcessListElement;
 class QuotaForIntervals;
 class QueryStatus;
-
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
 /** Callback to track the progress of the query.
   * Used in IBlockInputStream and Context.
@@ -131,7 +128,7 @@ public:
     virtual Block getTotals();
 
     /// The same for minimums and maximums.
-    Block getExtremes();
+    virtual Block getExtremes();
 
 
     /** Set the execution progress bar callback.
@@ -269,6 +266,11 @@ protected:
         children.push_back(child);
     }
 
+    /** Check limits.
+      * But only those that can be checked within each separate stream.
+      */
+    bool checkTimeLimit();
+
 private:
     bool enabled_extremes = false;
 
@@ -296,10 +298,9 @@ private:
 
     void updateExtremes(Block & block);
 
-    /** Check limits and quotas.
+    /** Check quotas.
       * But only those that can be checked within each separate stream.
       */
-    bool checkTimeLimit();
     void checkQuota(Block & block);
 
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
@@ -313,7 +314,11 @@ private:
         /// NOTE: Acquire a read lock, therefore f() should be thread safe
         std::shared_lock lock(children_mutex);
 
-        for (auto & child : children)
+        // Reduce lock scope and avoid recursive locking since that is undefined for shared_mutex.
+        const auto children_copy = children;
+        lock.unlock();
+
+        for (auto & child : children_copy)
             if (f(*child))
                 return;
     }

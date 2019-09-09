@@ -12,7 +12,7 @@ namespace DB
 class WriteBufferFromOStream : public BufferWithOwnMemory<WriteBuffer>
 {
 protected:
-    std::ostream * ostr;
+    std::ostream * ostr{};
 
     void nextImpl() override;
 

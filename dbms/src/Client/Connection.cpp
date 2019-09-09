@@ -48,7 +48,7 @@ namespace ErrorCodes
 }
 
 
-void Connection::connect()
+void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
@@ -73,7 +73,7 @@ void Connection::connect()
 
         current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
-        socket->connect(current_resolved_address, timeouts.connection_timeout);
+        socket->connect(*current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -230,10 +230,15 @@ UInt16 Connection::getPort() const
     return port;
 }
 
-void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision)
+void Connection::getServerVersion(const ConnectionTimeouts & timeouts,
+                                  String & name,
+                                  UInt64 & version_major,
+                                  UInt64 & version_minor,
+                                  UInt64 & version_patch,
+                                  UInt64 & revision)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     name = server_name;
     version_major = server_version_major;
@@ -242,40 +247,40 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     revision = server_revision;
 }
 
-UInt64 Connection::getServerRevision()
+UInt64 Connection::getServerRevision(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     return server_revision;
 }
 
-const String & Connection::getServerTimezone()
+const String & Connection::getServerTimezone(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     return server_timezone;
 }
 
-const String & Connection::getServerDisplayName()
+const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     return server_display_name;
 }
 
-void Connection::forceConnected()
+void Connection::forceConnected(const ConnectionTimeouts & timeouts)
 {
     if (!connected)
     {
-        connect();
+        connect(timeouts);
     }
     else if (!ping())
     {
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
-        connect();
+        connect(timeouts);
     }
 }
 
@@ -318,10 +323,11 @@ bool Connection::ping()
     return true;
 }
 
-TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & request)
+TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & timeouts,
+                                                 const TablesStatusRequest & request)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
 
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
@@ -344,6 +350,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
 
 
 void Connection::sendQuery(
+    const ConnectionTimeouts & timeouts,
     const String & query,
     const String & query_id_,
     UInt64 stage,
@@ -352,7 +359,9 @@ void Connection::sendQuery(
     bool with_pending_data)
 {
     if (!connected)
-        connect();
+        connect(timeouts);
+
+    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
 
     if (settings)
     {
@@ -524,12 +533,9 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
-Poco::Net::SocketAddress Connection::getResolvedAddress() const
+std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 {
-    if (connected)
-        return current_resolved_address;
-
-    return DNSResolver::instance().resolveAddress(host, port);
+    return current_resolved_address;
 }
 
 
@@ -583,10 +589,12 @@ Connection::Packet Connection::receivePacket()
         }
 
         //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
-
+        //std::cerr << "Client got packet: " << Protocol::Server::toString(res.type) << "\n";
         switch (res.type)
         {
-            case Protocol::Server::Data:
+            case Protocol::Server::Data: [[fallthrough]];
+            case Protocol::Server::Totals: [[fallthrough]];
+            case Protocol::Server::Extremes:
                 res.block = receiveData();
                 return res;
 
@@ -600,16 +608,6 @@ Connection::Packet Connection::receivePacket()
 
             case Protocol::Server::ProfileInfo:
                 res.profile_info = receiveProfileInfo();
-                return res;
-
-            case Protocol::Server::Totals:
-                /// Block with total values is passed in same form as ordinary block. The only difference is packed id.
-                res.block = receiveData();
-                return res;
-
-            case Protocol::Server::Extremes:
-                /// Same as above.
-                res.block = receiveData();
                 return res;
 
             case Protocol::Server::Log:
@@ -711,11 +709,14 @@ void Connection::initBlockLogsInput()
 void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
-    description = host + ":" + toString(resolved_address.port());
-    auto ip_address = resolved_address.host().toString();
+    description = host + ":" + toString(port);
 
-    if (host != ip_address)
-        description += ", " + ip_address;
+    if (resolved_address)
+    {
+        auto ip_address = resolved_address->host().toString();
+        if (host != ip_address)
+            description += ", " + ip_address;
+    }
 }
 
 

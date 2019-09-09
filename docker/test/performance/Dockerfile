@@ -1,3 +1,4 @@
+# docker build -t yandex/clickhouse-performance-test .
 FROM yandex/clickhouse-stateful-test
 
 RUN apt-get update -y \

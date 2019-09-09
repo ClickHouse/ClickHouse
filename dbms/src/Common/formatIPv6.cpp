@@ -10,7 +10,8 @@ namespace DB
 {
 
 // To be used in formatIPv4, maps a byte to it's string form prefixed with length (so save strlen call).
-extern const char one_byte_to_string_lookup_table[256][4] = {
+extern const char one_byte_to_string_lookup_table[256][4] =
+{
     {1, '0'}, {1, '1'}, {1, '2'}, {1, '3'}, {1, '4'}, {1, '5'}, {1, '6'}, {1, '7'}, {1, '8'}, {1, '9'},
     {2, '1', '0'}, {2, '1', '1'}, {2, '1', '2'}, {2, '1', '3'}, {2, '1', '4'}, {2, '1', '5'}, {2, '1', '6'}, {2, '1', '7'}, {2, '1', '8'}, {2, '1', '9'},
     {2, '2', '0'}, {2, '2', '1'}, {2, '2', '2'}, {2, '2', '3'}, {2, '2', '4'}, {2, '2', '5'}, {2, '2', '6'}, {2, '2', '7'}, {2, '2', '8'}, {2, '2', '9'},
@@ -152,7 +153,7 @@ void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_
     }
 
     /// Was it a trailing run of 0x00's?
-    if (best.base != -1 && (best.base + best.len) == words.size())
+    if (best.base != -1 && size_t(best.base) + size_t(best.len) == words.size())
         *dst++ = ':';
 
     *dst++ = '\0';

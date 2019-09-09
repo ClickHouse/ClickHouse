@@ -22,10 +22,11 @@ using JoinPtr = std::shared_ptr<Join>;
   */
 class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
+    friend struct ext::shared_ptr_helper<StorageJoin>;
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     /// Access the innards.
     JoinPtr & getJoin() { return join; }
@@ -43,7 +44,7 @@ public:
 
 private:
     Block sample_block;
-    const Names & key_names;
+    const Names key_names;
     bool use_nulls;
     SizeLimits limits;
     ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
@@ -57,12 +58,14 @@ private:
 protected:
     StorageJoin(
         const String & path_,
-        const String & name_,
+        const String & database_name_,
+        const String & table_name_,
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         bool overwrite);
 };
 

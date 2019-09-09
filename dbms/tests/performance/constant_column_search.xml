@@ -1,6 +1,4 @@
 <test>
-    <name>Constant column string search</name>
-
     <tags>
         <tag>search</tag>
     </tags>
@@ -21,6 +19,8 @@
             <total_time_ms>60000</total_time_ms>
         </any_of>
     </stop_conditions>
+
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE match(URL, ' *tranio\\.ru/spain/*/commercial/*') settings max_threads=5]]></query>
 
     <query><![CDATA[select count(position(URL, 'yandex')), count(position(URL, 'google')) FROM hits_100m_single]]></query>
     <query><![CDATA[select count(multiSearchAllPositions(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>

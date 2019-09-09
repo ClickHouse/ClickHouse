@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -32,6 +33,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -415,10 +417,10 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
-    if constexpr (std::is_integral_v<typename DataType::FieldType>)
-        return tryReadIntText(x, rb);
-    else if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
+    else /*if constexpr (std::is_integral_v<typename DataType::FieldType>)*/
+        return tryReadIntText(x, rb);
 }
 
 template <>
@@ -564,11 +566,7 @@ struct ConvertThroughParsing
 
             ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
-            if constexpr (IsDataTypeDecimal<ToDataType>)
-            {
-                ToDataType::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
-            }
-            else if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
+            if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
@@ -578,7 +576,10 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+                    if constexpr (IsDataTypeDecimal<ToDataType>)
+                        ToDataType::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
+                    else
+                        parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                 }
 
                 if (!isAllRead(read_buffer))
@@ -596,7 +597,12 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone) && isAllRead(read_buffer);
+                    if constexpr (IsDataTypeDecimal<ToDataType>)
+                        parsed = ToDataType::tryReadText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
+                    else
+                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
+
+                    parsed = parsed && isAllRead(read_buffer);
                 }
 
                 if (!parsed)
@@ -652,7 +658,7 @@ struct ConvertImplGenericFromString
             {
                 ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
-                data_type_to.deserializeAsTextEscaped(column_to, read_buffer, format_settings);
+                data_type_to.deserializeAsWholeText(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
@@ -985,27 +991,37 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
+        if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) +
+                ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isStringOrFixedString(arguments[0].type))
             throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        /// Optional second argument with time zone is supported.
-
         if (arguments.size() == 2)
         {
-            if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime>)
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+            {
+                if (!isString(arguments[1].type))
+                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+            else if constexpr (to_decimal)
+            {
+                if (!isInteger(arguments[1].type))
+                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                if (!arguments[1].column)
+                    throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            }
+            else
+            {
                 throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                    + toString(arguments.size()) + ", should be 1. Second argument makes sense only when converting to DateTime.",
+                    + toString(arguments.size()) + ", should be 1. Second argument makes sense only for DateTime and Decimal.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-            if (!isString(arguments[1].type))
-                throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
         }
 
         DataTypePtr res;
@@ -1013,7 +1029,19 @@ public:
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
             res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         else if constexpr (to_decimal)
-            throw Exception(getName() + " is only implemented for types String and Decimal", ErrorCodes::NOT_IMPLEMENTED);
+        {
+            UInt64 scale = extractToDecimalScale(arguments[1]);
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
+                res = createDecimal(9, scale);
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>)
+                res = createDecimal(18, scale);
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+                res = createDecimal(38, scale);
+
+            if (!res)
+                throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);
+        }
         else
             res = std::make_shared<ToDataType>();
 
@@ -1027,13 +1055,45 @@ public:
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
-        if (checkAndGetDataType<DataTypeString>(from_type))
-            ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
-                block, arguments, result, input_rows_count);
-        else if (checkAndGetDataType<DataTypeFixedString>(from_type))
-            ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
-                block, arguments, result, input_rows_count);
+        bool ok = true;
+        if constexpr (to_decimal)
+        {
+            if (arguments.size() != 2)
+                throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+
+            UInt32 scale = extractToDecimalScale(block.getByPosition(arguments[1]));
+
+            if (checkAndGetDataType<DataTypeString>(from_type))
+            {
+                ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count, scale);
+            }
+            else if (checkAndGetDataType<DataTypeFixedString>(from_type))
+            {
+                ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count, scale);
+            }
+            else
+                ok = false;
+        }
         else
+        {
+            if (checkAndGetDataType<DataTypeString>(from_type))
+            {
+                ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count);
+            }
+            else if (checkAndGetDataType<DataTypeFixedString>(from_type))
+            {
+                ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                    block, arguments, result, input_rows_count);
+            }
+            else
+                ok = false;
+
+        }
+
+        if (!ok)
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
                 + ". Only String or FixedString argument is accepted for try-conversion function."
                 + " For other arguments, use function without 'orZero' or 'orNull'.",
@@ -1151,7 +1211,7 @@ struct UnknownMonotonicity
 };
 
 template <typename T>
-struct ToIntMonotonicity
+struct ToNumberMonotonicity
 {
     static bool has() { return true; }
 
@@ -1326,21 +1386,21 @@ struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
 
-using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToIntMonotonicity<UInt8>>;
-using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToIntMonotonicity<UInt16>>;
-using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToIntMonotonicity<UInt32>>;
-using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToIntMonotonicity<UInt64>>;
-using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToIntMonotonicity<Int8>>;
-using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToIntMonotonicity<Int16>>;
-using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToIntMonotonicity<Int32>>;
-using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToIntMonotonicity<Int64>>;
-using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, PositiveMonotonicity>;
-using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, PositiveMonotonicity>;
-using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToIntMonotonicity<UInt16>>;
-using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToIntMonotonicity<UInt32>>;
-using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToIntMonotonicity<UInt128>>;
+using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMonotonicity<UInt8>>;
+using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
+using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToNumberMonotonicity<UInt32>>;
+using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToNumberMonotonicity<UInt64>>;
+using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonotonicity<Int8>>;
+using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
+using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMonotonicity<Int32>>;
+using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
+using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
+using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
+using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToNumberMonotonicity<UInt16>>;
+using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToNumberMonotonicity<UInt32>>;
+using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
-using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
 using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
 using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
 using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
@@ -1384,6 +1444,9 @@ struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
 struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; };
+struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; };
+struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; };
+struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
 
 using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -1397,6 +1460,9 @@ using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateTimeOrZero = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToDecimal32OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
@@ -1410,6 +1476,9 @@ struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
 struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; };
+struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; };
+struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; };
+struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
 
 using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
@@ -1423,6 +1492,9 @@ using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
@@ -1441,8 +1513,8 @@ class PreparedFunctionCast : public PreparedFunctionImpl
 public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
 
-    explicit PreparedFunctionCast(WrapperType && wrapper_function, const char * name)
-            : wrapper_function(std::move(wrapper_function)), name(name) {}
+    explicit PreparedFunctionCast(WrapperType && wrapper_function_, const char * name_)
+            : wrapper_function(std::move(wrapper_function_)), name(name_) {}
 
     String getName() const override { return name; }
 
@@ -1476,10 +1548,10 @@ public:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t, size_t)>;
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
 
-    FunctionCast(const Context & context, const char * name, MonotonicityForRange && monotonicity_for_range
-            , const DataTypes & argument_types, const DataTypePtr & return_type)
-            : context(context), name(name), monotonicity_for_range(monotonicity_for_range)
-            , argument_types(argument_types), return_type(return_type)
+    FunctionCast(const Context & context_, const char * name_, MonotonicityForRange && monotonicity_for_range_
+            , const DataTypes & argument_types_, const DataTypePtr & return_type_)
+            : context(context_), name(name_), monotonicity_for_range(monotonicity_for_range_)
+            , argument_types(argument_types_), return_type(return_type_)
     {
     }
 
@@ -1588,11 +1660,23 @@ private:
         using ToDataType = DataTypeDecimal<FieldType>;
 
         TypeIndex type_index = from_type->getTypeId();
+        UInt32 precision = to_type->getPrecision();
         UInt32 scale = to_type->getScale();
 
-        return [type_index, scale] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        WhichDataType which(type_index);
+        bool ok = which.isNativeInt() ||
+            which.isNativeUInt() ||
+            which.isDecimal() ||
+            which.isFloat() ||
+            which.isDateOrDateTime() ||
+            which.isStringOrFixedString();
+        if (!ok)
+            throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
+                ErrorCodes::CANNOT_CONVERT_TYPE};
+
+        return [type_index, precision, scale] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
-            callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
+            auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
             {
                 using Types = std::decay_t<decltype(types)>;
                 using LeftDataType = typename Types::LeftType;
@@ -1601,7 +1685,30 @@ private:
                 ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(block, arguments, result, input_rows_count, scale);
                 return true;
             });
+
+            /// Additionally check if callOnIndexAndDataType wasn't called at all.
+            if (!res)
+            {
+                auto to = DataTypeDecimal<FieldType>(precision, scale);
+                throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to.getName() +
+                                " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
+            }
         };
+    }
+
+    WrapperType createAggregateFunctionWrapper(const DataTypePtr & from_type_untyped, const DataTypeAggregateFunction * to_type) const
+    {
+        /// Conversion from String through parsing.
+        if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
+        {
+            return [] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
+            {
+                ConvertImplGenericFromString::execute(block, arguments, result);
+            };
+        }
+        else
+            throw Exception{"Conversion from " + from_type_untyped->getName() + " to " + to_type->getName() +
+                " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type) const
@@ -1741,7 +1848,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNumber(from_type) || isEnum(from_type))
+        else if (isNativeNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create(context);
 
@@ -1852,11 +1959,17 @@ private:
             };
         }
 
-        auto wrapper = prepareRemoveNullable(from_nested, to_nested);
+        bool skip_not_null_check = false;
+
+        if (from_low_cardinality && from_nested->isNullable() && !to_nested->isNullable())
+            /// Disable check for dictionary. Will check that column doesn't contain NULL in wrapper below.
+            skip_not_null_check = true;
+
+        auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check);
         if (!from_low_cardinality && !to_low_cardinality)
             return wrapper;
 
-        return [wrapper, from_low_cardinality, to_low_cardinality]
+        return [wrapper, from_low_cardinality, to_low_cardinality, skip_not_null_check]
                 (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             auto & arg = block.getByPosition(arguments[0]);
@@ -1881,6 +1994,11 @@ private:
                 if (from_low_cardinality)
                 {
                     auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(prev_arg_col.get());
+
+                    if (skip_not_null_check && col_low_cardinality->containsNull())
+                        throw Exception{"Cannot convert NULL value to non-Nullable type",
+                                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+
                     arg.column = col_low_cardinality->getDictionary().getNestedColumn();
                     arg.type = from_low_cardinality->getDictionaryType();
 
@@ -1922,7 +2040,7 @@ private:
         };
     }
 
-    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type) const
+    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const
     {
         /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
@@ -1956,6 +2074,11 @@ private:
 
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
 
+                /// May happen in fuzzy tests. For debug purpose.
+                if (!tmp_res.column)
+                    throw Exception("Couldn't convert " + block.getByPosition(arguments[0]).type->getName() + " to "
+                                    + nested_type->getName() + " in " + " prepareRemoveNullable wrapper.", ErrorCodes::LOGICAL_ERROR);
+
                 res.column = wrapInNullable(tmp_res.column, Block({block.getByPosition(arguments[0]), tmp_res}), {0}, 1, input_rows_count);
             };
         }
@@ -1963,19 +2086,23 @@ private:
         {
             /// Conversion from Nullable to non-Nullable.
 
-            return [wrapper] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+            return [wrapper, skip_not_null_check] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 Block tmp_block = createBlockWithNestedColumns(block, arguments, result);
 
                 /// Check that all values are not-NULL.
+                /// Check can be skipped in case if LowCardinality dictionary is transformed.
+                /// In that case, correctness will be checked beforehand.
+                if (!skip_not_null_check)
+                {
+                    const auto & col = block.getByPosition(arguments[0]).column;
+                    const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
+                    const auto & null_map = nullable_col.getNullMapData();
 
-                const auto & col = block.getByPosition(arguments[0]).column;
-                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                const auto & null_map = nullable_col.getNullMapData();
-
-                if (!memoryIsZero(null_map.data(), null_map.size()))
-                    throw Exception{"Cannot convert NULL value to non-Nullable type",
-                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+                    if (!memoryIsZero(null_map.data(), null_map.size()))
+                        throw Exception{"Cannot convert NULL value to non-Nullable type",
+                                        ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+                }
 
                 wrapper(tmp_block, arguments, result, input_rows_count);
                 block.getByPosition(result).column = tmp_block.getByPosition(result).column;
@@ -2060,12 +2187,11 @@ private:
             case TypeIndex::Tuple:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
 
+            case TypeIndex::AggregateFunction:
+                return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             default:
                 break;
         }
-
-        /// It's possible to use ConvertImplGenericFromString to convert from String to AggregateFunction,
-        ///  but it is disabled because deserializing aggregate functions state might be unsafe.
 
         throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
             ErrorCodes::CANNOT_CONVERT_TYPE};
@@ -2080,7 +2206,7 @@ public:
     static constexpr auto name = "CAST";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderCast>(context); }
 
-    FunctionBuilderCast(const Context & context) : context(context) {}
+    FunctionBuilderCast(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 

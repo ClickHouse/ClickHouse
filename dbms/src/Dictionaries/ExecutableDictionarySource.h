@@ -2,12 +2,10 @@
 
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
+#include <Core/Block.h>
 
 
-namespace Poco
-{
-class Logger;
-}
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -21,10 +19,11 @@ public:
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        Block & sample_block,
-        const Context & context);
+        Block & sample_block_,
+        const Context & context_);
 
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
+    ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

@@ -4,13 +4,15 @@
 #include <memory>
 #include <ext/singleton.h>
 #include <Core/Types.h>
+#include <Core/Names.h>
 
 
 namespace DB
 {
 
-/// A singleton implementing DNS names resolving with optional permanent DNS cache
-/// The cache could be updated only manually via drop() method
+/// A singleton implementing DNS names resolving with optional DNS cache
+/// The cache is being updated asynchronous in separate thread (see DNSCacheUpdater) 
+/// or it could be updated manually via drop() method.
 class DNSResolver : public ext::singleton<DNSResolver>
 {
 public:
@@ -34,9 +36,13 @@ public:
     /// Drops all caches
     void dropCache();
 
+    /// Updates all known hosts in cache.
+    /// Returns true if IP of any host has been changed.
+    bool updateCache();
+
     ~DNSResolver();
 
-protected:
+private:
 
     DNSResolver();
 
@@ -44,6 +50,11 @@ protected:
 
     struct Impl;
     std::unique_ptr<Impl> impl;
+
+    /// Returns true if IP of host has been changed.
+    bool updateHost(const String & host);
+
+    void addToNewHosts(const String & host);
 };
 
 }

@@ -1,4 +1,4 @@
-use test;
+set any_join_distinct_right_table_keys = 1;
 
 drop table if exists fooL;
 drop table if exists fooR;

@@ -60,7 +60,7 @@ public:
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
-        bool is_local;
+        bool is_local = false;
         bool user_specified = false;
 
         Protocol::Compression compression = Protocol::Compression::Enable;
@@ -84,17 +84,14 @@ public:
         String toFullString() const;
         static Address fromFullString(const String & address_full_string);
 
-        /// Returns initially resolved address
-        Poco::Net::SocketAddress getResolvedAddress() const
-        {
-            return initially_resolved_address;
-        }
+        /// Returns resolved address if it does resolve.
+        std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
         auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database); }
         bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
-        Poco::Net::SocketAddress initially_resolved_address;
+        bool isLocal(UInt16 clickhouse_port) const;
     };
 
     using Addresses = std::vector<Address>;

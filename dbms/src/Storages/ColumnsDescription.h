@@ -32,9 +32,10 @@ struct ColumnDescription
     String comment;
     CompressionCodecPtr codec;
     ASTPtr ttl;
+    bool is_virtual = false;
 
     ColumnDescription() = default;
-    ColumnDescription(String name_, DataTypePtr type_) : name(std::move(name_)), type(std::move(type_)) {}
+    ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
@@ -49,7 +50,7 @@ class ColumnsDescription
 {
 public:
     ColumnsDescription() = default;
-    explicit ColumnsDescription(NamesAndTypesList ordinary_);
+    explicit ColumnsDescription(NamesAndTypesList ordinary_, bool all_virtuals = false);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String());
@@ -67,8 +68,9 @@ public:
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
     NamesAndTypesList getAliases() const;
-    /// ordinary + materialized + aliases.
-    NamesAndTypesList getAll() const;
+    NamesAndTypesList getVirtuals() const;
+    NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
+    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + virtuals.
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
@@ -87,8 +89,6 @@ public:
             throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
     }
 
-    /// ordinary + materialized.
-    NamesAndTypesList getAllPhysical() const;
     Names getNamesOfPhysical() const;
     bool hasPhysical(const String & column_name) const;
     NameAndTypePair getPhysical(const String & column_name) const;

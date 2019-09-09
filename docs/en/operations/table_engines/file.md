@@ -1,6 +1,7 @@
-# File(InputFormat) {#table_engines-file}
+# File {#table_engines-file}
 
-The data source is a file that stores data in one of the supported input formats (TabSeparated, Native, etc.).
+The File table engine keeps the data in a file in one of the supported [file
+formats](../../interfaces/formats.md#formats) (TabSeparated, Native, etc.).
 
 Usage examples:
 
@@ -14,7 +15,10 @@ Usage examples:
 File(Format)
 ```
 
-`Format` should be supported for either `INSERT` and `SELECT`. For the full list of supported formats see [Formats](../../interfaces/formats.md#formats).
+The `Format` parameter specifies one of the available file formats. To perform
+`SELECT` queries, the format must be supported for input, and to perform
+`INSERT` queries -- for output. The available formats are listed in the
+[Formats](../../interfaces/formats.md#formats) section.
 
 ClickHouse does not allow to specify filesystem path for`File`. It will use folder defined by [path](../server_settings/settings.md) setting in server configuration.
 
@@ -23,7 +27,7 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../query_language/misc.md) it to table information with matching name, so you can query data from that file.
 
 !!! warning
-    Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+    Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
 **Example:**
 
@@ -67,11 +71,11 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## Details of Implementation
 
-- Reads can be parallel, but not writes
+- Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
 - Not supported:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - Indices
-  - Replication
+    - `ALTER`
+    - `SELECT ... SAMPLE`
+    - Indices
+    - Replication
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->

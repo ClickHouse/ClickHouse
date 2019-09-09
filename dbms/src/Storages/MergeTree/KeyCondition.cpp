@@ -179,6 +179,24 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
     },
     {
+        "empty",
+        [] (RPNElement & out, const Field &)
+        {
+            out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.range = Range("");
+            return true;
+        }
+    },
+    {
+        "notEmpty",
+        [] (RPNElement & out, const Field &)
+        {
+            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+            out.range = Range("");
+            return true;
+        }
+    },
+    {
         "like",
         [] (RPNElement & out, const Field & value)
         {
@@ -186,6 +204,48 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 return false;
 
             String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
+            if (prefix.empty())
+                return false;
+
+            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+            out.function = RPNElement::FUNCTION_IN_RANGE;
+            out.range = !right_bound.empty()
+                ? Range(prefix, true, right_bound, false)
+                : Range::createLeftBounded(prefix, true);
+
+            return true;
+        }
+    },
+    {
+        "notLike",
+        [] (RPNElement & out, const Field & value)
+        {
+            if (value.getType() != Field::Types::String)
+                return false;
+
+            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
+            if (prefix.empty())
+                return false;
+
+            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+
+            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+            out.range = !right_bound.empty()
+                        ? Range(prefix, true, right_bound, false)
+                        : Range::createLeftBounded(prefix, true);
+
+            return true;
+        }
+    },
+    {
+        "startsWith",
+        [] (RPNElement & out, const Field & value)
+        {
+            if (value.getType() != Field::Types::String)
+                return false;
+
+            String prefix = value.get<const String &>();
             if (prefix.empty())
                 return false;
 
@@ -334,7 +394,7 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
         out_type = block_with_constants.getByName(column_name).type;
         return true;
     }
-    else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst())
+    else if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
     {
         /// An expression which is dependent on constants only
         const auto & expr_info = block_with_constants.getByName(column_name);
@@ -486,11 +546,13 @@ bool KeyCondition::tryPrepareSetIndex(
         }
     };
 
+    size_t left_args_count = 1;
     const auto * left_arg_tuple = left_arg->as<ASTFunction>();
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
-        for (size_t i = 0; i < tuple_elements.size(); ++i)
+        left_args_count = tuple_elements.size();
+        for (size_t i = 0; i < left_args_count; ++i)
             get_key_tuple_position_mapping(tuple_elements[i], i);
     }
     else
@@ -516,6 +578,10 @@ bool KeyCondition::tryPrepareSetIndex(
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
         return false;
+
+    prepared_set->checkColumnsNumber(left_args_count);
+    for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, removeLowCardinality(data_types[i]));
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
@@ -624,92 +690,103 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
     {
         const ASTs & args = func->arguments->children;
 
-        if (args.size() != 2)
-            return false;
-
         DataTypePtr key_expr_type;    /// Type of expression containing key column
-        size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
         MonotonicFunctionsChain chain;
-        bool is_set_const = false;
-        bool is_constant_transformed = false;
+        std::string func_name = func->name;
 
-        if (functionIsInOrGlobalInOperator(func->name)
-            && tryPrepareSetIndex(args, context, out, key_column_num))
+        if (atom_map.find(func_name) == std::end(atom_map))
+            return false;
+
+        if (args.size() == 1)
         {
-            key_arg_pos = 0;
-            is_set_const = true;
+            if (!(isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain)))
+                return false;
+
+            if (key_column_num == static_cast<size_t>(-1))
+                throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
-        else if (getConstant(args[1], block_with_constants, const_value, const_type)
-            && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+        else if (args.size() == 2)
         {
-            key_arg_pos = 0;
-        }
-        else if (getConstant(args[1], block_with_constants, const_value, const_type)
-            && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
-        {
-            key_arg_pos = 0;
-            is_constant_transformed = true;
-        }
-        else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
-        {
-            key_arg_pos = 1;
-        }
-        else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
-        {
-            key_arg_pos = 1;
-            is_constant_transformed = true;
+            size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
+            bool is_set_const = false;
+            bool is_constant_transformed = false;
+
+            if (functionIsInOrGlobalInOperator(func_name)
+                && tryPrepareSetIndex(args, context, out, key_column_num))
+            {
+                key_arg_pos = 0;
+                is_set_const = true;
+            }
+            else if (getConstant(args[1], block_with_constants, const_value, const_type)
+                     && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+            {
+                key_arg_pos = 0;
+            }
+            else if (getConstant(args[1], block_with_constants, const_value, const_type)
+                     && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+            {
+                key_arg_pos = 0;
+                is_constant_transformed = true;
+            }
+            else if (getConstant(args[0], block_with_constants, const_value, const_type)
+                     && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+            {
+                key_arg_pos = 1;
+            }
+            else if (getConstant(args[0], block_with_constants, const_value, const_type)
+                     && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+            {
+                key_arg_pos = 1;
+                is_constant_transformed = true;
+            }
+            else
+                return false;
+
+            if (key_column_num == static_cast<size_t>(-1))
+                throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+            /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
+            if (is_constant_transformed)
+            {
+                if (func_name == "less")
+                    func_name = "lessOrEquals";
+                else if (func_name == "greater")
+                    func_name = "greaterOrEquals";
+            }
+
+            /// Replace <const> <sign> <data> on to <data> <-sign> <const>
+            if (key_arg_pos == 1)
+            {
+                if (func_name == "less")
+                    func_name = "greater";
+                else if (func_name == "greater")
+                    func_name = "less";
+                else if (func_name == "greaterOrEquals")
+                    func_name = "lessOrEquals";
+                else if (func_name == "lessOrEquals")
+                    func_name = "greaterOrEquals";
+                else if (func_name == "in" || func_name == "notIn" || func_name == "like")
+                {
+                    /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
+                    return false;
+                }
+            }
+
+            bool cast_not_needed =
+                    is_set_const /// Set args are already casted inside Set::createFromAST
+                    || (isNativeNumber(key_expr_type) && isNativeNumber(const_type)); /// Numbers are accurately compared without cast.
+
+            if (!cast_not_needed)
+                castValueToType(key_expr_type, const_value, const_type, node);
         }
         else
             return false;
 
-        if (key_column_num == static_cast<size_t>(-1))
-            throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-        std::string func_name = func->name;
-
-        /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5"
-        if (is_constant_transformed)
-        {
-            if (func_name == "less")
-                func_name = "lessOrEquals";
-            else if (func_name == "greater")
-                func_name = "greaterOrEquals";
-        }
-
-        /// Replace <const> <sign> <data> on to <data> <-sign> <const>
-        if (key_arg_pos == 1)
-        {
-            if (func_name == "less")
-                func_name = "greater";
-            else if (func_name == "greater")
-                func_name = "less";
-            else if (func_name == "greaterOrEquals")
-                func_name = "lessOrEquals";
-            else if (func_name == "lessOrEquals")
-                func_name = "greaterOrEquals";
-            else if (func_name == "in" || func_name == "notIn" || func_name == "like")
-            {
-                /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
-                return false;
-            }
-        }
+        const auto atom_it = atom_map.find(func_name);
 
         out.key_column = key_column_num;
         out.monotonic_functions_chain = std::move(chain);
-
-        const auto atom_it = atom_map.find(func_name);
-        if (atom_it == std::end(atom_map))
-            return false;
-
-        bool cast_not_needed =
-            is_set_const /// Set args are already casted inside Set::createFromAST
-            || (isNumber(key_expr_type) && isNumber(const_type)); /// Numbers are accurately compared without cast.
-
-        if (!cast_not_needed)
-            castValueToType(key_expr_type, const_value, const_type, node);
 
         return atom_it->second(out, const_value);
     }
@@ -727,7 +804,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             return true;
         }
     }
-
     return false;
 }
 
@@ -810,7 +886,7 @@ String KeyCondition::toString() const
   */
 
 template <typename F>
-static bool forAnyParallelogram(
+static BoolMask forAnyParallelogram(
     size_t key_size,
     const Field * key_left,
     const Field * key_right,
@@ -866,16 +942,15 @@ static bool forAnyParallelogram(
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         parallelogram[i] = Range();
 
-    if (callback(parallelogram))
-        return true;
+    BoolMask result(false, false);
+    result = result | callback(parallelogram);
 
     /// [x1]       x [y1 .. +inf)
 
     if (left_bounded)
     {
         parallelogram[prefix_size] = Range(key_left[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, callback);
     }
 
     /// [x2]       x (-inf .. y2]
@@ -883,15 +958,14 @@ static bool forAnyParallelogram(
     if (right_bounded)
     {
         parallelogram[prefix_size] = Range(key_right[prefix_size]);
-        if (forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback))
-            return true;
+        result = result | forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, callback);
     }
 
-    return false;
+    return result;
 }
 
 
-bool KeyCondition::mayBeTrueInRange(
+BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
     const Field * left_key,
     const Field * right_key,
@@ -917,7 +991,7 @@ bool KeyCondition::mayBeTrueInRange(
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
         [&] (const std::vector<Range> & key_ranges_parallelogram)
     {
-        auto res = mayBeTrueInParallelogram(key_ranges_parallelogram, data_types);
+        auto res = checkInParallelogram(key_ranges_parallelogram, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -928,11 +1002,11 @@ bool KeyCondition::mayBeTrueInRange(
     });
 }
 
+
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     MonotonicFunctionsChain & functions,
-    DataTypePtr current_type
-)
+    DataTypePtr current_type)
 {
     for (auto & func : functions)
     {
@@ -965,7 +1039,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
+BoolMask KeyCondition::checkInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -1013,7 +1087,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
+            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -1048,22 +1122,23 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
 
-    return rpn_stack[0].can_be_true;
+    return rpn_stack[0];
 }
 
 
-bool KeyCondition::mayBeTrueInRange(
+BoolMask KeyCondition::checkInRange(
     size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, right_key, data_types, true);
+    return checkInRange(used_key_size, left_key, right_key, data_types, true);
 }
 
-bool KeyCondition::mayBeTrueAfter(
+
+BoolMask KeyCondition::getMaskAfter(
     size_t used_key_size, const Field * left_key, const DataTypes & data_types) const
 {
-    return mayBeTrueInRange(used_key_size, left_key, nullptr, data_types, false);
+    return checkInRange(used_key_size, left_key, nullptr, data_types, false);
 }
 
 

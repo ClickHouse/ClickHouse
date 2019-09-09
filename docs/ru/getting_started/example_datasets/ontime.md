@@ -163,37 +163,60 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 Q0.
 
 ``` sql
-select avg(c1) from (select Year, Month, count(*) as c1 from ontime group by Year, Month);
+SELECT avg(c1)
+FROM
+(
+    SELECT Year, Month, count(*) AS c1
+    FROM ontime
+    GROUP BY Year, Month
+);
 ```
 
 Q1. Количество полетов в день с 2000 по 2008 года
 
 ``` sql
-SELECT DayOfWeek, count(*) AS c FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC;
+SELECT DayOfWeek, count(*) AS c
+FROM ontime
+WHERE Year>=2000 AND Year<=2008
+GROUP BY DayOfWeek
+ORDER BY c DESC;
 ```
 
 Q2. Количество полетов, задержанных более чем на 10 минут, с группировкой по дням неделе, за 2000-2008 года
 
 ``` sql
-SELECT DayOfWeek, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC
+SELECT DayOfWeek, count(*) AS c
+FROM ontime
+WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
+GROUP BY DayOfWeek
+ORDER BY c DESC;
 ```
 
 Q3. Количество задержек по аэропортам за 2000-2008
 
 ``` sql
-SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
+SELECT Origin, count(*) AS c
+FROM ontime
+WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
+GROUP BY Origin
+ORDER BY c DESC
+LIMIT 10;
 ```
 
 Q4. Количество задержек по перевозчикам за 2007 год
 
 ``` sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*)
+FROM ontime
+WHERE DepDelay>10 AND Year=2007
+GROUP BY Carrier
+ORDER BY count(*) DESC;
 ```
 
 Q5. Процент задержек по перевозчикам за 2007 год
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -219,13 +242,17 @@ ORDER BY c3 DESC;
 Более оптимальная версия того же запроса:
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay>10)*100 AS c3
+FROM ontime
+WHERE Year=2007
+GROUP BY Carrier
+ORDER BY Carrier
 ```
 
 Q6. Предыдущий запрос за более широкий диапазон лет, 2000-2008
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -233,7 +260,7 @@ FROM
         count(*) AS c
     FROM ontime
     WHERE DepDelay>10
-        AND Year >= 2000 AND Year <= 2008
+        AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
 ANY INNER JOIN
@@ -242,7 +269,7 @@ ANY INNER JOIN
         Carrier,
         count(*) AS c2
     FROM ontime
-    WHERE Year >= 2000 AND Year <= 2008
+    WHERE Year>=2000 AND Year<=2008
     GROUP BY Carrier
 ) USING Carrier
 ORDER BY c3 DESC;
@@ -251,7 +278,11 @@ ORDER BY c3 DESC;
 Более оптимальная версия того же запроса:
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay>10)*100 AS c3
+FROM ontime
+WHERE Year>=2000 AND Year<=2008
+GROUP BY Carrier
+ORDER BY Carrier;
 ```
 
 Q7. Процент полетов, задержанных на более 10 минут, в разбивке по годам
@@ -262,7 +293,7 @@ FROM
 (
     select
         Year,
-        count(*)*1000 as c1
+        count(*)*100 as c1
     from ontime
     WHERE DepDelay>10
     GROUP BY Year
@@ -275,41 +306,51 @@ ANY INNER JOIN
     from ontime
     GROUP BY Year
 ) USING (Year)
-ORDER BY Year
+ORDER BY Year;
 ```
 
 Более оптимальная версия того же запроса:
 
 ``` sql
-SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
+SELECT Year, avg(DepDelay>10)
+FROM ontime
+GROUP BY Year
+ORDER BY Year;
 ```
 
 Q8. Самые популярные направления по количеству напрямую соединенных городов для различных диапазонов лет
 
 ``` sql
-SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
+SELECT DestCityName, uniqExact(OriginCityName) AS u F
+ROM ontime
+WHERE Year>=2000 and Year<=2010
+GROUP BY DestCityName
+ORDER BY u DESC
+LIMIT 10;
 ```
 
 Q9.
 
 ``` sql
-select Year, count(*) as c1 from ontime group by Year;
+SELECT Year, count(*) AS c1
+FROM ontime
+GROUP BY Year;
 ```
 
 Q10.
 
 ``` sql
-select
-   min(Year), max(Year), Carrier, count(*) as cnt,
-   sum(ArrDelayMinutes>30) as flights_delayed,
-   round(sum(ArrDelayMinutes>30)/count(*),2) as rate
+SELECT
+   min(Year), max(Year), Carrier, count(*) AS cnt,
+   sum(ArrDelayMinutes>30) AS flights_delayed,
+   round(sum(ArrDelayMinutes>30)/count(*),2) AS rate
 FROM ontime
 WHERE
-   DayOfWeek not in (6,7) and OriginState not in ('AK', 'HI', 'PR', 'VI')
-   and DestState not in ('AK', 'HI', 'PR', 'VI')
-   and FlightDate < '2010-01-01'
+   DayOfWeek NOT IN (6,7) AND OriginState NOT IN ('AK', 'HI', 'PR', 'VI')
+   AND DestState NOT IN ('AK', 'HI', 'PR', 'VI')
+   AND FlightDate < '2010-01-01'
 GROUP by Carrier
-HAVING cnt > 100000 and max(Year) > 1990
+HAVING cnt>100000 and max(Year)>1990
 ORDER by rate DESC
 LIMIT 1000;
 ```
@@ -317,15 +358,39 @@ LIMIT 1000;
 Бонус:
 
 ``` sql
-SELECT avg(cnt) FROM (SELECT Year,Month,count(*) AS cnt FROM ontime WHERE DepDel15=1 GROUP BY Year,Month)
+SELECT avg(cnt)
+FROM
+(
+    SELECT Year,Month,count(*) AS cnt
+    FROM ontime
+    WHERE DepDel15=1
+    GROUP BY Year,Month
+);
 
-select avg(c1) from (select Year,Month,count(*) as c1 from ontime group by Year,Month)
+SELECT avg(c1) FROM
+(
+    SELECT Year,Month,count(*) AS c1
+    FROM ontime
+    GROUP BY Year,Month
+);
 
-SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
+SELECT DestCityName, uniqExact(OriginCityName) AS u
+FROM ontime
+GROUP BY DestCityName
+ORDER BY u DESC
+LIMIT 10;
 
-SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCityName, DestCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, DestCityName, count() AS c
+FROM ontime
+GROUP BY OriginCityName, DestCityName
+ORDER BY c DESC
+LIMIT 10;
 
-SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, count() AS c
+FROM ontime
+GROUP BY OriginCityName
+ORDER BY c DESC
+LIMIT 10;
 ```
 
 Данный тест производительности был создан Вадимом Ткаченко, статьи по теме:

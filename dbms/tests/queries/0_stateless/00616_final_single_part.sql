@@ -1,7 +1,7 @@
-DROP TABLE IF EXISTS test;
-DROP TABLE IF EXISTS replacing;
+DROP TABLE IF EXISTS test_00616;
+DROP TABLE IF EXISTS replacing_00616;
 
-CREATE TABLE test
+CREATE TABLE test_00616
 (
     date Date,
     x Int32,
@@ -9,18 +9,18 @@ CREATE TABLE test
 )
 ENGINE = MergeTree(date, x, 4096);
 
-INSERT INTO test VALUES ('2018-03-21', 1, 1), ('2018-03-21', 1, 2);
-CREATE TABLE replacing ENGINE = ReplacingMergeTree(date, x, 4096, ver) AS SELECT * FROM test;
+INSERT INTO test_00616 VALUES ('2018-03-21', 1, 1), ('2018-03-21', 1, 2);
+CREATE TABLE replacing_00616 ENGINE = ReplacingMergeTree(date, x, 4096, ver) AS SELECT * FROM test_00616;
 
-SELECT * FROM test ORDER BY ver;
+SELECT * FROM test_00616 ORDER BY ver;
 
-SELECT * FROM replacing ORDER BY ver;
-SELECT * FROM replacing FINAL ORDER BY ver;
+SELECT * FROM replacing_00616 ORDER BY ver;
+SELECT * FROM replacing_00616 FINAL ORDER BY ver;
 
-OPTIMIZE TABLE replacing PARTITION '201803' FINAL;
+OPTIMIZE TABLE replacing_00616 PARTITION '201803' FINAL;
 
-SELECT * FROM replacing ORDER BY ver;
-SELECT * FROM replacing FINAL ORDER BY ver;
+SELECT * FROM replacing_00616 ORDER BY ver;
+SELECT * FROM replacing_00616 FINAL ORDER BY ver;
 
-DROP TABLE test;
-DROP TABLE replacing;
+DROP TABLE test_00616;
+DROP TABLE replacing_00616;

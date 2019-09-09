@@ -15,8 +15,8 @@ public:
     ASTPtr type;
     String default_specifier;
     ASTPtr default_expression;
-    ASTPtr codec;
     ASTPtr comment;
+    ASTPtr codec;
     ASTPtr ttl;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }

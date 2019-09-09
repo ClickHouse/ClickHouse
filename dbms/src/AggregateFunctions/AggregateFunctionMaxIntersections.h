@@ -10,6 +10,7 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/NaNUtils.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -61,10 +62,10 @@ public:
     AggregateFunctionIntersectionsMax(AggregateFunctionIntersectionsKind kind_, const DataTypes & arguments)
         : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}), kind(kind_)
     {
-        if (!isNumber(arguments[0]))
+        if (!isNativeNumber(arguments[0]))
             throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!isNumber(arguments[1]))
+        if (!isNativeNumber(arguments[1]))
             throw Exception{getName() + ": second argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (!arguments[0]->equals(*arguments[1]))
@@ -88,8 +89,8 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        PointType left = static_cast<const ColumnVector<PointType> &>(*columns[0]).getData()[row_num];
-        PointType right = static_cast<const ColumnVector<PointType> &>(*columns[1]).getData()[row_num];
+        PointType left = assert_cast<const ColumnVector<PointType> &>(*columns[0]).getData()[row_num];
+        PointType right = assert_cast<const ColumnVector<PointType> &>(*columns[1]).getData()[row_num];
 
         if (!isNaN(left))
             this->data(place).value.push_back(std::make_pair(left, Int64(1)), arena);
@@ -152,12 +153,12 @@ public:
 
         if (kind == AggregateFunctionIntersectionsKind::Count)
         {
-            auto & result_column = static_cast<ColumnUInt64 &>(to).getData();
+            auto & result_column = assert_cast<ColumnUInt64 &>(to).getData();
             result_column.push_back(max_intersections);
         }
         else
         {
-            auto & result_column = static_cast<ColumnVector<PointType> &>(to).getData();
+            auto & result_column = assert_cast<ColumnVector<PointType> &>(to).getData();
             result_column.push_back(position_of_max_intersections);
         }
     }

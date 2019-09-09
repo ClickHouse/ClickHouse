@@ -13,6 +13,8 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsFetch = 2;
     extern const StorageActionBlockType PartsSend = 3;
     extern const StorageActionBlockType ReplicationQueue = 4;
+    extern const StorageActionBlockType DistributedSend = 5;
+    extern const StorageActionBlockType PartsTTLMerge = 6;
 }
 
 

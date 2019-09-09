@@ -81,6 +81,7 @@ ASTPtr ASTTablesInSelectQuery::clone() const
 
 void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.current_select = this;
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (database_and_table_name)
@@ -183,14 +184,14 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
 
     if (using_expression_list)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "USING " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
         settings.ostr << "(";
         using_expression_list->formatImpl(settings, state, frame);
         settings.ostr << ")";
     }
     else if (on_expression)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ON " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
         on_expression->formatImpl(settings, state, frame);
     }
 }
@@ -226,7 +227,6 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
         }
 
         table_expression->formatImpl(settings, state, frame);
-        settings.ostr << " ";
 
         if (table_join)
             table_join->as<ASTTableJoin &>().formatImplAfterTable(settings, state, frame);

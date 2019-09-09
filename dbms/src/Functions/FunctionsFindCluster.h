@@ -111,7 +111,7 @@ public:
 
         const auto type_x = arguments[0];
 
-        if (!isNumber(type_x))
+        if (!isNativeNumber(type_x))
             throw Exception{"Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -130,7 +130,7 @@ public:
         auto column_result = block.getByPosition(result).type->createColumn();
         auto out_untyped = column_result.get();
 
-        if (!centroids_array_untyped->isColumnConst())
+        if (!isColumnConst(*centroids_array_untyped))
             throw Exception{"Second argument of function " + getName() + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         executeImplTyped(in_untyped, out_untyped, centroids_array_untyped);

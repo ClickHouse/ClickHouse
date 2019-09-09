@@ -1,5 +1,4 @@
 <test>
-    <name>roundDown</name>
     <type>once</type>
 
     <stop_conditions>

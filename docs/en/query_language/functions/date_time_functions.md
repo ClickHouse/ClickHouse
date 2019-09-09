@@ -38,7 +38,7 @@ Converts a date or date with time to a UInt8 number containing the month number 
 
 ## toDayOfYear
 
-Converts a date or date with time to a UInt8 number containing the number of the day of the year (1-366).
+Converts a date or date with time to a UInt16 number containing the number of the day of the year (1-366).
 
 ## toDayOfMonth
 
@@ -94,6 +94,12 @@ Returns the date.
 
 Rounds down a date or date with time to the nearest Monday.
 Returns the date.
+
+## toStartOfWeek(t[,mode])
+
+Rounds down a date or date with time to the nearest Sunday or Monday by mode.
+Returns the date.
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used. 
 
 ## toStartOfDay
 
@@ -168,6 +174,72 @@ Converts a date or date with time to a UInt16 number containing the ISO Year num
 ## toISOWeek
 
 Converts a date or date with time to a UInt8 number containing the ISO Week number.
+
+## toWeek(date[,mode])
+This function returns the week number for date or datetime. The two-argument form of toWeek() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
+`toISOWeek() `is a compatibility function that is equivalent to `toWeek(date,3)`.
+The following table describes how the mode argument works.
+
+| Mode | First day of week | Range |  Week 1 is the first week … |
+| ----------- | -------- | -------- | ------------------ |
+|0|Sunday|0-53|with a Sunday in this year
+|1|Monday|0-53|with 4 or more days this year
+|2|Sunday|1-53|with a Sunday in this year
+|3|Monday|1-53|with 4 or more days this year
+|4|Sunday|0-53|with 4 or more days this year
+|5|Monday|0-53|with a Monday in this year
+|6|Sunday|1-53|with 4 or more days this year
+|7|Monday|1-53|with a Monday in this year
+|8|Sunday|1-53|contains January 1
+|9|Monday|1-53|contains January 1
+
+For mode values with a meaning of “with 4 or more days this year,” weeks are numbered according to ISO 8601:1988:
+
+- If the week containing January 1 has 4 or more days in the new year, it is week 1.
+
+- Otherwise, it is the last week of the previous year, and the next week is week 1.
+
+For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn't matter how many days in the new year the week contained, even if it contained only one day.
+
+```
+toWeek(date, [, mode][, Timezone])
+```
+**Parameters**
+
+- `date` – Date or DateTime.
+- `mode` – Optional parameter, Range of values is [0,9], default is 0.
+- `Timezone` –  Optional parameter, it behaves like any other conversion function.
+
+**Example**
+
+``` sql
+SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9;
+```
+
+```
+┌───────date─┬─week0─┬─week1─┬─week9─┐
+│ 2016-12-27 │    52 │    52 │     1 │
+└────────────┴───────┴───────┴───────┘
+```
+
+## toYearWeek(date[,mode])
+Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
+
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used. 
+
+`toISOYear() `is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+
+**Example**
+
+``` sql
+SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
+```
+
+```
+┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
+│ 2016-12-27 │    201652 │    201652 │    201701 │
+└────────────┴───────────┴───────────┴───────────┘
+```
 
 ## now
 
@@ -245,7 +317,7 @@ Return the difference between two times expressed in 'unit' e.g. `'hours'`. 't1'
 
 Supported unit values:
 
-| unit   | 
+| unit   |
 | ------ |
 |second  |
 |minute  |

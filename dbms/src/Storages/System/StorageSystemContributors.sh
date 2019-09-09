@@ -11,7 +11,7 @@ git shortlog --summary | perl -lnE 's/^\s+\d+\s+(.+)/    "$1",/; next unless $1;
 # If git history not available - dont make target file
 if [ ! -s $CONTRIBUTORS_FILE.tmp ]; then
     echo Empty result of git shortlog
-    git status
+    git status -uno
     exit
 fi
 

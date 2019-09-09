@@ -58,6 +58,8 @@ inc="-I. \
 -I./contrib/cppkafka/include \
 -I./contrib/librdkafka-cmake/include \
 -I./contrib/lz4/lib \
+-I./contrib/hyperscan/src \
+-I./contrib/simdjson/include \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
 

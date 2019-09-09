@@ -2,6 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -167,7 +168,7 @@ public:
         const auto & res_type = block.getByPosition(result).type;
 
         /// When column is constant, its difference is zero.
-        if (src.column->isColumnConst())
+        if (isColumnConst(*src.column))
         {
             block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
@@ -188,8 +189,8 @@ public:
         {
             using SrcFieldType = decltype(field_type_tag);
 
-            process(static_cast<const ColumnVector<SrcFieldType> &>(*src_column).getData(),
-                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData(), null_map);
+            process(assert_cast<const ColumnVector<SrcFieldType> &>(*src_column).getData(),
+                assert_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData(), null_map);
         });
 
         if (null_map_column)

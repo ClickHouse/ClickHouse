@@ -1,6 +1,4 @@
 <test>
-    <name>Constant-column string comparison</name>
-
     <tags>
         <tag>comparison</tag>
     </tags>

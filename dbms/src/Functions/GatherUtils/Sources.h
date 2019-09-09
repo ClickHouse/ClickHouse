@@ -10,9 +10,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 
-#include <Functions/GatherUtils/IArraySource.h>
-#include <Functions/GatherUtils/IValueSource.h>
-#include <Functions/GatherUtils/Slices.h>
+#include "IArraySource.h"
+#include "IValueSource.h"
+#include "Slices.h"
 #include <Functions/FunctionHelpers.h>
 
 
@@ -585,8 +585,8 @@ struct NullableArraySource : public ArraySource
 
     const NullMap & null_map;
 
-    NullableArraySource(const ColumnArray & arr, const NullMap & null_map)
-            : ArraySource(arr), null_map(null_map)
+    NullableArraySource(const ColumnArray & arr, const NullMap & null_map_)
+            : ArraySource(arr), null_map(null_map_)
     {
     }
 
@@ -743,7 +743,7 @@ struct NullableValueSource : public ValueSource
     const NullMap & null_map;
 
     template <typename Column>
-    explicit NullableValueSource(const Column & col, const NullMap & null_map) : ValueSource(col), null_map(null_map) {}
+    explicit NullableValueSource(const Column & col, const NullMap & null_map_) : ValueSource(col), null_map(null_map_) {}
 
     void accept(ValueSourceVisitor & visitor) override { visitor.visit(*this); }
 

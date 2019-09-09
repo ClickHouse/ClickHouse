@@ -1,5 +1,5 @@
-set(BROTLI_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/brotli/c)
-set(BROTLI_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/brotli/c)
+set(BROTLI_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/brotli/c)
+set(BROTLI_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/brotli/c)
 
 set(SRCS
     ${BROTLI_SOURCE_DIR}/dec/bit_reader.c
@@ -31,3 +31,7 @@ set(SRCS
 add_library(brotli ${SRCS})
 
 target_include_directories(brotli PUBLIC ${BROTLI_SOURCE_DIR}/include)
+
+if(M_LIBRARY)
+    target_link_libraries(brotli PRIVATE ${M_LIBRARY})
+endif()

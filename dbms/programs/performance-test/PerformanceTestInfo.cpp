@@ -3,9 +3,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <boost/filesystem.hpp>
 #include "applySubstitutions.h"
+#include <filesystem>
 #include <iostream>
+
 
 namespace DB
 {
@@ -39,7 +40,7 @@ void extractSettings(
 }
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
@@ -48,8 +49,8 @@ PerformanceTestInfo::PerformanceTestInfo(
     : profiles_file(profiles_file_)
     , settings(global_settings_)
 {
-    test_name = config->getString("name");
     path = config->getString("path");
+    test_name = fs::path(path).stem().string();
     if (config->has("main_metric"))
     {
         Strings main_metrics;
@@ -60,10 +61,10 @@ PerformanceTestInfo::PerformanceTestInfo(
 
     applySettings(config);
     extractQueries(config);
+    extractAuxiliaryQueries(config);
     processSubstitutions(config);
     getExecutionType(config);
     getStopConditions(config);
-    extractAuxiliaryQueries(config);
 }
 
 void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
@@ -153,12 +154,28 @@ void PerformanceTestInfo::processSubstitutions(XMLConfigurationPtr config)
         ConfigurationPtr substitutions_view(config->createView("substitutions"));
         constructSubstitutions(substitutions_view, substitutions);
 
-        auto queries_pre_format = queries;
+        auto create_and_fill_queries_preformat = create_and_fill_queries;
+        create_and_fill_queries.clear();
+        for (const auto & query : create_and_fill_queries_preformat)
+        {
+            auto formatted = formatQueries(query, substitutions);
+            create_and_fill_queries.insert(create_and_fill_queries.end(), formatted.begin(), formatted.end());
+        }
+
+        auto queries_preformat = queries;
         queries.clear();
-        for (const auto & query : queries_pre_format)
+        for (const auto & query : queries_preformat)
         {
             auto formatted = formatQueries(query, substitutions);
             queries.insert(queries.end(), formatted.begin(), formatted.end());
+        }
+
+        auto drop_queries_preformat = drop_queries;
+        drop_queries.clear();
+        for (const auto & query : drop_queries_preformat)
+        {
+            auto formatted = formatQueries(query, substitutions);
+            drop_queries.insert(drop_queries.end(), formatted.begin(), formatted.end());
         }
     }
 }
@@ -203,13 +220,20 @@ void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
 void PerformanceTestInfo::extractAuxiliaryQueries(XMLConfigurationPtr config)
 {
     if (config->has("create_query"))
-        create_queries = getMultipleValuesFromConfig(*config, "", "create_query");
+    {
+        create_and_fill_queries = getMultipleValuesFromConfig(*config, "", "create_query");
+    }
 
     if (config->has("fill_query"))
-        fill_queries = getMultipleValuesFromConfig(*config, "", "fill_query");
+    {
+        auto fill_queries = getMultipleValuesFromConfig(*config, "", "fill_query");
+        create_and_fill_queries.insert(create_and_fill_queries.end(), fill_queries.begin(), fill_queries.end());
+    }
 
     if (config->has("drop_query"))
+    {
         drop_queries = getMultipleValuesFromConfig(*config, "", "drop_query");
+    }
 }
 
 }

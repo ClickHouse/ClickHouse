@@ -20,12 +20,22 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileExactWeighted
 {
+    struct Int128Hash
+    {
+        size_t operator()(Int128 x) const
+        {
+            return CityHash_v1_0_2::Hash128to64({x >> 64, x & 0xffffffffffffffffll});
+        }
+    };
+
     using Weight = UInt64;
+    using UnderlyingType = typename NativeType<Value>::Type;
+    using Hasher = std::conditional_t<std::is_same_v<Value, Decimal128>, Int128Hash, HashCRC32<UnderlyingType>>;
 
     /// When creating, the hash table must be small.
     using Map = HashMap<
-        Value, Weight,
-        HashCRC32<Value>,
+        UnderlyingType, Weight,
+        Hasher,
         HashTableGrower<4>,
         HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>
     >;
@@ -39,7 +49,7 @@ struct QuantileExactWeighted
             ++map[x];
     }
 
-    void add(const Value & x, const Weight & weight)
+    void add(const Value & x, Weight weight)
     {
         if (!isNaN(x))
             map[x] += weight;
@@ -62,7 +72,7 @@ struct QuantileExactWeighted
         while (reader.next())
         {
             const auto & pair = reader.get();
-            map[pair.getFirst()] = pair.getSecond();
+            map[pair.first] = pair.second;
         }
     }
 
@@ -88,7 +98,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.getFirst() < b.getFirst(); });
+        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         UInt64 threshold = std::ceil(sum_weight * level);
         UInt64 accumulated = 0;
@@ -97,7 +107,7 @@ struct QuantileExactWeighted
         const Pair * end = array + size;
         while (it < end)
         {
-            accumulated += it->getSecond();
+            accumulated += it->second;
 
             if (accumulated >= threshold)
                 break;
@@ -108,7 +118,7 @@ struct QuantileExactWeighted
         if (it == end)
             --it;
 
-        return it->getFirst();
+        return it->first;
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -138,7 +148,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.getFirst() < b.getFirst(); });
+        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         UInt64 accumulated = 0;
 
@@ -150,11 +160,11 @@ struct QuantileExactWeighted
 
         while (it < end)
         {
-            accumulated += it->getSecond();
+            accumulated += it->second;
 
             while (accumulated >= threshold)
             {
-                result[indices[level_index]] = it->getFirst();
+                result[indices[level_index]] = it->first;
                 ++level_index;
 
                 if (level_index == num_levels)
@@ -168,7 +178,7 @@ struct QuantileExactWeighted
 
         while (level_index < num_levels)
         {
-            result[indices[level_index]] = array[size - 1].getFirst();
+            result[indices[level_index]] = array[size - 1].first;
             ++level_index;
         }
     }

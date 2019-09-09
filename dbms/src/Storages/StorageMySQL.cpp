@@ -1,4 +1,4 @@
-#include <Storages/StorageMySQL.h>
+#include "StorageMySQL.h"
 
 #if USE_MYSQL
 
@@ -26,62 +26,76 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
-StorageMySQL::StorageMySQL(const std::string & name,
-    mysqlxx::Pool && pool,
-    const std::string & remote_database_name,
-    const std::string & remote_table_name,
-    const bool replace_query,
-    const std::string & on_duplicate_clause,
-    const ColumnsDescription & columns_,
-    const Context & context)
-    : IStorage{columns_}
-    , name(name)
-    , remote_database_name(remote_database_name)
-    , remote_table_name(remote_table_name)
-    , replace_query{replace_query}
-    , on_duplicate_clause{on_duplicate_clause}
-    , pool(std::move(pool))
-    , global_context(context)
+String backQuoteMySQL(const String & x)
 {
+    String res(x.size(), '\0');
+    {
+        WriteBufferFromString wb(res);
+        writeBackQuotedStringMySQL(x, wb);
+    }
+    return res;
+}
+
+StorageMySQL::StorageMySQL(
+    const std::string & database_name_,
+    const std::string & table_name_,
+    mysqlxx::Pool && pool_,
+    const std::string & remote_database_name_,
+    const std::string & remote_table_name_,
+    const bool replace_query_,
+    const std::string & on_duplicate_clause_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const Context & context_)
+    : table_name(table_name_)
+    , database_name(database_name_)
+    , remote_database_name(remote_database_name_)
+    , remote_table_name(remote_table_name_)
+    , replace_query{replace_query_}
+    , on_duplicate_clause{on_duplicate_clause_}
+    , pool(std::move(pool_))
+    , global_context(context_)
+{
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 
 BlockInputStreams StorageMySQL::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const Names & column_names_,
+    const SelectQueryInfo & query_info_,
+    const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    size_t max_block_size_,
     unsigned)
 {
-    check(column_names);
+    check(column_names_);
     String query = transformQueryForExternalDatabase(
-        *query_info.query, getColumns().getOrdinary(), IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
+        *query_info_.query, getColumns().getOrdinary(), IdentifierQuotingStyle::BackticksMySQL, remote_database_name, remote_table_name, context_);
 
     Block sample_block;
-    for (const String & column_name : column_names)
+    for (const String & column_name : column_names_)
     {
         auto column_data = getColumn(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return { std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size) };
+    return { std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size_) };
 }
 
 
 class StorageMySQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageMySQLBlockOutputStream(const StorageMySQL & storage,
-        const std::string & remote_database_name,
-        const std::string & remote_table_name ,
-        const mysqlxx::PoolWithFailover::Entry & entry,
+    explicit StorageMySQLBlockOutputStream(const StorageMySQL & storage_,
+        const std::string & remote_database_name_,
+        const std::string & remote_table_name_,
+        const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : storage{storage}
-        , remote_database_name{remote_database_name}
-        , remote_table_name{remote_table_name}
-        , entry{entry}
+        : storage{storage_}
+        , remote_database_name{remote_database_name_}
+        , remote_table_name{remote_table_name_}
+        , entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
     {
     }
@@ -111,7 +125,7 @@ public:
     {
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
-        sqlbuf << backQuoteIfNeed(remote_database_name) << "." << backQuoteIfNeed(remote_table_name);
+        sqlbuf << backQuoteMySQL(remote_database_name) << "." << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
         auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.global_context);
@@ -163,7 +177,7 @@ public:
         {
             if (it != block.begin())
                 out << ", ";
-            out << backQuoteIfNeed(it->name);
+            out << backQuoteMySQL(it->name);
         }
         return out.str();
     }
@@ -221,6 +235,7 @@ void registerStorageMySQL(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS);
 
         return StorageMySQL::create(
+            args.database_name,
             args.table_name,
             std::move(pool),
             remote_database,
@@ -228,6 +243,7 @@ void registerStorageMySQL(StorageFactory & factory)
             replace_query,
             on_duplicate_clause,
             args.columns,
+            args.constraints,
             args.context);
     });
 }

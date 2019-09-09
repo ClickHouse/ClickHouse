@@ -47,6 +47,7 @@ public:
     TypeIndex getTypeId() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

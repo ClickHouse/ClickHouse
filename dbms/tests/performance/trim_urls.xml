@@ -1,5 +1,4 @@
 <test>
-    <name>trim_urls</name>
     <type>loop</type>
 
     <preconditions>

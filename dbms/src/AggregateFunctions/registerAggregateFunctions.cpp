@@ -28,8 +28,13 @@ void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
+void registerAggregateFunctionHistogram(AggregateFunctionFactory &);
+void registerAggregateFunctionRetention(AggregateFunctionFactory &);
+void registerAggregateFunctionTimeSeriesGroupSum(AggregateFunctionFactory &);
+void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
-void registerAggregateFunctionLeastSqr(AggregateFunctionFactory &);
+void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
+void registerAggregateFunctionMoving(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -37,9 +42,7 @@ void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFacto
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory &);
-
-void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
-void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
+void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 
 void registerAggregateFunctions()
 {
@@ -69,8 +72,11 @@ void registerAggregateFunctions()
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
+        registerAggregateFunctionTimeSeriesGroupSum(factory);
+        registerAggregateFunctionMLMethod(factory);
         registerAggregateFunctionEntropy(factory);
-        registerAggregateFunctionLeastSqr(factory);
+        registerAggregateFunctionSimpleLinearRegression(factory);
+        registerAggregateFunctionMoving(factory);
     }
 
     {
@@ -82,6 +88,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorState(factory);
         registerAggregateFunctionCombinatorMerge(factory);
         registerAggregateFunctionCombinatorNull(factory);
+        registerAggregateFunctionCombinatorResample(factory);
     }
 }
 

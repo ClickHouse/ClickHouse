@@ -46,6 +46,11 @@ public:
 
     ~RemoteBlockInputStream() override;
 
+    /// Set the query_id. For now, used by performance test to later find the query
+    /// in the server query_log. Must be called before sending the query to the
+    /// server.
+    void setQueryId(const std::string& query_id_) { assert(!sent_query); query_id = query_id_; }
+
     /// Specify how we allocate connections on a shard.
     void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }
 
@@ -95,7 +100,9 @@ private:
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
     const String query;
+    String query_id = "";
     Context context;
+
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
@@ -118,7 +125,7 @@ private:
       */
     std::atomic<bool> finished { false };
 
-    /** Cancel query request was sent to all replicas beacuse data is not needed anymore
+    /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side

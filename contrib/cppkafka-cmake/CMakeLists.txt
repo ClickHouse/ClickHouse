@@ -1,4 +1,4 @@
-set(CPPKAFKA_DIR ${CMAKE_SOURCE_DIR}/contrib/cppkafka)
+set(CPPKAFKA_DIR ${ClickHouse_SOURCE_DIR}/contrib/cppkafka)
 
 set(SRCS
   ${CPPKAFKA_DIR}/src/configuration.cpp

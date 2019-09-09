@@ -59,15 +59,18 @@
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
+#include <common/argsToConfig.h>
+#include <Common/TerminalSize.h>
 
 #if USE_READLINE
-#include "Suggest.h" // Y_IGNORE
+#include "Suggest.h"
 #endif
 
 #ifndef __clang__
@@ -103,6 +106,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READLINE;
     extern const int SYSTEM_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -128,7 +132,7 @@ private:
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
-    winsize terminal_size {};            /// Terminal size is needed to render progress bar.
+    uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
@@ -201,8 +205,10 @@ private:
     /// External tables info.
     std::list<ExternalTable> external_tables;
 
-    ConnectionParameters connection_parameters;
+    /// Dictionary with query parameters for prepared statements.
+    NameToNameMap query_parameters;
 
+    ConnectionParameters connection_parameters;
 
     void initialize(Poco::Util::Application & self)
     {
@@ -214,6 +220,7 @@ private:
 
         configReadClient(config(), home_path);
 
+        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
@@ -336,7 +343,7 @@ private:
         DateLUT::instance();
         if (!context.getSettingsRef().use_client_time_zone)
         {
-            const auto & time_zone = connection->getServerTimezone();
+            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
             if (!time_zone.empty())
             {
                 try
@@ -425,8 +432,14 @@ private:
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
-            else if (!home_path.empty())
-                history_file = home_path + "/.clickhouse-client-history";
+            else
+            {
+                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                if (history_file_from_env)
+                    history_file = history_file_from_env;
+                else if (!home_path.empty())
+                    history_file = home_path + "/.clickhouse-client-history";
+            }
 
             if (!history_file.empty())
             {
@@ -435,7 +448,7 @@ private:
 #if USE_READLINE
                     int res = read_history(history_file.c_str());
                     if (res)
-                        throwFromErrno("Cannot read history from file " + history_file, ErrorCodes::CANNOT_READ_HISTORY);
+                        std::cerr << "Cannot read history from file " + history_file + ": "+ errnoToString(ErrorCodes::CANNOT_READ_HISTORY);
 #endif
                 }
                 else    /// Create history file.
@@ -520,7 +533,6 @@ private:
             connection_parameters.default_database,
             connection_parameters.user,
             connection_parameters.password,
-            connection_parameters.timeouts,
             "client",
             connection_parameters.compression,
             connection_parameters.security);
@@ -536,11 +548,14 @@ private:
             connection->setThrottler(throttler);
         }
 
-        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+        connection->getServerVersion(connection_parameters.timeouts,
+                                     server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
+        if (
+            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+            server_display_name.length() == 0)
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -600,6 +615,7 @@ private:
 
             if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
             {
+                // TODO: should we do sensitive data masking on client too? History file can be source of secret leaks.
                 if (input != prev_input)
                 {
                     /// Replace line breaks with spaces to prevent the following problem.
@@ -612,7 +628,7 @@ private:
 
 #if USE_READLINE && HAVE_READLINE_HISTORY
                     if (!history_file.empty() && append_history(1, history_file.c_str()))
-                        throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
+                        std::cerr << "Cannot append history to file " + history_file + ": " + errnoToString(ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
 
                     prev_input = input;
@@ -664,7 +680,7 @@ private:
         String text;
 
         if (config().has("query"))
-            text = config().getString("query");
+            text = config().getRawString("query");  /// Poco configuration should not process substitutions in form of ${...} inside query.
         else
         {
             /// If 'query' parameter is not set, read a query from stdin.
@@ -704,7 +720,7 @@ private:
                     if (ignore_error)
                     {
                         Tokens tokens(begin, end);
-                        TokenIterator token_iterator(tokens);
+                        IParser::Pos token_iterator(tokens);
                         while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                             ++token_iterator;
                         begin = token_iterator->end;
@@ -751,7 +767,7 @@ private:
                 }
 
                 if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
-                    connection->forceConnected();
+                    connection->forceConnected(connection_parameters.timeouts);
 
                 if (got_exception && !ignore_error)
                 {
@@ -793,7 +809,6 @@ private:
         /// Some parts of a query (result output and formatting) are executed client-side.
         /// Thus we need to parse the query.
         parsed_query = parsed_query_;
-
         if (!parsed_query)
         {
             const char * begin = query.data();
@@ -827,11 +842,19 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
-            connection->forceConnected();
+            connection->forceConnected(connection_parameters.timeouts);
 
-            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-            if (insert && !insert->select)
+            ASTPtr input_function;
+            if (insert && insert->select)
+                insert->tryFindInputFunction(input_function);
+
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+            if (insert && (!insert->select || input_function))
+            {
+                if (input_function && insert->format.empty())
+                    throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
                 processInsertQuery();
+            }
             else
                 processOrdinaryQuery();
         }
@@ -866,7 +889,7 @@ private:
             std::cout << std::endl
                 << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
 
-            if (progress.rows >= 1000)
+            if (progress.read_rows >= 1000)
                 writeFinalProgress();
 
             std::cout << std::endl << std::endl;
@@ -898,7 +921,17 @@ private:
     /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
-        connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        /// We will always rewrite query (even if there are no query_parameters) because it will help to find errors in query formatter.
+        {
+            /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+            ReplaceQueryParameterVisitor visitor(query_parameters);
+            visitor.visit(parsed_query);
+
+            /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
+            query = serializeAST(*parsed_query);
+        }
+
+        connection->sendQuery(connection_parameters.timeouts, query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
         receiveResult();
     }
@@ -916,7 +949,7 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1010,13 +1043,17 @@ private:
         while (true)
         {
             Block block = async_block_input->read();
-            connection->sendData(block);
-            processed_rows += block.rows();
 
             /// Check if server send Log packet
+            receiveLogs();
+
+            /// Check if server send Exception packet
             auto packet_type = connection->checkPacket();
-            if (packet_type && *packet_type == Protocol::Server::Log)
-                receiveAndProcessPacket();
+            if (packet_type && *packet_type == Protocol::Server::Exception)
+                return;
+
+            connection->sendData(block);
+            processed_rows += block.rows();
 
             if (!block)
                 break;
@@ -1063,7 +1100,7 @@ private:
         bool cancelled = false;
 
         // TODO: get the poll_interval from commandline.
-        const auto receive_timeout = connection->getTimeouts().receive_timeout;
+        const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
         constexpr size_t default_poll_interval = 1000000; /// in microseconds
         constexpr size_t min_poll_interval = 5000; /// in microseconds
         const size_t poll_interval
@@ -1233,6 +1270,17 @@ private:
         }
     }
 
+    /// Process Log packets, used when inserting data by blocks
+    void receiveLogs()
+    {
+        auto packet_type = connection->checkPacket();
+
+        while (packet_type && *packet_type == Protocol::Server::Log)
+        {
+            receiveAndProcessPacket();
+            packet_type = connection->checkPacket();
+        }
+    }
 
     void initBlockOutputStream(const Block & block)
     {
@@ -1420,23 +1468,23 @@ private:
             << " Progress: ";
 
         message
-            << formatReadableQuantity(progress.rows) << " rows, "
-            << formatReadableSizeWithDecimalSuffix(progress.bytes);
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             message << " ("
-                << formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
         else
             message << ". ";
 
         written_progress_chars = message.count() - prefix_size - (increment % 8 == 7 ? 10 : 13);    /// Don't count invisible output (escape sequences).
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
-        if (progress.total_rows > 0)
+        if (progress.total_rows_to_read > 0)
         {
-            size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
+            size_t total_rows_corrected = std::max(progress.read_rows, progress.total_rows_to_read);
 
             /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
             ///  and the query is less than halfway done.
@@ -1444,15 +1492,15 @@ private:
             if (elapsed_ns > 500000000)
             {
                 /// Trigger to start displaying progress bar. If query is mostly done, don't display it.
-                if (progress.rows * 2 < total_rows_corrected)
+                if (progress.read_rows * 2 < total_rows_corrected)
                     show_progress_bar = true;
 
                 if (show_progress_bar)
                 {
-                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
-                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, total_rows_corrected, width_of_progress_bar));
+                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
                         message << "\033[0;32m" << bar << "\033[0m";
                         if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
                             message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
@@ -1461,7 +1509,7 @@ private:
             }
 
             /// Underestimate percentage a bit to avoid displaying 100%.
-            message << ' ' << (99 * progress.rows / total_rows_corrected) << '%';
+            message << ' ' << (99 * progress.read_rows / total_rows_corrected) << '%';
         }
 
         message << ENABLE_LINE_WRAPPING;
@@ -1474,14 +1522,14 @@ private:
     void writeFinalProgress()
     {
         std::cout << "Processed "
-            << formatReadableQuantity(progress.rows) << " rows, "
-            << formatReadableSizeWithDecimalSuffix(progress.bytes);
+            << formatReadableQuantity(progress.read_rows) << " rows, "
+            << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
             std::cout << " ("
-                << formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
         else
             std::cout << ". ";
     }
@@ -1546,10 +1594,11 @@ public:
         /** We allow different groups of arguments:
           * - common arguments;
           * - arguments for any number of external tables each in form "--external args...",
-          *   where possible args are file, name, format, structure, types.
+          *   where possible args are file, name, format, structure, types;
+          * - param arguments for prepared statements.
           * Split these groups before processing.
           */
-        using Arguments = std::vector<const char *>;
+        using Arguments = std::vector<std::string>;
 
         Arguments common_arguments{""};        /// 0th argument is ignored.
         std::vector<Arguments> external_tables_arguments;
@@ -1595,28 +1644,43 @@ public:
             else
             {
                 in_external_group = false;
-                common_arguments.emplace_back(arg);
+
+                /// Parameter arg after underline.
+                if (startsWith(arg, "--param_"))
+                {
+                    const char * param_continuation = arg + strlen("--param_");
+                    const char * equal_pos = strchr(param_continuation, '=');
+
+                    if (equal_pos == param_continuation)
+                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+                    if (equal_pos)
+                    {
+                        /// param_name=value
+                        query_parameters.emplace(String(param_continuation, equal_pos), String(equal_pos + 1));
+                    }
+                    else
+                    {
+                        /// param_name value
+                        ++arg_num;
+                        arg = argv[arg_num];
+                        query_parameters.emplace(String(param_continuation), String(arg));
+                    }
+                }
+                else
+                    common_arguments.emplace_back(arg);
             }
         }
 
         stdin_is_not_tty = !isatty(STDIN_FILENO);
 
+        if (!stdin_is_not_tty)
+            terminal_width = getTerminalWidth();
+
         namespace po = boost::program_options;
 
-        unsigned line_length = po::options_description::m_default_line_length;
-        unsigned min_description_length = line_length / 2;
-        if (!stdin_is_not_tty)
-        {
-            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
-                throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", ErrorCodes::SYSTEM_ERROR);
-            line_length = std::max(
-                static_cast<unsigned>(strlen("--http_native_compression_disable_checksumming_on_decompress ")),
-                static_cast<unsigned>(terminal_size.ws_col));
-            min_description_length = std::min(min_description_length, line_length - 2);
-        }
-
         /// Main commandline options related to client functionality and all parameters from Settings.
-        po::options_description main_description("Main options", line_length, min_description_length);
+        po::options_description main_description = createOptionsDescription("Main options", terminal_width);
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,C", po::value<std::string>(), "config-file path")
@@ -1631,7 +1695,7 @@ public:
               * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
               * as the password.
               */
-            ("password", po::value<std::string>()->implicit_value("\n"), "password")
+            ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1662,7 +1726,7 @@ public:
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
-        po::options_description external_description("External tables options");
+        po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
         external_description.add_options()
             ("file", po::value<std::string>(), "data file or - for stdin")
             ("name", po::value<std::string>()->default_value("_data"), "name of the table")
@@ -1670,9 +1734,9 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
+
         /// Parse main commandline options.
-        po::parsed_options parsed = po::command_line_parser(
-            common_arguments.size(), common_arguments.data()).options(main_description).run();
+        po::parsed_options parsed = po::command_line_parser(common_arguments).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
         po::notify(options);
@@ -1695,6 +1759,7 @@ public:
         {
             std::cout << main_description << "\n";
             std::cout << external_description << "\n";
+            std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
             exit(0);
         }
 
@@ -1705,8 +1770,7 @@ public:
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            po::parsed_options parsed_tables = po::command_line_parser(
-                external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
+            po::parsed_options parsed_tables = po::command_line_parser(external_tables_arguments[i]).options(external_description).run();
             po::variables_map external_options;
             po::store(parsed_tables, external_options);
 
@@ -1802,6 +1866,9 @@ public:
         }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+
+        argsToConfig(common_arguments, config(), 100);
+
     }
 };
 

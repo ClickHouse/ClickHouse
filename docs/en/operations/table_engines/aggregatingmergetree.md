@@ -21,6 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [PARTITION BY expr]
 [ORDER BY expr]
 [SAMPLE BY expr]
+[TTL expr]
 [SETTINGS name=value, ...]
 ```
 
@@ -28,7 +29,7 @@ For a description of request parameters, see [request description](../../query_l
 
 **Query clauses**
 
-When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `AggregatingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 

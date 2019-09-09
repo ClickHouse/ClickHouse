@@ -1,11 +1,10 @@
 <test>
-    <name>consistent_hashes</name>
     <type>once</type>
 
     <stop_conditions>
         <any_of>
-            <min_time_not_changing_for_ms>1000</min_time_not_changing_for_ms>
-            <total_time_ms>5000</total_time_ms>
+            <average_speed_not_changing_for_ms>6000</average_speed_not_changing_for_ms>
+            <total_time_ms>15000</total_time_ms>
         </any_of>
     </stop_conditions>
 
@@ -27,11 +26,11 @@
            <values>
                <value>2</value>
                <value>500</value>
-               <value>65535</value>
+               <value>32768</value>
            </values>
        </substitution>
     </substitutions>
 
-    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers LIMIT 1000000000</query>
-    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers LIMIT 10000</query>
+    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers</query>
+    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers</query>
 </test>

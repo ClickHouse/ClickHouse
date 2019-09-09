@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Parsers/ASTAlterQuery.h>
+#include <Storages/IStorage_fwd.h>
+
 #include <optional>
 #include <unordered_map>
 
@@ -8,7 +10,6 @@
 namespace DB
 {
 
-class IStorage;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
@@ -22,6 +23,7 @@ struct MutationCommand
         EMPTY,     /// Not used.
         DELETE,
         UPDATE,
+        MATERIALIZE_INDEX
     };
 
     Type type = EMPTY;
@@ -29,6 +31,10 @@ struct MutationCommand
     ASTPtr predicate;
 
     std::unordered_map<String, ASTPtr> column_to_update_expression;
+
+    /// For MATERIALIZE INDEX
+    String index_name;
+    ASTPtr partition;
 
     static std::optional<MutationCommand> parse(ASTAlterCommand * command);
 };

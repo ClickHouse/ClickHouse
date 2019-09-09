@@ -32,6 +32,11 @@ protected:
         serializeText(column, row_num, ostr, settings);
     }
 
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
+    {
+        deserializeText(column, istr, settings);
+    }
+
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
         deserializeText(column, istr, settings);

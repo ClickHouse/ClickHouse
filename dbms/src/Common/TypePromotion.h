@@ -60,4 +60,4 @@ public:
     }
 };
 
-} // namespace DB
+}

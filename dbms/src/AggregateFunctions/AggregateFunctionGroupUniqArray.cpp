@@ -43,11 +43,11 @@ static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_ty
     else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime<has_limit>(argument_type, std::forward<TArgs>(args)...);
     else
     {
-        /// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
+        /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
         if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggreagteFunctionGroupUniqArrayGeneric<true, has_limit>(argument_type, std::forward<TArgs>(args)...);
+            return new AggregateFunctionGroupUniqArrayGeneric<true, has_limit>(argument_type, std::forward<TArgs>(args)...);
         else
-            return new AggreagteFunctionGroupUniqArrayGeneric<false, has_limit>(argument_type, std::forward<TArgs>(args)...);
+            return new AggregateFunctionGroupUniqArrayGeneric<false, has_limit>(argument_type, std::forward<TArgs>(args)...);
     }
 }
 

@@ -37,7 +37,7 @@ Memory consumption is also restricted by the parameters `max_memory_usage_for_us
 
 The maximum amount of RAM to use for running a user's queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L244). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
@@ -45,7 +45,7 @@ See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 The maximum amount of RAM to use for running all queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L245). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
+Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
@@ -64,7 +64,7 @@ Maximum number of bytes (uncompressed data) that can be read from a table when r
 
 What to do when the volume of data read exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
-## max_rows_to_group_by
+## max_rows_to_group_by {#settings-max_rows_to_group_by}
 
 Maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
 
@@ -72,6 +72,17 @@ Maximum number of unique keys received from aggregation. This setting lets you l
 
 What to do when the number of unique keys for aggregation exceeds the limit: 'throw', 'break', or 'any'. By default, throw.
 Using the 'any' value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
+
+## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
+
+Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../query_language/select.md#select-group-by-in-external-memory).
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
+- 0 — `GROUP BY` in external memory disabled.
+
+Default value: 0.
 
 ## max_rows_to_sort
 
@@ -193,5 +204,74 @@ Maximum number of bytes (uncompressed data) that can be passed to a remote serve
 ## transfer_overflow_mode
 
 What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
+
+## max_rows_in_join {#settings-max_rows_in_join}
+
+Limits the number of rows in the hash table that is used when joining tables.
+
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join](../table_engines/join.md) table engine.
+
+If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) setting to choose the action.
+
+Possible values:
+
+- Positive integer.
+- 0 — Unlimited number of rows.
+
+Default value: 0.
+
+## max_bytes_in_join {#settings-max_bytes_in_join}
+
+Limits the size in bytes of the hash table used when joining tables.
+
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and [Join table engine](../table_engines/join.md).
+
+If the query contains joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+- Positive integer.
+- 0 — Memory control is disabled.
+
+Default value: 0.
+
+## join_overflow_mode {#settings-join_overflow_mode}
+
+Defines what action ClickHouse performs when any of the following join limits is reached:
+
+- [max_bytes_in_join](#settings-max_bytes_in_join)
+- [max_rows_in_join](#settings-max_rows_in_join)
+
+Possible values:
+
+- `THROW` — ClickHouse throws an exception and breaks operation.
+- `BREAK` — ClickHouse breaks operation and doesn't throw an exception.
+
+Default value: `THROW`.
+
+**See Also**
+
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
+
+
+## max_partitions_per_insert_block
+
+Limits the maximum number of partitions in a single inserted block.
+
+- Positive integer.
+- 0 — Unlimited number of partitions.
+
+Default value: 100.
+
+**Details**
+
+When inserting data, ClickHouse calculates the number of partitions in the inserted block. If the number of partitions is more than `max_partitions_per_insert_block`, ClickHouse throws an exception with the following text:
+
+> "Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->

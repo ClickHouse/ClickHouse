@@ -1,6 +1,5 @@
 <test>
-    <name>set_lookup_hits</name>
-    <type>once</type>
+    <type>loop</type>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
@@ -8,10 +7,10 @@
 
     <stop_conditions>
         <all_of>
-            <total_time_ms>10000</total_time_ms>
+            <total_time_ms>8000</total_time_ms>
         </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
+            <min_time_not_changing_for_ms>7000</min_time_not_changing_for_ms>
             <total_time_ms>20000</total_time_ms>
         </any_of>
     </stop_conditions>

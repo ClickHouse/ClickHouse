@@ -8,6 +8,7 @@
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsCommon.h>
@@ -33,7 +34,7 @@ template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto pos = arena.allocContinue(sizeof(T), begin);
-    unalignedStore(pos, data[n]);
+    unalignedStore<T>(pos, data[n]);
     return StringRef(pos, sizeof(T));
 }
 
@@ -216,9 +217,15 @@ UInt64 ColumnVector<T>::get64(size_t n) const
 }
 
 template <typename T>
+Float64 ColumnVector<T>::getFloat64(size_t n) const
+{
+    return static_cast<Float64>(data[n]);
+}
+
+template <typename T>
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnVector & src_vec = static_cast<const ColumnVector &>(src);
+    const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
     if (start + length > src_vec.data.size())
         throw Exception("Parameters start = "

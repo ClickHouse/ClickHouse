@@ -39,3 +39,5 @@ INSERT INTO summing (k, s) VALUES (0, 1), (666, 1), (666, 0);
 OPTIMIZE TABLE summing PARTITION 197001;
 
 SELECT k, s FROM summing ORDER BY k;
+
+DROP TABLE summing;

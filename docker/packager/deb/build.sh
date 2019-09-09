@@ -2,9 +2,12 @@
 
 set -x -e
 
-ccache -s ||:
-build/release --no-pbuilder
+ccache --show-stats ||:
+ccache --zero-stats ||:
+build/release --no-pbuilder $ALIEN_PKGS
 mv /*.deb /output
 mv *.changes /output
 mv *.buildinfo /output
-ccache -s ||:
+mv /*.rpm /output ||: # if exists
+mv /*.tgz /output ||: # if exists
+ccache --show-stats ||:

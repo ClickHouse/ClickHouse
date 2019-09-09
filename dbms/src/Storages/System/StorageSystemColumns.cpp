@@ -1,8 +1,6 @@
 #include <optional>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -20,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_DROPPED;
 }
 
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
@@ -38,10 +37,10 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
         { "comment",                    std::make_shared<DataTypeString>() },
         { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sorting_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sampling_key", std::make_shared<DataTypeUInt8>() },
-        { "compression_codec", std::make_shared<DataTypeString>() },
+        { "is_in_sorting_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_primary_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
+        { "compression_codec",   std::make_shared<DataTypeString>() },
     }));
 }
 
@@ -56,15 +55,15 @@ class ColumnsBlockInputStream : public IBlockInputStream
 {
 public:
     ColumnsBlockInputStream(
-        const std::vector<UInt8> & columns_mask,
-        const Block & header,
-        UInt64 max_block_size,
-        ColumnPtr databases,
-        ColumnPtr tables,
-        Storages storages,
+        const std::vector<UInt8> & columns_mask_,
+        const Block & header_,
+        UInt64 max_block_size_,
+        ColumnPtr databases_,
+        ColumnPtr tables_,
+        Storages storages_,
         String query_id_)
-        : columns_mask(columns_mask), header(header), max_block_size(max_block_size)
-        , databases(databases), tables(tables), storages(std::move(storages))
+        : columns_mask(columns_mask_), header(header_), max_block_size(max_block_size_)
+        , databases(databases_), tables(tables_), storages(std::move(storages_))
         , query_id(std::move(query_id_)), total_tables(tables->size())
     {
     }
@@ -123,21 +122,14 @@ protected:
                 cols_required_for_primary_key = storage->getColumnsRequiredForPrimaryKey();
                 cols_required_for_sampling = storage->getColumnsRequiredForSampling();
 
-                /** Info about sizes of columns for tables of MergeTree family.
-                * NOTE: It is possible to add getter for this info to IStorage interface.
-                */
-                if (auto storage_concrete_plain = dynamic_cast<StorageMergeTree *>(storage.get()))
-                {
-                    column_sizes = storage_concrete_plain->getData().getColumnSizes();
-                }
-                else if (auto storage_concrete_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
-                {
-                    column_sizes = storage_concrete_replicated->getData().getColumnSizes();
-                }
+                column_sizes = storage->getColumnSizes();
             }
 
             for (const auto & column : columns)
             {
+                if (column.is_virtual)
+                    continue;
+
                 size_t src_index = 0;
                 size_t res_index = 0;
 

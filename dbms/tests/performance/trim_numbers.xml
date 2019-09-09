@@ -1,5 +1,4 @@
 <test>
-    <name>trim_numbers</name>
     <type>loop</type>
 
     <stop_conditions>

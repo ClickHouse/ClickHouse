@@ -20,6 +20,7 @@
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -41,15 +42,13 @@ class ComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
     ComplexKeyCacheDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        const size_t size);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        const size_t size_);
 
     std::string getKeyDescription() const { return key_description; }
-
-    std::exception_ptr getCreationException() const override { return {}; }
 
     std::string getName() const override { return name; }
 
@@ -74,9 +73,9 @@ public:
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -84,8 +83,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -254,34 +251,6 @@ private:
     void createAttributes();
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
-
-    template <typename OutputType, typename DefaultGetter>
-    void
-    getItemsNumber(Attribute & attribute, const Columns & key_columns, PaddedPODArray<OutputType> & out, DefaultGetter && get_default) const
-    {
-        if (false)
-        {
-        }
-#define DISPATCH(TYPE) \
-    else if (attribute.type == AttributeUnderlyingType::TYPE) \
-        getItemsNumberImpl<TYPE, OutputType>(attribute, key_columns, out, std::forward<DefaultGetter>(get_default));
-        DISPATCH(UInt8)
-        DISPATCH(UInt16)
-        DISPATCH(UInt32)
-        DISPATCH(UInt64)
-        DISPATCH(UInt128)
-        DISPATCH(Int8)
-        DISPATCH(Int16)
-        DISPATCH(Int32)
-        DISPATCH(Int64)
-        DISPATCH(Float32)
-        DISPATCH(Float64)
-        DISPATCH(Decimal32)
-        DISPATCH(Decimal64)
-        DISPATCH(Decimal128)
-#undef DISPATCH
-        else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-    }
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(

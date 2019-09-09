@@ -5,6 +5,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/Arena.h>
 
 
@@ -24,32 +25,15 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
 
     /// Initialize current totals with initial state.
 
-    arena = std::make_shared<Arena>();
     Block source_header = children.at(0)->getHeader();
 
     current_totals.reserve(source_header.columns());
     for (const auto & elem : source_header)
     {
-        if (const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
-        {
-            /// Create ColumnAggregateFunction with initial aggregate function state.
-
-            IAggregateFunction * function = column->getAggregateFunction().get();
-            auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
-            AggregateDataPtr data = arena->alignedAlloc(function->sizeOfData(), function->alignOfData());
-            function->create(data);
-            target->getData().push_back(data);
-            current_totals.emplace_back(std::move(target));
-        }
-        else
-        {
-
-            /// Not an aggregate function state. Just create a column with default value.
-
-            MutableColumnPtr new_column = elem.type->createColumn();
-            elem.type->insertDefaultInto(*new_column);
-            current_totals.emplace_back(std::move(new_column));
-        }
+        // Create a column with default value
+        MutableColumnPtr new_column = elem.type->createColumn();
+        elem.type->insertDefaultInto(*new_column);
+        current_totals.emplace_back(std::move(new_column));
     }
 }
 
@@ -161,34 +145,35 @@ Block TotalsHavingBlockInputStream::readImpl()
 }
 
 
-void TotalsHavingBlockInputStream::addToTotals(const Block & block, const IColumn::Filter * filter)
+void TotalsHavingBlockInputStream::addToTotals(const Block & source_block, const IColumn::Filter * filter)
 {
-    for (size_t i = 0, num_columns = block.columns(); i < num_columns; ++i)
+    for (size_t i = 0, num_columns = source_block.columns(); i < num_columns; ++i)
     {
-        const ColumnWithTypeAndName & current = block.getByPosition(i);
-
-        if (const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(current.column.get()))
+        const auto * source_column = typeid_cast<const ColumnAggregateFunction *>(
+                    source_block.getByPosition(i).column.get());
+        if (!source_column)
         {
-            auto & target = typeid_cast<ColumnAggregateFunction &>(*current_totals[i]);
-            IAggregateFunction * function = target.getAggregateFunction().get();
-            AggregateDataPtr data = target.getData()[0];
+            continue;
+        }
 
-            /// Accumulate all aggregate states into that value.
+        auto & totals_column = assert_cast<ColumnAggregateFunction &>(*current_totals[i]);
+        assert(totals_column.size() == 1);
 
-            const ColumnAggregateFunction::Container & vec = column->getData();
-            size_t size = vec.size();
+        /// Accumulate all aggregate states from a column of a source block into
+        /// the corresponding totals column.
+        const auto & vec = source_column->getData();
+        size_t size = vec.size();
 
-            if (filter)
-            {
-                for (size_t j = 0; j < size; ++j)
-                    if ((*filter)[j])
-                        function->merge(data, vec[j], arena.get());
-            }
-            else
-            {
-                for (size_t j = 0; j < size; ++j)
-                    function->merge(data, vec[j], arena.get());
-            }
+        if (filter)
+        {
+            for (size_t j = 0; j < size; ++j)
+                if ((*filter)[j])
+                    totals_column.insertMergeFrom(vec[j]);
+        }
+        else
+        {
+            for (size_t j = 0; j < size; ++j)
+                totals_column.insertMergeFrom(vec[j]);
         }
     }
 }

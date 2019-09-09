@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Core/Defines.h>
 #include <ext/range.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
@@ -22,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -74,8 +78,8 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
+    StringSearcher(const char * const needle_, const size_t needle_size_)
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size_}
     {
         if (0 == needle_size)
             return;
@@ -156,7 +160,7 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
         static const Poco::UTF8Encoding utf8;
 
@@ -328,8 +332,7 @@ class StringSearcher<false, true> : private StringSearcherBase
 private:
     /// string to be searched for
     const UInt8 * const needle;
-    const size_t needle_size;
-    const UInt8 * const needle_end = needle + needle_size;
+    const UInt8 * const needle_end;
     /// lower and uppercase variants of the first character in `needle`
     UInt8 l{};
     UInt8 u{};
@@ -344,7 +347,7 @@ private:
 
 public:
     StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
@@ -374,7 +377,7 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -429,7 +432,7 @@ public:
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
-        if (0 == needle_size)
+        if (needle == needle_end)
             return haystack;
 
         while (haystack < haystack_end)
@@ -527,8 +530,7 @@ class StringSearcher<true, ASCII> : private StringSearcherBase
 private:
     /// string to be searched for
     const UInt8 * const needle;
-    const size_t needle_size;
-    const UInt8 * const needle_end = needle + needle_size;
+    const UInt8 * const needle_end;
     /// first character in `needle`
     UInt8 first{};
 
@@ -542,7 +544,7 @@ private:
 
 public:
     StringSearcher(const char * const needle_, const size_t needle_size)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
+        : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
@@ -568,7 +570,7 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -615,7 +617,7 @@ public:
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
-        if (0 == needle_size)
+        if (needle == needle_end)
             return haystack;
 
         while (haystack < haystack_end)
@@ -698,11 +700,82 @@ public:
     }
 };
 
+// Searches for needle surrounded by token-separators.
+// Separators are anything inside ASCII (0-128) and not alphanum.
+// Any value outside of basic ASCII (>=128) is considered a non-separator symbol, hence UTF-8 strings
+// should work just fine. But any Unicode whitespace is not considered a token separtor.
+template <typename StringSearcher>
+class TokenSearcher
+{
+    StringSearcher searcher;
+    size_t needle_size;
+
+public:
+    TokenSearcher(const char * const needle_, const size_t needle_size_)
+        : searcher{needle_, needle_size_},
+          needle_size(needle_size_)
+    {
+        if (std::any_of(reinterpret_cast<const UInt8 *>(needle_), reinterpret_cast<const UInt8 *>(needle_) + needle_size_, isTokenSeparator))
+        {
+            throw Exception{"Needle must not contain whitespace or separator characters", ErrorCodes::BAD_ARGUMENTS};
+        }
+
+    }
+
+    ALWAYS_INLINE bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const
+    {
+        // use searcher only if pos is in the beginning of token and pos + searcher.needle_size is end of token.
+        if (isToken(haystack, haystack_end, pos))
+            return searcher.compare(haystack, haystack_end, pos);
+
+        return false;
+    }
+
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+    {
+        // use searcher.search(), then verify that returned value is a token
+        // if it is not, skip it and re-run
+
+        const UInt8 * pos = haystack;
+        while (pos < haystack_end)
+        {
+            pos = searcher.search(pos, haystack_end);
+            if (pos == haystack_end || isToken(haystack, haystack_end, pos))
+                return pos;
+
+            // assuming that heendle does not contain any token separators.
+            pos += needle_size;
+        }
+        return haystack_end;
+    }
+
+    const UInt8 * search(const UInt8 * haystack, const size_t haystack_size) const
+    {
+        return search(haystack, haystack + haystack_size);
+    }
+
+    ALWAYS_INLINE bool isToken(const UInt8 * haystack, const UInt8 * const haystack_end, const UInt8* p) const
+    {
+        return (p == haystack || isTokenSeparator(*(p - 1)))
+             && (p + needle_size >= haystack_end || isTokenSeparator(*(p + needle_size)));
+    }
+
+    ALWAYS_INLINE static bool isTokenSeparator(const UInt8 c)
+    {
+        if (isAlphaNumericASCII(c) || !isASCII(c))
+            return false;
+
+        return true;
+    }
+};
+
 
 using ASCIICaseSensitiveStringSearcher = StringSearcher<true, true>;
 using ASCIICaseInsensitiveStringSearcher = StringSearcher<false, true>;
 using UTF8CaseSensitiveStringSearcher = StringSearcher<true, false>;
 using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
+using ASCIICaseSensitiveTokenSearcher = TokenSearcher<ASCIICaseSensitiveStringSearcher>;
+using ASCIICaseInsensitiveTokenSearcher = TokenSearcher<ASCIICaseInsensitiveStringSearcher>;
 
 
 /** Uses functions from libc.
@@ -714,10 +787,9 @@ using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
 struct LibCASCIICaseSensitiveStringSearcher
 {
     const char * const needle;
-    const size_t needle_size;
 
-    LibCASCIICaseSensitiveStringSearcher(const char * const needle, const size_t needle_size)
-        : needle(needle), needle_size(needle_size) {}
+    LibCASCIICaseSensitiveStringSearcher(const char * const needle_, const size_t /* needle_size */)
+        : needle(needle_) {}
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {
@@ -736,10 +808,9 @@ struct LibCASCIICaseSensitiveStringSearcher
 struct LibCASCIICaseInsensitiveStringSearcher
 {
     const char * const needle;
-    const size_t needle_size;
 
-    LibCASCIICaseInsensitiveStringSearcher(const char * const needle, const size_t needle_size)
-        : needle(needle), needle_size(needle_size) {}
+    LibCASCIICaseInsensitiveStringSearcher(const char * const needle_, const size_t /* needle_size */)
+        : needle(needle_) {}
 
     const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end) const
     {

@@ -4,12 +4,12 @@ Bitmap functions work for two bitmaps Object value calculation, it is to return 
 
 There are 2 kinds of construction methods for Bitmap Object. One is to be constructed by aggregation function groupBitmap with -State, the other is to be constructed by Array Object. It is also to convert Bitmap Object to Array Object.
 
-RoaringBitmap is wrapped into a data structure while actual storage of Bitmap objects. When the cardinality is less than or equal to 32, it uses Set objet. When the cardinality is greater than 32, it uses RoaringBitmap object. That is why storage of low cardinality set is faster. 
+RoaringBitmap is wrapped into a data structure while actual storage of Bitmap objects. When the cardinality is less than or equal to 32, it uses Set objet. When the cardinality is greater than 32, it uses RoaringBitmap object. That is why storage of low cardinality set is faster.
 
 For more information on RoaringBitmap, see: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
 
-## bitmapBuild
+## bitmapBuild {#bitmap_functions-bitmapbuild}
 
 Build a bitmap from unsigned integer array.
 
@@ -23,8 +23,13 @@ bitmapBuild(array)
 
 **Example**
 
-``` sql
-SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res
+```sql
+SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
+```
+```text
+┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
+│     │ AggregateFunction(groupBitmap, UInt8)    │
+└─────┴──────────────────────────────────────────────┘
 ```
 
 ## bitmapToArray
@@ -49,6 +54,119 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ┌─res─────────┐
 │ [1,2,3,4,5] │
 └─────────────┘
+```
+
+## bitmapSubsetInRange {#bitmap_functions-bitmapsubsetinrange}
+
+Return subset in specified range (not include the range_end).
+
+```
+bitmapSubsetInRange(bitmap, range_start, range_end)
+```
+
+**Parameters**
+
+- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
+- `range_end` – range end point(excluded). Type: [UInt32](../../data_types/int_uint.md).
+
+**Example**
+
+``` sql
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+```
+
+```
+┌─res───────────────┐
+│ [30,31,32,33,100] │
+└───────────────────┘
+```
+
+## bitmapContains {#bitmap_functions-bitmapcontains}
+
+Checks whether the bitmap contains an element.
+
+```
+bitmapContains(haystack, needle)
+```
+
+**Parameters**
+
+- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
+- `needle` – Value that the function searches. Type: [UInt32](../../data_types/int_uint.md).
+
+**Returned values**
+
+- 0 — If `haystack` doesn't contain `needle`.
+- 1 — If `haystack` contains `needle`.
+
+Type: `UInt8`.
+
+**Example**
+
+``` sql
+SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
+```
+```text
+┌─res─┐
+│  1  │
+└─────┘
+```
+
+## bitmapHasAny
+
+Checks whether two bitmaps have intersection by some elements.
+
+```
+bitmapHasAny(bitmap1, bitmap2)
+```
+
+If you are sure that `bitmap2` contains strictly one element, consider using the [bitmapContains](#bitmap_functions-bitmapcontains) function. It works more efficiently.
+
+**Parameters**
+
+- `bitmap*` – bitmap object.
+
+**Return values**
+
+- `1`, if `bitmap1` and `bitmap2` have one similar element at least.
+- `0`, otherwise.
+
+**Example**
+
+``` sql
+SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+```
+
+```
+┌─res─┐
+│  1  │
+└─────┘
+```
+
+## bitmapHasAll
+
+Analogous to `hasAll(array, array)` returns 1 if the first bitmap contains all the elements of the second one, 0 otherwise.
+If the second argument is an empty bitmap then returns 1.
+
+```
+bitmapHasAll(bitmap,bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+``` sql
+SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
+```
+
+```
+┌─res─┐
+│  0  │
+└─────┘
 ```
 
 

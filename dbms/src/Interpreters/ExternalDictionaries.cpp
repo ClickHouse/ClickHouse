@@ -5,47 +5,26 @@
 namespace DB
 {
 
-namespace
-{
-    const ExternalLoaderUpdateSettings externalDictionariesUpdateSettings {};
-
-    const ExternalLoaderConfigSettings & getExternalDictionariesConfigSettings()
-    {
-        static ExternalLoaderConfigSettings settings;
-        static std::once_flag flag;
-
-        std::call_once(flag, []
-        {
-            settings.external_config = "dictionary";
-            settings.external_name = "name";
-            settings.path_setting_name = "dictionaries_config";
-        });
-
-        return settings;
-    }
-}
-
-
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
 ExternalDictionaries::ExternalDictionaries(
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
     const Poco::Util::AbstractConfiguration & config,
-    Context & context)
+    Context & context_)
         : ExternalLoader(config,
-                         externalDictionariesUpdateSettings,
-                         getExternalDictionariesConfigSettings(),
-                         std::move(config_repository),
-                         &Logger::get("ExternalDictionaries"),
-                         "external dictionary"),
-        context(context)
+                         "external dictionary",
+                         &Logger::get("ExternalDictionaries")),
+        context(context_)
 {
+    addConfigRepository(std::move(config_repository), {"dictionary", "name", "dictionaries_config"});
+    enableAsyncLoading(true);
+    enablePeriodicUpdates(true);
 }
 
 
-std::unique_ptr<IExternalLoadable> ExternalDictionaries::create(
-        const std::string & name, const Configuration & config, const std::string & config_prefix) const
+ExternalLoader::LoadablePtr ExternalDictionaries::create(
+        const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config) const
 {
-    return DictionaryFactory::instance().create(name, config, config_prefix, context);
+    return DictionaryFactory::instance().create(name, config, key_in_config, context);
 }
 
 }

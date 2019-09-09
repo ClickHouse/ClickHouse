@@ -7,6 +7,8 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/IStorage.h>
 
+#include <IO/ConnectionTimeouts.h>
+
 
 namespace DB
 {
@@ -61,17 +63,17 @@ RemoteBlockInputStream::RemoteBlockInputStream(
     create_multiplexed_connections = [this, pool, throttler]()
     {
         const Settings & current_settings = context.getSettingsRef();
-
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
         std::vector<IConnectionPool::Entry> connections;
         if (main_table)
         {
-            auto try_results = pool->getManyChecked(&current_settings, pool_mode, *main_table);
+            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, *main_table);
             connections.reserve(try_results.size());
             for (auto & try_result : try_results)
                 connections.emplace_back(std::move(try_result.entry));
         }
         else
-            connections = pool->getMany(&current_settings, pool_mode);
+            connections = pool->getMany(timeouts, &current_settings, pool_mode);
 
         return std::make_unique<MultiplexedConnections>(
             std::move(connections), current_settings, throttler);
@@ -162,7 +164,18 @@ static Block adaptBlockStructure(const Block & block, const Block & header, cons
     res.info = block.info;
 
     for (const auto & elem : header)
-        res.insert({ castColumn(block.getByName(elem.name), elem.type, context), elem.type, elem.name });
+    {
+        ColumnPtr column;
+
+        if (elem.column && isColumnConst(*elem.column))
+            /// TODO: check that column from block contains the same value.
+            /// TODO: serialize const columns.
+            column = elem.column->cloneResized(block.rows());
+        else
+            column = castColumn(block.getByName(elem.name), elem.type, context);
+
+        res.insert({column, elem.type, elem.name});
+    }
     return res;
 }
 
@@ -283,12 +296,14 @@ void RemoteBlockInputStream::sendQuery()
 {
     multiplexed_connections = create_multiplexed_connections();
 
-    if (context.getSettingsRef().skip_unavailable_shards && 0 == multiplexed_connections->size())
+    const auto& settings = context.getSettingsRef();
+    if (settings.skip_unavailable_shards && 0 == multiplexed_connections->size())
         return;
 
     established = true;
 
-    multiplexed_connections->sendQuery(query, "", stage, &context.getClientInfo(), true);
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
+    multiplexed_connections->sendQuery(timeouts, query, query_id, stage, &context.getClientInfo(), true);
 
     established = false;
     sent_query = true;

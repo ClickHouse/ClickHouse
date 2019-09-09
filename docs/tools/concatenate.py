@@ -23,6 +23,8 @@ def concatenate(lang, docs_path, single_page_file):
     logging.debug('Concatenating: ' + ', '.join(files_to_concatenate))
 
     for path in files_to_concatenate:
+        if path.endswith('introduction/info.md'):
+            continue
         try:
             with open(os.path.join(lang_path, path)) as f:
                 anchors = set()

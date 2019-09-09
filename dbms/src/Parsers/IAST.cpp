@@ -17,12 +17,13 @@ namespace ErrorCodes
 }
 
 
-const char * IAST::hilite_keyword    = "\033[1m";
-const char * IAST::hilite_identifier = "\033[0;36m";
-const char * IAST::hilite_function   = "\033[0;33m";
-const char * IAST::hilite_operator   = "\033[1;33m";
-const char * IAST::hilite_alias      = "\033[0;32m";
-const char * IAST::hilite_none       = "\033[0m";
+const char * IAST::hilite_keyword      = "\033[1m";
+const char * IAST::hilite_identifier   = "\033[0;36m";
+const char * IAST::hilite_function     = "\033[0;33m";
+const char * IAST::hilite_operator     = "\033[1;33m";
+const char * IAST::hilite_alias        = "\033[0;32m";
+const char * IAST::hilite_substitution = "\033[1;36m";
+const char * IAST::hilite_none         = "\033[0m";
 
 
 String backQuoteIfNeed(const String & x)
@@ -45,6 +46,14 @@ String backQuote(const String & x)
     return res;
 }
 
+size_t IAST::size() const
+{
+    size_t res = 1;
+    for (const auto & child : children)
+        res += child->size();
+
+    return res;
+}
 
 size_t IAST::checkSize(size_t max_size) const
 {
@@ -142,6 +151,14 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
                 writeDoubleQuotedString(name, out);
             else
                 writeProbablyDoubleQuotedString(name, out);
+            break;
+        }
+        case IdentifierQuotingStyle::BackticksMySQL:
+        {
+            if (always_quote_identifiers)
+                writeBackQuotedStringMySQL(name, out);
+            else
+                writeProbablyBackQuotedStringMySQL(name, out);
             break;
         }
     }

@@ -57,6 +57,14 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
+  - 'Domains':
+    - 'Overview': 'data_types/domains/overview.md'
+    - 'IPv4': 'data_types/domains/ipv4.md'
+    - 'IPv6': 'data_types/domains/ipv6.md'
+
+- 'Движки баз данных':
+    - 'Введение': 'database_engines/index.md'
+    - 'MySQL': 'database_engines/mysql.md'
 
 - 'Движки таблиц':
   - 'Введение': 'operations/table_engines/index.md'
@@ -78,6 +86,8 @@ nav:
   - 'Интеграции':
     - 'Kafka': 'operations/table_engines/kafka.md'
     - 'MySQL': 'operations/table_engines/mysql.md'
+    - 'JDBC': 'operations/table_engines/jdbc.md'
+    - 'ODBC': 'operations/table_engines/odbc.md'
   - 'Особые':
     - 'Distributed': 'operations/table_engines/distributed.md'
     - 'Внешние данные': 'operations/table_engines/external_data.md'
@@ -99,6 +109,7 @@ nav:
   - 'INSERT INTO': 'query_language/insert_into.md'
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
+  - 'SYSTEM': 'query_language/system.md'
   - 'Прочие виды запросов': 'query_language/misc.md'
   - 'Функции':
     - 'Введение': 'query_language/functions/index.md'
@@ -116,6 +127,7 @@ nav:
     - 'Функции по работе с массивами': 'query_language/functions/array_functions.md'
     - 'Функции разбиения и слияния строк и массивов': 'query_language/functions/splitting_merging_functions.md'
     - 'Битовые функции': 'query_language/functions/bit_functions.md'
+    - 'Функции для битмапов': 'query_language/functions/bitmap_functions.md'
     - 'Функции хэширования': 'query_language/functions/hash_functions.md'
     - 'Функции генерации псевдослучайных чисел': 'query_language/functions/random_functions.md'
     - 'Функции для работы с UUID': 'query_language/functions/uuid_functions.md'
@@ -130,6 +142,7 @@ nav:
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
     - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
+    - 'Функции машинного обучения': 'query_language/functions/machine_learning_functions.md'
     - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
@@ -143,7 +156,10 @@ nav:
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
+    - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
+    - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'input': 'query_language/table_functions/input.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':
@@ -177,7 +193,9 @@ nav:
     - 'Разрешения на выполнение запросов': 'operations/settings/permissions_for_queries.md'
     - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
     - 'Настройки': 'operations/settings/settings.md'
+    - 'Ограничения на изменение настроек': 'operations/settings/constraints_on_settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
+    - 'Настройки пользователей': 'operations/settings/settings_users.md'
   - 'Утилиты':
     - 'Введение': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
