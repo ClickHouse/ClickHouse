@@ -76,6 +76,8 @@
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
+#define DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA 134217728
+
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
 #if defined(_MSC_VER)

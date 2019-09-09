@@ -168,7 +168,7 @@ void ParallelAggregatingBlockInputStream::execute()
     Stopwatch watch;
 
     for (auto & elem : many_data)
-        elem = std::make_shared<AggregatedDataVariants>();
+        elem = std::make_shared<AggregatedDataVariants>(params.max_arena_chunk_size);
 
     processor.process();
     processor.wait();

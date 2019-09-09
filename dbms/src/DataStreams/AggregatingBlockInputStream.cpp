@@ -25,7 +25,7 @@ Block AggregatingBlockInputStream::readImpl()
     if (!executed)
     {
         executed = true;
-        AggregatedDataVariantsPtr data_variants = std::make_shared<AggregatedDataVariants>();
+        AggregatedDataVariantsPtr data_variants = std::make_shared<AggregatedDataVariants>(params.max_arena_chunk_size);
 
         Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
         aggregator.setCancellationHook(hook);

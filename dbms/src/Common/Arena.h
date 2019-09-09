@@ -23,6 +23,10 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 /** Memory pool to append something. For example, short strings.
   * Usage scenario:
@@ -118,7 +122,7 @@ private:
     template <size_t> friend class AlignedArenaAllocator;
 
 public:
-    Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
+    Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA)
         : growth_factor(growth_factor_), linear_growth_threshold(linear_growth_threshold_),
         head(new Chunk(initial_size_, nullptr)), size_in_bytes(head->size())
     {
@@ -189,6 +193,8 @@ public:
     {
         while (unlikely(head->pos + size > head->end))
         {
+	    if (begin && (head->pos - begin + size) > (roundUpToPageSize(linear_growth_threshold) - pad_right))
+                throw Exception("cannot allocate memory, If you are using aggregate functions, set the large aggregation_max_size_for_arena_chunk.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
             char * prev_end = head->pos;
             addChunk(size);
 

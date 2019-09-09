@@ -523,7 +523,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     };
     Type type = Type::EMPTY;
 
-    AggregatedDataVariants() : aggregates_pools(1, std::make_shared<Arena>()), aggregates_pool(aggregates_pools.back().get()) {}
+    AggregatedDataVariants(size_t max_arena_chunk_size_ = DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA) : aggregates_pools(1, std::make_shared<Arena>(4096, 2, max_arena_chunk_size_)), aggregates_pool(aggregates_pools.back().get()) {}
     bool empty() const { return type == Type::EMPTY; }
     void invalidate() { type = Type::EMPTY; }
 
@@ -790,6 +790,9 @@ public:
         size_t max_threads;
 
         const size_t min_free_disk_space;
+	
+	size_t max_arena_chunk_size;
+
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
@@ -798,7 +801,7 @@ public:
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             const std::string & tmp_path_, size_t max_threads_,
-            size_t min_free_disk_space_)
+            size_t min_free_disk_space_, size_t max_arena_chunk_size_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -806,14 +809,15 @@ public:
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
             empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
             tmp_path(tmp_path_), max_threads(max_threads_),
-            min_free_disk_space(min_free_disk_space_)
+            min_free_disk_space(min_free_disk_space_),
+            max_arena_chunk_size(max_arena_chunk_size_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, "", max_threads_, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, "", max_threads_, 0, DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA)
         {
             intermediate_header = intermediate_header_;
         }
