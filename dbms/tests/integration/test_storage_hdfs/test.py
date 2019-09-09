@@ -29,7 +29,6 @@ def started_cluster():
 
 def test_read_write_storage(started_cluster):
     hdfs_api = HDFSApi("root")
-    hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
 
     node1.query("create table SimpleHDFSStorage (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/simple_storage', 'TSV')")
     node1.query("insert into SimpleHDFSStorage values (1, 'Mark', 72.53)")
@@ -39,19 +38,19 @@ def test_read_write_storage(started_cluster):
 def test_read_write_storage_with_globs(started_cluster):
     hdfs_api = HDFSApi("root")
 
-    for i in ["1", "2", "3"]:
-        hdfs_api.write_data("/storage" + i, i + "\tMark\t72.53\n")
-        assert hdfs_api.read_data("/storage" + i) == i + "\tMark\t72.53\n"
-
     node1.query("create table HDFSStorageWithRange (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1..5}', 'TSV')")
     node1.query("create table HDFSStorageWithEnum (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage{1,2,3,4,5}', 'TSV')")
     node1.query("create table HDFSStorageWithQuestionMark (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage?', 'TSV')")
     node1.query("create table HDFSStorageWithAsterisk (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/storage*', 'TSV')")
 
-    assert node1.query("select count(*) from HDFSStorageWithRange") == '3\n'
-    assert node1.query("select count(*) from HDFSStorageWithEnum") == '3\n'
-    assert node1.query("select count(*) from HDFSStorageWithQuestionMark") == '3\n'
-    assert node1.query("select count(*) from HDFSStorageWithAsterisk") == '3\n'
+    for i in ["1", "2", "3"]:
+        hdfs_api.write_data("/storage" + i, i + "\tMark\t72.53\n")
+        assert hdfs_api.read_data("/storage" + i) == i + "\tMark\t72.53\n"
+
+    assert node1.query("select count(*) from HDFSStorageWithRange") == "3\n"
+    assert node1.query("select count(*) from HDFSStorageWithEnum") == "3\n"
+    assert node1.query("select count(*) from HDFSStorageWithQuestionMark") == "3\n"
+    assert node1.query("select count(*) from HDFSStorageWithAsterisk") == "3\n"
 
 def test_read_write_table(started_cluster):
     hdfs_api = HDFSApi("root")
