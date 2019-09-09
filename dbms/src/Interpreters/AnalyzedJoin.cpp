@@ -2,11 +2,13 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
+#include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Storages/IStorage.h>
 
@@ -15,6 +17,17 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+AnalyzedJoin::AnalyzedJoin(const Settings & settings)
+    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
+    , join_use_nulls(settings.join_use_nulls)
+    , prefer_merge_join(settings.prefer_merge_join)
+{}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 {
@@ -210,36 +223,22 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->key_names_left == y->key_names_left
         && x->key_names_right == y->key_names_right
         && x->columns_added_by_join == y->columns_added_by_join
-        && x->hash_join == y->hash_join;
+        && x->join == y->join;
 }
 
 BlockInputStreamPtr AnalyzedJoin::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
 {
     if (isRightOrFull(table_join.kind))
-        return hash_join->createStreamWithNonJoinedRows(source_header, *this, max_block_size);
+        if (auto hash_join = typeid_cast<Join *>(join.get()))
+            return hash_join->createStreamWithNonJoinedRows(source_header, *this, max_block_size);
     return {};
 }
 
-JoinPtr AnalyzedJoin::makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const
+JoinPtr AnalyzedJoin::makeJoin(const Block & right_sample_block) const
 {
-    auto join = std::make_shared<Join>(key_names_right, join_use_nulls, size_limits_for_join, table_join.kind, table_join.strictness);
-    join->setSampleBlock(sample_block);
-    return join;
-}
-
-void AnalyzedJoin::joinBlock(Block & block) const
-{
-    hash_join->joinBlock(block, *this);
-}
-
-void AnalyzedJoin::joinTotals(Block & block) const
-{
-    hash_join->joinTotals(block);
-}
-
-bool AnalyzedJoin::hasTotals() const
-{
-    return hash_join->hasTotals();
+    if (prefer_merge_join)
+        return std::make_shared<MergeJoin>(*this, right_sample_block);
+    return std::make_shared<Join>(*this, right_sample_block);
 }
 
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)

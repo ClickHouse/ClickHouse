@@ -83,15 +83,16 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 
-Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits_,
-    ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_)
-    : kind(kind_), strictness(strictness_),
-    key_names_right(key_names_right_),
-    use_nulls(use_nulls_),
-    any_take_last_row(any_take_last_row_),
-    log(&Logger::get("Join")),
-    limits(limits_)
+Join::Join(const AnalyzedJoin & join_options_, const Block & right_sample_block, bool any_take_last_row_)
+    : join_options(join_options_)
+    , kind(join_options_.kind())
+    , strictness(join_options_.strictness())
+    , key_names_right(join_options_.keyNamesRight())
+    , use_nulls(join_options_.joinUseNulls())
+    , any_take_last_row(any_take_last_row_)
+    , log(&Logger::get("Join"))
 {
+    setSampleBlock(right_sample_block);
 }
 
 
@@ -269,7 +270,7 @@ size_t Join::getTotalByteCount() const
 
 void Join::setSampleBlock(const Block & block)
 {
-    std::unique_lock lock(rwlock);
+    //std::unique_lock lock(rwlock);
     LOG_DEBUG(log, "setSampleBlock: " << block.dumpStructure());
 
     if (!empty())
@@ -504,7 +505,7 @@ void Join::prepareBlockListStructure(Block & stored_block)
     }
 }
 
-bool Join::insertFromBlock(const Block & block)
+bool Join::addJoinedBlock(const Block & block)
 {
     std::unique_lock lock(rwlock);
 
@@ -570,7 +571,7 @@ bool Join::insertFromBlock(const Block & block)
             blocks_nullmaps.emplace_back(stored_block, null_map_holder);
     }
 
-    return limits.check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return join_options.sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 
@@ -1049,10 +1050,10 @@ void Join::joinGet(Block & block, const String & column_name) const
 }
 
 
-void Join::joinBlock(Block & block, const AnalyzedJoin & join_params) const
+void Join::joinBlock(Block & block)
 {
-    const Names & key_names_left = join_params.keyNamesLeft();
-    const NamesAndTypesList & columns_added_by_join = join_params.columnsAddedByJoin();
+    const Names & key_names_left = join_options.keyNamesLeft();
+    const NamesAndTypesList & columns_added_by_join = join_options.columnsAddedByJoin();
 
     std::shared_lock lock(rwlock);
 
