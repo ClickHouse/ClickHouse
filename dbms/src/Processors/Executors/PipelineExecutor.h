@@ -215,6 +215,7 @@ private:
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
+    std::mutex executor_contexts_mutex;
 
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;

@@ -389,6 +389,8 @@ void PipelineExecutor::finish()
         finished = true;
     }
 
+    std::lock_guard guard(executor_contexts_mutex);
+
     for (auto & context : executor_contexts)
     {
         {
@@ -659,9 +661,13 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
     threads_queue.init(num_threads);
 
-    executor_contexts.reserve(num_threads);
-    for (size_t i = 0; i < num_threads; ++i)
-        executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
+    {
+        std::lock_guard guard(executor_contexts_mutex);
+
+        executor_contexts.reserve(num_threads);
+        for (size_t i = 0; i < num_threads; ++i)
+            executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
+    }
 
     auto thread_group = CurrentThread::getGroup();
 
