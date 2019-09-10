@@ -57,6 +57,8 @@ None of the data formats except Values allow setting values to expressions such 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
+`FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](table_functions/input.md).
+
 ### Performance Considerations
 
 `INSERT` sorts the input data by primary key and splits them into partitions by month. If you insert data for mixed months, it can significantly reduce the performance of the `INSERT` query. To avoid this:

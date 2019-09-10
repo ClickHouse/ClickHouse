@@ -72,9 +72,7 @@ void ReadBufferFromKafkaConsumer::commit()
 
     PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
 
-    /// Since we can poll more messages than we already processed - commit only processed messages.
-    if (!messages.empty())
-        consumer->async_commit(*std::prev(current));
+    consumer->async_commit();
 
     PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
 
@@ -185,6 +183,9 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     // XXX: very fishy place with const casting.
     auto new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
     BufferBase::set(new_position, current->get_payload().get_size(), 0);
+
+    /// Since we can poll more messages than we already processed - commit only processed messages.
+    consumer->store_offset(*current);
 
     ++current;
 
