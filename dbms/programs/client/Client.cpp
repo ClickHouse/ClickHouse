@@ -567,7 +567,9 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            if (VERSION_STRING < server_version)
+            if (VERSION_MAJOR < server_version_major
+                || VERSION_MINOR < server_version_minor
+                || VERSION_PATCH < server_version_patch)
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
