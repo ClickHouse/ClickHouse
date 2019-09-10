@@ -180,6 +180,14 @@ Block NativeBlockInputStream::readImpl()
             index_column_it = index_block_it->columns.begin();
     }
 
+    if (rows && header)
+    {
+        /// Allow to skip columns. Fill them with default values.
+        for (auto & col : header)
+            if (!res.has(col.name))
+                res.insert({col.type->createColumnConstWithDefaultValue(rows), col.type, col.name});
+    }
+
     return res;
 }
 
