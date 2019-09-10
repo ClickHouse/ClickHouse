@@ -18,6 +18,7 @@ void registerStorageBuffer(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
 void registerStorageWindow(StorageFactory & factory);
+void registerStoragePartition(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory);
 void registerStorageS3(StorageFactory & factory);
@@ -61,6 +62,7 @@ void registerStorages()
     registerStorageDistributed(factory);
     registerStorageMemory(factory);
     registerStorageWindow(factory);
+    registerStoragePartition(factory);
     registerStorageFile(factory);
     registerStorageURL(factory);
     registerStorageS3(factory);

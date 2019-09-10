@@ -103,12 +103,19 @@ StoragePtr StorageFactory::get(
                     ErrorCodes::BAD_ARGUMENTS);
             }
 
-            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by ||
+            if ((storage_def->partition_by || storage_def->order_by) && !endsWith(name, "MergeTree") && name != "Partition")
+            {
+                throw Exception(
+                    "Engine " + name + " doesn't support PARTITION BY or ORDER BY. "
+                    "Currently only the MergeTree family of engines and Partition engine support them", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            if ((storage_def->primary_key || storage_def->sample_by ||
                  (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses and skipping indices. "
+                    "Engine " + name + " doesn't support PRIMARY KEY, SAMPLE BY clauses and skipping indices. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 
