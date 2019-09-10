@@ -1,3 +1,6 @@
+project(ClickHouse)
+cmake_minimum_required(VERSION 3.3)
+
 foreach(policy
         CMP0023
         CMP0048 # CMake 3.0
@@ -9,9 +12,6 @@ foreach(policy
         cmake_policy(SET ${policy} NEW)
     endif()
 endforeach()
-
-project(ClickHouse)
-cmake_minimum_required(VERSION 3.3)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
