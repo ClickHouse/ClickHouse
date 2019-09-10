@@ -894,4 +894,19 @@ Error count of each replica is capped at this value, preventing a single replica
 - [Table engine Distributed](../../operations/table_engines/distributed.md)
 - [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
 
+## os_thread_priority {#setting-os_thread_priority}
+
+Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that process queries. OS planner uses this priority when choosing the thread for execution.
+
+!!! warning "Warning"
+    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickHouse-server` package set it up when installing. Some virtual environments don't allow to set the `CAP_SYS_NICE` capability. In this case `clickhouse-server` shows an informational message at the start.
+
+Possible values:
+
+You can set values in the `[-20, 19]` range.
+
+The less value has a higher priority, so, threads with low values of `nice` priority are executed more frequently then threads with high values. Higher values are preferable for non-interactive and for long executing queries because it allows the server to stay available for short queries.
+
+Default value: 0.
+
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
