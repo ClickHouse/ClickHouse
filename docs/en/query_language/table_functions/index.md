@@ -4,7 +4,7 @@ Table function is a method of creating a table.
 
 You can use table functions in:
 
-* [CREATE TABLE](../create.md) query.
+* [CREATE TABLE](../create.md#create-table-query) query.
 
     It's an alternative method of creating a table.
 

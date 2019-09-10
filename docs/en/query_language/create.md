@@ -1,3 +1,5 @@
+# CREATE Queries
+
 ## CREATE DATABASE {#query_language-create-database}
 
 Creates database.
