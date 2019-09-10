@@ -2150,7 +2150,7 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
-    return queue.isPartAssignedToBackgroundOperation(part);
+    return queue.isVirtualPart(part);
 }
 
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::movePartsTask()

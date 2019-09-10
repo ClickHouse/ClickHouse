@@ -10,20 +10,22 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int NO_SUCH_DATA_PART;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
 /// Contains minimal number of heaviest parts, which sum size on disk is greater than required.
-/// If there are not enough summary size, than contains all.
+/// If there are not enough summary size, than contains all parts.
 class LargestPartsWithRequiredSize
 {
     struct PartsSizeOnDiskComparator
     {
         bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
         {
-            return f->bytes_on_disk < s->bytes_on_disk;
+            /// If parts have equal sizes, than order them by names (names are unique)
+            return std::tie(f->bytes_on_disk, f->name) < std::tie(s->bytes_on_disk, s->name);
         }
     };
 
@@ -57,7 +59,7 @@ public:
         }
     }
 
-    /// Returns elems ordered by size
+    /// Returns parts ordered by size
     MergeTreeData::DataPartsVector getAccumulatedParts()
     {
         MergeTreeData::DataPartsVector res;
@@ -103,6 +105,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     for (const auto & part : data_parts)
     {
         String reason;
+        /// Don't report message to log, because logging is excessive
         if (!can_move(part, &reason))
             continue;
 
@@ -113,7 +116,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     for (auto && move : need_to_move)
     {
-        auto min_volume_priority = policy->getVolumePriorityByDisk(move.first) + 1;
+        auto min_volume_priority = policy->getVolumeIndexByDisk(move.first) + 1;
         for (auto && part : move.second.getAccumulatedParts())
         {
             auto reservation = policy->reserve(part->bytes_on_disk, min_volume_priority);
@@ -157,6 +160,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
 
     auto active_part = data->getActiveContainingPart(cloned_part->name);
 
+    /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part->name)
     {
         LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."
@@ -165,7 +169,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     }
 
     cloned_part->renameTo(active_part->name);
-
+    /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);
 
     LOG_TRACE(log, "Part " << cloned_part->name << " was moved to " << cloned_part->getFullPath());

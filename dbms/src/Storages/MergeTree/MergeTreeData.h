@@ -923,16 +923,20 @@ protected:
         const MergeListEntry * merge_entry);
 
     /// If part is assigned to merge or mutation (possibly replicated)
+    /// Should be overriden by childs, because they can have different
+    /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Moves part to specified space
+    /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, DiskSpace::SpacePtr space);
 
-    /// Selects parts for move and moves them
+    /// Selects parts for move and moves them, used in background process
     bool selectPartsAndMove();
 
 private:
     /// RAII Wrapper for atomic work with currently moving parts
+    /// Acuire them in constructor and remove them in destructor
+    /// Uses data.currently_moving_parts_mutex
     struct CurrentlyMovingPartsTagger
     {
         MergeTreeMovingParts parts_to_move;
@@ -943,13 +947,13 @@ private:
         ~CurrentlyMovingPartsTagger();
     };
 
-    /// Move selected parts to corresponding volumes
+    /// Move selected parts to corresponding disks
     bool moveParts(CurrentlyMovingPartsTagger && parts_to_move);
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTagger selectPartsForMove();
 
-    /// Check selected parts for movements. Used ALTER ... MOVE queries/
+    /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, DiskSpace::SpacePtr space);
 };
 

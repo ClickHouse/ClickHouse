@@ -39,7 +39,7 @@ void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & 
 }
 
 
-bool ReplicatedMergeTreeQueue::isPartAssignedToBackgroundOperation(const MergeTreeData::DataPartPtr & data_part) const
+bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
 {
     std::lock_guard lock(state_mutex);
     return virtual_parts.getContainingPart(data_part->info) != data_part->name;
