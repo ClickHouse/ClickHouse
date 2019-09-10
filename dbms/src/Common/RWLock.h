@@ -61,11 +61,11 @@ private:
     struct Group
     {
         const Type type;
-        size_t referers;
+        size_t refererrs;
 
         std::condition_variable cv; /// all locking requests of the group wait on this condvar
 
-        explicit Group(Type type_) : type{type_}, referers{0} {}
+        explicit Group(Type type_) : type{type_}, refererrs{0} {}
     };
 
     GroupsContainer queue;

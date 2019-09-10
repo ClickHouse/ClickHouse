@@ -5,6 +5,8 @@
 #include <Common/ProfileEvents.h>
 
 #include <cassert>
+#include <random>
+#include <pcg_random.hpp>
 
 
 namespace ProfileEvents
@@ -35,20 +37,46 @@ namespace ErrorCodes
 }
 
 
+/// A single-use object that represents lock's ownership
+/// For the purpose of exception safety guarantees it is to be used in two steps:
+/// 1. Create an instance allocating all the memory needed
+/// 2. Associate the instance with the lock (attach to the lock and prepared locking request group)
 class RWLockImpl::LockHolderImpl
 {
-    RWLock parent;
-    GroupsContainer::iterator it_group;
+    bool bound{false};
+    Type lock_type;
     String query_id;
     CurrentMetrics::Increment active_client_increment;
-
-    LockHolderImpl(RWLock && parent, GroupsContainer::iterator it_group);
+    RWLock parent;
+    GroupsContainer::iterator it_group;
 
 public:
-
     LockHolderImpl(const LockHolderImpl & other) = delete;
+    LockHolderImpl& operator=(const LockHolderImpl & other) = delete;
+
+    /// Implicit memory allocation for query_id is done here
+    LockHolderImpl(const String & query_id_, Type type)
+        : lock_type{type}, query_id{query_id_},
+          active_client_increment{
+            type == Type::Read ? CurrentMetrics::RWLockActiveReaders : CurrentMetrics::RWLockActiveWriters}
+    {
+    }
 
     ~LockHolderImpl();
+
+private:
+    /// A separate method which binds the holder to the owned lock
+    /// N.B. It is very important that this method produces no allocations
+    bool bind_with(RWLock && parent_, GroupsContainer::iterator it_group_) noexcept
+    {
+        if (bound)
+            return false;
+        it_group = it_group_;
+        parent = std::move(parent_);
+        ++it_group->refererrs;
+        bound = true;
+        return true;
+    }
 
     friend class RWLockImpl;
 };
@@ -61,29 +89,33 @@ namespace
     class QueryLockInfo
     {
     private:
-        std::mutex mutex;
+        mutable std::mutex mutex;
         std::map<std::string, size_t> queries;
 
     public:
         void add(const String & query_id)
         {
             std::lock_guard lock(mutex);
-            ++queries[query_id];
+
+            const auto res = queries.emplace(query_id, 1);  // may throw
+            if (!res.second)
+                ++res.first->second;
         }
 
-        void remove(const String & query_id)
+        void remove(const String & query_id) noexcept
         {
             std::lock_guard lock(mutex);
-            auto it = queries.find(query_id);
-            assert(it != queries.end());
-            if (--it->second == 0)
-                queries.erase(it);
+
+            const auto query_it = queries.find(query_id);
+            if (query_it != queries.cend() && --query_it->second == 0)
+                queries.erase(query_it);
         }
 
-        void check(const String & query_id)
+        void check(const String & query_id) const
         {
             std::lock_guard lock(mutex);
-            if (queries.count(query_id))
+
+            if (queries.find(query_id) != queries.cend())
                 throw Exception("Possible deadlock avoided. Client should retry.", ErrorCodes::DEADLOCK_AVOIDED);
         }
     };
@@ -92,6 +124,11 @@ namespace
 }
 
 
+/// To guarantee that we do not get any piece of our data corrupted:
+/// 1. Perform all actions that include allocations before changing lock's internal state
+/// 2. Roll back any changes that make the state inconsistent
+///
+/// Note: "SM" in the commentaries below stands for STATE MODIFICATION
 RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id)
 {
     const bool request_has_query_id = query_id != NO_QUERY;
@@ -108,12 +145,12 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     };
 
     /// This object is placed above unique_lock, because it may lock in destructor.
-    LockHolder res;
+    auto lock_holder = std::make_shared<LockHolderImpl>(query_id, type);
 
     std::unique_lock lock(mutex);
 
-    /// FastPath - Check if the same query_id already holds the required lock
-    ///            in which case we can proceed without waiting
+    /// The FastPath:
+    /// Check if the same query_id already holds the required lock in which case we can proceed without waiting
     if (request_has_query_id)
     {
         const auto it_query = owner_queries.find(query_id);
@@ -121,7 +158,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         {
             const auto current_owner_group = queue.begin();
 
-            /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
+            /// XXX: it means we can't upgrade lock from read to write!
             if (type == Write)
                 throw Exception(
                         "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked",
@@ -132,16 +169,13 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
                         "RWLockImpl::getLock(): RWLock is already locked in exclusive mode",
                         ErrorCodes::LOGICAL_ERROR);
 
-            res.reset(new LockHolderImpl(shared_from_this(), current_owner_group));
-
-            ++owner_queries[query_id];
-            if (type == Type::Read)
-                all_read_locks.add(query_id);
-
-            res->query_id = query_id;
+            /// N.B. Type is Read here, query_id is not empty and it_query is a valid iterator
+            all_read_locks.add(query_id);                                     /// SM1: may throw on insertion (nothing to roll back)
+            ++it_query->second;                                               /// SM2: nothrow
+            lock_holder->bind_with(shared_from_this(), current_owner_group);  /// SM3: nothrow
 
             finalize_metrics();
-            return res;
+            return lock_holder;
         }
     }
 
@@ -160,76 +194,108 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
       * We will throw an exception instead.
       */
 
-    GroupsContainer::iterator it_group;
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
     {
         if (type == Type::Read && request_has_query_id && !queue.empty())
             all_read_locks.check(query_id);
 
         /// Create a new group of locking requests
-        it_group = queue.emplace(queue.end(), type);
+        queue.emplace_back(type);                        /// SM1: may throw (nothing to roll back)
     }
-    else
-    {
-        if (type == Type::Read && request_has_query_id && queue.size() > 1)
-            all_read_locks.check(query_id);
+    else if (request_has_query_id && queue.size() > 1)
+        all_read_locks.check(query_id);
 
-        /// Will append myself to last group
-        it_group = std::prev(queue.end());
-    }
+    GroupsContainer::iterator it_group = std::prev(queue.end());
 
-    /// LockHolder needs to be created before waiting to guarantee
-    /// that this group does not get deleted prematurely (group's referers is incremented)
-    res.reset(new LockHolderImpl(shared_from_this(), it_group));
+    /// We need to reference the associated group before waiting to guarantee
+    /// that this group does not get deleted prematurely
+    ++it_group->refererrs;
 
     /// Wait a notification until we will be the only in the group.
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
+    --it_group->refererrs;
+
     if (request_has_query_id)
     {
-        ++owner_queries[query_id];
-        if (type == Type::Read)
-            all_read_locks.add(query_id);
+        try
+        {
+            if (type == Type::Read)
+                all_read_locks.add(query_id);              /// SM2: may throw on insertion
+                                                           ///      and is safe to roll back unconditionally
+            const auto emplace_res =
+                    owner_queries.emplace(query_id, 1);    /// SM3: may throw on insertion
+            if (!emplace_res.second)
+                ++emplace_res.first->second;               /// SM4: nothrow
+        }
+        catch (...)
+        {
+            /// Methods std::list<>::emplace_back() and std::unordered_map<>::emplace() provide strong exception safety
+            /// We only need to roll back the changes to these objects: all_read_locks and the locking queue
+            if (type == Type::Read)
+                all_read_locks.remove(query_id);           /// Rollback(SM2): nothrow
 
-        res->query_id = query_id;
+            if (it_group->refererrs == 0)
+            {
+                const auto next = queue.erase(it_group);   /// Rollback(SM1): nothrow
+                if (next != queue.end())
+                    next->cv.notify_all();
+            }
+
+            throw;
+        }
     }
+
+    lock_holder->bind_with(shared_from_this(), it_group);  /// SM: nothrow
 
     finalize_metrics();
-    return res;
+    return lock_holder;
 }
 
 
+/// The sequence points of acquiring lock's ownership by an instance of LockHolderImpl:
+/// 1. all_read_locks is updated
+/// 2. owner_queries is updated
+/// 3. request group is updated by LockHolderImpl which in turn becomes "bound"
+///
+/// Reasoning as to why this algorithm is correct:
+/// If by the time when destructor of LockHolderImpl is called the instance has been "bound",
+/// it is guaranteed that all three steps have been executed successfully and the resulting state is consistent.
+/// With the mutex locked the order of steps to restore the lock's state can be arbitrary
+///
+/// We do not employ try-catch: if something bad happens, there is nothing we can do =(
 RWLockImpl::LockHolderImpl::~LockHolderImpl()
 {
-    std::lock_guard lock(parent->mutex);
+    if (!bound || parent == nullptr)
+        return;
 
+    std::lock_guard lock(parent->mutex);  // throws - must catch and print warning??
+
+    /// The associated group must exist (and be the beginning of the queue?)
+    if (parent->queue.empty() || it_group != parent->queue.begin())
+        return;
+
+    /// If query_id is not empty it must be listed in parent->owner_queries
     if (query_id != RWLockImpl::NO_QUERY)
     {
-        if (--parent->owner_queries.at(query_id) == 0)
-            parent->owner_queries.erase(query_id);
+        const auto owner_it = parent->owner_queries.find(query_id);
+        if (owner_it != parent->owner_queries.end())
+        {
+            if (--owner_it->second == 0)                  /// SM: nothrow
+                parent->owner_queries.erase(owner_it);    /// SM: nothrow
 
-        if (it_group->type == RWLockImpl::Read)
-            all_read_locks.remove(query_id);
+            if (lock_type == RWLockImpl::Read)
+                all_read_locks.remove(query_id);          /// SM: nothrow
+        }
     }
 
-    /// Remove the group if we are the last referer and notify the next group
-    if (--it_group->referers == 0)
+    /// If we are the last remaining referrer, remove the group and notify the next group
+    if (--it_group->refererrs == 0)                       /// SM: nothrow
     {
-        auto & parent_queue = parent->queue;
-        parent_queue.erase(it_group);
-
-        if (!parent_queue.empty())
-            parent_queue.begin()->cv.notify_all();
+        const auto next = parent->queue.erase(it_group);  /// SM: nothrow
+        if (next != parent->queue.end())
+            next->cv.notify_all();
     }
-}
-
-
-RWLockImpl::LockHolderImpl::LockHolderImpl(RWLock && parent_, RWLockImpl::GroupsContainer::iterator it_group_)
-    : parent{std::move(parent_)}, it_group{it_group_},
-      active_client_increment{(it_group_->type == RWLockImpl::Read) ? CurrentMetrics::RWLockActiveReaders
-                                                               : CurrentMetrics::RWLockActiveWriters}
-{
-    ++it_group->referers;
 }
 
 }
