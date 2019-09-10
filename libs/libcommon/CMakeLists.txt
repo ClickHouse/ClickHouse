@@ -62,7 +62,6 @@ add_library (common
     include/ext/scope_guard.h
     include/ext/size.h
     include/ext/unlock_guard.h
-    include/ext/singleton.h
 
     ${CONFIG_COMMON})
 

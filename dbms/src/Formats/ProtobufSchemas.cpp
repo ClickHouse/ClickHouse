@@ -15,6 +15,11 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_PROTOBUF_SCHEMA;
 }
 
+ProtobufSchemas & ProtobufSchemas::instance()
+{
+    static ProtobufSchemas instance;
+    return instance;
+}
 
 class ProtobufSchemas::ImporterWithSourceTree : public google::protobuf::compiler::MultiFileErrorCollector
 {
