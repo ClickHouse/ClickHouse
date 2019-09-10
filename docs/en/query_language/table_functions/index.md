@@ -2,11 +2,11 @@
 
 Table function is a method of creating a table.
 
-You can call table functions in:
+You can use table functions in:
 
 * [CREATE TABLE](../create.md) query.
 
-    It's another method of creating an ordinary table.
+    It's an alternative method of creating a table.
 
 * [FROM](../select.md#select-from) clause of the `SELECT` query.
 
@@ -14,8 +14,6 @@ You can call table functions in:
 
 !!! warning "Warning"
     You cann't use table functions if the [allow_ddl](../../operations/settings/permissions_for_queries.md#settings_allow_ddl) setting is disabled.
-
-Тут прямо вопрос, какая таки настройка должна быть allow_ddl или readonly. 
 
 Function | Description
 ---------|------------
