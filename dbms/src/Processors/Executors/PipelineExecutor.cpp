@@ -593,6 +593,11 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                             auto thread_to_wake = stream % num_threads;
 
                             {
+                                std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
+                                executor_contexts[thread_to_wake]->pinned_tasks.push(task);
+                            }
+
+                            {
                                 std::unique_lock lock(task_queue_mutex);
                                 if (threads_queue.has(thread_to_wake))
                                 {
@@ -601,11 +606,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                                 }
                             }
 
-                            std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
-                            executor_contexts[thread_to_wake]->pinned_tasks.push(task);
-
                             if (found_in_queue)
                             {
+                                std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
                                 executor_contexts[thread_to_wake]->wake_flag = true;
                                 executor_contexts[thread_to_wake]->condvar.notify_one();
                             }
