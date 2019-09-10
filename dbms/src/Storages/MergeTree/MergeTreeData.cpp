@@ -3288,6 +3288,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
     String global_shadow_path = clickhouse_path + "shadow/";
+    Poco::File(global_shadow_path).createDirectories();
     auto increment = Increment(global_shadow_path + "increment.txt").get(true);
 
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
