@@ -926,17 +926,17 @@ Data types of a ClickHouse table columns can differ from the corresponding field
 
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
-```
+```bash
 cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
-```
+```sql
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with the Hadoop, you can use [`HDFS` table engine](../../operations/table_engines/hdfs.md).
+To exchange data with the Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
 
 ## Format Schema {#formatschema}
 
