@@ -498,9 +498,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!task_queue.empty() && !threads_queue.empty())
                     {
-                        auto thread_to_wake = *threads_queue.begin();
-                        threads_queue.erase(threads_queue.begin());
-                        --num_waiting_threads;
+                        auto thread_to_wake = threads_queue.pop_front();
                         lock.unlock();
 
                         std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
@@ -511,16 +509,14 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     break;
                 }
 
-                ++num_waiting_threads;
-
-                if (num_waiting_threads == num_threads)
+                if (threads_queue.size() + 1 == num_threads)
                 {
                     lock.unlock();
                     finish();
                     break;
                 }
 
-                threads_queue.insert(thread_num);
+                threads_queue.push(thread_num);
             }
 
             {
@@ -597,11 +593,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                             {
                                 std::unique_lock lock(task_queue_mutex);
-                                auto it = threads_queue.find(stream);
-                                if (it != threads_queue.end())
+                                if (threads_queue.has(stream))
                                 {
-                                    threads_queue.erase(it);
-                                    --num_waiting_threads;
+                                    threads_queue.pop(stream);
                                     found_in_queue = true;
                                 }
                             }
@@ -635,10 +629,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!threads_queue.empty())
                     {
-                        auto it = threads_queue.begin();
-                        auto thread_to_wake = *it;
-                        threads_queue.erase(it);
-                        --num_waiting_threads;
+                        auto thread_to_wake = threads_queue.pop_front();
                         lock.unlock();
 
                         std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
