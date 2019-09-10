@@ -327,9 +327,63 @@ TTL date_time + INTERVAL 15 HOUR
 
 Секцию `TTL` нельзя использовать для ключевых столбцов.
 
+Примеры:
+
+Создание таблицы с TTL
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int TTL d + INTERVAL 1 MONTH,
+    b Int TTL d + INTERVAL 1 MONTH,
+    c String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d;
+```
+
+Добавление TTL на колонку существующей таблицы
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 DAY;
+```
+
+Изменение TTL у колонки
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 MONTH;
+```
+
 **TTL таблицы**
 
 Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки.
+
+Примеры:
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH;
+```
+
+Изменение TTL 
+
+```sql
+ALTER TABLE example_table
+    MODIFY TTL d + INTERVAL 1 DAY;
+```
 
 **Удаление данных**
 

@@ -56,9 +56,11 @@ public:
     PoolWithFailoverBase(
             NestedPools nested_pools_,
             time_t decrease_error_period_,
+            size_t max_error_cap_,
             Logger * log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
+        , max_error_cap(max_error_cap_)
         , shared_pool_states(nested_pools.size())
         , log(log_)
     {
@@ -120,12 +122,14 @@ protected:
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates();
+    PoolStates getPoolStates() const;
 
     NestedPools nested_pools;
 
     const time_t decrease_error_period;
+    const size_t max_error_cap;
 
-    std::mutex pool_states_mutex;
+    mutable std::mutex pool_states_mutex;
     PoolStates shared_pool_states;
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
@@ -193,7 +197,10 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     {
         std::lock_guard lock(pool_states_mutex);
         for (const ShuffledPool & pool: shuffled_pools)
-            shared_pool_states[pool.index].error_count += pool.error_count;
+        {
+            auto & pool_state = shared_pool_states[pool.index];
+            pool_state.error_count = std::min(max_error_cap, pool_state.error_count + pool.error_count);
+        }
     });
 
     std::string fail_messages;
@@ -236,7 +243,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                             << (shuffled_pool.error_count + 1) << ", reason: " << fail_message);
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-                ++shuffled_pool.error_count;
+                shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 
                 if (shuffled_pool.error_count >= max_tries)
                 {
@@ -297,7 +304,8 @@ void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
         if (nested_pools[i]->contains(entry))
         {
             std::lock_guard lock(pool_states_mutex);
-            ++shared_pool_states[i].error_count;
+            auto & pool_state = shared_pool_states[i];
+            pool_state.error_count = std::min(max_error_cap, pool_state.error_count + 1);
             return;
         }
     }
@@ -372,4 +380,12 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates()
         result.assign(shared_pool_states.begin(), shared_pool_states.end());
     }
     return result;
+}
+
+template <typename TNestedPool>
+typename PoolWithFailoverBase<TNestedPool>::PoolStates
+PoolWithFailoverBase<TNestedPool>::getPoolStates() const
+{
+    std::lock_guard lock(pool_states_mutex);
+    return shared_pool_states;
 }

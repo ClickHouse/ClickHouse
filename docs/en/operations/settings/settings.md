@@ -834,9 +834,6 @@ Possible values:
 
 Default value: `uniqExact`.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
-
-
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Enables or disables silent skipping of:
@@ -859,5 +856,42 @@ Possible values:
 - 0 — skipping disabled.
 
 Default value: 0.
+
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
+
+Enables or disables throwing an exception if the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query have not performed a merge.
+
+By default `OPTIMIZE` returns successfully even if it haven't done anything. This setting allows to distinguish this situation and get the reason in exception message.
+
+Possible values:
+
+- 1 — Throwing an exception is enabled.
+- 0 — Throwing an exception is disabled.
+
+Default value: 0.
+## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
+
+- Type: seconds
+- Default value: 60 seconds
+
+Controls how fast errors of distributed tables are zeroed. Given that currently a replica was unavailabe for some time and accumulated 5 errors and distributed_replica_error_half_life is set to 1 second, then said replica is considered back to normal in 3 seconds since last error.
+
+** See also **
+
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [`distributed_replica_error_cap`](#settings-distributed_replica_error_cap)
+
+
+## distributed_replica_error_cap {#settings-distributed_replica_error_cap}
+
+- Type: unsigned int
+- Default value: 1000
+
+Error count of each replica is capped at this value, preventing a single replica from accumulating to many errors.
+
+** See also **
+
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->
