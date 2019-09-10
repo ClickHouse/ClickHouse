@@ -477,19 +477,15 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         while (!finished)
         {
             {
-                std::unique_lock lock(executor_contexts[thread_num]->mutex);
+                std::unique_lock lock(task_queue_mutex);
+
                 if (!executor_contexts[thread_num]->pinned_tasks.empty())
                 {
                     state = executor_contexts[thread_num]->pinned_tasks.front();
                     executor_contexts[thread_num]->pinned_tasks.pop();
-                    lock.unlock();
 
                     break;
                 }
-            }
-
-            {
-                std::unique_lock lock(task_queue_mutex);
 
                 if (!task_queue.empty())
                 {
@@ -593,12 +589,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                             auto thread_to_wake = stream % num_threads;
 
                             {
-                                std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
-                                executor_contexts[thread_to_wake]->pinned_tasks.push(task);
-                            }
-
-                            {
                                 std::unique_lock lock(task_queue_mutex);
+                                executor_contexts[thread_to_wake]->pinned_tasks.push(task);
+
                                 if (threads_queue.has(thread_to_wake))
                                 {
                                     threads_queue.pop(thread_to_wake);
