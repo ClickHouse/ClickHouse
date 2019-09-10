@@ -636,9 +636,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     if (!threads_queue.empty())
                     {
                         auto it = threads_queue.begin();
+                        auto thread_to_wake = *it;
                         threads_queue.erase(it);
                         --num_waiting_threads;
-                        auto thread_to_wake = *it;
                         lock.unlock();
 
                         std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
