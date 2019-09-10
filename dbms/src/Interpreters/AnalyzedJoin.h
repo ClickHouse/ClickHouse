@@ -92,6 +92,7 @@ public:
 
     void deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix);
     size_t rightKeyInclusion(const String & name) const;
+    std::unordered_map<String, DataTypePtr> requiredRightKeys() const;
 
     void addJoinedColumn(const NameAndTypePair & joined_column);
     void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;

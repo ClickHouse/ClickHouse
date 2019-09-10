@@ -1,11 +1,16 @@
 #pragma once
 
 #include <memory>
+#include <vector>
+
+#include <Core/Names.h>
 
 namespace DB
 {
 
 class Block;
+class IColumn;
+using ColumnRawPtrs = std::vector<const IColumn *>;
 
 class IJoin
 {
@@ -28,5 +33,11 @@ public:
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;
+
+/// Common join functions
+
+ColumnRawPtrs extractKeysForJoin(const Names & key_names_right, const Block & right_sample_block,
+                                 Block & sample_block_with_keys, Block & sample_block_with_columns_to_add);
+void createMissedColumns(Block & block);
 
 }

@@ -142,6 +142,20 @@ Names AnalyzedJoin::requiredJoinedNames() const
     return Names(required_columns_set.begin(), required_columns_set.end());
 }
 
+std::unordered_map<String, DataTypePtr> AnalyzedJoin::requiredRightKeys() const
+{
+    NameSet right_keys;
+    for (const auto & name : key_names_right)
+        right_keys.insert(name);
+
+    std::unordered_map<String, DataTypePtr> required;
+    for (const auto & column : columns_added_by_join)
+        if (right_keys.count(column.name))
+            required.insert({column.name, column.type});
+
+    return required;
+}
+
 NamesWithAliases AnalyzedJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
 {
     NameSet required_columns(action_required_columns.begin(), action_required_columns.end());
@@ -230,7 +244,7 @@ BlockInputStreamPtr AnalyzedJoin::createStreamWithNonJoinedDataIfFullOrRightJoin
 {
     if (isRightOrFull(table_join.kind))
         if (auto hash_join = typeid_cast<Join *>(join.get()))
-            return hash_join->createStreamWithNonJoinedRows(source_header, *this, max_block_size);
+            return hash_join->createStreamWithNonJoinedRows(source_header, max_block_size);
     return {};
 }
 
