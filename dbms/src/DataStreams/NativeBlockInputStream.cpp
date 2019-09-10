@@ -155,10 +155,13 @@ Block NativeBlockInputStream::readImpl()
 
         /// Support insert from old clients without low cardinality type.
         bool revision_without_low_cardinality = server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE;
-        if (header && (convert_types_to_low_cardinality || revision_without_low_cardinality))
+        if (header && (convert_types_to_low_cardinality
+                       || revision_without_low_cardinality
+                       || header.getByPosition(i).type->equals(*column.type)))
         {
             column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
             column.type = header.getByPosition(i).type;
+            column.name = header.getByPosition(i).name;
         }
 
         res.insert(std::move(column));
