@@ -6,6 +6,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+
 MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sample_block)
     : table_join(table_join_)
     , sample_block_with_columns_to_add(materializeBlock(right_sample_block))
@@ -14,27 +20,39 @@ MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sampl
         sample_block_with_columns_to_add.getByName(column.name);
 }
 
-void MergeJoin::joinBlocks(const Block & src_block, Block & dst_block, size_t & src_row)
+/// TODO: sort
+bool MergeJoin::addJoinedBlock(const Block & block)
 {
-    for (auto it = right_blocks.begin(); it != right_blocks.end();)
-    {
-        join(src_block, *it, dst_block, src_row);
-        if (src_row == src_block.rows())
-            return;
+    std::unique_lock lock(rwlock);
 
-        it = right_blocks.erase(it);
-    }
+    right_blocks.push_back(block);
+    right_blocks_row_count += block.rows();
+    right_blocks_bytes += block.bytes();
+
+    return table_join.sizeLimits().check(right_blocks_row_count, right_blocks_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void MergeJoin::join(const Block & left_block, const Block & /*right_block*/, Block & dst_block, size_t & src_row)
+void MergeJoin::joinBlock(Block & block)
 {
-    for (auto & column : left_block)
-        dst_block.insert(column);
+    addRightColumns(block);
+
+    std::shared_lock lock(rwlock);
+
+    for (auto it = right_blocks.begin(); it != right_blocks.end(); ++it)
+        mergeJoin(block, *it);
+}
+
+void MergeJoin::addRightColumns(Block & block)
+{
+    size_t rows = block.rows();
 
     for (const auto & column : sample_block_with_columns_to_add)
-        dst_block.insert(ColumnWithTypeAndName{column.column->cloneResized(src_row), column.type, column.name});
+        block.insert(ColumnWithTypeAndName{column.column->cloneResized(rows), column.type, column.name});
+}
 
-    src_row = left_block.rows();
+void MergeJoin::mergeJoin(Block & /*block*/, const Block & /*right_block*/)
+{
+    /// TODO
 }
 
 }
