@@ -33,10 +33,11 @@ namespace ErrorCodes
 }
 
 
-/// A single-use object that represents lock's ownership
-/// For the purpose of exception safety guarantees it is to be used in two steps:
-/// 1. Create an instance allocating all the memory needed
-/// 2. Associate the instance with the lock (attach to the lock and prepared locking request group)
+/** A single-use object that represents lock's ownership
+  * For the purpose of exception safety guarantees LockHolder is to be used in two steps:
+  *   1. Create an instance (allocating all the memory needed)
+  *   2. Associate the instance with the lock (attach to the lock and locking request group)
+  */
 class RWLockImpl::LockHolderImpl
 {
     bool bound{false};
@@ -61,7 +62,7 @@ public:
     ~LockHolderImpl();
 
 private:
-    /// A separate method which binds the holder to the owned lock
+    /// A separate method which binds the lock holder to the owned lock
     /// N.B. It is very important that this method produces no allocations
     bool bind_with(RWLock && parent_, GroupsContainer::iterator it_group_) noexcept
     {
@@ -120,11 +121,12 @@ namespace
 }
 
 
-/// To guarantee that we do not get any piece of our data corrupted:
-/// 1. Perform all actions that include allocations before changing lock's internal state
-/// 2. Roll back any changes that make the state inconsistent
-///
-/// Note: "SM" in the commentaries below stands for STATE MODIFICATION
+/** To guarantee that we do not get any piece of our data corrupted:
+  *   1. Perform all actions that include allocations before changing lock's internal state
+  *   2. Roll back any changes that make the state inconsistent
+  *
+  * Note: "SM" in the commentaries below stands for STATE MODIFICATION
+  */
 RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id)
 {
     const bool request_has_query_id = query_id != NO_QUERY;
@@ -141,7 +143,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     };
 
     /// This object is placed above unique_lock, because it may lock in destructor.
-    auto lock_holder = std::make_shared<LockHolderImpl>(query_id, type);
+    std::shared_ptr lock_holder(new LockHolderImpl(query_id, type));
 
     std::unique_lock lock(mutex);
 
@@ -249,23 +251,23 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
 }
 
 
-/// The sequence points of acquiring lock's ownership by an instance of LockHolderImpl:
-/// 1. all_read_locks is updated
-/// 2. owner_queries is updated
-/// 3. request group is updated by LockHolderImpl which in turn becomes "bound"
-///
-/// Reasoning as to why this algorithm is correct:
-/// If by the time when destructor of LockHolderImpl is called the instance has been "bound",
-/// it is guaranteed that all three steps have been executed successfully and the resulting state is consistent.
-/// With the mutex locked the order of steps to restore the lock's state can be arbitrary
-///
-/// We do not employ try-catch: if something bad happens, there is nothing we can do =(
+/** The sequence points of acquiring lock's ownership by an instance of LockHolderImpl:
+  *   1. all_read_locks is updated
+  *   2. owner_queries is updated
+  *   3. request group is updated by LockHolderImpl which in turn becomes "bound"
+  *
+  * If by the time when destructor of LockHolderImpl is called the instance has been "bound",
+  * it is guaranteed that all three steps have been executed successfully and the resulting state is consistent.
+  * With the mutex locked the order of steps to restore the lock's state can be arbitrary
+  *
+  * We do not employ try-catch: if something bad happens, there is nothing we can do =(
+  */
 RWLockImpl::LockHolderImpl::~LockHolderImpl()
 {
     if (!bound || parent == nullptr)
         return;
 
-    std::lock_guard lock(parent->mutex);  // throws - must catch and print warning??
+    std::lock_guard lock(parent->mutex);
 
     /// The associated group must exist (and be the beginning of the queue?)
     if (parent->queue.empty() || it_group != parent->queue.begin())
