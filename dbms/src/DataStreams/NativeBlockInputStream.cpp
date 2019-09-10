@@ -183,9 +183,17 @@ Block NativeBlockInputStream::readImpl()
     if (rows && header)
     {
         /// Allow to skip columns. Fill them with default values.
+        Block tmp_res;
+
         for (auto & col : header)
-            if (!res.has(col.name))
-                res.insert({col.type->createColumnConstWithDefaultValue(rows), col.type, col.name});
+        {
+            if (res.has(col.name))
+                tmp_res.insert(std::move(res.getByName(col.name)));
+            else
+                tmp_res.insert({col.type->createColumnConstWithDefaultValue(rows), col.type, col.name});
+        }
+
+        res.swap(tmp_res);
     }
 
     return res;
