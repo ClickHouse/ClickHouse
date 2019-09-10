@@ -190,7 +190,7 @@ Block NativeBlockInputStream::readImpl()
             if (res.has(col.name))
                 tmp_res.insert(std::move(res.getByName(col.name)));
             else
-                tmp_res.insert({col.type->createColumnConstWithDefaultValue(rows), col.type, col.name});
+                tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
         }
 
         res.swap(tmp_res);
