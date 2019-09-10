@@ -764,6 +764,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             space_reservation->update(static_cast<size_t>((1. - progress) * initial_reservation));
         }
     }
+
     merged_stream->readSuffix();
     merged_stream.reset();
 

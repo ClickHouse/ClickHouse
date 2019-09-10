@@ -79,7 +79,6 @@ ReservationPtr Disk::reserve(UInt64 bytes) const
 
 bool Disk::tryReserve(UInt64 bytes) const
 {
-    auto available_space = getAvailableSpace();
     std::lock_guard lock(mutex);
     if (bytes == 0)
     {
@@ -88,12 +87,13 @@ bool Disk::tryReserve(UInt64 bytes) const
         return true;
     }
 
-    available_space -= std::min(available_space, reserved_bytes);
-    if (available_space >= bytes)
+    auto available_space = getAvailableSpace();
+    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+    if (unreserved_space >= bytes)
     {
         LOG_DEBUG(
             &Logger::get("DiskSpaceMonitor"),
-            "Reserving " << bytes << " bytes on disk " << name << " having available " << available_space << " bytes.");
+            "Reserving " << bytes << " bytes on disk " << name << " having unreserved " << unreserved_space << " bytes.");
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
@@ -103,8 +103,8 @@ bool Disk::tryReserve(UInt64 bytes) const
 
 UInt64 Disk::getUnreservedSpace() const
 {
-    auto available_space = getSpaceInformation().getAvailableSpace();
     std::lock_guard lock(mutex);
+    auto available_space = getSpaceInformation().getAvailableSpace();
     available_space -= std::min(available_space, reserved_bytes);
     return available_space;
 }
@@ -119,7 +119,9 @@ UInt64 Disk::Stat::getTotalSpace() const
 
 UInt64 Disk::Stat::getAvailableSpace() const
 {
-    UInt64 total_size = fs.f_bfree * fs.f_bsize;
+    /// we use f_bavail, because part of b_free space is
+    /// available for superuser only and for system purposes
+    UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
