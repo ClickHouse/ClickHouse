@@ -14,10 +14,9 @@ namespace ErrorCodes
 
 MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sample_block)
     : table_join(table_join_)
-    , sample_block_with_columns_to_add(materializeBlock(right_sample_block))
 {
-    for (auto & column : table_join.columnsAddedByJoin())
-        sample_block_with_columns_to_add.getByName(column.name);
+    extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, sample_block_with_keys, sample_block_with_columns_to_add);
+    createMissedColumns(sample_block_with_columns_to_add);
 }
 
 /// TODO: sort

@@ -158,8 +158,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const AnalyzedJoin & join_params,
-                                                      UInt64 max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const override;
@@ -346,7 +345,6 @@ private:
     void joinBlockImpl(
         Block & block,
         const Names & key_names_left,
-        const NamesAndTypesList & columns_added_by_join,
         const Block & block_with_columns_to_add,
         const Maps & maps) const;
 
