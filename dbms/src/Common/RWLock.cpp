@@ -143,7 +143,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     };
 
     /// This object is placed above unique_lock, because it may lock in destructor.
-    std::shared_ptr lock_holder(new LockHolderImpl(query_id, type));
+    auto lock_holder = std::make_shared<LockHolderImpl>(query_id, type);
 
     std::unique_lock lock(mutex);
 
