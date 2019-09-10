@@ -2522,9 +2522,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
-            (*active_part_it)->remove_time.store((*active_part_it)->modification_time, std::memory_order_relaxed);
             data_parts_indexes.erase(active_part_it);
 
             auto part_it = data_parts_indexes.insert(part_copy).first;
@@ -3249,7 +3247,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
 
 String MergeTreeData::getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const
 {
-    return disk->getPath() + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
+    return disk->getPath() /*+ "/clickhouse/" */ + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
 }
 
 
