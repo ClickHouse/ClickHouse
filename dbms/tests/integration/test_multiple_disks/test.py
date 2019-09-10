@@ -138,8 +138,6 @@ def test_system_tables(start_cluster):
     assert sorted(clickhouse_policies_data, key=key) == sorted(expected_policies_data, key=key)
 
 
-
-
 def test_query_parser(start_cluster):
     try:
         with pytest.raises(QueryRuntimeException):
@@ -751,7 +749,7 @@ def test_simple_replication_and_moves(start_cluster):
                node = random.choice([node1, node2])
                node.query("OPTIMIZE TABLE replicated_table_for_moves FINAL")
 
-        p = Pool(50)
+        p = Pool(60)
         tasks = []
         tasks.append(p.apply_async(insert, (20,)))
         tasks.append(p.apply_async(optimize, (20,)))
@@ -762,14 +760,16 @@ def test_simple_replication_and_moves(start_cluster):
         node1.query("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
         node2.query("SYSTEM SYNC REPLICA replicated_table_for_moves", timeout=5)
 
-        assert node1.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
-        assert node2.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
+        node1.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
+        node2.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
 
         data = [] # 1MB in total
         for i in range(2):
             data.append(get_random_string(512 * 1024)) # 500KB value
 
         time.sleep(3) # wait until old parts will be deleted
+        node1.query("SYSTEM STOP MERGES")
+        node2.query("SYSTEM STOP MERGES")
 
         node1.query("INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
         node2.query("INSERT INTO replicated_table_for_moves VALUES {}".format(','.join(["('" + x + "')" for x in data])))
@@ -779,8 +779,11 @@ def test_simple_replication_and_moves(start_cluster):
         disks1 = get_used_disks_for_table(node1, "replicated_table_for_moves")
         disks2 = get_used_disks_for_table(node2, "replicated_table_for_moves")
 
-        assert set(disks1) == set(["jbod1", "external"])
-        assert set(disks2) == set(["jbod1", "external"])
+        node1.query("SYSTEM START MERGES")
+        node2.query("SYSTEM START MERGES")
+
+        set(disks1) == set(["jbod1", "external"])
+        set(disks2) == set(["jbod1", "external"])
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS replicated_table_for_moves")

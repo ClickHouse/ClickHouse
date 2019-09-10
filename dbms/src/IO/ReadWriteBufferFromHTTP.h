@@ -52,8 +52,7 @@ namespace detail
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
             : ReadBuffer(nullptr, 0)
             , uri{uri_}
-            , method{!method_.empty() ? method_
-                                      : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
+            , method{!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session{session_}
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.

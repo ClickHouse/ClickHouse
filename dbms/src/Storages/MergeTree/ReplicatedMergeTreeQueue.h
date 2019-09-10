@@ -327,7 +327,7 @@ public:
     void disableMergesInBlockRange(const String & part_name);
 
     /// Cheks that part is already in virtual parts
-    bool isPartAssignedToBackgroundOperation(const MergeTreeData::DataPartPtr & data_part) const;
+    bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.

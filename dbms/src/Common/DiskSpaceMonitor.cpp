@@ -335,7 +335,7 @@ StoragePolicy::StoragePolicy(
 {
     String volumes_prefix = config_prefix + ".volumes";
     if (!config.has(volumes_prefix))
-        throw Exception("StoragePolicy must contain at least one Volume (.volumes)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception("StoragePolicy must contain at least one volume (.volumes)", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(volumes_prefix, keys);
@@ -351,7 +351,7 @@ StoragePolicy::StoragePolicy(
     }
 
     if (volumes.empty())
-        throw Exception("StoragePolicy must contain at least one Volume.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception("StoragePolicy must contain at least one volume.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     /// Check that disks are unique in Policy
     std::set<String> disk_names;
@@ -360,7 +360,7 @@ StoragePolicy::StoragePolicy(
         for (const auto & disk : volume->disks)
         {
             if (disk_names.find(disk->getName()) != disk_names.end())
-                throw Exception("Duplicate disk '" + disk->getName() + "' in storage policy '" + name + "'.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+                throw Exception("Duplicate disk '" + disk->getName() + "' in storage policy '" + name + "'", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
             disk_names.insert(disk->getName());
         }
@@ -368,7 +368,7 @@ StoragePolicy::StoragePolicy(
 
     move_factor = config.getDouble(config_prefix + ".move_factor", 0.1);
     if (move_factor > 1)
-        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor) + ".",
+        throw Exception("Disk move factor have to be in [0., 1.] interval, but set to " + toString(move_factor),
             ErrorCodes::LOGICAL_ERROR);
 
 }
@@ -410,10 +410,10 @@ DiskPtr StoragePolicy::getAnyDisk() const
     /// StoragePolicy must contain at least one Volume
     /// Volume must contain at least one Disk
     if (volumes.empty())
-        throw Exception("StoragePolicy has no Volumes. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
+        throw Exception("StoragePolicy has no volumes. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
 
     if (volumes[0]->disks.empty())
-        throw Exception("StoragePolicy Volume 1 has no disks. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
+        throw Exception("Volume '" + volumes[0]->getName() + "' has no disks. It's a bug.", ErrorCodes::NOT_ENOUGH_SPACE);
 
     return volumes[0]->disks[0];
 }
@@ -477,7 +477,7 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
 }
 
 
-size_t StoragePolicy::getVolumePriorityByDisk(const DiskPtr & disk_ptr) const
+size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
 {
     for (size_t i = 0; i < volumes.size(); ++i)
     {
@@ -512,7 +512,7 @@ StoragePolicySelector::StoragePolicySelector(
     constexpr auto default_volume_name = "default";
     constexpr auto default_disk_name = "default";
 
-    /// Add default if it's not specified explicetly
+    /// Add default policy if it's not specified explicetly
     if (policies.find(default_storage_policy_name) == policies.end())
     {
         auto default_volume = std::make_shared<Volume>(

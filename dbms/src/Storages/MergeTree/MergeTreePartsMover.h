@@ -10,11 +10,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
+/// Active part from storage and destination reservation where
+/// it have to be moved.
 struct MergeTreeMoveEntry
 {
     std::shared_ptr<const MergeTreeDataPart> part;
@@ -28,12 +26,13 @@ struct MergeTreeMoveEntry
 
 using MergeTreeMovingParts = std::vector<MergeTreeMoveEntry>;
 
-
+/** Can select parts for background moves, clone them to appropriate disks into
+ * /detached directory and replace them into active parts set
+ */
 class MergeTreePartsMover
-
-
 {
 private:
+    /// Callback tells that part is not participating in background process
     using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const MergeTreeDataPart> &, String * reason)>;
 
 public:
@@ -43,16 +42,25 @@ public:
     {
     }
 
+    /// Select parts for background moves according to storage_policy configuration.
+    /// Returns true if at least one part was selected for move.
     bool selectPartsForMove(
         MergeTreeMovingParts & parts_to_move,
         const AllowedMovingPredicate & can_move,
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
+    /// Copies part to selected reservation in detached folder. Throws exception if part alredy exists.
     std::shared_ptr<const MergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
 
+    /// Replaces cloned part from detached directory into active data parts set.
+    /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
+    /// MergeTreeDataPart called. If replacing part doesn't exists or not active (commited) than
+    /// cloned part will be removed and loge message will be reported. It may happen in case of concurrent
+    /// merge or mutation.
     void swapClonedPart(const std::shared_ptr<const MergeTreeDataPart> & cloned_parts) const;
 
 public:
+    /// Can stop background moves
     ActionBlocker moves_blocker;
 
 private:
