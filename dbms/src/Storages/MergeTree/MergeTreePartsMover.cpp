@@ -92,12 +92,11 @@ bool MergeTreePartsMover::selectPartsForMove(
     {
         for (const auto & disk : volumes[i]->disks)
         {
-            auto space_information = disk->getSpaceInformation();
+            UInt64 required_available_space = disk->getTotalSpace() * policy->getMoveFactor();
+            UInt64 unreserved_space = disk->getUnreservedSpace();
 
-            UInt64 required_available_space = space_information.getTotalSpace() * policy->getMoveFactor();
-
-            if (required_available_space > space_information.getAvailableSpace())
-                need_to_move.emplace(disk, required_available_space - space_information.getAvailableSpace());
+            if (required_available_space > unreserved_space)
+                need_to_move.emplace(disk, required_available_space - unreserved_space);
         }
     }
 
@@ -159,9 +158,11 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     auto active_part = data->getActiveContainingPart(cloned_part->name);
 
     if (!active_part || active_part->name != cloned_part->name)
-        throw Exception("Failed to swap " + cloned_part->name + ". Active part doesn't exist."
-            + " It can be removed by merge or deleted by hand. Will remove copy on path '"
-            + cloned_part->getFullPath() + "'.", ErrorCodes::NO_SUCH_DATA_PART);
+    {
+        LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."
+            << " Possible it was merged or mutated. Will remove copy on path '" << cloned_part->getFullPath() << "'.");
+        return;
+    }
 
     cloned_part->renameTo(active_part->name);
 
