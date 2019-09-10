@@ -64,9 +64,9 @@ Please note that `errors_count` is updated once per query to the cluster, but `e
 
 ** See also **
 
-- [Table engine Distributed](../../operations/table_engines/distributed.md)
-- [distributed_replica_error_cap setting](../settings/settings.md#settings-distributed_replica_error_cap)
-- [distributed_replica_error_half_life setting](../settings/settings.md#settings-distributed_replica_error_half_life)
+- [Table engine Distributed](table_engines/distributed.md)
+- [distributed_replica_error_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
+- [distributed_replica_error_half_life setting](settings/settings.md#settings-distributed_replica_error_half_life)
 
 ## system.columns
 
