@@ -21,6 +21,7 @@
 #include <IO/VarInt.h>
 
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -630,6 +631,8 @@ protected:
 
 
     /// If the key is zero, insert it into a special place and return true.
+    /// We don't have to persist a zero key, because it's not actually inserted.
+    /// That's why we just take a Key by value, an not a key holder.
     bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
@@ -655,17 +658,23 @@ protected:
         return false;
     }
 
-    void ALWAYS_INLINE emplaceNonZeroImpl(size_t place_value, Key x, iterator & it, bool & inserted, size_t hash_value)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplaceNonZeroImpl(size_t place_value, KeyHolder && key_holder,
+                                          iterator & it, bool & inserted, size_t hash_value)
     {
         it = iterator(this, &buf[place_value]);
 
         if (!buf[place_value].isZero(*this))
         {
+            keyHolderDiscardKey(key_holder);
             inserted = false;
             return;
         }
 
-        new(&buf[place_value]) Cell(x, *this);
+        keyHolderPersistKey(key_holder);
+        const auto & key = keyHolderGetKey(key_holder);
+
+        new(&buf[place_value]) Cell(key, *this);
         buf[place_value].setHash(hash_value);
         inserted = true;
         ++m_size;
@@ -687,17 +696,19 @@ protected:
                 throw;
             }
 
-            it = find(x, hash_value);
+            it = find(keyHolderGetKey(key_holder), hash_value);
         }
     }
 
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
-    void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplaceNonZero(KeyHolder && key_holder, iterator & it,
+                                      bool & inserted, size_t hash_value)
     {
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        emplaceNonZeroImpl(place_value, x, it, inserted, hash_value);
+        const auto & key = keyHolderGetKey(key_holder);
+        size_t place_value = findCell(key, hash_value, grower.place(hash_value));
+        emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
-
 
 
 public:
@@ -708,7 +719,9 @@ public:
 
         size_t hash_value = hash(Cell::getKey(x));
         if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, hash_value))
+        {
             emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
+        }
 
         if (res.second)
             res.first.ptr->setMapped(x);
@@ -739,19 +752,20 @@ public:
       * if (inserted)
       *     new(&it->second) Mapped(value);
       */
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, iterator & it, bool & inserted)
     {
-        size_t hash_value = hash(x);
-        if (!emplaceIfZero(x, it, inserted, hash_value))
-            emplaceNonZero(x, it, inserted, hash_value);
+        const auto & key = keyHolderGetKey(key_holder);
+        emplace(key_holder, it, inserted, hash(key));
     }
 
-
-    /// Same, but with a precalculated value of hash function.
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, iterator & it,
+                                  bool & inserted, size_t hash_value)
     {
-        if (!emplaceIfZero(x, it, inserted, hash_value))
-            emplaceNonZero(x, it, inserted, hash_value);
+        const auto & key = keyHolderGetKey(key_holder);
+        if (!emplaceIfZero(key, it, inserted, hash_value))
+            emplaceNonZero(key_holder, it, inserted, hash_value);
     }
 
     /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
