@@ -24,7 +24,7 @@ public:
     virtual void setTotals(const Block & block) = 0;
     virtual void joinTotals(Block & block) const = 0;
 
-    virtual size_t getTotalRowCount() const { return 0; }
+    virtual size_t getTotalRowCount() const = 0;
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;
