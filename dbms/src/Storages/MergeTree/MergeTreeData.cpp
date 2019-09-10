@@ -1188,6 +1188,7 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         auto new_full_path = disk->getPath() + new_file_db_name + '/' + new_file_table_name + '/';
+
         if (Poco::File{new_full_path}.exists())
             throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
     }
@@ -1195,7 +1196,13 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         auto full_path = disk->getPath() + old_file_db_name + '/' + old_file_table_name + '/';
-        auto new_full_path = disk->getPath() + new_file_db_name + '/' + new_file_table_name + '/';
+        auto new_db_path = disk->getPath() + new_file_db_name + '/';
+
+        Poco::File db_file{new_db_path};
+        if (!db_file.exists())
+            db_file.createDirectory();
+
+        auto new_full_path = new_db_path + new_file_table_name + '/';
         Poco::File{full_path}.renameTo(new_full_path);
     }
 

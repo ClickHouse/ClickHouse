@@ -60,7 +60,7 @@ public:
     void swapClonedPart(const std::shared_ptr<const MergeTreeDataPart> & cloned_parts) const;
 
 public:
-    /// Can stop background moves
+    /// Can stop background moves and moves from queries
     ActionBlocker moves_blocker;
 
 private:
