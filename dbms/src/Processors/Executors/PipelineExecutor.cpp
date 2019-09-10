@@ -661,6 +661,8 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 {
     Stack stack;
 
+    threads_queue.init(num_threads);
+
     executor_contexts.reserve(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
         executor_contexts.emplace_back(std::make_unique<ExecutorContext>());
