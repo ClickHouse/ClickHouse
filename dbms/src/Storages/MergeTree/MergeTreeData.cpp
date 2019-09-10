@@ -3287,15 +3287,8 @@ Strings MergeTreeData::getDataPaths() const
 void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
-    String shadow_path = clickhouse_path + "shadow/";
-    Poco::File(shadow_path).createDirectories();
-    String backup_path = shadow_path
-        + (!with_name.empty()
-            ? escapeForFileName(with_name)
-            : toString(Increment(shadow_path + "increment.txt").get(true)))
-        + "/";
-
-    LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
+    String global_shadow_path = clickhouse_path + "shadow/";
+    auto increment = Increment(global_shadow_path + "increment.txt").get(true);
 
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getDataParts();
@@ -3306,12 +3299,21 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         if (!matcher(part))
             continue;
 
-        LOG_DEBUG(log, "Freezing part " << part->name);
+        String shadow_path = global_shadow_path;
+        /// place new folder into data directory
+        if (part->disk->getName() != "default")
+            shadow_path = part->disk->getPath() + "shadow/";
+
+        Poco::File(shadow_path).createDirectories();
+        String backup_path = shadow_path
+            + (!with_name.empty()
+                ? escapeForFileName(with_name)
+                : toString(increment))
+            + "/";
+
+        LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " + backup_path);
 
         String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
-        if (!startsWith(part_absolute_path, clickhouse_path))
-            throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
-
         String backup_part_absolute_path = part_absolute_path;
         backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
         localBackup(part_absolute_path, backup_part_absolute_path);
