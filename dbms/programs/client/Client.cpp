@@ -563,9 +563,15 @@ private:
         if (is_interactive)
         {
             std::cout << "Connected to " << server_name
-                      << " server version " << server_version
-                      << " revision " << server_revision
-                      << "." << std::endl << std::endl;
+                << " server version " << server_version
+                << " revision " << server_revision
+                << "." << std::endl << std::endl;
+
+            if (VERSION_STRING < server_version) {
+                std::cout << "ClickHouse client version is older than ClickHouse server. "
+                    << "It may lack support for new features."
+                    << std::endl << std::endl;
+            }
         }
     }
 
