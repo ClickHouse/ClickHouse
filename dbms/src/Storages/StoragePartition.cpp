@@ -13,6 +13,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -76,7 +77,7 @@ namespace
 class PartitionBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit PartitionBlockOutputStream(StoragePartition & storage_) : storage(storage_) {}
+    explicit PartitionBlockOutputStream(StoragePartition & storage_, size_t max_threads_) : storage(storage_), max_threads(max_threads_) {}
 
     Block getHeader() const override { return storage.getSampleBlock(); }
 
@@ -167,14 +168,27 @@ public:
             storage.data[seq] = MergeSortingBlocksBlockInputStream(data, sort_description, -1).read();
         };
 
+        ThreadPool pool(std::min(max_threads, partitions_data.size()));
         size_t i = 0;
         for (auto & kv : partitions_data)
-            build(i++, kv.second);
+        {
+            auto seq = i++;
+            auto thread_group = CurrentThread::getGroup();
+            pool.schedule([&, seq, thread_group] {
+                setThreadName("BuildingSeqBlock");
+                build(seq, kv.second);
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
+            });
+        }
+        // Wait for concurrent view processing
+        pool.wait();
     }
 
 private:
     std::map<Row, Blocks> partitions_data;
     StoragePartition & storage;
+    size_t max_threads;
 };
 
 
@@ -295,9 +309,9 @@ BlockInputStreams StoragePartition::read(
 }
 
 
-BlockOutputStreamPtr StoragePartition::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StoragePartition::write(const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<PartitionBlockOutputStream>(*this);
+    return std::make_shared<PartitionBlockOutputStream>(*this, context.getSettingsRef().max_threads);
 }
 
 
