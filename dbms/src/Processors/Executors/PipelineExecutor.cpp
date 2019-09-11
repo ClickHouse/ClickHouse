@@ -472,6 +472,13 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         }
     };
 
+    auto wake_up_executor = [&](size_t executor)
+    {
+        std::lock_guard guard(executor_contexts[executor]->mutex);
+        executor_contexts[executor]->wake_flag = true;
+        executor_contexts[executor]->condvar.notify_one();
+    };
+
     while (!finished)
     {
         /// First, find any processor to execute.
@@ -498,10 +505,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     {
                         auto thread_to_wake = threads_queue.pop_front();
                         lock.unlock();
-
-                        std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
-                        executor_contexts[thread_to_wake]->wake_flag = true;
-                        executor_contexts[thread_to_wake]->condvar.notify_one();
+                        wake_up_executor(thread_to_wake);
                     }
 
                     break;
@@ -571,12 +575,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 prepare_all_processors(queue, children, children, parents);
                 prepare_all_processors(queue, parents, parents, parents);
 
-                if (!state && !queue.empty())
-                {
-                    state = queue.front();
-                    queue.pop();
-                }
-
+                /// Move pinned tasks to their executors.
                 {
                     Queue tmp_queue;
                     while (!queue.empty())
@@ -602,11 +601,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                             }
 
                             if (found_in_queue)
-                            {
-                                std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
-                                executor_contexts[thread_to_wake]->wake_flag = true;
-                                executor_contexts[thread_to_wake]->condvar.notify_one();
-                            }
+                                wake_up_executor(thread_to_wake);
                         }
                         else
                             tmp_queue.push(task);
@@ -615,6 +610,14 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     queue.swap(tmp_queue);
                 }
 
+                /// Take local task from queue if has one.
+                if (!state && !queue.empty())
+                {
+                    state = queue.front();
+                    queue.pop();
+                }
+
+                /// Push other tasks to global queue.
                 if (!queue.empty())
                 {
                     std::unique_lock lock(task_queue_mutex);
@@ -629,10 +632,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     {
                         auto thread_to_wake = threads_queue.pop_front();
                         lock.unlock();
-
-                        std::lock_guard guard(executor_contexts[thread_to_wake]->mutex);
-                        executor_contexts[thread_to_wake]->wake_flag = true;
-                        executor_contexts[thread_to_wake]->condvar.notify_one();
+                        wake_up_executor(thread_to_wake);
                     }
                 }
 
