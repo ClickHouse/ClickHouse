@@ -9,7 +9,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Common/PoolBase.h>
-
+#include <Poco/URIStreamFactory.h>
 
 #include <IO/ConnectionTimeouts.h>
 

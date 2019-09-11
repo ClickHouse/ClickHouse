@@ -16,6 +16,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/config.h>
 #include <common/logger_useful.h>
+#include <Poco/URIStreamFactory.h>
 
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
@@ -139,5 +140,10 @@ public:
     }
 };
 
+std::unique_ptr<ReadWriteBufferFromHTTP> makeReadWriteBufferFromHTTP(const Poco::URI & uri,
+    const std::string & method,
+    std::function<void(std::ostream &)> callback,
+    const ConnectionTimeouts & timeouts,
+    const SettingUInt64 max_redirects);
 
 }
