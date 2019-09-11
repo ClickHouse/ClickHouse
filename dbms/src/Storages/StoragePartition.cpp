@@ -81,12 +81,22 @@ public:
 
     Block getHeader() const override { return storage.getSampleBlock(); }
 
+    void writePrefix() override
+    {
+        auto log = &Poco::Logger::get("StoragePartition");
+        LOG_DEBUG(log, "write prefix");
+    }
+
     void write(const Block & block) override
     {
+        auto log = &Poco::Logger::get("StoragePartition");
+        LOG_DEBUG(log, "write start");
+        Stopwatch w;
         if (!block || !block.rows())
             return;
         storage.check(block, true);
         block.checkNumberOfRows();
+        ++block_num;
         auto part_blocks = [&]() {
             BlocksWithPartition result;
             if (!storage.partition_key_expr) /// Table is not partitioned.
@@ -139,10 +149,13 @@ public:
         std::lock_guard lock(storage.mutex);
         for (auto & block_with_partition : part_blocks)
             partitions_data[std::move(block_with_partition.partition)].push_back(std::move(block_with_partition.block));
+        write_time += w.elapsedMilliseconds();
+        LOG_DEBUG(log, "write end");
     }
 
     void writeSuffix() override
     {
+        Stopwatch w;
         std::lock_guard lock(storage.mutex);
         if (partitions_data.size() < 2)
             return;
@@ -183,12 +196,21 @@ public:
         }
         // Wait for concurrent view processing
         pool.wait();
+
+        auto log = &Poco::Logger::get("StoragePartition");
+        LOG_DEBUG(log, "Received blocks = " << block_num);
+        LOG_DEBUG(log, "Partition into blocks = " << partitions_data.size());
+        LOG_DEBUG(log, "Write takes " << write_time);
+        LOG_DEBUG(log, "Write suffix takes " << w.elapsedMilliseconds());
     }
 
 private:
     std::map<Row, Blocks> partitions_data;
     StoragePartition & storage;
     size_t max_threads;
+
+    UInt64 block_num{};
+    UInt64 write_time{};
 };
 
 
