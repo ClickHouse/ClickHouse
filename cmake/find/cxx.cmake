@@ -6,6 +6,11 @@ endif()
 if (USE_LIBCXX)
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
 
+    if (OS_DARWIN)
+        # Use libcxx from SDK
+        set (USE_INTERNAL_LIBCXX_LIBRARY OFF)
+    endif ()
+
     if (NOT USE_INTERNAL_LIBCXX_LIBRARY)
         find_library (LIBCXX_LIBRARY c++)
         find_library (LIBCXXFS_LIBRARY c++fs)

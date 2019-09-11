@@ -61,4 +61,7 @@ if (CMAKE_CROSSCOMPILING)
         set( HAS_POST_2038_EXITCODE "0" CACHE STRING "Result from TRY_RUN" FORCE)
         set( HAS_POST_2038_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
     endif ()
+
+    # Don't know why but CXX_STANDARD doesn't work for cross-compilation
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 endif ()

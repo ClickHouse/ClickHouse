@@ -179,7 +179,10 @@ protected:
     // MAP_POPULATE to mmap(). This takes some time, but should be faster
     // overall than having a hot loop interrupted by page faults.
     static constexpr int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS
-            | (mmap_populate ? MAP_POPULATE : 0);
+#if defined(OS_LINUX)
+        | (mmap_populate ? MAP_POPULATE : 0)
+#endif
+        ;
 
 private:
     void * allocNoTrack(size_t size, size_t alignment)

@@ -4,7 +4,7 @@ if (NOT COMPILER_CLANG)
     message (FATAL_ERROR "Darwin build is supported only for Clang")
 endif ()
 
-set (DEFAULT_LIBS "${DEFAULT_LIBS} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+set (DEFAULT_LIBS "${DEFAULT_LIBS} ${COVERAGE_OPTION} -lc -lm -lpthread -ldl")
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
@@ -25,9 +25,7 @@ include (cmake/find/cxx.cmake)
 add_library(global-group INTERFACE)
 
 target_link_libraries(global-group INTERFACE
-    -Wl,--start-group
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
-    -Wl,--end-group
 )
 
 link_libraries(global-group)
