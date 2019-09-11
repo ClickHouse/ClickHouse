@@ -261,9 +261,10 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
     conf.set("client.id", VERSION_FULL);
-    conf.set("auto.offset.reset", "smallest"); // If no offset stored for this group, read all messages from the start
-    conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
-    conf.set("enable.partition.eof", "false"); // Ignore EOF messages
+    conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+    conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
+    conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
+    conf.set("enable.partition.eof", "false");     // Ignore EOF messages
     updateConfiguration(conf);
 
     // Create a consumer and subscribe to topics
@@ -277,9 +278,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled),
-        row_delimiter);
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, row_delimiter, stream_cancelled);
 }
 
 
@@ -400,7 +399,7 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub;
+    std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
 
     // Check whether the limits were applied during query execution

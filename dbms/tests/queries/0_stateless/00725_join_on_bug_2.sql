@@ -1,3 +1,5 @@
+set joined_subquery_requires_alias = 0;
+
 drop table if exists t_00725_2;
 drop table if exists s_00725_2;
 

@@ -34,7 +34,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
     {
-        if (ttl_info.min <= current_time)
+        if (force || isTTLExpired(ttl_info.min))
         {
             new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
@@ -51,7 +51,7 @@ TTLBlockInputStream::TTLBlockInputStream(
             new_ttl_infos.columns_ttl.emplace(name, ttl_info);
     }
 
-    if (old_ttl_infos.table_ttl.min > current_time)
+    if (!force && !isTTLExpired(old_ttl_infos.table_ttl.min))
         new_ttl_infos.table_ttl = old_ttl_infos.table_ttl;
 
     if (!default_expr_list->children.empty())

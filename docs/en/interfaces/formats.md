@@ -1,4 +1,4 @@
-# Formats for input and output data {#formats}
+# Formats for Input and Output Data {#formats}
 
 ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read an external dictionary. A format supported for output can be used to arrange the
 results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
@@ -11,7 +11,7 @@ The supported formats are:
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
 | [TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
-| [Template](#template) | ✔ | ✔ |
+| [Template](#format-template) | ✔ | ✔ |
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
@@ -29,6 +29,7 @@ The supported formats are:
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
@@ -65,7 +66,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-23      1406958
 ```
 
-### Data formatting
+### Data Formatting
 
 Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
@@ -121,7 +122,7 @@ During parsing, the first and second rows are completely ignored.
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
-## Template {#template}
+## Template {#format-template}
 
 This format allows to specify a custom format string with placeholders for values with specified escaping rule.
 
@@ -680,9 +681,10 @@ For [NULL](../query_language/syntax.md#null-literal) support, an additional byte
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 Similar to [RowBinary](#rowbinary), but with added header:
-* [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
-* N `String`s specifying column names
-* N `String`s specifying column types
+
+ * [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+ * N `String`s specifying column names
+ * N `String`s specifying column types
 
 ## Values {#data-format-values}
 
@@ -924,17 +926,17 @@ Data types of a ClickHouse table columns can differ from the corresponding field
 
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
-```
+```bash
 cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
-```
+```sql
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with the Hadoop, you can use `HDFS` table engine.
+To exchange data with the Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
 
 ## Format Schema {#formatschema}
 

@@ -35,8 +35,7 @@ clickhouse_program_add_library(odbc-bridge)
 
 # clickhouse-odbc-bridge is always a separate binary.
 # Reason: it must not export symbols from SSL, mariadb-client, etc. to not break ABI compatibility with ODBC drivers.
-# For this reason, we disabling -rdynamic linker flag. But we do it in strange way:
-SET(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
 
 add_executable(clickhouse-odbc-bridge odbc-bridge.cpp)
 set_target_properties(clickhouse-odbc-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)

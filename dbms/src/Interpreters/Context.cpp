@@ -86,6 +86,7 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -1200,8 +1201,8 @@ void Context::setCurrentQueryId(const String & query_id)
             } words;
         } random;
 
-        random.words.a = thread_local_rng();
-        random.words.b = thread_local_rng();
+        random.words.a = thread_local_rng(); //-V656
+        random.words.b = thread_local_rng(); //-V656
 
         /// Use protected constructor.
         struct qUUID : Poco::UUID
@@ -2028,6 +2029,51 @@ void Context::initializeExternalTablesIfSet()
         /// Reset callback
         external_tables_initializer_callback = {};
     }
+}
+
+
+void Context::setInputInitializer(InputInitializer && initializer)
+{
+    if (input_initializer_callback)
+        throw Exception("Input initializer is already set", ErrorCodes::LOGICAL_ERROR);
+
+    input_initializer_callback = std::move(initializer);
+}
+
+
+void Context::initializeInput(const StoragePtr & input_storage)
+{
+    if (!input_initializer_callback)
+        throw Exception("Input initializer is not set", ErrorCodes::LOGICAL_ERROR);
+
+    input_initializer_callback(*this, input_storage);
+    /// Reset callback
+    input_initializer_callback = {};
+}
+
+
+void Context::setInputBlocksReaderCallback(InputBlocksReader && reader)
+{
+    if (input_blocks_reader)
+        throw Exception("Input blocks reader is already set", ErrorCodes::LOGICAL_ERROR);
+
+    input_blocks_reader = std::move(reader);
+}
+
+
+InputBlocksReader Context::getInputBlocksReaderCallback() const
+{
+    return input_blocks_reader;
+}
+
+
+void Context::resetInputCallbacks()
+{
+    if (input_initializer_callback)
+        input_initializer_callback = {};
+
+    if (input_blocks_reader)
+        input_blocks_reader = {};
 }
 
 

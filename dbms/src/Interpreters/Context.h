@@ -100,6 +100,11 @@ using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(Context &)>;
 
+/// Callback for initialize input()
+using InputInitializer = std::function<void(Context &, const StoragePtr &)>;
+/// Callback for reading blocks of data from client for function input()
+using InputBlocksReader = std::function<Block(Context &)>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -123,6 +128,9 @@ private:
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
+
+    InputInitializer input_initializer_callback;
+    InputBlocksReader input_blocks_reader;
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
@@ -212,6 +220,17 @@ public:
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
     /// This method is called in executeQuery() and will call the external tables initializer.
     void initializeExternalTablesIfSet();
+
+    /// When input() is present we have to send columns structure to client
+    void setInputInitializer(InputInitializer && initializer);
+    /// This method is called in StorageInput::read while executing query
+    void initializeInput(const StoragePtr & input_storage);
+
+    /// Callback for read data blocks from client one by one for function input()
+    void setInputBlocksReaderCallback(InputBlocksReader && reader);
+    /// Get callback for reading data for input()
+    InputBlocksReader getInputBlocksReaderCallback() const;
+    void resetInputCallbacks();
 
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }

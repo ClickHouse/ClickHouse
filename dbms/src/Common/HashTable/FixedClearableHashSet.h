@@ -23,7 +23,6 @@ struct FixedClearableHashTableCell
     struct CellExt
     {
         Key key;
-        value_type & getValueMutable() { return key; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedClearableHashTableCell *) { key = key_; }
     };
