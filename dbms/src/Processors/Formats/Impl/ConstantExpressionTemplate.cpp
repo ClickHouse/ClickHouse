@@ -37,10 +37,13 @@ struct LiteralInfo
     /// Make column nullable even if expression type is not.
     /// (for literals in functions like ifNull and assumeNotNul, which never return NULL even for NULL arguments)
     bool force_nullable;
+
+    DataTypePtr type;
+    bool need_special_parser;
 };
 
-using LiteralsInfo = std::vector<LiteralInfo>;
-
+/// Extracts ASTLiterals from expression, replaces them with ASTIdentifiers where needed
+/// and deduces data types for dummy columns by field type of literal
 class ReplaceLiteralsVisitor
 {
 public:
@@ -49,7 +52,7 @@ public:
 
     explicit ReplaceLiteralsVisitor(const Context & context_) : context(context_) { }
 
-    void visit(ASTPtr & ast, bool force_nullable = {})
+    void visit(ASTPtr & ast, bool force_nullable)
     {
         if (visitIfLiteral(ast, force_nullable))
             return;
@@ -112,26 +115,87 @@ private:
             }
             String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
+            setDataType(replaced_literals.back());
             ast = std::make_shared<ASTIdentifier>(column_name);
         }
         return true;
     }
+
+    void setDataType(LiteralInfo & info)
+    {
+        /// Type (Field::Types:Which) of literal in AST can be: String, UInt64, Int64, Float64, Null or Array of simple literals (not of Arrays).
+        /// Null and empty Array literals are considered as tokens, because template with Nullable(Nothing) or Array(Nothing) is useless.
+
+        Field::Types::Which field_type = info.literal->value.getType();
+
+        /// We have to use ParserNumber instead of type->deserializeAsTextQuoted() for arithmetic types
+        /// to check actual type of literal and avoid possible overflow and precision issues.
+        info.need_special_parser = true;
+
+        /// Do not use 8, 16 and 32 bit types, so template will match all integers
+        if (field_type == Field::Types::UInt64)
+            info.type = std::make_shared<DataTypeUInt64>();
+        else if (field_type == Field::Types::Int64)
+            info.type = std::make_shared<DataTypeInt64>();
+        else if (field_type == Field::Types::Float64)
+            info.type = std::make_shared<DataTypeFloat64>();
+        else if (field_type == Field::Types::String)
+        {
+            info.need_special_parser = false;
+            info.type = std::make_shared<DataTypeString>();
+        }
+        else if (field_type == Field::Types::Array)
+        {
+            info.type = applyVisitor(FieldToDataType(), info.literal->value);
+            auto nested_type = dynamic_cast<const DataTypeArray &>(*info.type).getNestedType();
+
+            /// It can be Array(Nullable(nested_type))
+            bool array_of_nullable = false;
+            if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
+            {
+                nested_type = nullable->getNestedType();
+                array_of_nullable = true;
+            }
+
+            WhichDataType type_info{nested_type};
+            /// Promote integers to 64 bit types
+            if (type_info.isNativeUInt())
+                /// TODO maybe it's better to always use Int64 instead of UInt64 if settings.values.accurate_types_of_literals is false
+                nested_type = std::make_shared<DataTypeUInt64>();
+            else if (type_info.isNativeInt())
+                nested_type = std::make_shared<DataTypeInt64>();
+            else if (type_info.isFloat64())
+                ;
+            else if (type_info.isString())
+                info.need_special_parser = false;
+            else
+                throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
+                                ErrorCodes::LOGICAL_ERROR);
+
+            if (array_of_nullable)
+                nested_type = std::make_shared<DataTypeNullable>(nested_type);
+
+            info.type = std::make_shared<DataTypeArray>(nested_type);
+        }
+        else
+            throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
+                            ErrorCodes::LOGICAL_ERROR);
+
+        /// Allow literal to be NULL, if result column has nullable type or if function never returns NULL
+        if (info.force_nullable && info.type->canBeInsideNullable())
+            info.type = makeNullable(info.type);
+    }
 };
+
 
 
 /// Expression template is a sequence of tokens and data types of literals.
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
-ConstantExpressionTemplate::ConstantExpressionTemplate(DataTypePtr result_column_type_,
-                                                       TokenIterator expression_begin, TokenIterator expression_end,
-                                                       const ASTPtr & expression_, const Context & context)
-                                                       : result_column_type(result_column_type_)
+ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
+                                                                 ASTPtr & expression, const IDataType & result_type, const Context & context)
 {
-    /// Extract ASTLiterals from expression and replace them with ASTIdentifiers where needed
-    ASTPtr expression = expression_->clone();
-    ReplaceLiteralsVisitor visitor(context);
-    visitor.visit(expression);
-    LiteralsInfo & replaced_literals = visitor.replaced_literals;
+
 
     std::sort(replaced_literals.begin(), replaced_literals.end(), [](const LiteralInfo & a, const LiteralInfo & b)
     {
@@ -156,10 +220,9 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(DataTypePtr result_column
         }
         token_after_literal_idx.push_back(tokens.size());
 
-        DataTypePtr type;
-        use_special_parser[i] = getDataType(info, type);
+        use_special_parser[i] = info.need_special_parser;
 
-        literals.insert({nullptr, type, info.dummy_column_name});
+        literals.insert({nullptr, info.type, info.dummy_column_name});
 
         prev_end = info.literal->end.value();
     }
@@ -170,113 +233,73 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(DataTypePtr result_column
         ++prev_end;
     }
 
-    columns = literals.cloneEmptyColumns();
-    addNodesToCastResult(*result_column_type, expression);
+    addNodesToCastResult(result_type, expression);
     result_column_name = expression->getColumnName();
 
     auto syntax_result = SyntaxAnalyzer(context).analyze(expression, literals.getNamesAndTypesList());
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
 }
 
-bool ConstantExpressionTemplate::getDataType(const LiteralInfo & info, DataTypePtr & type) const
+size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
+                                                                      const LiteralsInfo & replaced_literals,
+                                                                      const DataTypePtr & result_column_type,
+                                                                      TokenIterator expression_end)
 {
-    /// Type (Field::Types:Which) of literal in AST can be: String, UInt64, Int64, Float64, Null or Array of simple literals (not of Arrays).
-    /// Null and empty Array literals are considered as tokens, because template with Nullable(Nothing) or Array(Nothing) is useless.
+    SipHash hash_state;
+    hash_state.update(result_column_type->getName());
 
-    Field::Types::Which field_type = info.literal->value.getType();
+    expression->updateTreeHash(hash_state);
 
-    /// We have to use ParserNumber instead of type->deserializeAsTextQuoted() for arithmetic types
-    /// to check actual type of literal and avoid possible overflow and precision issues.
-    bool need_special_parser = true;
+    for (const auto & info : replaced_literals)
+        hash_state.update(info.type->getName());
 
-    /// Do not use 8, 16 and 32 bit types, so template will match all integers
-    if (field_type == Field::Types::UInt64)
-        type = std::make_shared<DataTypeUInt64>();
-    else if (field_type == Field::Types::Int64)
-        type = std::make_shared<DataTypeInt64>();
-    else if (field_type == Field::Types::Float64)
-        type = std::make_shared<DataTypeFloat64>();
-    else if (field_type == Field::Types::String)
-    {
-        need_special_parser = false;
-        type = std::make_shared<DataTypeString>();
-    }
-    else if (field_type == Field::Types::Array)
-    {
-        type = applyVisitor(FieldToDataType(), info.literal->value);
-        auto nested_type = dynamic_cast<const DataTypeArray &>(*type).getNestedType();
+    /// TODO remove expression_end from hash
+    --expression_end;
+    /// Allows distinguish expression in the last column in Values format
+    hash_state.update(expression_end->begin, expression_end->size());
 
-        /// It can be Array(Nullable(nested_type))
-        bool array_of_nullable = false;
-        if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
-        {
-            nested_type = nullable->getNestedType();
-            array_of_nullable = true;
-        }
-
-        WhichDataType type_info{nested_type};
-        /// Promote integers to 64 bit types
-        if (type_info.isNativeUInt())
-            /// TODO maybe it's better to always use Int64 instead of UInt64 if settings.values.accurate_types_of_literals is false
-            nested_type = std::make_shared<DataTypeUInt64>();
-        else if (type_info.isNativeInt())
-            nested_type = std::make_shared<DataTypeInt64>();
-        else if (type_info.isFloat64())
-            ;
-        else if (type_info.isString())
-            need_special_parser = false;
-        else
-            throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
-                            ErrorCodes::LOGICAL_ERROR);
-
-        if (array_of_nullable)
-            nested_type = std::make_shared<DataTypeNullable>(nested_type);
-
-        type = std::make_shared<DataTypeArray>(nested_type);
-    }
-    else
-        throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
-                        ErrorCodes::LOGICAL_ERROR);
-
-    /// Allow literal to be NULL, if result column has nullable type or if function never returns NULL
-    bool allow_nulls = result_column_type->isNullable();
-    if ((allow_nulls || info.force_nullable) && type->canBeInsideNullable())
-        type = makeNullable(type);
-
-    return need_special_parser;
+    IAST::Hash res;
+    hash_state.get128(res.first, res.second);
+    return res.first ^ res.second;
 }
 
-void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const FormatSettings & settings)
+
+
+ConstantExpressionTemplate::ConstantExpressionTemplate(DataTypePtr result_column_type,
+                                                       TokenIterator expression_begin, TokenIterator expression_end,
+                                                       const ASTPtr & expression_, const Context & context, Cache * cache)
+{
+    ASTPtr expression = expression_->clone();
+    ReplaceLiteralsVisitor visitor(context);
+    visitor.visit(expression, result_column_type->isNullable());
+
+    if (cache)
+    {
+        size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, expression_end);
+        auto iter = cache->find(template_hash);
+        if (iter == cache->end())
+        {
+            if (max_cache_size <= cache->size())
+                cache->clear();
+            structure = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
+            cache->insert({template_hash, structure});
+        }
+        else    /// FIXME process collisions correctly
+            structure = iter->second;
+    }
+    else
+        structure = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
+
+    columns = structure->literals.cloneEmptyColumns();
+}
+
+bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const FormatSettings & settings)
 {
     size_t cur_column = 0;
     try
     {
-        size_t cur_token = 0;
-        while (cur_column < literals.columns())
-        {
-            size_t skip_tokens_until = token_after_literal_idx[cur_column];
-            while (cur_token < skip_tokens_until)
-            {
-                /// TODO skip comments
-                skipWhitespaceIfAny(istr);
-                assertString(tokens[cur_token++], istr);
-            }
-            skipWhitespaceIfAny(istr);
-
-            const DataTypePtr & type = literals.getByPosition(cur_column).type;
-            if (settings.values.accurate_types_of_literals && use_special_parser[cur_column])
-                parseLiteralAndAssertType(istr, type.get(), cur_column);
-            else
-                type->deserializeAsTextQuoted(*columns[cur_column], istr, settings);
-
-            ++cur_column;
-        }
-        while (cur_token < tokens.size())
-        {
-            skipWhitespaceIfAny(istr);
-            assertString(tokens[cur_token++], istr);
-        }
-        ++rows_count;
+        if (tryParseExpression(istr, settings, cur_column))
+            return true;
     }
     catch (DB::Exception & e)
     {
@@ -286,11 +309,53 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
         if (!isParseError(e.code()))
             throw;
 
-        throw DB::Exception("Cannot parse expression using template", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
+        return false;
     }
+
+    for (size_t i = 0; i < cur_column; ++i)
+        columns[i]->popBack(1);
+    return false;
 }
 
-void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx)
+bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const FormatSettings & settings, size_t & cur_column)
+{
+    size_t cur_token = 0;
+    size_t num_columns = structure->literals.columns();
+    while (cur_column < num_columns)
+    {
+        size_t skip_tokens_until = structure->token_after_literal_idx[cur_column];
+        while (cur_token < skip_tokens_until)
+        {
+            /// TODO skip comments
+            skipWhitespaceIfAny(istr);
+            if (!checkString(structure->tokens[cur_token++], istr))
+                return false;
+        }
+        skipWhitespaceIfAny(istr);
+
+        const DataTypePtr & type = structure->literals.getByPosition(cur_column).type;
+        if (settings.values.accurate_types_of_literals && structure->use_special_parser[cur_column])
+        {
+            if (!parseLiteralAndAssertType(istr, type.get(), cur_column))
+                return false;
+        }
+        else
+            type->deserializeAsTextQuoted(*columns[cur_column], istr, settings);
+
+        ++cur_column;
+    }
+    while (cur_token < structure->tokens.size())
+    {
+        skipWhitespaceIfAny(istr);
+        if (!checkString(structure->tokens[cur_token++], istr))
+            return false;
+    }
+    ++rows_count;
+
+    return true;
+}
+
+bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx)
 {
     /// TODO faster way to check types without using Parsers
     ParserKeyword parser_null("NULL");
@@ -325,7 +390,7 @@ void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     if (is_array)
     {
         if (!parser_array.parse(iterator, ast, expected))
-            throw DB::Exception("Cannot parse literal", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
+            return false;
         istr.position() = const_cast<char *>(iterator->begin);
 
         const Field & array = ast->as<ASTLiteral &>().value;
@@ -342,7 +407,7 @@ void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         {
             Field array_same_types = convertFieldToType(array, *complex_type, nullptr);
             columns[column_idx]->insert(array_same_types);
-            return;
+            return true;
         }
     }
     else
@@ -350,7 +415,7 @@ void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         if (is_nullable && parser_null.parse(iterator, ast, expected))
             ast = std::make_shared<ASTLiteral>(Field());
         else if (!parser_number.parse(iterator, ast, expected))
-            throw DB::Exception("Cannot parse literal", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
+            return false;
         istr.position() = const_cast<char *>(iterator->begin);
 
         Field & number = ast->as<ASTLiteral &>().value;
@@ -361,35 +426,34 @@ void ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
             is_nullable)
         {
             columns[column_idx]->insert(number);
-            return;
+            return true;
         }
     }
-    throw DB::Exception("Cannot parse literal: type mismatch", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
+    return false;
 }
 
 ColumnPtr ConstantExpressionTemplate::evaluateAll()
 {
-    Block evaluated = literals.cloneWithColumns(std::move(columns));
-    columns = literals.cloneEmptyColumns();
-    if (!literals.columns())
+    Block evaluated = structure->literals.cloneWithColumns(std::move(columns));
+    columns = structure->literals.cloneEmptyColumns();
+    if (!structure->literals.columns())
         evaluated.insert({ColumnConst::create(ColumnUInt8::create(1, 0), rows_count), std::make_shared<DataTypeUInt8>(), "_dummy"});
-    actions_on_literals->execute(evaluated);
+    structure->actions_on_literals->execute(evaluated);
 
     if (!evaluated || evaluated.rows() != rows_count)
         throw Exception("Number of rows mismatch after evaluation of batch of constant expressions: got " +
                         std::to_string(evaluated.rows()) + " rows for " + std::to_string(rows_count) + " expressions",
                         ErrorCodes::LOGICAL_ERROR);
 
-    if (!evaluated.has(result_column_name))
-        throw Exception("Cannot evaluate template " + result_column_name + ", block structure:\n" + evaluated.dumpStructure(),
+    if (!evaluated.has(structure->result_column_name))
+        throw Exception("Cannot evaluate template " + structure->result_column_name + ", block structure:\n" + evaluated.dumpStructure(),
                         ErrorCodes::LOGICAL_ERROR);
 
     rows_count = 0;
-    return evaluated.getByName(result_column_name).column->convertToFullColumnIfConst();
+    return evaluated.getByName(structure->result_column_name).column->convertToFullColumnIfConst();
 }
 
-
-void ConstantExpressionTemplate::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr)
+void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr)
 {
     auto result_type = std::make_shared<ASTLiteral>(result_column_type.getName());
 

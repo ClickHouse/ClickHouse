@@ -38,7 +38,7 @@ private:
 
     Chunk generate() override;
 
-    bool parseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
+    void parseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     void readValueOrParseSeparateExpression(IColumn & column, size_t column_idx);
     void parseExpression(IColumn & column, size_t column_idx, bool deduce_template);
 
@@ -68,6 +68,7 @@ private:
 
     ParserExpression parser;
     ConstantExpressionTemplates templates;
+    ConstantExpressionTemplate::Cache templates_cache;
 };
 
 }
