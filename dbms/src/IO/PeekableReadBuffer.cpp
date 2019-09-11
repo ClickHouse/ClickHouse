@@ -144,34 +144,33 @@ bool PeekableReadBuffer::nextImpl()
     checkStateCorrect();
     bool res;
 
-    if (!checkpoint)
-    {
-        if (!useSubbufferOnly())
-        {
-            /// All copied data have been read from own memory, continue reading from sub_buf
-            peeked_size = 0;
-            res = sub_buf.hasPendingData() || sub_buf.next();
-        }
-        else
-        {
-            /// Load next data to sub_buf
-            sub_buf.position() = pos;
-            res = sub_buf.next();
-        }
-
-        Buffer & sub_working = sub_buf.buffer();
-        /// Switch to reading from sub_buf (or just update it if already switched)
-        BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
-    }
-    else
+    if (checkpoint)
     {
         if (currentlyReadFromOwnMemory())
             res = sub_buf.hasPendingData() || sub_buf.next();
         else
             res = peekNext();
-        Buffer & sub_working = sub_buf.buffer();
-        BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
     }
+    else
+    {
+        if (useSubbufferOnly())
+        {
+            /// Load next data to sub_buf
+            sub_buf.position() = pos;
+            res = sub_buf.next();
+        }
+        else
+        {
+            /// All copied data have been read from own memory, continue reading from sub_buf
+            peeked_size = 0;
+            res = sub_buf.hasPendingData() || sub_buf.next();
+        }
+    }
+
+    /// Switch to reading from sub_buf (or just update it if already switched)
+    Buffer & sub_working = sub_buf.buffer();
+    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
+    working_buffer_offset = sub_buf.offset();
 
     checkStateCorrect();
     return res;
@@ -328,7 +327,7 @@ void PeekableReadBuffer::assertCanBeDestructed() const
 {
     if (peeked_size && pos != memory.data() + peeked_size)
         throw DB::Exception("There are data, which were extracted from sub-buffer, but not from peekable buffer. "
-                            "Cannot destruct peekable buffer correctly because tha data will be lost."
+                            "Cannot destruct peekable buffer correctly because tha data will be lost. "
                             "Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
