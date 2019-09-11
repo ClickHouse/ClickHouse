@@ -361,12 +361,6 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
     return find(address, data.objects);
 }
 
-SymbolIndex & SymbolIndex::instance()
-{
-    static SymbolIndex instance;
-    return instance;
-}
-
 }
 
 #endif

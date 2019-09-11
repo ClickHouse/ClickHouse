@@ -4,12 +4,12 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Common/NamePrompter.h>
 
+#include <ext/singleton.h>
 
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -21,11 +21,9 @@ using TableFunctionCreator = std::function<TableFunctionPtr()>;
 
 /** Lets you get a table function by its name.
   */
-class TableFunctionFactory final: private boost::noncopyable, public IFactoryWithAliases<TableFunctionCreator>
+class TableFunctionFactory final: public ext::singleton<TableFunctionFactory>, public IFactoryWithAliases<TableFunctionCreator>
 {
 public:
-
-    static TableFunctionFactory & instance();
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.

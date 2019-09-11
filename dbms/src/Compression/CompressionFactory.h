@@ -6,6 +6,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 
+#include <ext/singleton.h>
+
 #include <functional>
 #include <memory>
 #include <optional>
@@ -22,7 +24,7 @@ using CodecNameWithLevel = std::pair<String, std::optional<int>>;
 
 /** Creates a codec object by name of compression algorithm family and parameters.
  */
-class CompressionCodecFactory final : private boost::noncopyable
+class CompressionCodecFactory final : public ext::singleton<CompressionCodecFactory>
 {
 protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
@@ -31,8 +33,6 @@ protected:
     using CompressionCodecsDictionary = std::unordered_map<String, CreatorWithType>;
     using CompressionCodecsCodeDictionary = std::unordered_map<UInt8, CreatorWithType>;
 public:
-
-    static CompressionCodecFactory & instance();
 
     /// Return default codec (currently LZ4)
     CompressionCodecPtr getDefaultCodec() const;
@@ -65,6 +65,8 @@ private:
     CompressionCodecPtr default_codec;
 
     CompressionCodecFactory();
+
+    friend class ext::singleton<CompressionCodecFactory>;
 };
 
 }

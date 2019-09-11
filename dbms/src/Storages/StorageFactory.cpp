@@ -163,10 +163,4 @@ StoragePtr StorageFactory::get(
     return it->second(arguments);
 }
 
-StorageFactory & StorageFactory::instance()
-{
-    static StorageFactory ret;
-    return ret;
-}
-
 }

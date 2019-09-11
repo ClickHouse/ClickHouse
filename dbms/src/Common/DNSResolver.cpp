@@ -223,10 +223,5 @@ void DNSResolver::addToNewHosts(const String & host)
 
 DNSResolver::~DNSResolver() = default;
 
-DNSResolver & DNSResolver::instance()
-{
-    static DNSResolver ret;
-    return ret;
-}
 
 }

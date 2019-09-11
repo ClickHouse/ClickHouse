@@ -2,11 +2,11 @@
 
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <ext/singleton.h>
 
 #include <functional>
 #include <memory>
 #include <unordered_map>
-#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -34,7 +34,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
   */
-class FormatFactory final : private boost::noncopyable
+class FormatFactory final : public ext::singleton<FormatFactory>
 {
 public:
     /// This callback allows to perform some additional actions after reading a single row.
@@ -87,9 +87,6 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
-
-    static FormatFactory & instance();
-
     BlockInputStreamPtr getInput(
         const String & name,
         ReadBuffer & buf,
@@ -131,6 +128,7 @@ private:
     FormatsDictionary dict;
 
     FormatFactory();
+    friend class ext::singleton<FormatFactory>;
 
     const Creators & getCreators(const String & name) const;
 };

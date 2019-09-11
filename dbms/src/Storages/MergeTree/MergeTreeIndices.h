@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <Core/Block.h>
+#include <ext/singleton.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -128,11 +129,11 @@ public:
 using MergeTreeIndices = std::vector<MutableMergeTreeIndexPtr>;
 
 
-class MergeTreeIndexFactory : private boost::noncopyable
+class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
 {
-public:
-    static MergeTreeIndexFactory & instance();
+    friend class ext::singleton<MergeTreeIndexFactory>;
 
+public:
     using Creator = std::function<
             std::unique_ptr<IMergeTreeIndex>(
                     const NamesAndTypesList & columns,

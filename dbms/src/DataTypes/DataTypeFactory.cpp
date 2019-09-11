@@ -202,10 +202,4 @@ DataTypeFactory::DataTypeFactory()
 DataTypeFactory::~DataTypeFactory()
 {}
 
-DataTypeFactory & DataTypeFactory::instance()
-{
-    static DataTypeFactory ret;
-    return ret;
-}
-
 }

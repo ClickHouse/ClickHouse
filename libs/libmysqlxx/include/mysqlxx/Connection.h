@@ -5,6 +5,7 @@
 
 #include <Poco/Util/Application.h>
 
+#include <ext/singleton.h>
 
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Exception.h>
@@ -25,11 +26,9 @@ namespace mysqlxx
   * Usage:
   *     LibrarySingleton::instance();
   */
-class LibrarySingleton : private boost::noncopyable
+class LibrarySingleton : public ext::singleton<LibrarySingleton>
 {
-public:
-    static auto & instance();
-
+friend class ext::singleton<LibrarySingleton>;
 private:
     LibrarySingleton();
     ~LibrarySingleton();

@@ -83,5 +83,4 @@ public:
         return IHashingBuffer<WriteBuffer>::getHash();
     }
 };
-
 }

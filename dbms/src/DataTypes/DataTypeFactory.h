@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 
+#include <ext/singleton.h>
 
 #include <functional>
 #include <memory>
@@ -19,7 +20,7 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /** Creates a data type by name of data type family and parameters.
   */
-class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>
+class DataTypeFactory final : public ext::singleton<DataTypeFactory>, public IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>
 {
 private:
     using SimpleCreator = std::function<DataTypePtr()>;
@@ -28,8 +29,6 @@ private:
     using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
 
 public:
-    static DataTypeFactory & instance();
-
     DataTypePtr get(const String & full_name) const;
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
@@ -63,6 +62,8 @@ private:
     const DataTypesDictionary & getCaseInsensitiveCreatorMap() const override { return case_insensitive_data_types; }
 
     String getFactoryName() const override { return "DataTypeFactory"; }
+
+    friend class ext::singleton<DataTypeFactory>;
 };
 
 }
