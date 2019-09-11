@@ -151,6 +151,7 @@ macro(add_object_library name common_path)
         add_glob(${name}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
         add_glob(${name}_sources ${common_path}/*.cpp ${common_path}/*.c ${common_path}/*.h)
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
+        target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
     endif ()
 endmacro()
 
