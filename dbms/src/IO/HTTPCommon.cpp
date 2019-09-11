@@ -224,15 +224,11 @@ std::istream * receiveResponse(
     auto istr = &session.receiveResponse(response);
     auto status = response.getStatus();
 
-    if (
-        ( request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET) &&  //  we only accepts redirects on GET requests.
-        (status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || // 301
-            status == Poco::Net::HTTPResponse::HTTP_FOUND || // 302
-            status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || // 303
-            status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT) // 307
-        )  {
+    if ( ( request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET ) && (status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT) )
         throw Poco::URIRedirection(response.get("Location"));
-    } else if (status != Poco::Net::HTTPResponse::HTTP_OK)    {
+
+    if (status != Poco::Net::HTTPResponse::HTTP_OK)    
+    {
         std::stringstream error_message;
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
                       << response.getReason() << ", body: " << istr->rdbuf();
