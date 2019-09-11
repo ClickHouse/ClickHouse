@@ -50,8 +50,8 @@ DictionaryPtr DictionaryFactory::create(
         }
     }
 
-
     const auto & layout_type = keys.front();
+
     {
         const auto found = registered_layouts.find(layout_type);
         if (found != registered_layouts.end())
