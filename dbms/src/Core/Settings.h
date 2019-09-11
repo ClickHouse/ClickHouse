@@ -169,6 +169,8 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingBool, add_http_cors_header, false, "Write add http CORS header.") \
     \
+    M(SettingUInt64, max_http_get_redirects, 0, "Max number of http GET redirects hops allowed.") \
+    \
     M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow, CSVWithNames, TSVWithNames and TSKV formats).") \
     M(SettingBool, input_format_with_names_use_header, false, "For TSVWithNames and CSVWithNames input formats this controls whether format parser is to assume that column data appear in the input exactly as they are specified in the header.") \
     M(SettingBool, input_format_import_nested_json, false, "Map nested JSON data to nested tables (it works for JSONEachRow format).") \

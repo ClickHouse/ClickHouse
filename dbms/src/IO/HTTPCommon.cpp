@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int TOO_MANY_REDIRECTS;
 }
 
 
@@ -223,8 +224,15 @@ std::istream * receiveResponse(
     auto istr = &session.receiveResponse(response);
     auto status = response.getStatus();
 
-    if (status != Poco::Net::HTTPResponse::HTTP_OK)
-    {
+    if (
+        ( request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET) &&  //  we only accepts redirects on GET requests.
+        (status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || // 301
+            status == Poco::Net::HTTPResponse::HTTP_FOUND || // 302
+            status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || // 303
+            status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT) // 307
+        )  {
+        throw Poco::URIRedirection(response.get("Location"));
+    } else if (status != Poco::Net::HTTPResponse::HTTP_OK)    {
         std::stringstream error_message;
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
                       << response.getReason() << ", body: " << istr->rdbuf();
