@@ -659,7 +659,7 @@ void executeQuery(
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
 
-            if (dynamic_cast<const ASTWatchQuery *>(ast.get()))
+            if (ast->as<ASTWatchQuery>())
             {
                 /// For Watch query, flush data if block is empty (to send data to client).
                 auto flush_callback = [&out](const Block & block)
