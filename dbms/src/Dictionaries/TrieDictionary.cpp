@@ -36,11 +36,13 @@ namespace ErrorCodes
 
 TrieDictionary::TrieDictionary(
     const std::string & name_,
+    const std::unordered_set<std::string> & allowed_databases_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
     : name{name_}
+    , allowed_databases{allowed_databases_}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -754,6 +756,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,
+                             const std::unordered_set<std::string> & allowed_databases,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -765,7 +768,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         // This is specialised trie for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<TrieDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<TrieDictionary>(name, allowed_databases, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("ip_trie", create_layout);
 }

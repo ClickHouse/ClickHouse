@@ -23,6 +23,7 @@ class FlatDictionary final : public IDictionary
 public:
     FlatDictionary(
         const std::string & name_,
+        const std::unordered_set<std::string> & allowed_databases_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
@@ -30,6 +31,8 @@ public:
         BlockPtr saved_block_ = nullptr);
 
     std::string getName() const override { return name; }
+
+    const std::unordered_set<std::string> & getAllowedDatabases() const override { return allowed_databases; }
 
     std::string getTypeName() const override { return "Flat"; }
 
@@ -47,7 +50,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+        return std::make_shared<FlatDictionary>(name, allowed_databases, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -225,6 +228,7 @@ private:
     PaddedPODArray<Key> getIds() const;
 
     const std::string name;
+    const std::unordered_set<std::string> allowed_databases;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

@@ -40,6 +40,8 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual bool isCached() const = 0;
 
+    virtual const std::unordered_set<std::string> & getAllowedDatabases() const = 0;
+
     virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
@@ -66,6 +68,13 @@ struct IDictionaryBase : public IExternalLoadable
     std::shared_ptr<const IDictionaryBase> shared_from_this() const
     {
         return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
+    }
+
+    bool isAllowed(const std::string & database_name) const
+    {
+        auto allowed_databases = getAllowedDatabases();
+
+        return allowed_databases.size() == 0 || allowed_databases.find(database_name) != allowed_databases.end();
     }
 };
 

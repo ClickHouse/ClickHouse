@@ -69,11 +69,13 @@ bool operator<(const RangeHashedDictionary::Range & left, const RangeHashedDicti
 
 RangeHashedDictionary::RangeHashedDictionary(
     const std::string & dictionary_name_,
+    const std::unordered_set<std::string> & allowed_databases_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
     : dictionary_name{dictionary_name_}
+    , allowed_databases{allowed_databases_}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -675,6 +677,7 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 void registerDictionaryRangeHashed(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,
+                             const std::unordered_set<std::string> & allowed_databases,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -689,7 +692,7 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<RangeHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<RangeHashedDictionary>(name, allowed_databases, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("range_hashed", create_layout);
 }

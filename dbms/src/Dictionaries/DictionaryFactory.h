@@ -31,6 +31,7 @@ public:
 
     using Creator = std::function<DictionaryPtr(
         const std::string & name,
+        const std::unordered_set<std::string> & allowed_databases,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,

@@ -33,14 +33,31 @@ DictionaryPtr DictionaryFactory::create(
 
     auto source_ptr = DictionarySourceFactory::instance().create(name, config, config_prefix + ".source", dict_struct, context);
 
-    const auto & layout_type = keys.front();
+    /// Fill list of allowed databases.
+    std::unordered_set<std::string> allowed_databases;
 
+    const auto config_sub_elem = config_prefix + ".allow_databases";
+    if (config.has(config_sub_elem))
+    {
+        Poco::Util::AbstractConfiguration::Keys config_keys;
+        config.keys(config_sub_elem, config_keys);
+
+        allowed_databases.reserve(config_keys.size());
+        for (const auto & key : config_keys)
+        {
+            const auto database_name = config.getString(config_sub_elem + "." + key);
+            allowed_databases.insert(database_name);
+        }
+    }
+
+
+    const auto & layout_type = keys.front();
     {
         const auto found = registered_layouts.find(layout_type);
         if (found != registered_layouts.end())
         {
             const auto & create_layout = found->second;
-            return create_layout(name, dict_struct, config, config_prefix, std::move(source_ptr));
+            return create_layout(name, allowed_databases, dict_struct, config, config_prefix, std::move(source_ptr));
         }
     }
 
