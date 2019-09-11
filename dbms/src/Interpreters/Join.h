@@ -340,9 +340,6 @@ private:
      */
     void prepareBlockListStructure(Block & stored_block);
 
-    /// Throw an exception if blocks have different types of key columns.
-    void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right) const;
-
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(
         Block & block,
