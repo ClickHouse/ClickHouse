@@ -19,7 +19,7 @@ std::unique_ptr<DB::ReadWriteBufferFromHTTP> makeReadWriteBufferFromHTTP(const P
         auto actual_uri =uri;
         UInt64 redirects = 0;
 
-        do 
+        do
         {
             try
             {
