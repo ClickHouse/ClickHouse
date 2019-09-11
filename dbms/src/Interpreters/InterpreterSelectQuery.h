@@ -204,6 +204,7 @@ private:
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info);
+    void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
     void executeUnion(Pipeline & pipeline, Block header); /// If header is not empty, convert streams structure to it.
@@ -221,6 +222,7 @@ private:
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info);
+    void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline);
     void executeLimitBy(QueryPipeline & pipeline);

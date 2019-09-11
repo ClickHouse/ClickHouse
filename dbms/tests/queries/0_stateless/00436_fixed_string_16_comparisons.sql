@@ -12,7 +12,7 @@ FROM
     UNION ALL SELECT 'aaaaaaaabaaaaaaa'
     UNION ALL SELECT 'aaaaaaabaaaaaaaa'
     UNION ALL SELECT 'aaaaaaacaaaaaaaa'
-)
+) js1
 CROSS JOIN
 (
     SELECT 'aaaaaaaaaaaaaaaa' AS b
@@ -24,7 +24,7 @@ CROSS JOIN
     UNION ALL SELECT 'aaaaaaaabaaaaaaa'
     UNION ALL SELECT 'aaaaaaabaaaaaaaa'
     UNION ALL SELECT 'aaaaaaacaaaaaaaa'
-)
+) js2
 ORDER BY a, b;
 
 

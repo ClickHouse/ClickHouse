@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int SYNTAX_ERROR;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int CANNOT_PARSE_EXPRESSION_USING_TEMPLATE;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -86,7 +85,7 @@ Chunk ValuesBlockInputFormat::generate()
         }
         catch (Exception & e)
         {
-            if (isParseError(e.code()) || e.code() == ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
+            if (isParseError(e.code()))
                 e.addMessage(" at row " + std::to_string(total_rows));
             throw;
         }

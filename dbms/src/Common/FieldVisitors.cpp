@@ -130,7 +130,7 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) con
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
 {
-    return "(" + formatQuoted(x.name) + ")" + formatQuoted(x.data);
+    return formatQuoted(x.data);
 }
 
 String FieldVisitorToString::operator() (const Array & x) const

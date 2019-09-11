@@ -177,10 +177,13 @@ Changes already made by the mutation are not rolled back.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
-Asks the table engine to do something for optimization.
-Supported only by `*MergeTree` engines, in which this query initializes a non-scheduled merge of data parts.
-If you specify a `PARTITION`, only the specified partition will be optimized.
-If you specify `FINAL`, optimization will be performed even when all the data is already in one part.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine of [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines are not supported.
+
+When `OPTIMIZE` is used with [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
+
+- If `OPTIMIZE` doesn't perform merging for any reason, it doesn't notify the client about it. To enable notification use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
+- If you specify a `PARTITION`, only the specified partition is optimized.
+- If you specify `FINAL`, optimization is performed even when all the data is already in one part.
 
 !!! warning
     OPTIMIZE can't fix the "Too many parts" error.

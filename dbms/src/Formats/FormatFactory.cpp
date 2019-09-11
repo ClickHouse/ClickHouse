@@ -317,4 +317,10 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorMySQLWrite(*this);
 }
 
+FormatFactory & FormatFactory::instance()
+{
+    static FormatFactory ret;
+    return ret;
+}
+
 }

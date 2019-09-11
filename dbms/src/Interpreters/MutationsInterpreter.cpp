@@ -14,6 +14,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
+#include "MutationsInterpreter.h"
 
 
 namespace DB
@@ -37,39 +38,12 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
             return true;
     }
 
-    /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
-    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
-    /// changes how many rows satisfy the predicates of the subsequent commands).
-    /// But we can be sure that if count = 0, then no rows will be touched.
-
-    auto select = std::make_shared<ASTSelectQuery>();
-
-    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    auto count_func = std::make_shared<ASTFunction>();
-    count_func->name = "count";
-    count_func->arguments = std::make_shared<ASTExpressionList>();
-    select->select()->children.push_back(count_func);
-
-    if (commands.size() == 1)
-        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
-    else
-    {
-        auto coalesced_predicates = std::make_shared<ASTFunction>();
-        coalesced_predicates->name = "or";
-        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-
-        for (const MutationCommand & command : commands)
-            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
-
-        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
-    }
-
     auto context_copy = context;
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
+    const ASTPtr & select_query = prepareQueryAffectedAST();
+    BlockInputStreamPtr in = InterpreterSelectQuery(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -157,7 +131,7 @@ static void validateUpdateColumns(
 }
 
 
-void MutationsInterpreter::prepare(bool dry_run)
+ASTPtr MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
         throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -304,7 +278,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages_copy.back().output_columns = stage.output_columns;
                 stages_copy.back().filters = stage.filters;
             }
-            auto first_stage_header = prepareInterpreterSelect(stages_copy, /* dry_run = */ true)->getSampleBlock();
+
+            const ASTPtr select_query = prepareInterpreterSelectQuery(stages_copy, /* dry_run = */ true);
+            InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+
+            auto first_stage_header = interpreter.getSampleBlock();
             auto in = std::make_shared<NullBlockInputStream>(first_stage_header);
             updated_header = std::make_unique<Block>(addStreamsForLaterStages(stages_copy, in)->getHeader());
         }
@@ -315,12 +293,12 @@ void MutationsInterpreter::prepare(bool dry_run)
                     column, std::make_shared<ASTIdentifier>(column));
     }
 
-    interpreter_select = prepareInterpreterSelect(stages, dry_run);
-
     is_prepared = true;
+
+    return prepareInterpreterSelectQuery(stages, dry_run);
 }
 
-std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run)
+ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run)
 {
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
@@ -426,7 +404,7 @@ std::unique_ptr<InterpreterSelectQuery> MutationsInterpreter::prepareInterpreter
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    return std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run).ignoreLimits());
+    return select;
 }
 
 BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const
@@ -462,17 +440,19 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
 
 void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
-    prepare(/* dry_run = */ true);
+    const auto & select_query = prepare(/* dry_run = */ true);
+    InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ true).ignoreLimits()};
     /// Do not use getSampleBlock in order to check the whole pipeline.
-    Block first_stage_header = interpreter_select->execute().in->getHeader();
+    Block first_stage_header = interpreter.execute().in->getHeader();
     BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
     addStreamsForLaterStages(stages, in)->getHeader();
 }
 
 BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
 {
-    prepare(/* dry_run = */ false);
-    BlockInputStreamPtr in = interpreter_select->execute().in;
+    const auto & select_query = prepare(/* dry_run = */ false);
+    InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
+    BlockInputStreamPtr in = interpreter.execute().in;
     auto result_stream = addStreamsForLaterStages(stages, in);
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
@@ -482,6 +462,48 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
 const Block & MutationsInterpreter::getUpdatedHeader() const
 {
     return *updated_header;
+}
+
+ASTPtr MutationsInterpreter::prepareQueryAffectedAST() const
+{
+    /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
+    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
+    /// changes how many rows satisfy the predicates of the subsequent commands).
+    /// But we can be sure that if count = 0, then no rows will be touched.
+
+    auto select = std::make_shared<ASTSelectQuery>();
+
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    auto count_func = std::make_shared<ASTFunction>();
+    count_func->name = "count";
+    count_func->arguments = std::make_shared<ASTExpressionList>();
+    select->select()->children.push_back(count_func);
+
+    if (commands.size() == 1)
+        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
+    else
+    {
+        auto coalesced_predicates = std::make_shared<ASTFunction>();
+        coalesced_predicates->name = "or";
+        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
+
+        for (const MutationCommand & command : commands)
+            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
+
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
+    }
+
+    return select;
+}
+
+size_t MutationsInterpreter::evaluateCommandsSize()
+{
+    for (const MutationCommand & command : commands)
+        if (unlikely(!command.predicate)) /// The command touches all rows.
+            return prepare(/* dry_run = */ true)->size();
+
+    return std::max(prepareQueryAffectedAST()->size(), prepare(/* dry_run = */ true)->size());
 }
 
 }

@@ -23,7 +23,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_PARSE_EXPRESSION_USING_TEMPLATE;
     extern const int SYNTAX_ERROR;
 }
 

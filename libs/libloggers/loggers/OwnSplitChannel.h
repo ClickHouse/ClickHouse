@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <vector>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
@@ -16,19 +17,21 @@ class OwnSplitChannel : public Poco::Channel
 public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
-
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
     void addTextLog(std::shared_ptr<DB::TextLog> log);
 
 private:
+    void logSplit(const Poco::Message & msg);
+
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::vector<ExtendedChannelPtrPair> channels;
 
     std::mutex text_log_mutex;
+
     std::weak_ptr<DB::TextLog> text_log;
 };
 
