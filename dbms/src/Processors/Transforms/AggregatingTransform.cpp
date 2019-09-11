@@ -14,7 +14,8 @@ namespace ProfileEvents
 namespace DB
 {
 
-
+/// Convert block to chunk.
+/// Adds additional info about aggregation.
 static Chunk convertToChunk(const Block & block)
 {
     auto info = std::make_shared<AggregatedChunkInfo>();
@@ -30,6 +31,7 @@ static Chunk convertToChunk(const Block & block)
 
 namespace
 {
+    /// Reads chunks from file in native format. Provide chunks with aggregation info.
     class SourceFromNativeStream : public ISource
     {
     public:
@@ -65,6 +67,8 @@ namespace
     };
 }
 
+/// Worker which merges buckets for two-level aggregation.
+/// Atomically increments bucket counter and returns merged result.
 class ConvertingAggregatedToChunksSource : public ISource
 {
 public:
@@ -104,6 +108,10 @@ private:
     static constexpr UInt32 NUM_BUCKETS = 256;
 };
 
+/// Generates chunks with aggregated data.
+/// In single level case, aggregates data itself.
+/// In two-level case, creates `ConvertingAggregatedToChunksSource` workers.
+/// Result chunks guaranteed to be sorted by bucket number.
 class ConvertingAggregatedToChunksTransform : public IProcessor
 {
 public:
