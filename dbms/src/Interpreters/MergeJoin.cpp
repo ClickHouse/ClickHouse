@@ -16,8 +16,8 @@ MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sampl
     : table_join(table_join_)
     , required_right_keys(table_join.requiredRightKeys())
 {
-    extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, right_table_keys, sample_block_with_columns_to_add);
-    createMissedColumns(sample_block_with_columns_to_add);
+    JoinCommon::extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, right_table_keys, sample_block_with_columns_to_add);
+    JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 }
 
 /// TODO: sort
@@ -34,9 +34,11 @@ bool MergeJoin::addJoinedBlock(const Block & block)
 
 void MergeJoin::joinBlock(Block & block)
 {
-    addRightColumns(block);
-
     std::shared_lock lock(rwlock);
+
+    JoinCommon::checkTypesOfKeys(block, table_join.keyNamesLeft(), right_table_keys, table_join.keyNamesRight());
+
+    addRightColumns(block);
 
     for (auto it = right_blocks.begin(); it != right_blocks.end(); ++it)
         mergeJoin(block, *it);
