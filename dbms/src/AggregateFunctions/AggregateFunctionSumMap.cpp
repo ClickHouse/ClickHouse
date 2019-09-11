@@ -46,23 +46,33 @@ using SumMapArgs = std::pair<DataTypePtr, DataTypes>;
 
 SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
 {
-    if (arguments.size() < 2)
-        throw Exception("Aggregate function " + name + " requires at least two arguments of Array type.",
+    DataTypes &args = const_cast<DataTypes &>(arguments);
+
+    if (args.size() == 1)
+    {
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(args[0].get());
+        if (!tuple_type)
+            throw Exception("When function " + name + " gets one argument it must be a tuple.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        args = tuple_type->getElements();
+    }
+    else if (args.size() != 2)
+        throw Exception("Aggregate function " + name + " requires at least two arguments of Array type or one argument of tuple",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+    const auto * array_type = checkAndGetDataType<DataTypeArray>(args[0].get());
     if (!array_type)
         throw Exception("First argument for function " + name + " must be an array.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-
     DataTypePtr keys_type = array_type->getNestedType();
 
     DataTypes values_types;
-    values_types.reserve(arguments.size() - 1);
-    for (size_t i = 1; i < arguments.size(); ++i)
+    values_types.reserve(args.size() - 1);
+    for (size_t i = 1; i < args.size(); ++i)
     {
-        array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+        array_type = checkAndGetDataType<DataTypeArray>(args[i].get());
         if (!array_type)
             throw Exception("Argument #" + toString(i) + " for function " + name + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

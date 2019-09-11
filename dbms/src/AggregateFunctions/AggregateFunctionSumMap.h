@@ -81,8 +81,22 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
+    void add(AggregateDataPtr place, const IColumn ** argColumns, const size_t row_num, Arena *) const override
     {
+        IColumn **columns = const_cast<IColumn**>(argColumns);
+
+        // Check if tuple
+        std::unique_ptr<IColumn *[]> tuple_columns;
+        auto tuple_col = checkAndGetColumn<ColumnTuple>(columns[0]);
+        if (tuple_col)
+        {
+            tuple_columns.reset(new IColumn*[tuple_col->tupleSize()]);
+            for (size_t i = 0; i < tuple_col->tupleSize(); i++)
+                tuple_columns.get()[i] = &const_cast<IColumn&>(tuple_col->getColumn(i));
+
+            columns = tuple_columns.get();
+        }
+
         // Column 0 contains array of keys of known type
         const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets0 = array_column0.getOffsets();
