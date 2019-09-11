@@ -230,7 +230,8 @@ try
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
                 1, /// max_threads
-                0
+                0,
+                DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA
             );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);
@@ -303,7 +304,8 @@ try
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
                 1, /// max_threads
-                0
+                0,
+                DEFAULT_LINEAR_GROWTH_THRESHOLD_FOR_ARENA
         );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);
