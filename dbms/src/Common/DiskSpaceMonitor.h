@@ -111,10 +111,10 @@ public:
         UInt64 getAvailableSpace() const;
     };
 
-    Disk(String name_, String path_, UInt64 keep_free_space_bytes_)
-        : name(std::move(name_)),
-          path(std::move(path_)),
-          keep_free_space_bytes(keep_free_space_bytes_)
+    Disk(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
+        : name(name_)
+        , path(path_)
+        , keep_free_space_bytes(keep_free_space_bytes_)
     {
         if (path.back() != '/')
             throw Exception("Disk path must ends with '/', but '" + path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
@@ -129,8 +129,8 @@ public:
     /// Path on fs to disk
     const String & getPath() const { return path; }
 
-    /// Path to clickhouse data folder on this disk
-    String getClickHouseDataPath() const { return path + "clickhouse/data/"; }
+    /// Path to clickhouse data directory on this disk
+    String getClickHouseDataPath() const { return path + "data/"; }
 
     /// Amount of bytes which should be kept free on this disk
     UInt64 getKeepingFreeSpace() const { return keep_free_space_bytes; }
@@ -206,7 +206,7 @@ class DiskSelector
 {
 public:
     DiskSelector(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix, String default_path);
+        const std::string & config_prefix, const String & default_path);
 
     /// Get disk by name
     const DiskPtr & operator[](const String & name) const;
