@@ -147,16 +147,9 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (CMAKE_VERSION VERSION_LESS "3.8.0")
-    if (NOT MSVC)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
-    endif ()
-else ()
-    set (CMAKE_CXX_STANDARD 17)
-    set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
-    set (CMAKE_CXX_STANDARD_REQUIRED ON)
-    set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++17")
-endif ()
+set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
@@ -203,6 +196,7 @@ if (OS_LINUX AND NOT SANITIZE)
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
+
 if (OS_LINUX)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
