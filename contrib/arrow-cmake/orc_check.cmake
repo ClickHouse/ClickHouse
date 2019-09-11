@@ -124,3 +124,7 @@ CHECK_CXX_SOURCE_COMPILES("
     }"
   NEEDS_Z_PREFIX
 )
+
+# See https://cmake.org/cmake/help/v3.14/policy/CMP0075.html. Without unsetting it breaks thrift.
+set(CMAKE_REQUIRED_INCLUDES)
+set(CMAKE_REQUIRED_LIBRARIES)
