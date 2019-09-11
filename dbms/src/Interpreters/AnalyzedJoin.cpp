@@ -142,17 +142,13 @@ Names AnalyzedJoin::requiredJoinedNames() const
     return Names(required_columns_set.begin(), required_columns_set.end());
 }
 
-std::unordered_map<String, DataTypePtr> AnalyzedJoin::requiredRightKeys() const
+NameSet AnalyzedJoin::requiredRightKeys() const
 {
-    NameSet right_keys;
+    NameSet required;
     for (const auto & name : key_names_right)
-        right_keys.insert(name);
-
-    std::unordered_map<String, DataTypePtr> required;
-    for (const auto & column : columns_added_by_join)
-        if (right_keys.count(column.name))
-            required.insert({column.name, column.type});
-
+        for (const auto & column : columns_added_by_join)
+            if (name == column.name)
+                required.insert(name);
     return required;
 }
 

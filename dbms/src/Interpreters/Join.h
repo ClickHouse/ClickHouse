@@ -280,8 +280,10 @@ private:
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
-    /// Names of key columns (columns for equi-JOIN) in "right" table (in the order they appear in USING clause).
+    /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
     const Names key_names_right;
+    /// Names right-side table keys that are needed in result (would be attached after joined columns).
+    const NameSet required_right_keys;
 
     /// Substitute NULLs for non-JOINed rows.
     bool use_nulls;
@@ -310,8 +312,8 @@ private:
 
     /// Block with columns from the right-side table except key columns.
     Block sample_block_with_columns_to_add;
-    /// Block with key columns in the same order they appear in the right-side table.
-    Block sample_block_with_keys;
+    /// Block with key columns in the same order they appear in the right-side table (duplicates appear once).
+    Block right_table_keys;
 
     /// Block as it would appear in the BlockList
     Block blocklist_sample;

@@ -209,10 +209,10 @@ public:
         for (size_t i = 0; i < sample_block.columns(); ++i)
         {
             auto & [_, type, name] = sample_block.getByPosition(i);
-            if (parent.sample_block_with_keys.has(name))
+            if (parent.right_table_keys.has(name))
             {
                 key_pos = i;
-                column_with_null[i] = parent.sample_block_with_keys.getByName(name).type->isNullable();
+                column_with_null[i] = parent.right_table_keys.getByName(name).type->isNullable();
             }
             else
             {
