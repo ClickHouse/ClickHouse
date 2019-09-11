@@ -2910,7 +2910,7 @@ MergeTreeData::getDetachedParts() const
 void MergeTreeData::validateDetachedPartName(const String & name) const
 {
     if (name.find('/') != std::string::npos || name == "." || name == "..")
-        throw DB::Exception("Invalid part name", ErrorCodes::INCORRECT_FILE_NAME);
+        throw DB::Exception("Invalid part name '" + name + "'", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = getFullPathForPart(name, "detached/");
 
@@ -3299,7 +3299,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         if (!matcher(part))
             continue;
 
-        String shadow_path = part->disk->getPath() + "clickhouse/shadow/";
+        String shadow_path = part->disk->getPath() + "shadow/";
 
         Poco::File(shadow_path).createDirectories();
         String backup_path = shadow_path

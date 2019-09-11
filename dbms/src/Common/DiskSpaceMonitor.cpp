@@ -161,7 +161,7 @@ void Reservation::update(UInt64 new_size)
     disk_ptr->reserved_bytes += size;
 }
 
-DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, String default_path)
+DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const String & default_path)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);

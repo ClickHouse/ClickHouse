@@ -40,7 +40,7 @@ def test_system_tables(start_cluster):
     expected_disks_data = [
         {
             "name": "default",
-            "path": "/var/lib/clickhouse/data/",
+            "path": "/var/lib/clickhouse/",
             "keep_free_space": '1024',
         },
         {
@@ -884,8 +884,8 @@ def test_freeze(start_cluster):
 
         node1.query("ALTER TABLE freezing_table FREEZE PARTITION 201903")
         # check shadow files (backups) exists
-        node1.exec_in_container(["bash", "-c", "find /jbod1/clickhouse/shadow -name '*.mrk2' | grep '.*'"])
-        node1.exec_in_container(["bash", "-c", "find /external/clickhouse/shadow -name '*.mrk2' | grep '.*'"])
+        node1.exec_in_container(["bash", "-c", "find /jbod1/shadow -name '*.mrk2' | grep '.*'"])
+        node1.exec_in_container(["bash", "-c", "find /external/shadow -name '*.mrk2' | grep '.*'"])
 
 
     finally:
