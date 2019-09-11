@@ -20,20 +20,20 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template<typename T>
-struct floatOrIntValue {
+template <typename T> struct floatOrIntValue
+{
     static inline T getValue(const IColumn &, size_t) { throw "not implemented"; }
 };
-template<>
-struct floatOrIntValue<Int64> {
+template <> struct floatOrIntValue<Int64>
+{
     static inline Int64 getValue(const IColumn &col, size_t i) { return col.getInt(i); }
 };
-template<>
-struct floatOrIntValue<UInt64> {
+template <> struct floatOrIntValue<UInt64>
+{
     static inline UInt64 getValue(const IColumn &col, size_t i) { return col.getUInt(i); }
 };
-template<>
-struct floatOrIntValue<Float64> {
+template <> struct floatOrIntValue<Float64>
+{
     static inline Float64 getValue(const IColumn &col, size_t i) { return col.getFloat64(i); }
 };
 
@@ -93,7 +93,7 @@ private:
     {
         bool max_key_is_provided = max_key_column_ptr != nullptr;
         bool max_key_column_is_const = false;
-        KeyType	max_key{0};
+        KeyType	max_key = 0;
 
         if (max_key_is_provided && isColumnConst(*max_key_column_ptr))
         {
@@ -127,7 +127,8 @@ private:
             keys.reserve(rows * sz);
             values.reserve(rows * sz);
         }
-        else {
+        else
+        {
             keys.reserve(rows * keys_offset[0]);
             values.reserve(rows * keys_offset[0]);
         }
@@ -140,8 +141,8 @@ private:
          */
         for (size_t row = 0, row1 = 0, row2 = 0; row < rows; ++row)
         {
-            ValType sum{0};
-            KeyType	prev_key{0};
+            ValType sum = 0;
+            KeyType	prev_key = 0;
 
             /* update the current max key if it's not constant */
             if (max_key_is_provided && !max_key_column_is_const)
@@ -153,7 +154,7 @@ private:
             bool done = false;
             for (size_t i = 0; !done && i < keys_offset[row1] - prev_keys_offset; ++i)
             {
-                KeyType	key = static_cast<KeyType>(keys_array->getData().getInt(prev_keys_offset + i));
+                auto key = static_cast<KeyType>(keys_array->getData().getInt(prev_keys_offset + i));
 
                 /*
                  * if there is gap, fill by generated keys and last sum,
@@ -181,7 +182,8 @@ private:
             }
 
             /* if max key if provided, try to extend the current arrays */
-            if (max_key_is_provided) {
+            if (max_key_is_provided)
+            {
                 for (; prev_key <= max_key; ++prev_key, ++offset)
                 {
                     keys.push_back(prev_key);
@@ -189,11 +191,13 @@ private:
                 }
             }
 
-            if (!keys_array_is_const) {
+            if (!keys_array_is_const)
+            {
                 prev_keys_offset = keys_offset[row1];
                 ++row1;
             }
-            if (!values_array_is_const) {
+            if (!values_array_is_const)
+            {
                 prev_values_offset = offsetValues[row2];
                 ++row2;
             }
