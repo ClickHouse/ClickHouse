@@ -14,8 +14,9 @@ namespace ErrorCodes
 
 MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sample_block)
     : table_join(table_join_)
+    , required_right_keys(table_join.requiredRightKeys())
 {
-    extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, sample_block_with_keys, sample_block_with_columns_to_add);
+    extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, right_table_keys, sample_block_with_columns_to_add);
     createMissedColumns(sample_block_with_columns_to_add);
 }
 
@@ -47,6 +48,10 @@ void MergeJoin::addRightColumns(Block & block)
 
     for (const auto & column : sample_block_with_columns_to_add)
         block.insert(ColumnWithTypeAndName{column.column->cloneResized(rows), column.type, column.name});
+
+    for (const auto & column : right_table_keys)
+        if (required_right_keys.count(column.name))
+            block.insert(ColumnWithTypeAndName{column.column->cloneResized(rows), column.type, column.name});
 }
 
 void MergeJoin::mergeJoin(Block & /*block*/, const Block & /*right_block*/)
