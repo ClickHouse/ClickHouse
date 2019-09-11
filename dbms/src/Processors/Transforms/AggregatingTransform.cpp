@@ -110,7 +110,12 @@ private:
 
 /// Generates chunks with aggregated data.
 /// In single level case, aggregates data itself.
-/// In two-level case, creates `ConvertingAggregatedToChunksSource` workers.
+/// In two-level case, creates `ConvertingAggregatedToChunksSource` workers:
+///
+/// ConvertingAggregatedToChunksSource ->
+/// ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform -> AggregatingTransform
+/// ConvertingAggregatedToChunksSource ->
+///
 /// Result chunks guaranteed to be sorted by bucket number.
 class ConvertingAggregatedToChunksTransform : public IProcessor
 {
