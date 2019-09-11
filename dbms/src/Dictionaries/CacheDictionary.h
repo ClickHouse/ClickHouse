@@ -26,12 +26,15 @@ class CacheDictionary final : public IDictionary
 public:
     CacheDictionary(
         const std::string & name_,
+        const std::unordered_set<std::string> & allowed_databases_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         const size_t size_);
 
     std::string getName() const override { return name; }
+
+    const std::unordered_set<std::string> & getAllowedDatabases() const override { return allowed_databases; }
 
     std::string getTypeName() const override { return "Cache"; }
 
@@ -52,7 +55,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<CacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+        return std::make_shared<CacheDictionary>(name, allowed_databases, dict_struct, source_ptr->clone(), dict_lifetime, size);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -255,6 +258,7 @@ private:
     void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
     const std::string name;
+    const std::unordered_set<std::string> allowed_databases;
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

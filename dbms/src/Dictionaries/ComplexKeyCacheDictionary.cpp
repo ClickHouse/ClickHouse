@@ -52,11 +52,13 @@ inline UInt64 ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 
 ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
     const std::string & name_,
+    const std::unordered_set<std::string> & allowed_databases_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     const size_t size_)
     : name{name_}
+    , allowed_databases{allowed_databases_}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -395,6 +397,7 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
 void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,
+                             const std::unordered_set<std::string> & allowed_databases,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -413,7 +416,7 @@ void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+        return std::make_unique<ComplexKeyCacheDictionary>(name, allowed_databases, dict_struct, std::move(source_ptr), dict_lifetime, size);
     };
     factory.registerLayout("complex_key_cache", create_layout);
 }
