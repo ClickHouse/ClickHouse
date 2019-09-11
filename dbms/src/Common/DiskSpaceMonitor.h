@@ -126,8 +126,11 @@ public:
     /// Disk name from configuration;
     const String & getName() const override { return name; }
 
-    /// Path on fs
+    /// Path on fs to disk
     const String & getPath() const { return path; }
+
+    /// Path to clickhouse data folder on this disk
+    String getClickHouseDataPath() const { return path + "clickhouse/data/"; }
 
     /// Amount of bytes which should be kept free on this disk
     UInt64 getKeepingFreeSpace() const { return keep_free_space_bytes; }
@@ -143,6 +146,7 @@ public:
 
     /// Currently available (prev method) minus already reserved space
     UInt64 getUnreservedSpace() const;
+
 
 private:
     const String name;

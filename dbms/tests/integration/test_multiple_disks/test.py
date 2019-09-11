@@ -819,3 +819,74 @@ def test_download_appropriate_disk(start_cluster):
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS replicated_table_for_download")
+
+def test_rename(start_cluster):
+    try:
+        node1.query("""
+            CREATE TABLE default.renaming_table (
+                s String
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy_name='small_jbod_with_external'
+        """)
+
+        for _ in range(5):
+            data = []
+            for i in range(10):
+                data.append(get_random_string(1024 * 1024)) # 1MB value
+            node1.query("INSERT INTO renaming_table VALUES {}".format(','.join(["('" + x + "')" for x in data])))
+
+        disks = get_used_disks_for_table(node1, "renaming_table")
+        assert len(disks) > 1
+        assert node1.query("SELECT COUNT() FROM default.renaming_table") == "50\n"
+
+        node1.query("RENAME TABLE default.renaming_table TO default.renaming_table1")
+        assert node1.query("SELECT COUNT() FROM default.renaming_table1") == "50\n"
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("SELECT COUNT() FROM default.renaming_table")
+
+        node1.query("CREATE DATABASE IF NOT EXISTS test")
+        node1.query("RENAME TABLE default.renaming_table1 TO test.renaming_table2")
+        assert node1.query("SELECT COUNT() FROM test.renaming_table2") == "50\n"
+
+        with pytest.raises(QueryRuntimeException):
+            node1.query("SELECT COUNT() FROM default.renaming_table1")
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS default.renaming_table")
+        node1.query("DROP TABLE IF EXISTS default.renaming_table1")
+        node1.query("DROP TABLE IF EXISTS test.renaming_table2")
+
+def test_freeze(start_cluster):
+    try:
+        node1.query("""
+            CREATE TABLE default.freezing_table (
+                d Date,
+                s String
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(d)
+            SETTINGS storage_policy_name='small_jbod_with_external'
+        """)
+
+        for _ in range(5):
+            data = []
+            dates = []
+            for i in range(10):
+                data.append(get_random_string(1024 * 1024)) # 1MB value
+                dates.append("toDate('2019-03-05')")
+            node1.query("INSERT INTO freezing_table VALUES {}".format(','.join(["(" + d + ", '" + s + "')" for d, s in zip(dates, data)])))
+
+        disks = get_used_disks_for_table(node1, "freezing_table")
+        assert len(disks) > 1
+        assert node1.query("SELECT COUNT() FROM default.freezing_table") == "50\n"
+
+        node1.query("ALTER TABLE freezing_table FREEZE PARTITION 201903")
+        # check shadow files (backups) exists
+        node1.exec_in_container(["bash", "-c", "find /jbod1/clickhouse/shadow -name '*.mrk2' | grep '.*'"])
+        node1.exec_in_container(["bash", "-c", "find /external/clickhouse/shadow -name '*.mrk2' | grep '.*'"])
+
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS default.freezing_table")

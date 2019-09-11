@@ -19,7 +19,6 @@
     </disks>
 
     <policies>
-        <!-- store on JBOD by default (round-robin), store big parts on external -->
         <small_jbod_with_external>
             <volumes>
                 <main>
