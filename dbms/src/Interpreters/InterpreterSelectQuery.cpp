@@ -1829,7 +1829,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
         /// Add resize transform to uniformly distribute data between aggregating streams.
         pipeline.resize(pipeline.getNumMainStreams(), true);
 
-        auto many_data = std::make_shared<ManyAggregatedData>(max_streams);
+        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumMainStreams());
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                 : static_cast<size_t>(settings.max_threads);
