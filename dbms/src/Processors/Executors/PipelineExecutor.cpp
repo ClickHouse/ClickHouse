@@ -584,7 +584,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                         queue.pop();
 
                         auto stream = task->processor->getStream();
-                        if (stream != IProcessor::NO_STREAM && dynamic_cast<const ISource *>(task->processor))
+                        if (stream != IProcessor::NO_STREAM)
                         {
                             bool found_in_queue = false;
                             auto thread_to_wake = stream % num_threads;

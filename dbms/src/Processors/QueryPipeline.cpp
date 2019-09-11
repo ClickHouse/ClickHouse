@@ -116,7 +116,7 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
     Block header;
 
-    auto add_transform = [&](OutputPort *& stream, StreamType stream_type, size_t stream_num = IProcessor::NO_STREAM)
+    auto add_transform = [&](OutputPort *& stream, StreamType stream_type, size_t stream_num [[maybe_unused]] = IProcessor::NO_STREAM)
     {
         if (!stream)
             return;
@@ -149,8 +149,8 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
         if (transform)
         {
-            if (stream_type == StreamType::Main)
-                transform->setStream(stream_num);
+//            if (stream_type == StreamType::Main)
+//                transform->setStream(stream_num);
 
             connect(*stream, transform->getInputs().front());
             stream = &transform->getOutputs().front();
