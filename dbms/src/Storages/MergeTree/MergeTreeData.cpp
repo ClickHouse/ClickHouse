@@ -1187,7 +1187,7 @@ void MergeTreeData::rename(
 
     for (const auto & disk : disks)
     {
-        auto new_full_path = disk->getPath() + new_file_db_name + '/' + new_file_table_name + '/';
+        auto new_full_path = disk->getClickHouseDataPath() + new_file_db_name + '/' + new_file_table_name + '/';
 
         if (Poco::File{new_full_path}.exists())
             throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
@@ -1195,8 +1195,8 @@ void MergeTreeData::rename(
 
     for (const auto & disk : disks)
     {
-        auto full_path = disk->getPath() + old_file_db_name + '/' + old_file_table_name + '/';
-        auto new_db_path = disk->getPath() + new_file_db_name + '/';
+        auto full_path = disk->getClickHouseDataPath() + old_file_db_name + '/' + old_file_table_name + '/';
+        auto new_db_path = disk->getClickHouseDataPath() + new_file_db_name + '/';
 
         Poco::File db_file{new_db_path};
         if (!db_file.exists())
@@ -3235,8 +3235,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     LOG_DEBUG(log, "Cloning part " << src_part_absolute_path.toString() << " to " << dst_part_absolute_path.toString());
     localBackup(src_part_absolute_path, dst_part_absolute_path);
 
-    MergeTreeData::MutableDataPartPtr dst_data_part = std::make_shared<MergeTreeData::DataPart>(*this,
-                                                                                                reservation->getDisk(), dst_part_name, dst_part_info);
+    MergeTreeData::MutableDataPartPtr dst_data_part = std::make_shared<MergeTreeData::DataPart>(
+        *this, reservation->getDisk(), dst_part_name, dst_part_info);
+
     dst_data_part->relative_path = tmp_dst_part_name;
     dst_data_part->is_temp = true;
 
@@ -3247,7 +3248,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
 
 String MergeTreeData::getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const
 {
-    return disk->getPath() /*+ "/clickhouse/" */ + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
+    return disk->getClickHouseDataPath() + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
 }
 
 
@@ -3285,9 +3286,9 @@ Strings MergeTreeData::getDataPaths() const
 void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
-    String global_shadow_path = clickhouse_path + "shadow/";
-    Poco::File(global_shadow_path).createDirectories();
-    auto increment = Increment(global_shadow_path + "increment.txt").get(true);
+    String default_shadow_path = clickhouse_path + "shadow/";
+    Poco::File(default_shadow_path).createDirectories();
+    auto increment = Increment(default_shadow_path + "increment.txt").get(true);
 
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getDataParts();
@@ -3298,10 +3299,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         if (!matcher(part))
             continue;
 
-        String shadow_path = global_shadow_path;
-        /// place new folder into data directory
-        if (part->disk->getName() != "default")
-            shadow_path = part->disk->getPath() + "shadow/";
+        String shadow_path = part->disk->getPath() + "clickhouse/shadow/";
 
         Poco::File(shadow_path).createDirectories();
         String backup_path = shadow_path
@@ -3313,8 +3311,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " + backup_path);
 
         String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
-        String backup_part_absolute_path = part_absolute_path;
-        backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
+        String backup_part_absolute_path = backup_path + "data/" + getDatabaseName() + "/" + getTableName() + "/" + part->relative_path;
         localBackup(part_absolute_path, backup_part_absolute_path);
         part->is_frozen.store(true, std::memory_order_relaxed);
         ++parts_processed;
