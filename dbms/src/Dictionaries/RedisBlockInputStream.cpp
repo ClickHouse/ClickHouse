@@ -35,8 +35,8 @@ namespace DB
             const std::shared_ptr<Poco::Redis::Client> & client_,
             const Poco::Redis::Array & keys_,
             const DB::Block & sample_block,
-            const size_t max_block_size)
-            : client(client_), keys(keys_), max_block_size{max_block_size}
+            const size_t max_block_size_)
+            : client(client_), keys(keys_), max_block_size{max_block_size_}
     {
         description.init(sample_block);
     }
@@ -87,46 +87,46 @@ namespace DB
 
             switch (type)
             {
-                case ValueType::UInt8:
+                case ValueType::vtUInt8:
                     insert<UInt8>(column, stringValue);
                     break;
-                case ValueType::UInt16:
+                case ValueType::vtUInt16:
                     insert<UInt16>(column, stringValue);
                     break;
-                case ValueType::UInt32:
+                case ValueType::vtUInt32:
                     insert<UInt32>(column, stringValue);
                     break;
-                case ValueType::UInt64:
+                case ValueType::vtUInt64:
                     insert<UInt64>(column, stringValue);
                     break;
-                case ValueType::Int8:
+                case ValueType::vtInt8:
                     insert<Int8>(column, stringValue);
                     break;
-                case ValueType::Int16:
+                case ValueType::vtInt16:
                     insert<Int16>(column, stringValue);
                     break;
-                case ValueType::Int32:
+                case ValueType::vtInt32:
                     insert<Int32>(column, stringValue);
                     break;
-                case ValueType::Int64:
+                case ValueType::vtInt64:
                     insert<Int64>(column, stringValue);
                     break;
-                case ValueType::Float32:
+                case ValueType::vtFloat32:
                     insert<Float32>(column, stringValue);
                     break;
-                case ValueType::Float64:
+                case ValueType::vtFloat64:
                     insert<Float64>(column, stringValue);
                     break;
-                case ValueType::String:
+                case ValueType::vtString:
                     static_cast<ColumnString &>(column).insert(parse<String>(stringValue));
                     break;
-                case ValueType::Date:
+                case ValueType::vtDate:
                     static_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(stringValue).getDayNum());
                     break;
-                case ValueType::DateTime:
+                case ValueType::vtDateTime:
                     static_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(stringValue)));
                     break;
-                case ValueType::UUID:
+                case ValueType::vtUUID:
                     static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(stringValue));
                     break;
             }
@@ -138,7 +138,7 @@ namespace DB
 
     Block RedisBlockInputStream::readImpl()
     {
-        if (description.sample_block.rows() == 0 || keys.size() == 0)
+        if (keys.isNull() || description.sample_block.rows() == 0 || keys.size() == 0)
             all_read = true;
 
         if (all_read)
@@ -162,6 +162,8 @@ namespace DB
             else
                 insertValue(*columns[idx], description.types[idx].first, value, name);
         };
+
+        std::cerr << "keys: " << keys.toString() << "\n";
 
         if (keys.begin()->get()->isArray())
         {
@@ -198,6 +200,8 @@ namespace DB
                     commandForValues.addRedisType(secondary_key);
                 }
                 ++cursor;
+
+                std::cerr << "Redis command: " << commandForValues.toString() << "\n";
 
                 Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
                 if (keys_array.size() != values.size() + 1) // 'HMGET' primary_key secondary_keys

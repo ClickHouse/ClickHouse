@@ -61,18 +61,18 @@ namespace DB
 
 
     RedisDictionarySource::RedisDictionarySource(
-            const DictionaryStructure & dict_struct,
-            const std::string & host,
-            UInt16 port,
-            UInt8 db_index,
-            RedisStorageType::Id storage_type,
-            const Block & sample_block)
-            : dict_struct{dict_struct}
-            , host{host}
-            , port{port}
-            , db_index{db_index}
-            , storage_type{storage_type}
-            , sample_block{sample_block}
+            const DictionaryStructure & dict_struct_,
+            const std::string & host_,
+            UInt16 port_,
+            UInt8 db_index_,
+            RedisStorageType::Id storage_type_,
+            const Block & sample_block_)
+            : dict_struct{dict_struct_}
+            , host{host_}
+            , port{port_}
+            , db_index{db_index_}
+            , storage_type{storage_type_}
+            , sample_block{sample_block_}
             , client{std::make_shared<Poco::Redis::Client>(host, port)}
     {
         if (dict_struct.attributes.size() != 1)
@@ -80,8 +80,8 @@ namespace DB
                             DB::toString(dict_struct.attributes.size()) + ", expected 1",
                             ErrorCodes::INVALID_CONFIG_PARAMETER};
 
-        if (storage_type == RedisStorageType::HASH_MAP)
         {
+        if (storage_type == RedisStorageType::HASH_MAP)
             if (!dict_struct.key.has_value())
                 throw Exception{"Redis source with storage type \'hash_map\' must have key",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
@@ -104,17 +104,17 @@ namespace DB
 
 
     RedisDictionarySource::RedisDictionarySource(
-            const DictionaryStructure & dict_struct,
-            const Poco::Util::AbstractConfiguration & config,
-            const std::string & config_prefix,
-            Block & sample_block)
+            const DictionaryStructure & dict_struct_,
+            const Poco::Util::AbstractConfiguration & config_,
+            const std::string & config_prefix_,
+            Block & sample_block_)
             : RedisDictionarySource(
-            dict_struct,
-            config.getString(config_prefix + ".host"),
-            config.getUInt(config_prefix + ".port"),
-            config.getUInt(config_prefix + ".db_index", 0),
-            parseStorageType(config.getString(config_prefix + ".storage_type", "")),
-            sample_block)
+            dict_struct_,
+            config_.getString(config_prefix_ + ".host"),
+            config_.getUInt(config_prefix_ + ".port"),
+            config_.getUInt(config_prefix_ + ".db_index", 0),
+            parseStorageType(config_.getString(config_prefix_ + ".storage_type", "")),
+            sample_block_)
     {
     }
 
@@ -140,11 +140,16 @@ namespace DB
 
         Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(command_for_keys);
 
-        if (storage_type == RedisStorageType::HASH_MAP && dict_struct.key->size() == 2)
+        if (storage_type == RedisStorageType::HASH_MAP && !keys.isNull())
         {
             Poco::Redis::Array hkeys;
             for (const auto & key : keys)
             {
+                Poco::Redis::Command command_for_type("TYPE");
+                auto type_reply = client->execute<std::string>(command_for_type.addRedisType(key));
+                if (type_reply != "hash")
+                    continue;
+
                 Poco::Redis::Command command_for_secondary_keys("HKEYS");
                 command_for_secondary_keys.addRedisType(key);
 
