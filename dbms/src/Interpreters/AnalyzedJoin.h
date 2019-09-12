@@ -39,7 +39,7 @@ class AnalyzedJoin
 
     const SizeLimits size_limits;
     const bool join_use_nulls;
-    const bool prefer_merge_join;
+    const bool partial_merge_join;
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
@@ -67,7 +67,7 @@ public:
                  const Names & key_names_right_)
         : size_limits(limits)
         , join_use_nulls(use_nulls)
-        , prefer_merge_join(false)
+        , partial_merge_join(false)
         , key_names_right(key_names_right_)
     {
         table_join.kind = kind;

@@ -82,8 +82,7 @@ void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
 
     head_rows = profile_info.rows;
 
-    if (subquery.join)
-        subquery.join->setTotals(subquery.source->getTotals());
+    subquery.setTotals();
 
     if (head_rows != 0)
     {

@@ -4,6 +4,7 @@
 #include <shared_mutex>
 
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
 
 
@@ -20,20 +21,24 @@ public:
     bool addJoinedBlock(const Block & block) override;
     void joinBlock(Block &) override;
     void joinTotals(Block &) const override {}
-    void setTotals(const Block &) override {}
+    void setTotals(const Block &) override;
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
 
 private:
     mutable std::shared_mutex rwlock;
     const AnalyzedJoin & table_join;
+    SortDescription right_sort_description;
+    SortDescription left_sort_description;
     Block right_table_keys;
     Block right_columns_to_add;
     BlocksList right_blocks;
+    Block totals;
     bool nullable_right_side;
     size_t right_blocks_row_count = 0;
     size_t right_blocks_bytes = 0;
 
     void addRightColumns(Block & block);
+    void mergeRightBlocks();
     void mergeJoin(Block & block, const Block & right_block);
 };
 
