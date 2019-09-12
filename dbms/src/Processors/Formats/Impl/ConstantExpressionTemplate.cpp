@@ -26,6 +26,15 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
+struct SpecialParserType
+{
+    bool is_array;
+    bool is_nullable;
+    Field::Types::Which nested_type;
+
+    bool useDefaultParser() const { return nested_type == Field::Types::Which::String; }
+};
+
 struct LiteralInfo
 {
     typedef std::shared_ptr<ASTLiteral> ASTLiteralPtr;
@@ -38,7 +47,7 @@ struct LiteralInfo
     bool force_nullable;
 
     DataTypePtr type;
-    bool need_special_parser;
+    SpecialParserType special_parser;
 };
 
 /// Extracts ASTLiterals from expression, replaces them with ASTIdentifiers where needed
@@ -129,7 +138,7 @@ private:
 
         /// We have to use ParserNumber instead of type->deserializeAsTextQuoted() for arithmetic types
         /// to check actual type of literal and avoid possible overflow and precision issues.
-        info.need_special_parser = true;
+        info.special_parser = SpecialParserType{false, false, field_type};
 
         /// Do not use 8, 16 and 32 bit types, so template will match all integers
         if (field_type == Field::Types::UInt64)
@@ -139,12 +148,10 @@ private:
         else if (field_type == Field::Types::Float64)
             info.type = std::make_shared<DataTypeFloat64>();
         else if (field_type == Field::Types::String)
-        {
-            info.need_special_parser = false;
             info.type = std::make_shared<DataTypeString>();
-        }
         else if (field_type == Field::Types::Array)
         {
+            info.special_parser.is_array = true;
             info.type = applyVisitor(FieldToDataType(), info.literal->value);
             auto nested_type = dynamic_cast<const DataTypeArray &>(*info.type).getNestedType();
 
@@ -156,23 +163,37 @@ private:
                 array_of_nullable = true;
             }
 
+            bool force_signed = !context.getSettingsRef().input_format_values_accurate_types_of_literals;
+
             WhichDataType type_info{nested_type};
             /// Promote integers to 64 bit types
-            if (type_info.isNativeUInt())
-                /// TODO maybe it's better to always use Int64 instead of UInt64 if settings.values.accurate_types_of_literals is false
+            if (type_info.isNativeUInt() && !force_signed)
+            {
                 nested_type = std::make_shared<DataTypeUInt64>();
-            else if (type_info.isNativeInt())
+                info.special_parser.nested_type = Field::Types::UInt64;
+            }
+            else if (type_info.isNativeInt() || (type_info.isNativeUInt() && force_signed))
+            {
                 nested_type = std::make_shared<DataTypeInt64>();
+                info.special_parser.nested_type = Field::Types::Int64;
+            }
             else if (type_info.isFloat64())
-                ;
+            {
+                info.special_parser.nested_type = Field::Types::Float64;
+            }
             else if (type_info.isString())
-                info.need_special_parser = false;
+            {
+                info.special_parser.nested_type = Field::Types::String;
+            }
             else
                 throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
                                 ErrorCodes::LOGICAL_ERROR);
 
             if (array_of_nullable)
+            {
                 nested_type = std::make_shared<DataTypeNullable>(nested_type);
+                info.special_parser.is_nullable = true;
+            }
 
             info.type = std::make_shared<DataTypeArray>(nested_type);
         }
@@ -182,7 +203,10 @@ private:
 
         /// Allow literal to be NULL, if result column has nullable type or if function never returns NULL
         if (info.force_nullable && info.type->canBeInsideNullable())
+        {
             info.type = makeNullable(info.type);
+            info.special_parser.is_nullable = true;
+        }
     }
 };
 
@@ -203,7 +227,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 
     /// Make sequence of tokens and determine IDataType by Field::Types:Which for each literal.
     token_after_literal_idx.reserve(replaced_literals.size());
-    use_special_parser.resize(replaced_literals.size(), true);
+    special_parser.resize(replaced_literals.size());
 
     TokenIterator prev_end = expression_begin;
     for (size_t i = 0; i < replaced_literals.size(); ++i)
@@ -219,7 +243,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         }
         token_after_literal_idx.push_back(tokens.size());
 
-        use_special_parser[i] = info.need_special_parser;
+        special_parser[i] = info.special_parser;
 
         literals.insert({nullptr, info.type, info.dummy_column_name});
 
@@ -333,7 +357,7 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
         skipWhitespaceIfAny(istr);
 
         const DataTypePtr & type = structure->literals.getByPosition(cur_column).type;
-        if (settings.values.accurate_types_of_literals && structure->use_special_parser[cur_column])
+        if (settings.values.accurate_types_of_literals && !structure->special_parser[cur_column].useDefaultParser())
         {
             if (!parseLiteralAndAssertType(istr, type.get(), cur_column))
                 return false;
@@ -356,38 +380,26 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
 
 bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx)
 {
-    /// TODO faster way to check types without using Parsers
-    ParserKeyword parser_null("NULL");
-    ParserNumber parser_number;
-    ParserArrayOfLiterals parser_array;
+    using Type = Field::Types::Which;
 
-    const IDataType * type = complex_type;
-    bool is_array = false;
-    if (auto array = dynamic_cast<const DataTypeArray *>(type))
-    {
-        type = array->getNestedType().get();
-        is_array = true;
-    }
+    /// TODO in case of type mismatch return some hints to deduce new template faster
+    if (istr.eof())
+        return false;
 
-    bool is_nullable = false;
-    if (auto nullable = dynamic_cast<const DataTypeNullable *>(type))
-    {
-        type = nullable->getNestedType().get();
-        is_nullable = true;
-    }
-
-    WhichDataType type_info(type);
+    SpecialParserType type_info = structure->special_parser[column_idx];
 
     /// If literal does not fit entirely in the buffer, parsing error will happen.
-    /// However, it's possible to deduce new template after error like it was template mismatch.
-    /// TODO fix it
-    Tokens tokens_number(istr.position(), istr.buffer().end());
-    IParser::Pos iterator(tokens_number);
-    Expected expected;
-    ASTPtr ast;
+    /// However, it's possible to deduce new template (or use template from cache) after error like it was template mismatch.
 
-    if (is_array)
+    if (type_info.is_array)
     {
+        /// TODO faster way to check types without using Parsers
+        ParserArrayOfLiterals parser_array;
+        Tokens tokens_number(istr.position(), istr.buffer().end());
+        IParser::Pos iterator(tokens_number);
+        Expected expected;
+        ASTPtr ast;
+
         if (!parser_array.parse(iterator, ast, expected))
             return false;
         istr.position() = const_cast<char *>(iterator->begin);
@@ -395,40 +407,75 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
         const Field & array = ast->as<ASTLiteral &>().value;
         auto array_type = applyVisitor(FieldToDataType(), array);
         auto nested_type = dynamic_cast<const DataTypeArray &>(*array_type).getNestedType();
-        if (is_nullable)
+        if (type_info.is_nullable)
             if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
                 nested_type = nullable->getNestedType();
 
         WhichDataType nested_type_info(nested_type);
-        if ((nested_type_info.isNativeUInt() && type_info.isUInt64()) ||
-            (nested_type_info.isNativeInt()  && type_info.isInt64())  ||
-            (nested_type_info.isFloat64()    && type_info.isFloat64()))
+        if ((nested_type_info.isNativeUInt() && type_info.nested_type == Type::UInt64) ||
+            (nested_type_info.isNativeInt()  && type_info.nested_type == Type::Int64)  ||
+            (nested_type_info.isFloat64()    && type_info.nested_type == Type::Float64))
         {
             Field array_same_types = convertFieldToType(array, *complex_type, nullptr);
             columns[column_idx]->insert(array_same_types);
             return true;
         }
+        return false;
     }
     else
     {
-        if (is_nullable && parser_null.parse(iterator, ast, expected))
-            ast = std::make_shared<ASTLiteral>(Field());
-        else if (!parser_number.parse(iterator, ast, expected))
-            return false;
-        istr.position() = const_cast<char *>(iterator->begin);
-
-        Field & number = ast->as<ASTLiteral &>().value;
-
-        if ((number.getType() == Field::Types::UInt64  && type_info.isUInt64())  ||
-            (number.getType() == Field::Types::Int64   && type_info.isInt64())   ||
-            (number.getType() == Field::Types::Float64 && type_info.isFloat64()) ||
-            is_nullable)
+        Field number;
+        if (!type_info.is_nullable || istr.available() < 4 || 0 != strncasecmp(istr.position(), "NULL", 4))
         {
-            columns[column_idx]->insert(number);
-            return true;
+            /// ParserNumber::parse(...) is slow because of using ASTPtr, Expected and Tokens, which is't needed here
+            bool negative = *istr.position() == '-';
+            if (negative || *istr.position() == '+')
+                ++istr.position();
+
+            static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
+            char buf[MAX_LENGTH_OF_NUMBER + 1];
+            size_t bytes_to_copy = std::min(istr.available(), MAX_LENGTH_OF_NUMBER);
+            memcpy(buf, istr.position(), bytes_to_copy);
+            buf[bytes_to_copy] = 0;
+
+            char * pos_double = buf;
+            errno = 0;
+            Float64 float_value = std::strtod(buf, &pos_double);
+            if (pos_double == buf || errno == ERANGE || float_value < 0)
+                return false;
+
+            if (negative)
+                float_value = -float_value;
+
+            char * pos_integer = buf;
+            errno = 0;
+            UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+            if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
+            {
+                istr.position() += pos_integer - buf;
+                if (negative && type_info.nested_type == Type::Int64)
+                    number = static_cast<Int64>(-uint_value);
+                else if (!negative && type_info.nested_type == Type::UInt64)
+                    number = uint_value;
+                else
+                    return false;
+            }
+            else if (type_info.nested_type == Type::Float64)
+            {
+                istr.position() += pos_double - buf;
+                number = float_value;
+            }
+            else
+                return false;
         }
+        else if (type_info.is_nullable)
+            istr.position() += 4;
+        else
+            return false;
+
+        columns[column_idx]->insert(number);
+        return true;
     }
-    return false;
 }
 
 ColumnPtr ConstantExpressionTemplate::evaluateAll()

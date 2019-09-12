@@ -10,6 +10,7 @@ namespace DB
 
 struct LiteralInfo;
 using LiteralsInfo = std::vector<LiteralInfo>;
+struct SpecialParserType;
 
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.
@@ -33,7 +34,7 @@ class ConstantExpressionTemplate
         Block literals;
         ExpressionActionsPtr actions_on_literals;
 
-        std::vector<char> use_special_parser;
+        std::vector<SpecialParserType> special_parser;
     };
 
 public:
