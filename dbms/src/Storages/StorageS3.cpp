@@ -170,7 +170,7 @@ void registerStorageS3(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageS3::create(uri, args.table_name, format_name, args.columns, args.context);
+        return StorageS3::create(uri, args.database_name, args.table_name, format_name, args.columns, args.context);
     });
 }
 }
