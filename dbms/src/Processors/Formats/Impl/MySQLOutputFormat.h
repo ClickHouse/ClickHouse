@@ -1,4 +1,6 @@
 #pragma once
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
@@ -40,3 +42,4 @@ private:
 };
 
 }
+#endif
