@@ -628,17 +628,6 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 if (!prepare_processor(state->processors_id, children, parents))
                     state = nullptr;
 
-                /// Take pinned task if has one.
-                if (!state)
-                {
-                    std::lock_guard guard(task_queue_mutex);
-                    if (!executor_contexts[thread_num]->pinned_tasks.empty())
-                    {
-                        state = executor_contexts[thread_num]->pinned_tasks.front();
-                        executor_contexts[thread_num]->pinned_tasks.pop();
-                    }
-                }
-
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
                 process_pinned_tasks(queue);
@@ -652,6 +641,19 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 prepare_all_processors(queue, parents, parents, parents);
                 process_pinned_tasks(queue);
+
+                /// Take pinned task if has one.
+                {
+                    std::lock_guard guard(task_queue_mutex);
+                    if (!executor_contexts[thread_num]->pinned_tasks.empty())
+                    {
+                        if (state)
+                        queue.push(state);
+
+                        state = executor_contexts[thread_num]->pinned_tasks.front();
+                        executor_contexts[thread_num]->pinned_tasks.pop();
+                    }
+                }
 
                 /// Push other tasks to global queue.
                 if (!queue.empty())
