@@ -774,4 +774,17 @@ If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_e
 
 **Default value:** 0.
 
+## disable_internal_dns_cache {#server-settings-disable_internal_dns_cache}
+
+Disables the internal DNS cache. Used when operating ClickHouse in systems
+with frequently changing infrastructure such as Kubernetes.
+
+## dns_cache_update_period {#server-settings-dns_cache_update_period}
+
+The period (in seconds) of updating IP addresses stored in the ClickHouse internal DNS cache.
+The update is performed asynchronously, in a separate system thread.
+
+**Default value**: 15.
+
+
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->
