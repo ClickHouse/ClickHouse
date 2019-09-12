@@ -629,6 +629,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     state = nullptr;
 
                 /// Take pinned task if has one.
+                if (!state)
                 {
                     std::lock_guard guard(task_queue_mutex);
                     if (!executor_contexts[thread_num]->pinned_tasks.empty())
