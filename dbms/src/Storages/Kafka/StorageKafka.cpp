@@ -261,9 +261,10 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
     conf.set("client.id", VERSION_FULL);
-    conf.set("auto.offset.reset", "smallest"); // If no offset stored for this group, read all messages from the start
-    conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
-    conf.set("enable.partition.eof", "false"); // Ignore EOF messages
+    conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+    conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
+    conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
+    conf.set("enable.partition.eof", "false");     // Ignore EOF messages
     updateConfiguration(conf);
 
     // Create a consumer and subscribe to topics
