@@ -453,19 +453,9 @@ bool Join::addJoinedBlock(const Block & block)
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    size_t keys_size = key_names_right.size();
-    ColumnRawPtrs key_columns(keys_size);
-
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
-    materialized_columns.reserve(keys_size);
-
-    /// Memoize key columns to work.
-    for (size_t i = 0; i < keys_size; ++i)
-    {
-        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column->convertToFullColumnIfConst()));
-        key_columns[i] = materialized_columns.back().get();
-    }
+    ColumnRawPtrs key_columns = JoinCommon::temporaryMaterializeColumns(block, key_names_right, materialized_columns);
 
     /// We will insert to the map only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -478,15 +468,12 @@ bool Join::addJoinedBlock(const Block & block)
 
     prepareBlockListStructure(*stored_block);
 
-    size_t size = stored_block->columns();
-
     /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
-    for (size_t i = 0; i < size; ++i)
-        stored_block->safeGetByPosition(i).column = stored_block->safeGetByPosition(i).column->convertToFullColumnIfConst();
+    *stored_block = materializeBlock(*stored_block);
 
     /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
     if (use_nulls && isLeftOrFull(kind))
-        JoinCommon::convertColumnsToNullable(*stored_block, (isFull(kind) ? keys_size : 0));
+        JoinCommon::convertColumnsToNullable(*stored_block, (isFull(kind) ? key_names_right.size() : 0));
 
     if (kind != ASTTableJoin::Kind::Cross)
     {
@@ -723,19 +710,9 @@ void Join::joinBlockImpl(
     const Block & block_with_columns_to_add,
     const Maps & maps_) const
 {
-    size_t keys_size = key_names_left.size();
-    ColumnRawPtrs key_columns(keys_size);
-
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
-    materialized_columns.reserve(keys_size);
-
-    /// Memoize key columns to work with.
-    for (size_t i = 0; i < keys_size; ++i)
-    {
-        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column->convertToFullColumnIfConst()));
-        key_columns[i] = materialized_columns.back().get();
-    }
+    ColumnRawPtrs key_columns = JoinCommon::temporaryMaterializeColumns(block, key_names_left, materialized_columns);
 
     /// Keys with NULL value in any column won't join to anything.
     ConstNullMapPtr null_map{};

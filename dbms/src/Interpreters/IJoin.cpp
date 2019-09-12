@@ -32,6 +32,22 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
         convertColumnToNullable(block.getByPosition(i));
 }
 
+ColumnRawPtrs temporaryMaterializeColumns(const Block & block, const Names & names, Columns & materialized)
+{
+    ColumnRawPtrs ptrs;
+    ptrs.reserve(names.size());
+    materialized.reserve(names.size());
+
+    for (auto & column_name : names)
+    {
+        const auto & src_column = block.getByName(column_name).column;
+        materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
+        ptrs.push_back(materialized.back().get());
+    }
+
+    return ptrs;
+}
+
 ColumnRawPtrs extractKeysForJoin(const Names & key_names_right, const Block & right_sample_block,
                                  Block & sample_block_with_keys, Block & sample_block_with_columns_to_add)
 {
