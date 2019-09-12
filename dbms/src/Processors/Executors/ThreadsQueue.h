@@ -42,8 +42,8 @@ struct ThreadsQueue
         if (unlikely(!has(thread)))
             throw Exception("Can't pop thread because it is not in threads queue.", ErrorCodes::LOGICAL_ERROR);
 
-        swap_threads(thread, stack[stack_size]);
         --stack_size;
+        swap_threads(thread, stack[stack_size]);
     }
 
     size_t pop_any()
@@ -51,7 +51,8 @@ struct ThreadsQueue
         if (unlikely(stack_size == 0))
             throw Exception("Can't pop from empty queue.", ErrorCodes::LOGICAL_ERROR);
 
-        return stack[--stack_size];
+        --stack_size;
+        return stack[stack_size];
     }
 
 private:
