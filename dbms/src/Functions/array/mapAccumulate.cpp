@@ -1,18 +1,17 @@
-#include <Functions/IFunction.h>
+#include <numeric>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnTuple.h>
-#include <numeric>
+#include <Functions/IFunction.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -20,21 +19,25 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename T> struct floatOrIntValue
+template <typename T>
+struct floatOrIntValue
 {
     static inline T getValue(const IColumn &, size_t) { throw "not implemented"; }
 };
-template <> struct floatOrIntValue<Int64>
+template <>
+struct floatOrIntValue<Int64>
 {
-    static inline Int64 getValue(const IColumn &col, size_t i) { return col.getInt(i); }
+    static inline Int64 getValue(const IColumn & col, size_t i) { return col.getInt(i); }
 };
-template <> struct floatOrIntValue<UInt64>
+template <>
+struct floatOrIntValue<UInt64>
 {
-    static inline UInt64 getValue(const IColumn &col, size_t i) { return col.getUInt(i); }
+    static inline UInt64 getValue(const IColumn & col, size_t i) { return col.getUInt(i); }
 };
-template <> struct floatOrIntValue<Float64>
+template <>
+struct floatOrIntValue<Float64>
 {
-    static inline Float64 getValue(const IColumn &col, size_t i) { return col.getFloat64(i); }
+    static inline Float64 getValue(const IColumn & col, size_t i) { return col.getFloat64(i); }
 };
 
 class FunctionMapAccumulate : public IFunction
@@ -72,7 +75,8 @@ private:
         else if (whichKey.isNativeInt())
             key_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
         else
-            throw Exception("Keys for " + getName() + " should be of integer type (signed or unsigned)", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Keys for " + getName() + " should be of integer type (signed or unsigned)", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         WhichDataType whichVal(values_array->getNestedType());
         if (whichVal.isNativeUInt())
@@ -82,28 +86,35 @@ private:
         else if (whichVal.isFloat())
             value_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
         else
-            throw Exception(getName() + " cannot add values of type " + values_array->getNestedType()->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                getName() + " cannot add values of type " + values_array->getNestedType()->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeTuple>(DataTypes{key_type, value_type});
     }
 
     template <typename KeyType, typename ValType>
-    bool executeInternal(Block & block, const ColumnArray *keys_array, const ColumnArray *values_array, bool keys_array_is_const, bool values_array_is_const,
-                         ColumnPtr & max_key_column_ptr, const size_t result)
+    bool executeInternal(
+        Block & block,
+        const ColumnArray * keys_array,
+        const ColumnArray * values_array,
+        bool keys_array_is_const,
+        bool values_array_is_const,
+        ColumnPtr & max_key_column_ptr,
+        const size_t result)
     {
         bool max_key_is_provided = max_key_column_ptr != nullptr;
         bool max_key_column_is_const = false;
-        KeyType	max_key = 0;
+        KeyType max_key = 0;
 
         if (max_key_is_provided && isColumnConst(*max_key_column_ptr))
         {
-            auto *column_const = static_cast<const ColumnConst *>(&*max_key_column_ptr);
+            auto * column_const = static_cast<const ColumnConst *>(&*max_key_column_ptr);
             max_key = column_const->template getValue<KeyType>();
             max_key_column_is_const = true;
         }
 
         const IColumn::Offsets & keys_offset = keys_array->getOffsets();
-        const IColumn::Offsets & offsetValues = values_array->getOffsets();
+        const IColumn::Offsets & values_offset = values_array->getOffsets();
 
         auto keys_vector = ColumnVector<KeyType>::create();
         typename ColumnVector<KeyType>::Container & keys = keys_vector->getData();
@@ -114,24 +125,10 @@ private:
         auto offsets_vector = ColumnArray::ColumnOffsets::create(keys_array->size());
         typename ColumnVector<IColumn::Offset>::Container & offsets = offsets_vector->getData();
 
-        size_t rows = keys_array_is_const? values_array->size() : keys_array->size();
+        size_t rows = keys_array_is_const ? values_array->size() : keys_array->size();
 
-        /* Prepare some space for resulting arrays trying to avoid extra allocations */
+        /* Prepare offsets array so we can just use indexes on it */
         offsets.resize(rows);
-        if (max_key_is_provided)
-        {
-            KeyType sz = max_key;
-            if (!max_key_column_is_const)
-                sz = floatOrIntValue<KeyType>::getValue(*max_key_column_ptr, 0);
-
-            keys.reserve(rows * sz);
-            values.reserve(rows * sz);
-        }
-        else
-        {
-            keys.reserve(rows * keys_offset[0]);
-            values.reserve(rows * keys_offset[0]);
-        }
 
         IColumn::Offset offset{0}, prev_keys_offset{0}, prev_values_offset{0};
 
@@ -142,13 +139,13 @@ private:
         for (size_t row = 0, row1 = 0, row2 = 0; row < rows; ++row)
         {
             ValType sum = 0;
-            KeyType	prev_key = 0;
+            KeyType prev_key = 0;
 
             /* update the current max key if it's not constant */
             if (max_key_is_provided && !max_key_column_is_const)
                 max_key = floatOrIntValue<KeyType>::getValue(*max_key_column_ptr, row);
 
-            if (keys_offset[row1] - prev_keys_offset != offsetValues[row2] - prev_values_offset)
+            if (keys_offset[row1] - prev_keys_offset != values_offset[row2] - prev_values_offset)
                 throw Exception{"Arrays for " + getName() + " should have equal size of elements", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
             bool done = false;
@@ -198,7 +195,7 @@ private:
             }
             if (!values_array_is_const)
             {
-                prev_values_offset = offsetValues[row2];
+                prev_values_offset = values_offset[row2];
                 ++row2;
             }
 
@@ -218,8 +215,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
-        auto col1 = block.safeGetByPosition(arguments[0]),
-             col2 = block.safeGetByPosition(arguments[1]);
+        auto col1 = block.safeGetByPosition(arguments[0]), col2 = block.safeGetByPosition(arguments[1]);
 
         auto keys_array = checkAndGetColumn<ColumnArray>(col1.column.get()),
              values_array = checkAndGetColumn<ColumnArray>(col2.column.get());
@@ -269,17 +265,23 @@ private:
         /* Determine array types and call according functions */
         bool res = false;
         if (whichKey.isNativeInt() && whichVal.isNativeInt())
-            res = executeInternal<Int64, Int64>(block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
+            res = executeInternal<Int64, Int64>(
+                block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
         else if (whichKey.isNativeInt() && whichVal.isNativeUInt())
-            res = executeInternal<Int64, UInt64>(block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
+            res = executeInternal<Int64, UInt64>(
+                block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
         else if (whichKey.isNativeUInt() && whichVal.isNativeInt())
-            res = executeInternal<UInt64, Int64>(block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
+            res = executeInternal<UInt64, Int64>(
+                block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
         else if (whichKey.isNativeUInt() && whichVal.isNativeUInt())
-            res = executeInternal<UInt64, UInt64>(block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
+            res = executeInternal<UInt64, UInt64>(
+                block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
         else if (whichKey.isNativeInt() && whichVal.isFloat())
-            res = executeInternal<Int64, Float64>(block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
+            res = executeInternal<Int64, Float64>(
+                block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
         else if (whichKey.isNativeUInt() && whichVal.isFloat())
-            res = executeInternal<UInt64, Float64>(block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
+            res = executeInternal<UInt64, Float64>(
+                block, keys_array, values_array, keys_array_is_const, values_array_is_const, max_key_column_ptr, result);
 
         if (!res)
             throw Exception{"Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
