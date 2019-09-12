@@ -14,19 +14,19 @@ class ReportBuilder
 public:
 
     std::string buildFullReport(
-        const PerformanceTestInfo & test_info,
-        std::vector<TestStats> & stats,
-        const std::vector<std::size_t> & queries_to_run,
-        const Connections & connections,
-        const ConnectionTimeouts & timeouts) const;
+            const PerformanceTestInfo & test_info,
+            std::vector<TestStats> & stats,
+            const std::vector<std::size_t> & queries_to_run,
+            const Connections & connections,
+            const ConnectionTimeouts & timeouts,
+            StudentTTest & t_test) const;
 
 
     std::string buildCompactReport(
         const PerformanceTestInfo & test_info,
         std::vector<TestStats> & stats,
         const std::vector<std::size_t> & queries_to_run,
-        const Connections & connections,
-        const ConnectionTimeouts & timeouts) const;
+        const Connections & connections) const;
 
 private:
 
@@ -37,8 +37,9 @@ private:
             std::vector<TestStats> & stats,
             const std::vector<std::size_t> & queries_to_run,
             const Connections & connections,
-            const ConnectionTimeouts & /*timeouts*/,
-            JSONString & json_output) const;
+            const ConnectionTimeouts & timeouts,
+            JSONString & json_output,
+            StudentTTest & t_test) const;
 
 };
 

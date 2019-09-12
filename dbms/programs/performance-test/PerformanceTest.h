@@ -21,7 +21,7 @@ class PerformanceTest
 public:
     PerformanceTest(
         const XMLConfigurationPtr & config_,
-        Connections & connection_,
+        const Connections & connection_,
         const ConnectionTimeouts & timeouts_,
         InterruptListener & interrupt_listener_,
         const PerformanceTestInfo & test_info_,
@@ -48,7 +48,7 @@ private:
 
 private:
     XMLConfigurationPtr config;
-    Connections & connections;
+    const Connections & connections;
     const ConnectionTimeouts & timeouts;
     InterruptListener & interrupt_listener;
 

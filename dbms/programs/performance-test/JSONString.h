@@ -35,11 +35,6 @@ public:
     }
 
     std::string asString(size_t cur_padding) const;
-
-    size_t getPadding() const
-    {
-        return padding;
-    }
 };
 
 }

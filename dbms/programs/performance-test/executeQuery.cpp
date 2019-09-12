@@ -14,20 +14,17 @@ void checkFulfilledConditionsAndUpdate(
         const Progress & progress,
         RemoteBlockInputStream & stream,
         ConnectionTestStats & statistics,
-        TestStopConditions & stop_conditions,
-        InterruptListener & interrupt_listener,
-        StudentTTest & t_test,
-        Poco::Logger * log)
+        ConnectionTestStopConditions & stop_conditions,
+        InterruptListener & interrupt_listener)
 {
     statistics.add(progress.read_rows, progress.read_bytes);
 
     stop_conditions.reportRowsRead(statistics.total_rows_read);
     stop_conditions.reportBytesReadUncompressed(statistics.total_bytes_read);
-    stop_conditions.reportTotalTime(statistics.watch.elapsed() / (1000 * 1000));
-    stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsed() / (1000 * 1000));
-    stop_conditions.reportMaxSpeedNotChangingFor(statistics.max_rows_speed_watch.elapsed() / (1000 * 1000));
-    stop_conditions.reportAverageSpeedNotChangingFor(statistics.avg_rows_speed_watch.elapsed() / (1000 * 1000));
-    stop_conditions.reportTTest(t_test, log);
+    stop_conditions.reportTotalTime(statistics.watch.elapsedMilliseconds());
+    stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsedMilliseconds());
+    stop_conditions.reportMaxSpeedNotChangingFor(statistics.max_rows_speed_watch.elapsedMilliseconds());
+    stop_conditions.reportAverageSpeedNotChangingFor(statistics.avg_rows_speed_watch.elapsedMilliseconds());
 
     if (stop_conditions.areFulfilled())
     {
@@ -46,7 +43,7 @@ void checkFulfilledConditionsAndUpdate(
 } // anonymous namespace
 
 void executeQuery(
-        Connections & connections,
+        const Connections & connections,
         const std::string & query,
         TestStats & statistics,
         StudentTTest & t_test,
@@ -54,8 +51,7 @@ void executeQuery(
         InterruptListener & interrupt_listener,
         Context & context,
         const Settings & settings,
-        size_t connection_index,
-        Poco::Logger * log)
+        size_t connection_index)
 {
     static const std::string query_id_prefix = Poco::UUIDGenerator::defaultGenerator().create().toString() + "-";
     static int next_query_id = 1;
@@ -74,19 +70,19 @@ void executeQuery(
     stream.setProgressCallback(
         [&](const Progress & value)
         {
-            checkFulfilledConditionsAndUpdate(value, stream, statistic, stop_conditions, interrupt_listener, t_test, log);
+            checkFulfilledConditionsAndUpdate(value, stream, statistic, stop_conditions[connection_index], interrupt_listener);
         });
     stream.readPrefix();
     while (Block block = stream.read());
     stream.readSuffix();
 
     double seconds = statistic.watch_per_query.elapsedSeconds();
-
+//    std::cerr << seconds  << " " << statistic.query_id << " conn. " << connection_index << "\n"  ;
     if (!statistic.last_query_was_cancelled)
         statistic.updateQueryInfo();
 
     statistic.total_time += seconds;
-    if (connections.size() == 2)
+    if (stop_conditions[connection_index].isInitializedTTestWithConfidenceLevel())
         t_test.add(connection_index, seconds);
 
 }

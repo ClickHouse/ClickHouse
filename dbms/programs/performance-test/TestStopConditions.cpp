@@ -3,7 +3,7 @@
 namespace DB
 {
 
-void TestStopConditions::loadFromConfig(ConfigurationPtr & stop_conditions_config)
+void ConnectionTestStopConditions::loadFromConfig(ConfigurationPtr & stop_conditions_config)
 {
     if (stop_conditions_config->has("all_of"))
     {
@@ -17,13 +17,13 @@ void TestStopConditions::loadFromConfig(ConfigurationPtr & stop_conditions_confi
     }
 }
 
-bool TestStopConditions::areFulfilled() const
+bool ConnectionTestStopConditions::areFulfilled() const
 {
     return (conditions_all_of.initialized_count && conditions_all_of.fulfilled_count >= conditions_all_of.initialized_count)
         || (conditions_any_of.initialized_count && conditions_any_of.fulfilled_count);
 }
 
-UInt64 TestStopConditions::getMaxExecTime() const
+UInt64 ConnectionTestStopConditions::getMaxExecTime() const
 {
     UInt64 all_of_time = conditions_all_of.total_time_ms.value;
     if (all_of_time == 0 && conditions_all_of.initialized_count != 0) /// max time is not set in all conditions

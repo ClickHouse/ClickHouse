@@ -158,7 +158,7 @@ void StudentTTest::updateResults(size_t confidence_level_index)
 
 
 /// Confidence_level_index can be set in range [0, 5]. Corresponding values can be found above.
-bool StudentTTest::distributionsDiffer(size_t confidence_level_index)
+bool StudentTTest::distributionsDiffer(size_t confidence_level_index, double comparison_precision)
 {
     if (empty())
         return false;
@@ -166,13 +166,13 @@ bool StudentTTest::distributionsDiffer(size_t confidence_level_index)
     updateResults(confidence_level_index);
 
     /// Difference must be more than 0.0001, to take into account connection latency.
-    return mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0005);
+    return mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > comparison_precision);
 }
 
-std::string StudentTTest::reportResults(size_t confidence_level_index)
+std::string StudentTTest::reportResults(size_t confidence_level_index, double comparison_precision)
 {
     std::stringstream ss;
-    if (distributionsDiffer(confidence_level_index))
+    if (distributionsDiffer(confidence_level_index, comparison_precision))
     {
         ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence: ";
         ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;

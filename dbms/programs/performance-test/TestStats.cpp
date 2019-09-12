@@ -1,4 +1,4 @@
-#include "ConnectionTestStats.h"
+#include "TestStats.h"
 #include <algorithm>
 namespace DB
 {
@@ -57,7 +57,7 @@ std::string ConnectionTestStats::getStatisticByName(const std::string & statisti
 }
 
 
-void ConnectionTestStats::update_min_time(UInt64 min_time_candidate)
+void ConnectionTestStats::updateMinTime(UInt64 min_time_candidate)
 {
     if (min_time_candidate < min_time)
     {
@@ -66,7 +66,7 @@ void ConnectionTestStats::update_min_time(UInt64 min_time_candidate)
     }
 }
 
-void ConnectionTestStats::update_max_speed(
+void ConnectionTestStats::updateMaxSpeed(
     size_t max_speed_candidate,
     Stopwatch & max_speed_watch,
     UInt64 & max_speed)
@@ -79,7 +79,7 @@ void ConnectionTestStats::update_max_speed(
 }
 
 
-void ConnectionTestStats::update_average_speed(
+void ConnectionTestStats::updateAverageSpeed(
     double new_speed_info,
     Stopwatch & avg_speed_watch,
     size_t & number_of_info_batches,
@@ -113,21 +113,21 @@ void ConnectionTestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
     double new_bytes_speed = last_query_bytes_read / watch_per_query.elapsedSeconds();
 
     /// Update rows speed
-    update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
-    update_average_speed(new_rows_speed,
-        avg_rows_speed_watch,
-        number_of_rows_speed_info_batches,
-        avg_rows_speed_precision,
-        avg_rows_speed_first,
-        avg_rows_speed_value);
+    updateMaxSpeed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
+    updateAverageSpeed(new_rows_speed,
+                       avg_rows_speed_watch,
+                       number_of_rows_speed_info_batches,
+                       avg_rows_speed_precision,
+                       avg_rows_speed_first,
+                       avg_rows_speed_value);
     /// Update bytes speed
-    update_max_speed(new_bytes_speed, max_bytes_speed_watch, max_bytes_speed);
-    update_average_speed(new_bytes_speed,
-        avg_bytes_speed_watch,
-        number_of_bytes_speed_info_batches,
-        avg_bytes_speed_precision,
-        avg_bytes_speed_first,
-        avg_bytes_speed_value);
+    updateMaxSpeed(new_bytes_speed, max_bytes_speed_watch, max_bytes_speed);
+    updateAverageSpeed(new_bytes_speed,
+                       avg_bytes_speed_watch,
+                       number_of_bytes_speed_info_batches,
+                       avg_bytes_speed_precision,
+                       avg_bytes_speed_first,
+                       avg_bytes_speed_value);
 }
 
 void ConnectionTestStats::updateQueryInfo()
@@ -137,7 +137,7 @@ void ConnectionTestStats::updateQueryInfo()
     double seconds = watch_per_query.elapsedSeconds();
     total_time += seconds;
     sampler.insert(seconds);
-    update_min_time(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
+    updateMinTime(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
 }
 
 

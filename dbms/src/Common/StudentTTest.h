@@ -61,7 +61,7 @@ public:
 
     bool empty() const;
 
-    bool distributionsDiffer(size_t confidence_level_index = 5);
+    bool distributionsDiffer(size_t confidence_level_index = 5, double comparison_precision = 0.001);
 
-    std::string reportResults(size_t confidence_level_index = 5);
+    std::string reportResults(size_t confidence_level_index = 5, double comparison_precision = 0.001);
 };

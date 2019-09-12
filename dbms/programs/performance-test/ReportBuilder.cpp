@@ -45,11 +45,12 @@ std::string ReportBuilder::getCurrentTime() const
 }
 
 std::string ReportBuilder::buildFullReport(
-    const PerformanceTestInfo & test_info,
-    std::vector<TestStats> & stats,
-    const std::vector<std::size_t> & queries_to_run,
-    const Connections & connections,
-    const ConnectionTimeouts & timeouts) const
+        const PerformanceTestInfo & test_info,
+        std::vector<TestStats> & stats,
+        const std::vector<std::size_t> & queries_to_run,
+        const Connections & connections,
+        const ConnectionTimeouts & timeouts,
+        StudentTTest & t_test) const
 {
     JSONString json_output;
 
@@ -82,7 +83,7 @@ std::string ReportBuilder::buildFullReport(
         json_output.set("parameters", json_parameters.asString());
     }
 
-    buildRunsReport(test_info, stats, queries_to_run, connections, timeouts, json_output);
+    buildRunsReport(test_info, stats, queries_to_run, connections, timeouts, json_output, t_test);
 
     return json_output.asString();
 }
@@ -93,7 +94,8 @@ void ReportBuilder::buildRunsReport(
         const std::vector<std::size_t> & queries_to_run,
         const Connections & connections,
         const ConnectionTimeouts & timeouts,
-        JSONString & json_output) const
+        JSONString & json_output,
+        StudentTTest & t_test) const
 {
     std::vector<std::vector<JSONString>> run_infos;
 
@@ -120,6 +122,10 @@ void ReportBuilder::buildRunsReport(
                 connection_runJSON.set("query_index", query_index);
                 connection_runJSON.set("connection", connections[connection_index]->getDescription());
                 connection_runJSON.set("server_version", connections[connection_index]->getServerVersion(timeouts));
+
+                bool t_test_status = test_info.stop_conditions_by_run[run_index][connection_index].isInitializedTTestWithConfidenceLevel();
+                if (t_test_status)
+                    connection_runJSON.set("t_test_status", t_test.reportResults(ConnectionTestStats::t_test_confidence_level, ConnectionTestStats::t_test_comparison_precision));
 
                 if (!statistics.exception.empty())
                 {
@@ -182,8 +188,7 @@ std::string ReportBuilder::buildCompactReport(
     const PerformanceTestInfo & test_info,
     std::vector<TestStats> & stats,
     const std::vector<std::size_t> & queries_to_run,
-    const Connections & connections,
-    const ConnectionTimeouts & /*timeouts*/) const
+    const Connections & connections) const
 {
     std::ostringstream output;
     for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)

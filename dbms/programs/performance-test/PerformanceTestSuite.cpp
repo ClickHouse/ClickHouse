@@ -11,6 +11,7 @@
 
 #include <boost/program_options.hpp>
 
+#include <Poco/Util/Application.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
@@ -31,7 +32,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 
-#include "ConnectionTestStats.h"
+#include "TestStats.h"
 #include "ConfigPreprocessor.h"
 #include "PerformanceTest.h"
 #include "ReportBuilder.h"
@@ -105,14 +106,13 @@ public:
             connections.emplace_back(std::make_shared<Connection>(cur_host, cur_port, default_database_, user_, password_,
                     "performance-test-" + toString(i + 1),Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable));
         }
+        report_builder = std::make_shared<ReportBuilder>();
     }
 
     int run()
     {
-        report_builder = std::make_shared<ReportBuilder>();
-
-        processTestsConfigurations(input_files);
-
+        processTestsConfigurations();
+        runTests();
         return 0;
     }
 
@@ -144,10 +144,10 @@ private:
 
     StudentTTest t_test;
 
-    void processTestsConfigurations(const Strings & paths)
+    void processTestsConfigurations()
     {
         LOG_INFO(log, "Preparing test configurations");
-        ConfigPreprocessor config_prep(paths);
+        ConfigPreprocessor config_prep(input_files);
         tests_configurations = config_prep.processConfig(
             tests_tags,
             tests_names,
@@ -155,9 +155,11 @@ private:
             skip_tags,
             skip_names,
             skip_names_regexp);
-
         LOG_INFO(log, "Test configurations prepared");
+    }
 
+    void runTests()
+    {
         if (!tests_configurations.empty())
         {
             Strings outputs;
@@ -196,7 +198,7 @@ private:
 
     std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
-        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
+        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef(), connections);
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connections, timeouts, interrupt_listener, info, global_context, query_indexes[info.path], t_test);
 
@@ -211,16 +213,16 @@ private:
         current.prepare();
         LOG_INFO(log, "Prepared");
         LOG_INFO(log, "Running test '" << info.test_name << "'");
-        auto result = current.execute();
+        std::vector<TestStats> result = current.execute();
         LOG_INFO(log, "Test '" << info.test_name << "' finished");
         LOG_INFO(log, "Running post run queries");
         current.finish();
         LOG_INFO(log, "Post run queries finished");
 
         if (lite_output)
-            return {report_builder->buildCompactReport(info, result, query_indexes[info.path], connections, timeouts), current.checkSIGINT()};
+            return {report_builder->buildCompactReport(info, result, query_indexes[info.path], connections), current.checkSIGINT()};
 
-        return {report_builder->buildFullReport(info, result, query_indexes[info.path], connections, timeouts), current.checkSIGINT()};
+        return {report_builder->buildFullReport(info, result, query_indexes[info.path], connections, timeouts, t_test), current.checkSIGINT()};
     }
 };
 

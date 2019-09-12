@@ -55,7 +55,7 @@ namespace fs = std::filesystem;
 
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
-    Connections & connections_,
+    const Connections & connections_,
     const ConnectionTimeouts & timeouts_,
     InterruptListener & interrupt_listener_,
     const PerformanceTestInfo & test_info_,
@@ -184,10 +184,14 @@ UInt64 PerformanceTest::calculateMaxExecTime() const
     UInt64 result = 0;
     for (const auto & stop_conditions : test_info.stop_conditions_by_run)
     {
-        UInt64 condition_max_time = stop_conditions.getMaxExecTime();
-        if (condition_max_time == 0)
-            return 0;
-        result += condition_max_time;
+        for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
+        {
+            UInt64 condition_max_time = stop_conditions[connection_index].getMaxExecTime();
+            if (condition_max_time == 0)
+                return 0;
+
+            result += condition_max_time;
+        }
     }
     return result;
 }
@@ -328,27 +332,35 @@ std::vector<TestStats> PerformanceTest::execute()
     return statistics_by_run;
 }
 
-void PerformanceTest::runQueries(
-    const QueriesWithIndexes & queries_with_indexes,
-    std::vector<TestStats> & statistics_by_run)
+bool gotSIGINTOnAnyConnection(TestStats & statistics_by_connections)
+{
+    for (const auto & statistics : statistics_by_connections)
+    {
+        if (statistics.got_SIGINT)
+            return true;
+    }
+    return false;
+}
+
+bool conditionsFulfilledOnEveryConnection(TestStopConditions & stop_conditions_by_connections)
+{
+    bool are_fulfilled = true;
+    for (const auto & stop_conditions : stop_conditions_by_connections)
+    {
+        are_fulfilled &= stop_conditions.areFulfilled();
+    }
+    return are_fulfilled;
+};
+
+void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes, std::vector<TestStats> & statistics_by_run)
 {
     for (const auto & [query, run_index] : queries_with_indexes)
     {
         LOG_INFO(log, "[" << run_index << "] Run query '" << query << "'");
 
-        TestStopConditions & stop_conditions = test_info.stop_conditions_by_run[run_index];
+        TestStopConditions & stop_conditions_by_connections = test_info.stop_conditions_by_run[run_index];
         TestStats & statistics_by_connections = statistics_by_run[run_index];
         t_test.clear();
-
-        auto gotSIGINT = [&statistics_by_connections]()
-        {
-            for (const auto & statistics : statistics_by_connections)
-            {
-                if (statistics.got_SIGINT)
-                    return true;
-            }
-            return false;
-        };
 
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, connections.size() - 1);
@@ -358,24 +370,28 @@ void PerformanceTest::runQueries(
         {
             /// Executes once on every connection and than continues randomly if execution type is loop
             for (size_t i = 0; i < connections.size(); ++i)
-                executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions, interrupt_listener, context, test_info.settings, i, log);
+            {
+                executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions_by_connections, interrupt_listener, context, test_info.settings, i);
+                stop_conditions_by_connections[connection_index].reportIterations(statistics_by_connections[connection_index].queries);
+            }
 
             if (test_info.exec_type == ExecutionType::Loop)
             {
                 LOG_INFO(log, "Will run query in loop");
-                for (size_t iteration = 1; !gotSIGINT(); ++iteration)
+                for (size_t iteration = 1; !gotSIGINTOnAnyConnection(statistics_by_connections); ++iteration)
                 {
-                    stop_conditions.reportIterations(iteration);
-                    if (stop_conditions.areFulfilled())
+                    if (conditionsFulfilledOnEveryConnection(stop_conditions_by_connections))
                     {
                         LOG_INFO(log, "Stop conditions fulfilled");
                         break;
                     }
+                    connection_index = distribution(generator);
+
+                    executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions_by_connections, interrupt_listener, context, test_info.settings, connection_index);
+
+                    stop_conditions_by_connections[connection_index].reportIterations(statistics_by_connections[connection_index].queries);
                     for (size_t i = 0; i < connections.size(); ++i)
-                    {
-                        connection_index = distribution(generator);
-                        executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions, interrupt_listener, context, test_info.settings, connection_index, log);
-                    }
+                        stop_conditions_by_connections[connection_index].reportTTest(t_test);
                 }
             }
         }
@@ -385,7 +401,7 @@ void PerformanceTest::runQueries(
             LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
         }
-        if (!gotSIGINT())
+        if (!gotSIGINTOnAnyConnection(statistics_by_connections))
         {
             for (auto & statistics : statistics_by_connections)
                 statistics.ready = true;

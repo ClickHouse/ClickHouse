@@ -23,11 +23,12 @@ struct StopConditionsSet
     {
         UInt64 value = 0;
         bool fulfilled = false;
+        bool initialized = false;
     };
 
-    void report(UInt64 value, StopCondition & condition);
+    void reportMinimalThresholdCondition(UInt64 value, StopCondition & condition);
 
-    void reportTTestSingle(StudentTTest & t_test, StopCondition & condition, Poco::Logger * log);
+    void reportTTestCondition(StudentTTest & t_test, StopCondition & condition);
 
     StopCondition total_time_ms;
     StopCondition rows_read;
