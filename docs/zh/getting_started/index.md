@@ -67,7 +67,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 ###来自Docker
 
-要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/)上的指南。那些图像使用官方的`deb`包。
+要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/)上的指南。这些镜像使用官方的`deb`包构建。
 
 ### 使用源码安装
 
