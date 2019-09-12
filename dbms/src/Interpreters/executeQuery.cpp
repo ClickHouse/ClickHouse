@@ -38,6 +38,7 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Parsers/ASTWatchQuery.h>
 
 namespace ProfileEvents
 {
@@ -658,7 +659,19 @@ void executeQuery(
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
 
-            copyData(*streams.in, *out);
+            if (ast->as<ASTWatchQuery>())
+            {
+                /// For Watch query, flush data if block is empty (to send data to client).
+                auto flush_callback = [&out](const Block & block)
+                {
+                    if (block.rows() == 0)
+                        out->flush();
+                };
+
+                copyData(*streams.in, *out, [](){ return false; }, std::move(flush_callback));
+            }
+            else
+                copyData(*streams.in, *out);
         }
 
         if (pipeline.initialized())
