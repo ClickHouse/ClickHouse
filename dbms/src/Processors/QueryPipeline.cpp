@@ -75,7 +75,7 @@ void QueryPipeline::init(Processors sources)
             totals.emplace_back(&source->getOutputs().back());
         }
 
-        source->setStream(streams.size());
+        /// source->setStream(streams.size());
         streams.emplace_back(&source->getOutputs().front());
         processors.emplace_back(std::move(source));
     }
