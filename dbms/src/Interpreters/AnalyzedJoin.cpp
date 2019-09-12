@@ -26,7 +26,7 @@ namespace ErrorCodes
 AnalyzedJoin::AnalyzedJoin(const Settings & settings)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , join_use_nulls(settings.join_use_nulls)
-    , prefer_merge_join(settings.prefer_merge_join)
+    , partial_merge_join(settings.partial_merge_join)
 {}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
@@ -246,7 +246,7 @@ BlockInputStreamPtr AnalyzedJoin::createStreamWithNonJoinedDataIfFullOrRightJoin
 
 JoinPtr AnalyzedJoin::makeJoin(const Block & right_sample_block) const
 {
-    if (prefer_merge_join)
+    if (partial_merge_join)
         return std::make_shared<MergeJoin>(*this, right_sample_block);
     return std::make_shared<Join>(*this, right_sample_block);
 }
