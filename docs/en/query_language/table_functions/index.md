@@ -13,7 +13,7 @@ You can use table functions in:
     The method of creating a temporary table, that is deleted after the query finishes.
 
 !!! warning "Warning"
-    You cann't use table functions if the [allow_ddl](../../operations/settings/permissions_for_queries.md#settings_allow_ddl) setting is disabled.
+    You can't use table functions if the [allow_ddl](../../operations/settings/permissions_for_queries.md#settings_allow_ddl) setting is disabled.
 
 Function | Description
 ---------|------------
