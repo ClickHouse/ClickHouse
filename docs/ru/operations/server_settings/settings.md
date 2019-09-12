@@ -260,7 +260,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## interserver_http_credentials {#server-settings-interserver_http_credentials}
 
-Имя пользователя и пароль, использующиеся для аутентификации при репликации движками Replicated*.
+Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../table_engines/replication.md) движками Replicated*.
 По умолчанию аутентификация не используется.
 
 Раздел содержит следующие параметры:
