@@ -101,12 +101,11 @@ The `FROM` clause specifies the source to read data from:
 
 - Table
 - Subquery
-- [table function](table_functions/index.md)
+- [Table function](table_functions/index.md)
 
 `ARRAY JOIN` and the regular `JOIN` may also be included (see below).
 
-Instead of a table, the `SELECT` subquery may be specified in brackets.
-In this case, the subquery processing pipeline will be built into the processing pipeline of an external query.
+Instead of a table, the `SELECT` subquery may be specified in parenthesis.
 In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write `AS name` after a subquery, but the specified name isn't used anywhere.
 
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.

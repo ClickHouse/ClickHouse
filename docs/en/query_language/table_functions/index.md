@@ -1,16 +1,16 @@
-# Table functions
+# Table Functions
 
-Table function is a method of creating a table.
+Table function is a method of constructing a table.
 
 You can use table functions in:
 
-* [CREATE TABLE](../create.md#create-table-query) query.
+* [CREATE TABLE AS <table_function()>](../create.md#create-table-query) query.
 
-    It's an alternative method of creating a table.
+    It's one of the methods of creating a table.
 
 * [FROM](../select.md#select-from) clause of the `SELECT` query.
 
-    The method of creating a temporary table, that is deleted after the query finishes.
+    The method of creating a temporary table, that is available only in current query. The table is deleted after the query finishes.
 
 !!! warning "Warning"
     You can't use table functions if the [allow_ddl](../../operations/settings/permissions_for_queries.md#settings_allow_ddl) setting is disabled.

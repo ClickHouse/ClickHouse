@@ -38,7 +38,7 @@ Default value: 0
 
 ## allow_ddl {#settings_allow_ddl}
 
-Enables or disables [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
+Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 
 See how the queries are divided into types [above](#permissions_for_queries).
 
@@ -47,7 +47,7 @@ Possible values:
 - 0 — DDL queries are not allowed.
 - 1 — DDL queries are allowed.
 
-You cannot execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
+You can't execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 
 Default value: 1
 
