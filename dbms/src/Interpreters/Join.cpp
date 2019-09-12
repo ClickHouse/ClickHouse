@@ -66,7 +66,8 @@ Join::Join(const AnalyzedJoin & join_options_, const Block & right_sample_block,
     , strictness(join_options_.strictness())
     , key_names_right(join_options_.keyNamesRight())
     , required_right_keys(join_options_.requiredRightKeys())
-    , use_nulls(join_options_.joinUseNulls())
+    , nullable_right_side(join_options_.forceNullabelRight())
+    , nullable_left_side(join_options_.forceNullabelLeft())
     , any_take_last_row(any_take_last_row_)
     , log(&Logger::get("Join"))
 {
@@ -295,8 +296,7 @@ void Join::setSampleBlock(const Block & block)
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
-    /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
-    if (use_nulls && isLeftOrFull(kind))
+    if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
 }
 
@@ -471,8 +471,7 @@ bool Join::addJoinedBlock(const Block & block)
     /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
     materializeBlockInplace(*stored_block);
 
-    /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
-    if (use_nulls && isLeftOrFull(kind))
+    if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(*stored_block, (isFull(kind) ? key_names_right.size() : 0));
 
     if (kind != ASTTableJoin::Kind::Cross)
@@ -729,7 +728,7 @@ void Join::joinBlockImpl(
     {
         materializeBlockInplace(block);
 
-        if (use_nulls)
+        if (nullable_left_side)
             JoinCommon::convertColumnsToNullable(block);
     }
 
@@ -754,7 +753,6 @@ void Join::joinBlockImpl(
     /// Filter & insert missing rows
     constexpr bool is_all_join = STRICTNESS == ASTTableJoin::Strictness::All;
     constexpr bool inner_or_right = static_in_v<KIND, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Right>;
-    constexpr bool left_or_full = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
 
     std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
 
@@ -773,7 +771,7 @@ void Join::joinBlockImpl(
             if (required_right_keys.count(right_key.name) && !block.has(right_key.name))
             {
                 const auto & col = block.getByName(left_name);
-                bool is_nullable = (use_nulls && left_or_full) || right_key.type->isNullable();
+                bool is_nullable = nullable_right_side || right_key.type->isNullable();
                 block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
             }
         }
@@ -807,7 +805,7 @@ void Join::joinBlockImpl(
                         mut_column->insertDefault();
                 }
 
-                bool is_nullable = (use_nulls && left_or_full) || right_key.type->isNullable();
+                bool is_nullable = nullable_right_side || right_key.type->isNullable();
                 block.insert(correctNullability({std::move(mut_column), col.type, right_key.name}, is_nullable, null_map_filter));
 
                 if constexpr (is_all_join)
@@ -1137,9 +1135,7 @@ private:
                                std::unordered_map<size_t, size_t> & left_to_right_key_map)
     {
         result_sample_block = materializeBlock(left_sample_block);
-
-        /// Convert left columns to Nullable if allowed
-        if (parent.use_nulls)
+        if (parent.nullable_left_side)
             JoinCommon::convertColumnsToNullable(result_sample_block);
 
         /// Add columns from the right-side table to the block.
@@ -1159,7 +1155,7 @@ private:
             if (parent.required_right_keys.count(right_key.name) && !result_sample_block.has(right_key.name))
             {
                 const auto & col = result_sample_block.getByPosition(left_key_pos);
-                bool is_nullable = (parent.use_nulls && isFull(parent.kind)) || right_key.type->isNullable();
+                bool is_nullable = (parent.nullable_right_side && isFull(parent.kind)) || right_key.type->isNullable();
                 result_sample_block.insert(correctNullability({col.column, col.type, right_key.name}, is_nullable));
 
                 size_t right_key_pos = result_sample_block.getPositionByName(right_key.name);

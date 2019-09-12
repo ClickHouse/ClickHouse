@@ -26,10 +26,10 @@ public:
 private:
     mutable std::shared_mutex rwlock;
     const AnalyzedJoin & table_join;
-    const NameSet required_right_keys;
     Block right_table_keys;
-    Block sample_block_with_columns_to_add;
+    Block right_columns_to_add;
     BlocksList right_blocks;
+    bool nullable_right_side;
     size_t right_blocks_row_count = 0;
     size_t right_blocks_bytes = 0;
 

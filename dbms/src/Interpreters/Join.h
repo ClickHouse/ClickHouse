@@ -128,8 +128,6 @@ public:
 
     bool empty() { return type == Type::EMPTY; }
 
-    bool isNullUsedAsDefault() const { return use_nulls; }
-
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -285,8 +283,10 @@ private:
     /// Names right-side table keys that are needed in result (would be attached after joined columns).
     const NameSet required_right_keys;
 
-    /// Substitute NULLs for non-JOINed rows.
-    bool use_nulls;
+    /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
+    bool nullable_right_side;
+    /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
+    bool nullable_left_side;
 
     /// Overwrite existing values when encountering the same key again
     bool any_take_last_row;

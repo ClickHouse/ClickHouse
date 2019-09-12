@@ -14,10 +14,19 @@ namespace ErrorCodes
 
 MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sample_block)
     : table_join(table_join_)
-    , required_right_keys(table_join.requiredRightKeys())
+    , nullable_right_side(table_join_.forceNullabelRight())
 {
-    JoinCommon::extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, right_table_keys, sample_block_with_columns_to_add);
-    JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
+    JoinCommon::extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, right_table_keys, right_columns_to_add);
+
+    const NameSet required_right_keys = table_join.requiredRightKeys();
+    for (const auto & column : right_table_keys)
+        if (required_right_keys.count(column.name))
+            right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
+
+    JoinCommon::createMissedColumns(right_columns_to_add);
+
+    if (nullable_right_side)
+        JoinCommon::convertColumnsToNullable(right_columns_to_add);
 }
 
 /// TODO: sort
@@ -47,13 +56,8 @@ void MergeJoin::joinBlock(Block & block)
 void MergeJoin::addRightColumns(Block & block)
 {
     size_t rows = block.rows();
-
-    for (const auto & column : sample_block_with_columns_to_add)
+    for (const auto & column : right_columns_to_add)
         block.insert(ColumnWithTypeAndName{column.column->cloneResized(rows), column.type, column.name});
-
-    for (const auto & column : right_table_keys)
-        if (required_right_keys.count(column.name))
-            block.insert(ColumnWithTypeAndName{column.column->cloneResized(rows), column.type, column.name});
 }
 
 void MergeJoin::mergeJoin(Block & /*block*/, const Block & /*right_block*/)
