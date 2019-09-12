@@ -899,7 +899,7 @@ Error count of each replica is capped at this value, preventing a single replica
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
 !!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickHouse-server` package set it up when installing. Some virtual environments don't allow to set the `CAP_SYS_NICE` capability. In this case `clickhouse-server` shows an informational message at the start.
+    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments don't allow to set the `CAP_SYS_NICE` capability. In this case `clickhouse-server` shows a message about it at the start.
 
 Possible values:
 
