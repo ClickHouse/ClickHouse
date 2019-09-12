@@ -630,7 +630,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                     if (!threads_queue.empty())
                     {
-                        auto thread_to_wake = threads_queue.pop_front();
+                        auto thread_to_wake = threads_queue.pop_any();
                         lock.unlock();
                         wake_up_executor(thread_to_wake);
                     }

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <queue>
-#include <stack>
 #include <Processors/IProcessor.h>
-#include <mutex>
+#include <Processors/Executors/ThreadsQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
 #include <common/logger_useful.h>
 
-#include <boost/lockfree/stack.hpp>
+#include <queue>
+#include <stack>
+#include <mutex>
 
 namespace DB
 {
@@ -122,59 +122,6 @@ private:
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
-
-    struct ThreadsQueue
-    {
-        void init(size_t num_threads)
-        {
-            queue_size = 0;
-            is_thread_in_queue.assign(num_threads, false);
-        }
-
-        bool has(size_t pos) const { return is_thread_in_queue[pos]; }
-        size_t size() const { return queue_size; }
-        bool empty() const { return queue_size == 0; }
-
-        void push(size_t pos)
-        {
-            if (unlikely(has(pos)))
-                throw Exception("Can't push thread because it is already in threads queue.", ErrorCodes::LOGICAL_ERROR);
-
-            ++queue_size;
-            is_thread_in_queue[pos] = true;
-        }
-
-        void pop(size_t pos)
-        {
-            if (unlikely(!has(pos)))
-                throw Exception("Can't pop thread because it is not in threads queue.", ErrorCodes::LOGICAL_ERROR);
-
-            --queue_size;
-            is_thread_in_queue[pos] = false;
-        }
-
-        size_t pop_front()
-        {
-            if (unlikely(queue_size == 0))
-                throw Exception("Can't pop from empty queue.", ErrorCodes::LOGICAL_ERROR);
-
-            for (size_t i = 0; i < is_thread_in_queue.size(); ++i)
-            {
-                if (has(i))
-                {
-                    is_thread_in_queue[i] = false;
-                    --queue_size;
-                    return i;
-                }
-            }
-
-            throw Exception("Can't find any thread in queue.", ErrorCodes::LOGICAL_ERROR);
-        }
-
-    private:
-        std::vector<char> is_thread_in_queue;
-        size_t queue_size = 0;
-    };
 
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
