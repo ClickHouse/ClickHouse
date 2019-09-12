@@ -1661,6 +1661,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             Processors sources;
             sources.reserve(streams.size());
 
+            /// Pin sources for merge tree tables.
+            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+
             for (auto & stream : streams)
             {
                 bool force_add_agg_info = processing_stage == QueryProcessingStage::WithMergeableState;
@@ -1669,8 +1672,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (processing_stage == QueryProcessingStage::Complete)
                     source->addTotalsPort();
 
-                sources.emplace_back(std::move(source));
+                if (pin_sources)
+                    source->setStream(sources.size());
 
+                sources.emplace_back(std::move(source));
             }
 
             pipeline.init(std::move(sources));
