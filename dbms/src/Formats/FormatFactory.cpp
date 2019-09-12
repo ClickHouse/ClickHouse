@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -312,7 +313,9 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
+#if USE_POCO_NETSSL
     registerOutputFormatProcessorMySQLWrite(*this);
+#endif
 }
 
 FormatFactory & FormatFactory::instance()
