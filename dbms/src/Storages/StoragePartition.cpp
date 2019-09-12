@@ -46,14 +46,7 @@ namespace
                 constexpr size_t max_parts = 1024;
                 if (partitions_count >= max_parts)
                     throw Exception(
-                        "Too many partitions for single INSERT block (more than " + toString(max_parts)
-                            + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a "
-                              "common misconception. It will lead to severe negative performance impact, including slow server startup, "
-                              "slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under "
-                              "1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is "
-                              "sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, "
-                              "etc).",
-                        ErrorCodes::TOO_MANY_PARTS);
+                        "Too many partitions for single INSERT block (more than " + toString(max_parts) + ")", ErrorCodes::TOO_MANY_PARTS);
 
                 partition_num_to_first_row.push_back(i);
                 it->getSecond() = partitions_count;
@@ -81,28 +74,21 @@ public:
 
     Block getHeader() const override { return storage.getSampleBlock(); }
 
-    void writePrefix() override
-    {
-        auto log = &Poco::Logger::get("StoragePartition");
-        LOG_DEBUG(log, "write prefix");
-    }
-
     void write(const Block & block) override
     {
-        auto log = &Poco::Logger::get("StoragePartition");
-        LOG_DEBUG(log, "write start");
         Stopwatch w;
         if (!block || !block.rows())
             return;
         storage.check(block, true);
         block.checkNumberOfRows();
         ++block_num;
-        auto part_blocks = [&]() {
-            BlocksWithPartition result;
+        BlocksWithPartition part_blocks;
+        do
+        {
             if (!storage.partition_key_expr) /// Table is not partitioned.
             {
-                result.emplace_back(Block(block), Row());
-                return result;
+                part_blocks.emplace_back(Block(block), Row());
+                break;
             }
             Block block_copy = block;
             storage.partition_key_expr->execute(block_copy);
@@ -117,7 +103,7 @@ public:
             buildScatterSelector(partition_columns, partition_num_to_first_row, selector);
 
             size_t partitions_count = partition_num_to_first_row.size();
-            result.reserve(partitions_count);
+            part_blocks.reserve(partitions_count);
 
             auto get_partition = [&](size_t num) {
                 Row partition(partition_columns.size());
@@ -129,28 +115,25 @@ public:
             if (partitions_count == 1)
             {
                 /// A typical case is when there is one partition (you do not need to split anything).
-                result.emplace_back(Block(block), get_partition(0));
-                return result;
+                part_blocks.emplace_back(Block(block), get_partition(0));
+                break;
             }
 
             for (size_t i = 0; i < partitions_count; ++i)
-                result.emplace_back(block.cloneEmpty(), get_partition(i));
+                part_blocks.emplace_back(block.cloneEmpty(), get_partition(i));
 
             for (size_t col = 0; col < block.columns(); ++col)
             {
                 MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
                 for (size_t i = 0; i < partitions_count; ++i)
-                    result[i].block.getByPosition(col).column = std::move(scattered[i]);
+                    part_blocks[i].block.getByPosition(col).column = std::move(scattered[i]);
             }
-
-            return result;
-        }();
+        } while (0);
 
         std::lock_guard lock(storage.mutex);
         for (auto & block_with_partition : part_blocks)
             partitions_data[std::move(block_with_partition.partition)].push_back(std::move(block_with_partition.block));
         write_time += w.elapsedMilliseconds();
-        LOG_DEBUG(log, "write end");
     }
 
     void writeSuffix() override
@@ -196,6 +179,15 @@ public:
         }
         // Wait for concurrent view processing
         pool.wait();
+
+        size_t rows = storage.data[0];
+        for (auto & block : storage.data)
+        {
+            if (block.rows() != rows)
+                throw Exception(
+                    "Invalid number of rows in Block Partition: expected " + toString(rows) + ", got " + toString(block.rows()),
+                    ErrorCodes::LOGICAL_ERROR);
+        }
 
         auto log = &Poco::Logger::get("StoragePartition");
         LOG_DEBUG(log, "Received blocks = " << block_num);
