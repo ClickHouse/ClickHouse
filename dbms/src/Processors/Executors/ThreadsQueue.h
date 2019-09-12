@@ -51,9 +51,7 @@ struct ThreadsQueue
         if (unlikely(stack_size == 0))
             throw Exception("Can't pop from empty queue.", ErrorCodes::LOGICAL_ERROR);
 
-        size_t thread = stack[stack_size];
-        --stack_size;
-        return thread;
+        return stack[--stack_size];
     }
 
 private:
