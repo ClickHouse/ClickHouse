@@ -469,7 +469,7 @@ bool Join::addJoinedBlock(const Block & block)
     prepareBlockListStructure(*stored_block);
 
     /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
-    *stored_block = materializeBlock(*stored_block);
+    materializeBlockInplace(*stored_block);
 
     /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
     if (use_nulls && isLeftOrFull(kind))
@@ -727,8 +727,7 @@ void Join::joinBlockImpl(
     constexpr bool right_or_full = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
     if constexpr (right_or_full)
     {
-        for (size_t i = 0; i < block.columns(); ++i)
-            block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
+        materializeBlockInplace(block);
 
         if (use_nulls)
             JoinCommon::convertColumnsToNullable(block);
