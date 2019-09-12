@@ -905,7 +905,7 @@ Possible values:
 
 You can set values in the `[-20, 19]` range.
 
-The less value has a higher priority, so, threads with low values of `nice` priority are executed more frequently then threads with high values. Higher values are preferable for non-interactive and for long executing queries because it allows the server to stay available for short queries.
+The lower value means a higher priority. Threads with low values of `nice` priority are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
 
 Default value: 0.
 
