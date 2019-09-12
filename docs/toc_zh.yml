@@ -86,6 +86,7 @@ nav:
     - 'MySQL': 'operations/table_engines/mysql.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
     - 'ODBC': 'operations/table_engines/odbc.md'
+    - 'HDFS': 'operations/table_engines/hdfs.md'
   - '其他表引擎':
     - 'Distributed': 'operations/table_engines/distributed.md'
     - 'External data': 'operations/table_engines/external_data.md'
@@ -157,6 +158,8 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
+    - 'input': 'query_language/table_functions/input.md'
   - '字典':
     - '介绍': 'query_language/dicts/index.md'
     - '外部字典':

@@ -1,3 +1,5 @@
+# CREATE Queries
+
 ## CREATE DATABASE {#query_language-create-database}
 
 Creates database.
@@ -56,7 +58,7 @@ Creates a table with the same structure as another table. You can specify a diff
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
 ```
 
-Creates a table with the same structure and data as the value returned by table function.
+Creates a table with the structure and data returned by a [table function](table_functions/index.md).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
@@ -151,8 +153,8 @@ If a codec is specified, the default codec doesn't apply. Codecs can be combined
 
 Compression is supported for the table engines:
 
-- [*MergeTree](../operations/table_engines/mergetree.md) family
-- [*Log](../operations/table_engines/log_family.md) family
+- [MergeTree](../operations/table_engines/mergetree.md) family
+- [Log](../operations/table_engines/log_family.md) family
 - [Set](../operations/table_engines/set.md)
 - [Join](../operations/table_engines/join.md)
 
