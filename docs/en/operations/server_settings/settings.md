@@ -258,6 +258,25 @@ Useful for breaking away from a specific network interface.
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
+## interserver_http_credentials {#server-settings-interserver_http_credentials}
+
+The username and password used to authenticate during replication with the Replicated* engines.
+By default, the authentication is not used.
+
+This section contains the following parameters:
+
+- `user` — username.
+- `password` — password.
+
+**Example**
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+</interserver_http_credentials>
+```
+
 
 ## keep_alive_timeout
 
