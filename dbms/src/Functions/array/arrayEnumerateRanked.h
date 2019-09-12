@@ -357,6 +357,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
                     {
                         last_offset_by_depth[depth] = (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]];
                         ++current_offset_n_by_depth[depth];
+                        want_clear = true;
                     }
                     else
                     {
