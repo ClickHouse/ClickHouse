@@ -742,4 +742,17 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 0.
 
+## disable_internal_dns_cache {#server-settings-disable_internal_dns_cache}
+
+Отключает внутренний кеш DNS записей. Используется при эксплуатации ClickHouse в системах
+с часто меняющейся инфраструктурой, таких как Kubernetes.
+
+## dns_cache_update_period {#server-settings-dns_cache_update_period}
+
+Период (в секундах) обновления IP адресов у записей во внутреннем DNS кеше ClickHouse.
+Обновление выполняется асинхронно, отдельным системным потоком.
+
+**Значение по умолчанию**: 15.
+
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->
