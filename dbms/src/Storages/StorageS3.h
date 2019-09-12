@@ -29,6 +29,7 @@ public:
         , database_name(database_name_)
         , table_name(table_name_)
     {
+        setColumns(columns_);
     }
 
     String getName() const override

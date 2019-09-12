@@ -49,6 +49,9 @@ void WriteBufferFromS3::nextImpl()
     if (!offset())
         return;
 
+
+    LOG_TRACE((&Logger::get("WriteBufferFromS3")), "nextImpl(), offset() == " << offset());
+
     temporary_buffer->write(working_buffer.begin(), offset());
 
     last_part_size += offset();
@@ -65,9 +68,11 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::finalize()
 {
+    LOG_TRACE((&Logger::get("WriteBufferFromS3")), "finalize()");
     temporary_buffer->finish();
     if (!buffer_string.empty())
     {
+        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "finalize(), writing last part");
         writePart(buffer_string);
     }
 
