@@ -16,6 +16,7 @@ class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
 {
 public:
     StorageS3(const Poco::URI & uri_,
+        const std::string & database_name_,
         const std::string & table_name_,
         const String & format_name_,
         const ColumnsDescription & columns_,
@@ -25,6 +26,7 @@ public:
         , uri(uri_)
         , context_global(context_)
         , format_name(format_name_)
+        , database_name(database_name_)
         , table_name(table_name_)
     {
     }
@@ -61,6 +63,7 @@ protected:
 
 private:
     String format_name;
+    String database_name;
     String table_name;
 };
 
