@@ -104,8 +104,12 @@ public:
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
-    const String & getServerName(const ConnectionTimeouts & timeouts);
-    String getServerVersion(const ConnectionTimeouts & timeouts);
+    void getServerVersion(const ConnectionTimeouts & timeouts,
+                          String & name,
+                          UInt64 & version_major,
+                          UInt64 & version_minor,
+                          UInt64 & version_patch,
+                          UInt64 & revision);
     UInt64 getServerRevision(const ConnectionTimeouts & timeouts);
 
     const String & getServerTimezone(const ConnectionTimeouts & timeouts);

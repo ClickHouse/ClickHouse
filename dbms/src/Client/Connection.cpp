@@ -230,22 +230,21 @@ UInt16 Connection::getPort() const
     return port;
 }
 
-const String & Connection::getServerName(const ConnectionTimeouts & timeouts)
+void Connection::getServerVersion(const ConnectionTimeouts & timeouts,
+                                  String & name,
+                                  UInt64 & version_major,
+                                  UInt64 & version_minor,
+                                  UInt64 & version_patch,
+                                  UInt64 & revision)
 {
     if (!connected)
         connect(timeouts);
 
-    return server_name;
-}
-
-String Connection::getServerVersion(const ConnectionTimeouts & timeouts)
-{
-    if (!connected)
-        connect(timeouts);
-
-    std::stringstream server_version;
-    server_version << server_version_major << "." << server_version_minor << "." << server_version_patch;
-    return server_version.str();
+    name = server_name;
+    version_major = server_version_major;
+    version_minor = server_version_minor;
+    version_patch = server_version_patch;
+    revision = server_revision;
 }
 
 UInt64 Connection::getServerRevision(const ConnectionTimeouts & timeouts)

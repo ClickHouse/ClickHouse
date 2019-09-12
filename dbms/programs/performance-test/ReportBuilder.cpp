@@ -121,7 +121,20 @@ void ReportBuilder::buildRunsReport(
                 connection_runJSON.set("query", std::regex_replace(test_info.queries[query_index], QUOTE_REGEX, "\\\""));
                 connection_runJSON.set("query_index", query_index);
                 connection_runJSON.set("connection", connections[connection_index]->getDescription());
-                connection_runJSON.set("server_version", connections[connection_index]->getServerVersion(timeouts));
+
+                std::string name;
+                UInt64 version_major;
+                UInt64 version_minor;
+                UInt64 version_patch;
+                UInt64 version_revision;
+
+                connections[connection_index]->getServerVersion(timeouts, name, version_major, version_minor, version_patch, version_revision);
+
+                std::stringstream ss;
+                ss << version_major << "." << version_minor << "." << version_patch;
+                std::string connection_server_version = ss.str();
+                
+                connection_runJSON.set("server_version", connection_server_version);
 
                 bool t_test_status = test_info.stop_conditions_by_run[run_index][connection_index].isInitializedTTestWithConfidenceLevel();
                 if (t_test_status)
