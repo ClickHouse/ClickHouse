@@ -258,6 +258,26 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
+## interserver_http_credentials {#server-settings-interserver_http_credentials}
+
+Имя пользователя и пароль, использующиеся для аутентификации при репликации движками Replicated*.
+По умолчанию аутентификация не используется.
+
+Раздел содержит следующие параметры:
+
+- `user` — имя пользователя.
+- `password` — пароль.
+
+**Пример конфигурации**
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+</interserver_http_credentials>
+```
+
+
 ## keep_alive_timeout
 
 Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
