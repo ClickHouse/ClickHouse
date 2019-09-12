@@ -479,6 +479,63 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
         executor_contexts[executor]->condvar.notify_one();
     };
 
+    auto process_pinned_tasks = [&](Queue & queue)
+    {
+        Queue tmp_queue;
+
+        struct PinnedTask
+        {
+            ExecutionState * task;
+            size_t thread_num;
+        };
+
+        std::stack<PinnedTask> pinned_tasks;
+
+        while (!queue.empty())
+        {
+            auto task = queue.front();
+            queue.pop();
+
+            auto stream = task->processor->getStream();
+            if (stream != IProcessor::NO_STREAM)
+                pinned_tasks.push({.task = task, .thread_num = stream % num_threads});
+            else
+                tmp_queue.push(task);
+        }
+
+        if (!pinned_tasks.empty())
+        {
+            std::stack<size_t> threads_to_wake;
+
+            {
+                std::lock_guard lock(task_queue_mutex);
+
+                while (!pinned_tasks.empty())
+                {
+                    auto & pinned_task = pinned_tasks.top();
+                    auto thread = pinned_task.thread_num;
+
+                    executor_contexts[thread]->pinned_tasks.push(pinned_task.task);
+                    pinned_tasks.pop();
+
+                    if (threads_queue.has(thread))
+                    {
+                        threads_queue.pop(thread);
+                        threads_to_wake.push(thread);
+                    }
+                }
+            }
+
+            while (!threads_to_wake.empty())
+            {
+                wake_up_executor(threads_to_wake.top());
+                threads_to_wake.pop();
+            }
+        }
+
+        queue.swap(tmp_queue);
+    };
+
     while (!finished)
     {
         /// First, find any processor to execute.
@@ -573,42 +630,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
                 /// Process all neighbours. Children will be on the top of stack, then parents.
                 prepare_all_processors(queue, children, children, parents);
-                prepare_all_processors(queue, parents, parents, parents);
-
-                /// Move pinned tasks to their executors.
-                {
-                    Queue tmp_queue;
-                    while (!queue.empty())
-                    {
-                        auto task = queue.front();
-                        queue.pop();
-
-                        auto stream = task->processor->getStream();
-                        if (stream != IProcessor::NO_STREAM)
-                        {
-                            bool found_in_queue = false;
-                            auto thread_to_wake = stream % num_threads;
-
-                            {
-                                std::unique_lock lock(task_queue_mutex);
-                                executor_contexts[thread_to_wake]->pinned_tasks.push(task);
-
-                                if (threads_queue.has(thread_to_wake))
-                                {
-                                    threads_queue.pop(thread_to_wake);
-                                    found_in_queue = true;
-                                }
-                            }
-
-                            if (found_in_queue)
-                                wake_up_executor(thread_to_wake);
-                        }
-                        else
-                            tmp_queue.push(task);
-                    }
-
-                    queue.swap(tmp_queue);
-                }
+                process_pinned_tasks(queue);
 
                 /// Take local task from queue if has one.
                 if (!state && !queue.empty())
@@ -616,6 +638,9 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     state = queue.front();
                     queue.pop();
                 }
+
+                prepare_all_processors(queue, parents, parents, parents);
+                process_pinned_tasks(queue);
 
                 /// Push other tasks to global queue.
                 if (!queue.empty())
