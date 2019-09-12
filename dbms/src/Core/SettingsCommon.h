@@ -6,8 +6,8 @@
 #include <common/StringRef.h>
 #include <Common/SettingsChanges.h>
 #include <Core/Types.h>
-#include <ext/singleton.h>
 #include <unordered_map>
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -329,14 +329,10 @@ private:
         bool isChanged(const Derived & collection) const { return is_changed(collection); }
     };
 
-    class MemberInfos
+    class MemberInfos : private boost::noncopyable
     {
     public:
-        static const MemberInfos & instance()
-        {
-            static const MemberInfos single_instance;
-            return single_instance;
-        }
+        static const MemberInfos & instance();
 
         size_t size() const { return infos.size(); }
         const MemberInfo & operator[](size_t index) const { return infos[index]; }
@@ -630,6 +626,12 @@ public:
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
         }; \
         LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
+    } \
+    template <> \
+    const SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos & SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos::instance() \
+    { \
+        static const SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos single_instance; \
+        return single_instance; \
     }
 
 
