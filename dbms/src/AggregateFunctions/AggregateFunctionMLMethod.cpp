@@ -238,6 +238,10 @@ void Adam::read(ReadBuffer & buf)
 void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     auto & adam_rhs = static_cast<const Adam &>(rhs);
+
+    if (adam_rhs.average_gradient.empty())
+        return;
+
     if (average_gradient.empty())
     {
         if (!average_squared_gradient.empty() ||

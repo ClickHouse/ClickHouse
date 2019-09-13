@@ -158,6 +158,12 @@ std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
     return promises[request_id].get_future();
 }
 
+AIOContextPool & AIOContextPool::instance()
+{
+    static AIOContextPool instance;
+    return instance;
+}
+
 }
 
 #endif

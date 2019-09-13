@@ -28,6 +28,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
@@ -673,7 +674,15 @@ FixedString представлены просто как последовате�
 
 Array представлены как длина в формате varint (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), а затем элементы массива, подряд.
 
-Для поддержки [NULL](../query_language/syntax.md#null-literal) перед каждым значением типа [Nullable](../data_types/nullable.md
+Для поддержки [NULL](../query_language/syntax.md#null-literal) перед каждым значением типа [Nullable](../data_types/nullable.md) следует байт содержащий 1 или 0. Если байт 1, то значение равно NULL, и этот байт интерпретируется как отдельное значение (т.е. после него следует значение следующего поля). Если байт 0, то после байта следует значение поля (не равно NULL).
+
+## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
+
+То же самое что [RowBinary](#rowbinary), но добавляется заголовок:
+
+ * Количество колонок - N, закодированное [LEB128](https://en.wikipedia.org/wiki/LEB128),
+ * N строк (`String`) с именами колонок,
+ * N строк (`String`) с типами колонок.
 
 ## Values {#data-format-values}
 
@@ -927,7 +936,7 @@ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parq
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [`HDFS`](../operations/table_engines/hdfs.md) и `URL`.
+Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../operations/table_engines/hdfs.md) и `URL`.
 
 ## Схема формата {#formatschema}
 
