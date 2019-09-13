@@ -336,10 +336,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         /// Skipping offsets if no data in this array
         if (prev_off == off)
         {
-
-            if (depth_to_look > 2)
-                want_clear = true;
-
             if (depth_to_look >= 2)
             {
                 /// Advance to the next element of the parent array.
@@ -357,6 +353,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
                     {
                         last_offset_by_depth[depth] = (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]];
                         ++current_offset_n_by_depth[depth];
+                        want_clear = true;
                     }
                     else
                     {

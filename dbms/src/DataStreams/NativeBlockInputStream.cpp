@@ -29,8 +29,8 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
 {
 }
 
-NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool convert_types_to_low_cardinality_)
-    : istr(istr_), header(header_), server_revision(server_revision_), convert_types_to_low_cardinality(convert_types_to_low_cardinality_)
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
+    : istr(istr_), header(header_), server_revision(server_revision_)
 {
 }
 
@@ -153,12 +153,15 @@ Block NativeBlockInputStream::readImpl()
 
         column.column = std::move(read_column);
 
-        /// Support insert from old clients without low cardinality type.
-        bool revision_without_low_cardinality = server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE;
-        if (header && (convert_types_to_low_cardinality || revision_without_low_cardinality))
+        if (header)
         {
-            column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
-            column.type = header.getByPosition(i).type;
+            /// Support insert from old clients without low cardinality type.
+            auto & header_column = header.getByName(column.name);
+            if (!header_column.type->equals(*column.type))
+            {
+                column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+                column.type = header.getByPosition(i).type;
+            }
         }
 
         res.insert(std::move(column));
@@ -175,6 +178,22 @@ Block NativeBlockInputStream::readImpl()
         ++index_block_it;
         if (index_block_it != index_block_end)
             index_column_it = index_block_it->columns.begin();
+    }
+
+    if (rows && header)
+    {
+        /// Allow to skip columns. Fill them with default values.
+        Block tmp_res;
+
+        for (auto & col : header)
+        {
+            if (res.has(col.name))
+                tmp_res.insert(std::move(res.getByName(col.name)));
+            else
+                tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
+        }
+
+        res.swap(tmp_res);
     }
 
     return res;
