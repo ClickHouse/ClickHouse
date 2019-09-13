@@ -186,7 +186,7 @@ void ASTAlterCommand::formatImpl(
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-        if (!from_database.empty())
+        if (!to_database.empty())
         {
             settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
                           << (settings.hilite ? hilite_none : "") << ".";
