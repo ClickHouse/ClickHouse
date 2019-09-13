@@ -963,25 +963,56 @@ External sorting works much less effectively than sorting in RAM.
 
 If you want to get all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
-You can also use the `COLUMNS` expression to match some columns in the result by a regular expression.
+To match some columns in the result by a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
 
 ```sql
 COLUMNS('regexp')
 ```
 
-Example:
+For example, consider the table:
 
 ```sql
-SELECT COLUMNS('n') + COLUMNS('u') FROM system.numbers LIMIT 2
-```
-```text
-┌─plus(number, number)─┐
-│                    0 │
-│                    2 │
-└──────────────────────┘
+CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
 ```
 
-The result is the sum of values in columns wich contain `n` and `u` in their names.
+The following query selects data from all the columns containing the `a` symbol in their name.
+
+```sql
+SELECT COLUMNS('a') FROM col_names
+```
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+You can use multiple `COLUMNS` expressions in a query, also you can apply functions to it.
+
+For example:
+
+```sql
+SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
+```
+```text
+┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
+│  1 │  1 │  1 │ Int8           │
+└────┴────┴────┴────────────────┘
+```
+
+Be careful when using functions because the `COLUMN` expression returns variable number of columns, and, if a function doesn't support this number of arguments, ClickHouse throws an exception.
+
+For example:
+
+```sql
+SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
+```
+```text
+Received exception from server (version 19.14.1):
+Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus doesn't match: passed 3, should be 2. 
+```
+
+In this example, `COLUMNS('a')` returns two columns `aa`, `ab`, and `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the message about it.
+
 
 ### DISTINCT Clause {#select-distinct}
 
