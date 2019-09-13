@@ -23,7 +23,8 @@ def test_sophisticated_default(started_cluster):
     instance = started_cluster.instances['dummy']
     instance.copy_file_to_container(os.path.join(os.path.dirname(__file__), 'test_server.py'), 'test_server.py')
     communication_path = '/test_sophisticated_default'
-    instance.exec_in_container(['python', 'test_server.py', communication_path], detach=True)
+    bucket = 'abc'
+    instance.exec_in_container(['python', 'test_server.py', communication_path, bucket], detach=True)
 
     format = 'column1 UInt32, column2 UInt32, column3 UInt32'
     values = '(1, 2, 3), (3, 2, 1), (78, 43, 45)'
@@ -45,7 +46,6 @@ def test_sophisticated_default(started_cluster):
         assert False, 'Could not initialize mock server' + str(raw)
 
     redirecting_host = localhost
-    bucket = 'abc'
 
     def run_query(query):
         print('Running query "{}"...'.format(query))
@@ -117,6 +117,9 @@ def test_sophisticated_default(started_cluster):
                 ['1', '1', '1', '1'],
                 ['11', '11', '11', '1331'],
             ]
+        # FIXME check result
+
+        # FIXME tests for multipart
     
     finally:
         print('Done')
