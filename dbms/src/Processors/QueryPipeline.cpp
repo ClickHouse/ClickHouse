@@ -75,6 +75,7 @@ void QueryPipeline::init(Processors sources)
             totals.emplace_back(&source->getOutputs().back());
         }
 
+        /// source->setStream(streams.size());
         streams.emplace_back(&source->getOutputs().front());
         processors.emplace_back(std::move(source));
     }
@@ -115,7 +116,7 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
     Block header;
 
-    auto add_transform = [&](OutputPort *& stream, StreamType stream_type)
+    auto add_transform = [&](OutputPort *& stream, StreamType stream_type, size_t stream_num [[maybe_unused]] = IProcessor::NO_STREAM)
     {
         if (!stream)
             return;
@@ -148,14 +149,17 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
         if (transform)
         {
+//            if (stream_type == StreamType::Main)
+//                transform->setStream(stream_num);
+
             connect(*stream, transform->getInputs().front());
             stream = &transform->getOutputs().front();
             processors.emplace_back(std::move(transform));
         }
     };
 
-    for (auto & stream : streams)
-        add_transform(stream, StreamType::Main);
+    for (size_t stream_num = 0; stream_num < streams.size(); ++stream_num)
+        add_transform(streams[stream_num], StreamType::Main, stream_num);
 
     add_transform(delayed_stream_port, StreamType::Main);
     add_transform(totals_having_port, StreamType::Totals);
@@ -247,12 +251,12 @@ void QueryPipeline::concatDelayedStream()
     delayed_stream_port = nullptr;
 }
 
-void QueryPipeline::resize(size_t num_streams)
+void QueryPipeline::resize(size_t num_streams, bool force)
 {
     checkInitialized();
     concatDelayedStream();
 
-    if (num_streams == getNumStreams())
+    if (!force && num_streams == getNumStreams())
         return;
 
     has_resize = true;

@@ -545,6 +545,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 {
     auto & pipeline = state.io.pipeline;
 
+    if (pipeline.getMaxThreads())
+        num_threads = pipeline.getMaxThreads();
+
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         auto & header = pipeline.getHeader();
@@ -594,7 +597,15 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 lazy_format->finish();
                 lazy_format->clearQueue();
 
-                pool.wait();
+                try
+                {
+                    pool.wait();
+                }
+                catch (...)
+                {
+                    /// If exception was thrown during pipeline execution, skip it while processing other exception.
+                }
+
                 pipeline = QueryPipeline()
         );
 
