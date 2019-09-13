@@ -372,7 +372,7 @@ void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes
             for (size_t i = 0; i < connections.size(); ++i)
             {
                 executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions_by_connections, interrupt_listener, context, test_info.settings, i);
-                stop_conditions_by_connections[connection_index].reportIterations(statistics_by_connections[connection_index].queries);
+                stop_conditions_by_connections[i].reportIterations(statistics_by_connections[i].queries);
             }
 
             if (test_info.exec_type == ExecutionType::Loop)
@@ -386,12 +386,14 @@ void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes
                         break;
                     }
                     connection_index = distribution(generator);
-
+                    if (stop_conditions_by_connections[connection_index].areFulfilled())
+                        continue;
                     executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions_by_connections, interrupt_listener, context, test_info.settings, connection_index);
-
                     stop_conditions_by_connections[connection_index].reportIterations(statistics_by_connections[connection_index].queries);
-                    for (size_t i = 0; i < connections.size(); ++i)
-                        stop_conditions_by_connections[connection_index].reportTTest(t_test);
+
+                    if (stop_conditions_by_connections[connection_index].isInitializedTTestWithConfidenceLevel())
+                        for (size_t i = 0; i < connections.size(); ++i)
+                            stop_conditions_by_connections[i].reportTTest(t_test);
                 }
             }
         }

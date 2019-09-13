@@ -135,7 +135,6 @@ void ConnectionTestStats::updateQueryInfo()
     ++queries;
 
     double seconds = watch_per_query.elapsedSeconds();
-    total_time += seconds;
     sampler.insert(seconds);
     updateMinTime(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
 }
