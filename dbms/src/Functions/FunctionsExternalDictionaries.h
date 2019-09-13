@@ -127,7 +127,7 @@ private:
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!dict->isAllowed(context.getCurrentDatabase()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
                 + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
@@ -302,7 +302,7 @@ private:
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!dict->isAllowed(context.getCurrentDatabase()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
                 + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
@@ -488,7 +488,7 @@ private:
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!dict->isAllowed(context.getCurrentDatabase()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
                 + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
@@ -830,7 +830,7 @@ private:
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!dict->isAllowed(context.getCurrentDatabase()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
                 + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
@@ -1094,7 +1094,7 @@ private:
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!dict->isAllowed(context.getCurrentDatabase()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
                 + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
@@ -1671,7 +1671,7 @@ private:
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!dict->isAllowed(context.getCurrentDatabase()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
                 + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};
@@ -1840,7 +1840,7 @@ private:
         auto dict = dictionaries.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
 
-        if (!dict->isAllowed(context.getCurrentDatabase()))
+        if (!context.hasDictionaryAccessRights(dict_ptr->getName()))
         {
             throw Exception{"For function " + getName() + ", cannot access dictionary "
                 + dict->getName() + " on database " + context.getCurrentDatabase(), ErrorCodes::DICTIONARY_ACCESS_DENIED};

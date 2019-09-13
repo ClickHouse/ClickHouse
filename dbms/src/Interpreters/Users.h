@@ -67,6 +67,10 @@ struct User
     using DatabaseSet = std::unordered_set<std::string>;
     DatabaseSet databases;
 
+    /// List of allowed databases.
+    using DictionarySet = std::unordered_set<std::string>;
+    DictionarySet dictionaries;
+
     /// Table properties.
     using PropertyMap = std::unordered_map<std::string /* name */, std::string /* value */>;
     using TableMap = std::unordered_map<std::string /* table */, PropertyMap /* properties */>;

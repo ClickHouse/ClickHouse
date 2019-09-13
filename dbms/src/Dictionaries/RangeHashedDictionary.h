@@ -19,15 +19,12 @@ class RangeHashedDictionary final : public IDictionaryBase
 public:
     RangeHashedDictionary(
         const std::string & dictionary_name_,
-        const std::unordered_set<std::string> & allowed_databases_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_);
 
     std::string getName() const override { return dictionary_name; }
-
-    const std::unordered_set<std::string> & getAllowedDatabases() const override { return allowed_databases; }
 
     std::string getTypeName() const override { return "RangeHashed"; }
 
@@ -45,7 +42,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RangeHashedDictionary>(dictionary_name, allowed_databases, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<RangeHashedDictionary>(dictionary_name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -214,7 +211,6 @@ private:
     friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
 
     const std::string dictionary_name;
-    const std::unordered_set<std::string> allowed_databases;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
