@@ -60,12 +60,6 @@ struct HashMethodOneNumber
 
     /// Is used for default implementation in HashMethodBase.
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
-
-    /// Get StringRef from value which can be inserted into column.
-    static StringRef getValueRef(const Value & value)
-    {
-        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
-    }
 };
 
 
@@ -101,8 +95,6 @@ struct HashMethodString
             return key;
         }
     }
-
-    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -141,8 +133,6 @@ struct HashMethodFixedString
             return key;
         }
     }
-
-    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -559,11 +549,6 @@ struct HashMethodHashed
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
         return hash128(row, key_columns.size(), key_columns);
-    }
-
-    static ALWAYS_INLINE StringRef getValueRef(const Value & value)
-    {
-        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
 };
 

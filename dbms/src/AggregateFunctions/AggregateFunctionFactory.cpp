@@ -160,4 +160,10 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
     return false;
 }
 
+AggregateFunctionFactory & AggregateFunctionFactory::instance()
+{
+    static AggregateFunctionFactory ret;
+    return ret;
+}
+
 }

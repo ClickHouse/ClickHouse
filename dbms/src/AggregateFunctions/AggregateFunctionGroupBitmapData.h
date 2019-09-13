@@ -88,10 +88,11 @@ public:
 
         if (is_large)
         {
-            toLarge();
-            UInt32 cardinality;
-            readBinary(cardinality, in);
-            db_roaring_bitmap_add_many(in, rb, cardinality);
+            std::string s;
+            readStringBinary(s,in);
+            rb = roaring_bitmap_portable_deserialize(s.c_str());
+            for (const auto & x : small) //merge from small
+                roaring_bitmap_add(rb, x.getValue());
         }
         else
             small.read(in);
@@ -103,9 +104,10 @@ public:
 
         if (isLarge())
         {
-            UInt32 cardinality = roaring_bitmap_get_cardinality(rb);
-            writePODBinary(cardinality, out);
-            db_ra_to_uint32_array(out, &rb->high_low_container);
+            uint32_t expectedsize = roaring_bitmap_portable_size_in_bytes(rb);
+            std::string s(expectedsize,0);
+            roaring_bitmap_portable_serialize(rb, const_cast<char*>(s.data()));
+            writeStringBinary(s,out);
         }
         else
             small.write(out);
