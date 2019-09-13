@@ -25,12 +25,13 @@ To generate the UUID value, ClickHouse provides the [generateUUIDv4](../query_la
 This example demonstrates creating a table with the UUID type column and inserting a value into the table.
 
 ``` sql
-:) CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
+CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
 
-:) INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
+INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
 
-:) SELECT * FROM t_uuid
-
+SELECT * FROM t_uuid
+```
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 └──────────────────────────────────────┴───────────┘
@@ -41,10 +42,11 @@ This example demonstrates creating a table with the UUID type column and inserti
 In this example, the UUID column value is not specified when inserting a new record.
 
 ``` sql
-:) INSERT INTO t_uuid (y) VALUES ('Example 2')
+INSERT INTO t_uuid (y) VALUES ('Example 2')
 
-:) SELECT * FROM t_uuid
-
+SELECT * FROM t_uuid
+```
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 │ 00000000-0000-0000-0000-000000000000 │ Example 2 │
