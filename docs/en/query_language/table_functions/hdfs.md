@@ -41,7 +41,7 @@ Multiple path components can have globs. For being processed file should exists 
 - `*` — Substitutes any number of any characters including none.
 - `?` — Substitutes any single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'` (similar to the remote table function).
-- `{N..M}` — Substitutes any number in range from N to M including both borders (similar to the [remote table function]()).
+- `{N..M}` — Substitutes any number in range from N to M including both borders (similar to the [remote table function](remote.md)).
 
 **Example**
 
