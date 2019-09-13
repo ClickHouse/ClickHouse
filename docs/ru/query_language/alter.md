@@ -192,7 +192,8 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
-- [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера.
+- [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
+- [MOVE PARTITION|PART](#alter_move-partition) -- переместить партицию/кускок на другой диск или том.
 
 #### DETACH PARTITION {#alter_detach-partition}
 
@@ -309,6 +310,9 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 - `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
 - `N` — инкрементальный номер резервной копии.
 
+!!! note
+    При использовании [нескольких дисков для хранения данных таблицы](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
+
 Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит 'chmod' для всех файлов, запрещая запись в них.
 
 Обратите внимание, запрос `ALTER TABLE t FREEZE PARTITION` не реплицируется. Он создает резервную копию только на локальном сервере. После создания резервной копии данные из `/var/lib/clickhouse/shadow/` можно скопировать на удалённый сервер, а локальную копию удалить.
@@ -354,6 +358,27 @@ ALTER TABLE users ATTACH PARTITION 201902;
 Перед загрузкой данных система проверяет, существует ли партиция и совпадает ли её структура со структурой таблицы. При этом автоматически выбирается наиболее актуальная реплика среди всех живых реплик.
 
 Несмотря на то что запрос называется `ALTER TABLE`, он не изменяет структуру таблицы и не изменяет сразу доступные данные в таблице.
+
+#### MOVE PARTITION|PART {#alter_move-partition}
+
+```sql
+ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+```
+
+Перемещает партицию или кусок на другой том или диск. Запрос работает только для движков семейства MergeTree. Подробнее о хранении данных на разных дисках читайте в разделе [Хранение данных таблицы на нескольких блочных устройствах](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+Следует иметь ввиду:
+
+- Запрос `ALTER TABLE t MOVE` не реплицируется, т.к. на разных репликах могут быть различные конфигурации политик хранения.
+- Запрос `ALTER TABLE t MOVE` будет возвращать ошибку, если указан несуществующий том или диск, а также в случае невыполнения условий перемещения данных, которые указаны в конфигурации политики хранения.
+- Запрос `ALTER TABLE t MOVE` может возвращать ошибку в случае, когда перемещаемые данные уже оказались перемещены в результате фонового процесса, конкурентного запроса `ALTER TABLE t MOVE` или как часть результата фоновой операции слияния. В данном случае никаких дополнительных действий от пользователя не требуется.
+
+Примеры:
+
+```sql
+ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
+ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
+```
 
 #### Как задавать имя партиции в запросах ALTER {#alter-how-to-specify-part-expr}
 
