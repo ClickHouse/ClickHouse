@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS test1;
 DROP TABLE IF EXISTS test2;
 
 CREATE TABLE test1 (a UInt8, b Array(DateTime)) ENGINE Memory;
-CREATE TABLE test2 as test1 ENGINE Distributed(test_shard, currentDatabase(), test1);
+CREATE TABLE test2 as test1 ENGINE Distributed(test_shard_localhost, currentDatabase(), test1);
 
 INSERT INTO test1 VALUES (1, [1, 2, 3]);
 
