@@ -29,6 +29,7 @@ logging.getLogger().addHandler(file_handler)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 comm_path = sys.argv[1]
+bucket = sys.argv[2]
 
 def GetFreeTCPPortsAndIP(n):
     result = []
