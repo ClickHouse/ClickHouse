@@ -181,9 +181,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
             throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
-        /// Numeric values for Enums should not be used directly in IN section
-        if (src.getType() == Field::Types::UInt64 && !which_type.isEnum())
+        if (src.getType() == Field::Types::UInt64)
+        {
+            if (which_type.isEnum())
+            {
+                /// Convert UInt64 to Enum's value
+                return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
+            }
+
             return src;
+        }
 
         if (src.getType() == Field::Types::String)
         {
