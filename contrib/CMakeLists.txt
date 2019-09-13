@@ -10,16 +10,18 @@ endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-
-if (USE_INTERNAL_UNWIND_LIBRARY)
-    add_subdirectory (libunwind-cmake)
-endif ()
-
-if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
-    add_subdirectory(libcxx-cmake)
-    add_subdirectory(libcxxabi-cmake)
+if (USE_INTERNAL_ORC_LIBRARY)
+    set(BUILD_JAVA OFF)
+    set (ANALYZE_JAVA OFF)
+    set (BUILD_CPP_TESTS OFF)
+    set (BUILD_TOOLS OFF)
+    option(BUILD_JAVA OFF)
+    option (ANALYZE_JAVA OFF)
+    option (BUILD_CPP_TESTS OFF)
+    option (BUILD_TOOLS OFF)
+    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/contrib/orc/cmake_modules")
+    add_subdirectory(orc)
 endif()
-
 
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
@@ -158,15 +160,6 @@ endif()
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_subdirectory (unixodbc-cmake)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
-endif ()
-
-if (ENABLE_CAPNP AND USE_INTERNAL_CAPNP_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    set (_save ${CMAKE_CXX_EXTENSIONS})
-    set (CMAKE_CXX_EXTENSIONS)
-    add_subdirectory (capnproto/c++)
-    set (CMAKE_CXX_EXTENSIONS ${_save})
-    target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)

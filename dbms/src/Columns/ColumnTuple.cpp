@@ -5,6 +5,7 @@
 #include <ext/map.h>
 #include <ext/range.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -80,6 +81,16 @@ MutableColumnPtr ColumnTuple::cloneEmpty() const
     return ColumnTuple::create(std::move(new_columns));
 }
 
+MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
+{
+    const size_t tuple_size = columns.size();
+    MutableColumns new_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->cloneResized(new_size);
+
+    return ColumnTuple::create(std::move(new_columns));
+}
+
 Field ColumnTuple::operator[](size_t n) const
 {
     return Tuple{ext::map<TupleBackend>(columns, [n] (const auto & column) { return (*column)[n]; })};
@@ -118,7 +129,7 @@ void ColumnTuple::insert(const Field & x)
 
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 {
-    const ColumnTuple & src = static_cast<const ColumnTuple &>(src_);
+    const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
 
     const size_t tuple_size = columns.size();
     if (src.columns.size() != tuple_size)
@@ -172,7 +183,7 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertRangeFrom(
-            *static_cast<const ColumnTuple &>(src).columns[i],
+            *assert_cast<const ColumnTuple &>(src).columns[i],
             start, length);
 }
 
@@ -245,7 +256,7 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        if (int res = columns[i]->compareAt(n, m, *static_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
+        if (int res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
             return res;
 
     return 0;

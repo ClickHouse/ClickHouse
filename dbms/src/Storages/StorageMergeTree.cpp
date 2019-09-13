@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -36,6 +37,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int UNKNOWN_SETTING;
 }
 
 namespace ActionLocks
@@ -51,6 +53,7 @@ StorageMergeTree::StorageMergeTree(
     const String & table_name_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
+    const ConstraintsDescription & constraints_,
     bool attach,
     Context & context_,
     const String & date_column_name,
@@ -60,14 +63,14 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
     const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
-    const MergeTreeSettings & settings_,
+    std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
-            columns_, indices_,
+            columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
-            settings_, false, attach),
+            std::move(storage_settings_), false, attach),
         path(path_),
         background_pool(context_.getBackgroundPool()),
         reader(*this), writer(*this), merger_mutator(*this, global_context.getBackgroundPool())
@@ -154,13 +157,13 @@ void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
     global_context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
 }
 
-void StorageMergeTree::drop()
+void StorageMergeTree::drop(TableStructureWriteLockHolder &)
 {
     shutdown();
     dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &, const Context &)
+void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -178,7 +181,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     clearOldPartsFromFilesystem();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
@@ -242,18 +245,29 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
 void StorageMergeTree::alter(
     const AlterCommands & params,
-    const String & current_database_name,
-    const String & current_table_name,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
+
     if (!params.isMutable())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndices();
-        params.apply(new_columns);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
+        auto new_constraints = getConstraints();
+        ASTPtr new_order_by_ast = order_by_ast;
+        ASTPtr new_primary_key_ast = primary_key_ast;
+        ASTPtr new_ttl_table_ast = ttl_table_ast;
+        SettingsChanges new_changes;
+
+        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
+
+        changeSettings(new_changes, table_lock_holder);
+
+        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier);
         setColumns(std::move(new_columns));
         return;
     }
@@ -262,15 +276,15 @@ void StorageMergeTree::alter(
     auto merge_blocker = merger_mutator.merges_blocker.cancel();
 
     lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-
     checkAlter(params, context);
-
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
-    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+    SettingsChanges new_changes;
+    params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
 
     auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
@@ -288,12 +302,21 @@ void StorageMergeTree::alter(
 
         if (new_ttl_table_ast.get() != ttl_table_ast.get())
             storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
+
+        if (!new_changes.empty())
+        {
+            auto settings_modifier = getSettingsModifier(new_changes);
+            settings_modifier(ast);
+        }
     };
 
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
+    changeSettings(new_changes, table_lock_holder);
+
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
+
 
     /// Reinitialize primary key because primary key column types might have changed.
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
+    setProperties(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, new_constraints);
 
     setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 
@@ -630,8 +653,6 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        auto disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
         std::lock_guard lock(currently_merging_mutex);
 
         if (current_mutations_by_version.empty())
@@ -647,8 +668,7 @@ bool StorageMergeTree::tryMutatePart()
             if (mutations_begin_it == mutations_end_it)
                 continue;
 
-            auto estimated_needed_space = MergeTreeDataMergerMutator::estimateNeededDiskSpace({part});
-            if (estimated_needed_space > disk_space)
+            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
                 continue;
 
             for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
@@ -661,7 +681,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.part_info = new_part_info;
             future_part.name = part->getNewName(new_part_info);
 
-            tagger.emplace(future_part, estimated_needed_space, *this);
+            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this);
             break;
         }
     }
@@ -792,14 +812,15 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
 
 void StorageMergeTree::clearOldMutations()
 {
-    if (!settings.finished_mutations_to_keep)
+    const auto settings = getSettings();
+    if (!settings->finished_mutations_to_keep)
         return;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_merging_mutex);
 
-        if (current_mutations_by_version.size() <= settings.finished_mutations_to_keep)
+        if (current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
             return;
 
         auto begin_it = current_mutations_by_version.begin();
@@ -810,10 +831,10 @@ void StorageMergeTree::clearOldMutations()
             end_it = current_mutations_by_version.upper_bound(*min_version);
 
         size_t done_count = std::distance(begin_it, end_it);
-        if (done_count <= settings.finished_mutations_to_keep)
+        if (done_count <= settings->finished_mutations_to_keep)
             return;
 
-        size_t to_delete_count = done_count - settings.finished_mutations_to_keep;
+        size_t to_delete_count = done_count - settings->finished_mutations_to_keep;
 
         auto it = begin_it;
         for (size_t i = 0; i < to_delete_count; ++i)
@@ -848,10 +869,14 @@ void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, c
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
+    SettingsChanges ignored_settings_changes;
+
+    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast,
+        ignored_primary_key_ast, ignored_ttl_table_ast, ignored_settings_changes);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
@@ -950,6 +975,10 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                 dropPartition(command.partition, command.detach, context);
                 break;
 
+            case PartitionCommand::DROP_DETACHED_PARTITION:
+                dropDetached(command.partition, command.part, context);
+                break;
+
             case PartitionCommand::ATTACH_PARTITION:
                 attachPartition(command.partition, command.part, context);
                 break;
@@ -966,7 +995,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezePartition(command.partition, command.with_name, context);
+                freezePartition(command.partition, command.with_name, context, lock);
             }
             break;
 
@@ -991,7 +1020,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockStructureForShare(false, context.getCurrentQueryId());
-                freezeAll(command.with_name, context);
+                freezeAll(command.with_name, context, lock);
             }
             break;
 
@@ -1014,6 +1043,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 
         /// TODO: should we include PreComitted parts like in Replicated case?
         auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        // TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
 
         if (detach)
@@ -1037,51 +1067,14 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
 
-    String partition_id;
+    PartsTemporaryRename renamed_parts(*this, full_path + "detached/");
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, context, renamed_parts);
 
-    if (attach_part)
-        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-    else
-        partition_id = getPartitionIDFromQuery(partition, context);
-
-    String source_dir = "detached/";
-
-    /// Let's make a list of parts to add.
-    Strings parts;
-    if (attach_part)
+    for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        parts.push_back(partition_id);
-    }
-    else
-    {
-        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ActiveDataPartSet active_parts(format_version);
-        for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
-        {
-            const String & name = it.name();
-            MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
-                || part_info.partition_id != partition_id)
-            {
-                continue;
-            }
-            LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
-        }
-        LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
-    }
-
-    for (const auto & source_part_name : parts)
-    {
-        String source_path = source_dir + source_part_name;
-
-        LOG_DEBUG(log, "Checking data");
-        MutableDataPartPtr part = loadPartAndFixMetadata(source_path);
-
-        LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path);
-        renameTempPartAndAdd(part, &increment);
-
+        LOG_INFO(log, "Attaching part " << loaded_parts[i]->name << " from " << renamed_parts.old_and_new_names[i].second);
+        renameTempPartAndAdd(loaded_parts[i], &increment);
+        renamed_parts.old_and_new_names[i].first.clear();
         LOG_INFO(log, "Finished attaching part");
     }
 
@@ -1160,6 +1153,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         throw;
     }
 }
+
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {

@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 #include <common/unaligned.h>
 
@@ -133,7 +134,7 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 template <typename T>
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnDecimal & src_vec = static_cast<const ColumnDecimal &>(src);
+    const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
     if (start + length > src_vec.data.size())
         throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length) +
