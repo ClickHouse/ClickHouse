@@ -704,6 +704,13 @@ bool Context::hasDatabaseAccessRights(const String & database_name) const
         shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name);
 }
 
+bool Context::hasDictionaryAccessRights(const String & dictionary_name) const
+{
+    auto lock = getLock();
+    return client_info.current_user.empty() ||
+        shared->users_manager->hasAccessToDictionary(client_info.current_user, dictionary_name);
+}
+
 void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
 {
     if (client_info.current_user.empty() || (database_name == "system"))

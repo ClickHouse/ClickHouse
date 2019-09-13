@@ -326,6 +326,23 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         }
     }
 
+    /// Fill list of allowed databases.
+    const auto config_dictionary_sub_elem = config_elem + ".allow_dictionaries";
+    if (config.has(config_dictionary_sub_elem))
+    {
+        Poco::Util::AbstractConfiguration::Keys config_keys;
+        config.keys(config_dictionary_sub_elem, config_keys);
+
+        dictionaries.reserve(config_keys.size());
+        for (const auto & key : config_keys)
+        {
+            const auto dictionary_name = config.getString(config_dictionary_sub_elem + "." + key);
+            dictionaries.insert(dictionary_name);
+        }
+    }
+
+
+
     /// Read properties per "database.table"
     /// Only tables are expected to have properties, so that all the keys inside "database" are table names.
     const auto config_databases = config_elem + ".databases";

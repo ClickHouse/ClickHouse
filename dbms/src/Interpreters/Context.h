@@ -253,6 +253,8 @@ public:
     bool hasDatabaseAccessRights(const String & database_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
+    bool hasDictionaryAccessRights(const String & dictionary_name) const;
+
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
       * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
       * made this check.
