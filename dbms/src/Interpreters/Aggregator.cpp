@@ -509,6 +509,13 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
 {
+    UInt64 num_rows = block.rows();
+    return executeOnBlock(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys);
+}
+
+bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
+{
     if (isCancelled())
         return true;
 
@@ -538,7 +545,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        materialized_columns.push_back(block.safeGetByPosition(params.keys[i]).column->convertToFullColumnIfConst());
+        materialized_columns.push_back(columns.at(params.keys[i])->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back().get();
 
         if (!result.isLowCardinality())
@@ -559,7 +566,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            materialized_columns.push_back(block.safeGetByPosition(params.aggregates[i].arguments[j]).column->convertToFullColumnIfConst());
+            materialized_columns.push_back(columns.at(params.aggregates[i].arguments[j])->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             auto column_no_lc = recursiveRemoveLowCardinality(aggregate_columns[i][j]->getPtr());
@@ -579,8 +586,6 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     if (isCancelled())
         return true;
 
-    size_t rows = block.rows();
-
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {
         AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
@@ -593,7 +598,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     /// For the case when there are no keys (all aggregate into one row).
     if (result.type == AggregatedDataVariants::Type::without_key)
     {
-        executeWithoutKeyImpl(result.without_key, rows, aggregate_functions_instructions.data(), result.aggregates_pool);
+        executeWithoutKeyImpl(result.without_key, num_rows, aggregate_functions_instructions.data(), result.aggregates_pool);
     }
     else
     {
@@ -602,7 +607,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_functions_instructions.data(), \
+                executeImpl(*result.NAME, result.aggregates_pool, num_rows, key_columns, aggregate_functions_instructions.data(), \
                     no_more_keys, overflow_row_ptr);
 
         if (false) {}
@@ -737,6 +742,30 @@ Block Aggregator::convertOneBucketToBlock(
         });
 
     block.info.bucket_num = bucket;
+    return block;
+}
+
+Block Aggregator::mergeAndConvertOneBucketToBlock(
+    ManyAggregatedDataVariants & variants,
+    Arena * arena,
+    bool final,
+    size_t bucket) const
+{
+    auto & merged_data = *variants[0];
+    auto method = merged_data.type;
+    Block block;
+
+    if (false) {}
+#define M(NAME) \
+    else if (method == AggregatedDataVariants::Type::NAME) \
+    { \
+        mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena); \
+        block = convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket); \
+    }
+
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+
     return block;
 }
 
@@ -1635,9 +1664,7 @@ private:
     }
 };
 
-
-std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
-    ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
+ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const
 {
     if (data_variants.empty())
         throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
@@ -1651,7 +1678,7 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
             non_empty_data.push_back(data);
 
     if (non_empty_data.empty())
-        return std::make_unique<NullBlockInputStream>(getHeader(final));
+        return {};
 
     if (non_empty_data.size() > 1)
     {
@@ -1694,6 +1721,17 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
         first->aggregates_pools.insert(first->aggregates_pools.end(),
             non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
     }
+
+    return non_empty_data;
+}
+
+std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
+    ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
+{
+    ManyAggregatedDataVariants non_empty_data = prepareVariantsToMerge(data_variants);
+
+    if (non_empty_data.empty())
+        return std::make_unique<NullBlockInputStream>(getHeader(final));
 
     return std::make_unique<MergingAndConvertingBlockInputStream>(*this, non_empty_data, final, max_threads);
 }
