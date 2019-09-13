@@ -1013,6 +1013,8 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 In this example, `COLUMNS('a')` returns two columns `aa`, `ab`, and `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the message about it.
 
+Columns that matched by the `COLUMNS` expression can be in different types. If `COLUMNS` doesn't match any columns and it is the single expression in `SELECT`, ClickHouse throws an exception.
+
 
 ### DISTINCT Clause {#select-distinct}
 
