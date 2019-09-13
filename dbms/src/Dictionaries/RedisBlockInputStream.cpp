@@ -163,8 +163,6 @@ namespace DB
                 insertValue(*columns[idx], description.types[idx].first, value, name);
         };
 
-        std::cerr << "keys: " << keys.toString() << "\n";
-
         if (keys.begin()->get()->isArray())
         {
             size_t num_rows = 0;
@@ -200,8 +198,6 @@ namespace DB
                     commandForValues.addRedisType(secondary_key);
                 }
                 ++cursor;
-
-                std::cerr << "Redis command: " << commandForValues.toString() << "\n";
 
                 Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
                 if (keys_array.size() != values.size() + 1) // 'HMGET' primary_key secondary_keys
