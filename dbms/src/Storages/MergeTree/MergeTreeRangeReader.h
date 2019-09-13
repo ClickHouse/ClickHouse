@@ -157,7 +157,7 @@ public:
 
         void addNumBytesRead(size_t count) { num_bytes_read += count; }
 
-        Block block;
+        Columns columns;
 
     private:
         RangesInfo started_ranges;

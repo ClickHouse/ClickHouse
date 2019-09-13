@@ -19,7 +19,8 @@ namespace ErrorCodes
 }
 
 
-MergeTreeBaseSelectBlockInputStream::MergeTreeBaseSelectBlockInputStream(
+MergeTreeBaseSelectBlockInputProcessor::MergeTreeBaseSelectBlockInputProcessor(
+    Block header,
     const MergeTreeData & storage_,
     const PrewhereInfoPtr & prewhere_info_,
     UInt64 max_block_size_rows_,
@@ -31,6 +32,7 @@ MergeTreeBaseSelectBlockInputStream::MergeTreeBaseSelectBlockInputStream(
     bool save_marks_in_cache_,
     const Names & virt_column_names_)
 :
+    ISource(getHeader(std::move(header), prewhere_info_, virt_column_names_)),
     storage(storage_),
     prewhere_info(prewhere_info_),
     max_block_size_rows(max_block_size_rows_),
@@ -45,26 +47,27 @@ MergeTreeBaseSelectBlockInputStream::MergeTreeBaseSelectBlockInputStream(
 }
 
 
-Block MergeTreeBaseSelectBlockInputStream::readImpl()
+Chunk MergeTreeBaseSelectBlockInputProcessor::generate()
 {
-    Block res;
-
-    while (!res && !isCancelled())
+    while (!isCancelled())
     {
         if ((!task || task->isFinished()) && !getNewTask())
-            break;
+            return {};
 
-        res = readFromPart();
+        auto res = readFromPart();
 
-        if (res)
-            injectVirtualColumns(res);
+        if (!res.hasNoRows())
+        {
+            injectVirtualColumns(res, task.get(), virt_column_names);
+            return res;
+        }
     }
 
-    return res;
+    return {};
 }
 
 
-void MergeTreeBaseSelectBlockInputStream::initializeRangeReaders(MergeTreeReadTask & current_task)
+void MergeTreeBaseSelectBlockInputProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
     if (prewhere_info)
     {
@@ -103,7 +106,7 @@ void MergeTreeBaseSelectBlockInputStream::initializeRangeReaders(MergeTreeReadTa
 }
 
 
-Block MergeTreeBaseSelectBlockInputStream::readFromPartImpl()
+Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
 {
     if (task->size_predictor)
         task->size_predictor->startBlock();
@@ -160,7 +163,8 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPartImpl()
 
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.block.rows();
 
-    progressImpl({ read_result.numReadRows(), read_result.numBytesRead() });
+    /// TODO
+    /// progressImpl({ read_result.numReadRows(), read_result.numBytesRead() });
 
     if (task->size_predictor)
     {
@@ -177,13 +181,14 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPartImpl()
         column.column = column.column->convertToFullColumnIfConst();
     }
 
-    read_result.block.checkNumberOfRows();
+    UInt64 num_rows = read_result.columns.empty() ? 0
+                                                  : read_result.columns[0]->size();
 
-    return read_result.block;
+    return Chunk(std::move(read_result.columns), num_rows);
 }
 
 
-Block MergeTreeBaseSelectBlockInputStream::readFromPart()
+Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPart()
 {
     if (!task->range_reader.isInitialized())
         initializeRangeReaders(*task);
@@ -192,15 +197,18 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
 }
 
 
-void MergeTreeBaseSelectBlockInputStream::injectVirtualColumns(Block & block) const
+template <typename InsertCallback>
+static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, MergeTreeReadTask * task, const Names & virtual_columns)
 {
     /// add virtual columns
     /// Except _sample_factor, which is added from the outside.
-    if (!virt_column_names.empty())
+    if (!virtual_columns.empty())
     {
-        const auto rows = block.rows();
+        if (unlikely(rows && !task))
+            throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
+                            ErrorCodes::LOGICAL_ERROR);
 
-        for (const auto & virt_column_name : virt_column_names)
+        for (const auto & virt_column_name : virtual_columns)
         {
             if (virt_column_name == "_part")
             {
@@ -210,7 +218,7 @@ void MergeTreeBaseSelectBlockInputStream::injectVirtualColumns(Block & block) co
                 else
                     column = DataTypeString().createColumn();
 
-                block.insert({ column, std::make_shared<DataTypeString>(), virt_column_name});
+                callback.template insert<DataTypeString>(column, virt_column_name);
             }
             else if (virt_column_name == "_part_index")
             {
@@ -220,7 +228,7 @@ void MergeTreeBaseSelectBlockInputStream::injectVirtualColumns(Block & block) co
                 else
                     column = DataTypeUInt64().createColumn();
 
-                block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
+                callback.template insert<DataTypeUInt64>(column, virt_column_name);
             }
             else if (virt_column_name == "_partition_id")
             {
@@ -230,14 +238,55 @@ void MergeTreeBaseSelectBlockInputStream::injectVirtualColumns(Block & block) co
                 else
                     column = DataTypeString().createColumn();
 
-                block.insert({ column, std::make_shared<DataTypeString>(), virt_column_name});
+                callback.template insert<DataTypeString>(column, virt_column_name);
             }
         }
     }
 }
 
+namespace
+{
+    struct InsertIntoBlockCallback
+    {
+        template <typename DataType>
+        void insert(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataType>(), name});
+        }
 
-void MergeTreeBaseSelectBlockInputStream::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
+        Block & block;
+    };
+
+    struct InsertIntoColumnsCallback
+    {
+        template <typename>
+        void insert(const ColumnPtr & column, const String &)
+        {
+            columns.push_back(column);
+        }
+
+        Columns & columns;
+    };
+}
+
+void MergeTreeBaseSelectBlockInputProcessor::injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns)
+{
+    InsertIntoBlockCallback callback { block };
+    injectVirtualColumnsImpl(block.rows(), callback, task, virtual_columns);
+}
+
+void MergeTreeBaseSelectBlockInputProcessor::injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns)
+{
+    UInt64 num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+
+    InsertIntoColumnsCallback callback { columns };
+    injectVirtualColumnsImpl(num_rows, callback, task, virtual_columns);
+
+    chunk.setColumns(columns, num_rows);
+}
+
+void MergeTreeBaseSelectBlockInputProcessor::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
 {
     if (prewhere_info)
     {
@@ -253,7 +302,15 @@ void MergeTreeBaseSelectBlockInputStream::executePrewhereActions(Block & block, 
     }
 }
 
+Block MergeTreeBaseSelectBlockInputProcessor::getHeader(
+    Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
+{
+    executePrewhereActions(block, prewhere_info);
+    injectVirtualColumns(block, nullptr, virtual_columns);
+    return block;
+}
 
-MergeTreeBaseSelectBlockInputStream::~MergeTreeBaseSelectBlockInputStream() = default;
+
+MergeTreeBaseSelectBlockInputProcessor::~MergeTreeBaseSelectBlockInputProcessor() = default;
 
 }

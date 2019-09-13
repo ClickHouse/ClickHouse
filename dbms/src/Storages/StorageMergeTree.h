@@ -35,7 +35,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
