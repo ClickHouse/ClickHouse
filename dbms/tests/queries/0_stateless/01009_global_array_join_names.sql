@@ -7,12 +7,12 @@ CREATE TABLE test2 as test1 ENGINE Distributed(test_shard_localhost, currentData
 INSERT INTO test1 VALUES (1, [1, 2, 3]);
 
 SELECT 1
-FROM d1 AS d1
+FROM test2 AS test2
 ARRAY JOIN arrayFilter(t -> (t GLOBAL IN
     (
         SELECT DISTINCT now() AS `ym:a`
         WHERE 1
-    )), d1.a) AS d1_a
+    )), test1.b) AS test1_b
 WHERE 1;
 
 DROP TABLE test1;
