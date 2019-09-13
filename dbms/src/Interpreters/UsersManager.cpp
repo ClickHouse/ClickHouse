@@ -148,5 +148,4 @@ bool UsersManager::hasAccessToDictionary(const std::string & user_name, const st
     auto user = it->second;
     return user->dictionaries.empty() || user->dictionaries.count(dictionary_name);
 }
-
 }
