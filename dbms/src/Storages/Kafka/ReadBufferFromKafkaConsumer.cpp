@@ -1,5 +1,7 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
+#include <common/logger_useful.h>
+
 namespace DB
 {
 
@@ -11,6 +13,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     size_t max_batch_size,
     size_t poll_timeout_,
     bool intermediate_commit_,
+    char delimiter_,
     const std::atomic<bool> & stopped_)
     : ReadBuffer(nullptr, 0)
     , consumer(consumer_)
@@ -18,6 +21,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , intermediate_commit(intermediate_commit_)
+    , delimiter(delimiter_)
     , stopped(stopped_)
     , current(messages.begin())
 {
@@ -68,20 +72,7 @@ void ReadBufferFromKafkaConsumer::commit()
 
     PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
 
-    if (current != messages.end())
-    {
-        /// Since we can poll more messages than we already processed,
-        /// commit only processed messages.
-        consumer->async_commit(*std::prev(current));
-    }
-    else
-    {
-        /// Commit everything we polled so far because either:
-        /// - read all polled messages (current == messages.end()),
-        /// - read nothing at all (messages.empty()),
-        /// - stalled.
-        consumer->async_commit();
-    }
+    consumer->async_commit();
 
     PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
 
@@ -152,6 +143,15 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     if (stalled || stopped)
         return false;
 
+    if (put_delimiter)
+    {
+        BufferBase::set(&delimiter, 1, 0);
+        put_delimiter = false;
+        return true;
+    }
+
+    put_delimiter = (delimiter != 0);
+
     if (current == messages.end())
     {
         if (intermediate_commit)
@@ -183,6 +183,9 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     // XXX: very fishy place with const casting.
     auto new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
     BufferBase::set(new_position, current->get_payload().get_size(), 0);
+
+    /// Since we can poll more messages than we already processed - commit only processed messages.
+    consumer->store_offset(*current);
 
     ++current;
 

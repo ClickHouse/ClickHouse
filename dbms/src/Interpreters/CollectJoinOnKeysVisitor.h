@@ -10,7 +10,7 @@ namespace DB
 {
 
 class ASTIdentifier;
-struct AnalyzedJoin;
+class AnalyzedJoin;
 
 class CollectJoinOnKeysMatcher
 {

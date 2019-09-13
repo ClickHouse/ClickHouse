@@ -64,6 +64,13 @@ struct QueryState
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
 
+    /// Request requires data from client for function input()
+    bool need_receive_data_for_input = false;
+    /// temporary place for incoming data block for input()
+    Block block_for_input;
+    /// sample block from StorageInput
+    Block input_header;
+
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
 
@@ -79,6 +86,13 @@ struct QueryState
     {
         return is_empty;
     }
+};
+
+
+struct LastBlockInputParameters
+{
+    Protocol::Compression compression = Protocol::Compression::Disable;
+    Block header;
 };
 
 
@@ -126,6 +140,9 @@ private:
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
 
+    /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
+    LastBlockInputParameters last_block_in;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
     /// It is the name of the server that will be sent to the client.
@@ -137,7 +154,14 @@ private:
     bool receivePacket();
     void receiveQuery();
     bool receiveData();
+    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & global_settings);
+    std::tuple<size_t, int> getReadTimeouts(const Settings & global_settings);
+
+    [[noreturn]] void receiveUnexpectedData();
+    [[noreturn]] void receiveUnexpectedQuery();
+    [[noreturn]] void receiveUnexpectedHello();
+    [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
     void processInsertQuery(const Settings & global_settings);

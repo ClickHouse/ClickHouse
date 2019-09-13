@@ -19,3 +19,4 @@ FROM
 ) USING domain
 ORDER BY hits DESC
 LIMIT 10
+SETTINGS joined_subquery_requires_alias = 0;

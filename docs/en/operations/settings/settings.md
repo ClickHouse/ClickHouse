@@ -72,6 +72,9 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
 
+## format_schema
+
+This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/), [Protobuf](https://developers.google.com/protocol-buffers/) or [Template](../../interfaces/formats.md#format-template). The value depends on the format.
 
 ## fsync_metadata
 
@@ -573,10 +576,6 @@ If a query from the same user with the same 'query_id' already exists at this ti
 
 Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn't finished yet, it should be canceled.
 
-## schema
-
-This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/). The value depends on the format.
-
 
 ## stream_flush_interval_ms
 
@@ -835,9 +834,6 @@ Possible values:
 
 Default value: `uniqExact`.
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
-
-
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
 Enables or disables silent skipping of:
@@ -860,5 +856,42 @@ Possible values:
 - 0 — skipping disabled.
 
 Default value: 0.
+
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
+
+Enables or disables throwing an exception if the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query have not performed a merge.
+
+By default `OPTIMIZE` returns successfully even if it haven't done anything. This setting allows to distinguish this situation and get the reason in exception message.
+
+Possible values:
+
+- 1 — Throwing an exception is enabled.
+- 0 — Throwing an exception is disabled.
+
+Default value: 0.
+## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
+
+- Type: seconds
+- Default value: 60 seconds
+
+Controls how fast errors of distributed tables are zeroed. Given that currently a replica was unavailabe for some time and accumulated 5 errors and distributed_replica_error_half_life is set to 1 second, then said replica is considered back to normal in 3 seconds since last error.
+
+** See also **
+
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [`distributed_replica_error_cap`](#settings-distributed_replica_error_cap)
+
+
+## distributed_replica_error_cap {#settings-distributed_replica_error_cap}
+
+- Type: unsigned int
+- Default value: 1000
+
+Error count of each replica is capped at this value, preventing a single replica from accumulating to many errors.
+
+** See also **
+
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->

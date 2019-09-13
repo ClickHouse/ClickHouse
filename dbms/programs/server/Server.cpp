@@ -55,6 +55,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
+#include <Common/SensitiveDataMasker.h>
 
 
 #if defined(__linux__)
@@ -278,7 +279,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+
         global_context->shutdown();
+
         LOG_DEBUG(log, "Shutted down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -407,6 +410,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    if (config().has("query_masking_rules"))
+    {
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         config().getString("path", ""),

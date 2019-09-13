@@ -116,7 +116,7 @@ private:
         const DataPartPtr & part,
         std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
 
-    void clearOldMutations();
+    void clearOldMutations(bool truncate = false);
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);

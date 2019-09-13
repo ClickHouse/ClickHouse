@@ -50,6 +50,15 @@ struct FormatSettings
 
     Values values;
 
+    struct Template
+    {
+        String format;
+        String row_format;
+        String row_between_delimiter;
+    };
+
+    Template template_settings;
+
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool write_statistics = true;
