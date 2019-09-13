@@ -141,7 +141,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 }
 
 
-BlockInputStreams MergeTreeDataSelectExecutor::read(
+Pipes MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -154,7 +154,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         max_block_size, num_streams, max_block_numbers_to_read);
 }
 
-BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
+Pipes MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
@@ -565,7 +565,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     ProfileEvents::increment(ProfileEvents::SelectedRanges, sum_ranges);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, sum_marks);
 
-    BlockInputStreams res;
+    Pipes res;
 
     if (select.final())
     {
@@ -658,7 +658,7 @@ size_t roundRowsOrBytesToMarks(
 }
 
 
-BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
+Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
@@ -707,7 +707,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
 
-    BlockInputStreams res;
+    Pipes res;
 
     if (sum_marks > 0 && settings.merge_tree_uniform_read_distribution == 1)
     {
@@ -817,7 +817,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     return res;
 }
 
-BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
+Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
@@ -1026,7 +1026,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithO
 }
 
 
-BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
+Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
     const Names & column_names,
     UInt64 max_block_size,

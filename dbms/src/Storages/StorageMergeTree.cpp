@@ -121,7 +121,7 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-BlockInputStreams StorageMergeTree::read(
+Pipes StorageMergeTree::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

@@ -11,7 +11,7 @@ class MergeTreeReadPool;
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
   */
-class MergeTreeThreadSelectBlockInputStream : public MergeTreeBaseSelectBlockInputStream
+class MergeTreeThreadSelectBlockInputStream : public MergeTreeBaseSelectBlockInputProcessor
 {
 public:
     MergeTreeThreadSelectBlockInputStream(
@@ -30,8 +30,6 @@ public:
     String getName() const override { return "MergeTreeThread"; }
 
     ~MergeTreeThreadSelectBlockInputStream() override;
-
-    Block getHeader() const override;
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one

@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <Processors/ISource.h>
+
 namespace DB
 {
 
@@ -14,10 +16,11 @@ class MarkCache;
 
 
 /// Base class for MergeTreeThreadSelectBlockInputStream and MergeTreeSelectBlockInputStream
-class MergeTreeBaseSelectBlockInputStream : public IBlockInputStream
+class MergeTreeBaseSelectBlockInputProcessor : public ISource
 {
 public:
-    MergeTreeBaseSelectBlockInputStream(
+    MergeTreeBaseSelectBlockInputProcessor(
+        Block header,
         const MergeTreeData & storage_,
         const PrewhereInfoPtr & prewhere_info_,
         UInt64 max_block_size_rows_,
@@ -29,24 +32,23 @@ public:
         bool save_marks_in_cache_ = true,
         const Names & virt_column_names_ = {});
 
-    ~MergeTreeBaseSelectBlockInputStream() override;
+    ~MergeTreeBaseSelectBlockInputProcessor() override;
 
     static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
 
 protected:
-    Block readImpl() final;
+    Chunk generate() final;
 
     /// Creates new this->task, and initilizes readers
     virtual bool getNewTask() = 0;
 
-    /// We will call progressImpl manually.
-    void progress(const Progress &) override {}
+    virtual Chunk readFromPart();
 
-    virtual Block readFromPart();
+    Chunk readFromPartImpl();
 
-    Block readFromPartImpl();
-
-    void injectVirtualColumns(Block & block) const;
+    static void injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns);
+    static void injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns);
+    static Block getHeader(Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns);
 
     void initializeRangeReaders(MergeTreeReadTask & task);
 

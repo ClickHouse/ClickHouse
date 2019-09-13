@@ -20,7 +20,7 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     const Settings & settings,
     const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
+    MergeTreeBaseSelectBlockInputProcessor{pool->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, settings.min_bytes_to_use_direct_io,
         settings.max_read_buffer_size, use_uncompressed_cache_, true, virt_column_names_},
     thread{thread_},
@@ -38,18 +38,8 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     else
         min_marks_to_read = min_marks_to_read_;
 
-    ordered_names = getHeader().getNames();
+    ordered_names = getPort().getHeader().getNames();
 }
-
-
-Block MergeTreeThreadSelectBlockInputStream::getHeader() const
-{
-    auto res = pool->getHeader();
-    executePrewhereActions(res, prewhere_info);
-    injectVirtualColumns(res);
-    return res;
-}
-
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadSelectBlockInputStream::getNewTask()
