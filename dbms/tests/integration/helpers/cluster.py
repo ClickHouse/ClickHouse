@@ -114,7 +114,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -135,7 +135,7 @@ class ClickHouseCluster:
             self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address,
-            with_installed_binary=with_installed_binary)
+            with_installed_binary=with_installed_binary, tmpfs=tmpfs)
 
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
@@ -395,6 +395,10 @@ class ClickHouseCluster:
             instance.client = None
 
 
+    def open_bash_shell(self, instance_name):
+        os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
+
+
     def get_kazoo_client(self, zoo_instance_name):
         zk = KazooClient(hosts=self.get_instance_ip(zoo_instance_name))
         zk.start()
@@ -435,6 +439,7 @@ services:
             {odbc_bridge_volume}
             {odbc_ini_path}
         entrypoint: {entrypoint_cmd}
+        tmpfs: {tmpfs}
         cap_add:
             - SYS_PTRACE
         depends_on: {depends_on}
@@ -456,7 +461,7 @@ class ClickHouseInstance:
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -464,6 +469,7 @@ class ClickHouseInstance:
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
+        self.tmpfs = tmpfs[:]
         self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
@@ -811,6 +817,7 @@ class ClickHouseInstance:
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,
+                tmpfs=str(self.tmpfs),
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),
                 user=os.getuid(),

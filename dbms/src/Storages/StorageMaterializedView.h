@@ -65,7 +65,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    String getDataPath() const override;
+    Strings getDataPaths() const override;
 
 private:
     String select_database_name;
