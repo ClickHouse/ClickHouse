@@ -132,37 +132,52 @@ namespace DB
 
     RedisDictionarySource::~RedisDictionarySource() = default;
 
+    static std::string storageTypeToKeyType(RedisStorageType::Id type)
+    {
+        switch (type)
+        {
+            case RedisStorageType::Id::SIMPLE:
+                return "string";
+            case RedisStorageType::Id::HASH_MAP:
+                return "hash";
+            default:
+                return "none";
+        }
+
+        __builtin_unreachable();       
+    }
 
     BlockInputStreamPtr RedisDictionarySource::loadAll()
     {
         Poco::Redis::Command command_for_keys("KEYS");
         command_for_keys << "*";
 
-        Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(command_for_keys);
+        /// Get only keys for specified storage type.
+        auto all_keys = client->execute<Poco::Redis::Array>(command_for_keys);
+        Poco::Redis::Array keys;
+        auto key_type = storageTypeToKeyType(storage_type);
+        for (auto & key : all_keys)
+            if (key_type == client->execute<std::string>(Poco::Redis::Command("TYPE").addRedisType(key)))
+                keys.addRedisType(std::move(key));
 
         if (storage_type == RedisStorageType::HASH_MAP && !keys.isNull())
         {
             Poco::Redis::Array hkeys;
             for (const auto & key : keys)
             {
-                Poco::Redis::Command command_for_type("TYPE");
-                auto type_reply = client->execute<std::string>(command_for_type.addRedisType(key));
-                if (type_reply != "hash")
-                    continue;
-
                 Poco::Redis::Command command_for_secondary_keys("HKEYS");
                 command_for_secondary_keys.addRedisType(key);
 
-                Poco::Redis::Array reply_for_primary_key = client->execute<Poco::Redis::Array>(command_for_secondary_keys);
+                auto secondary_keys = client->execute<Poco::Redis::Array>(command_for_secondary_keys);
 
                 Poco::Redis::Array primary_with_secondary;
                 primary_with_secondary.addRedisType(key);
-                for (const auto & secondary_key : reply_for_primary_key)
+                for (const auto & secondary_key : secondary_keys)
                     primary_with_secondary.addRedisType(secondary_key);
 
-                hkeys.add(primary_with_secondary);
+                hkeys.add(std::move(primary_with_secondary));
             }
-            keys = hkeys;
+            keys = std::move(hkeys);
         }
 
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
