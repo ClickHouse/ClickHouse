@@ -310,7 +310,7 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 - `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
 - `N` — инкрементальный номер резервной копии.
 
-!!! note
+!!! note "Примечание"
     При использовании [нескольких дисков для хранения данных таблицы](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
 
 Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит 'chmod' для всех файлов, запрещая запись в них.
