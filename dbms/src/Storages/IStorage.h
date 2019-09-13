@@ -41,6 +41,11 @@ class AlterCommands;
 class MutationCommands;
 class PartitionCommands;
 
+class IProcessor;
+using ProcessorPtr = std::shared_ptr<IProcessor>;
+using Processors = std::vector<ProcessorPtr>;
+using Pipes = std::vector<Processors>;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -234,6 +239,14 @@ public:
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
       */
     virtual BlockInputStreams read(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/);
+
+    virtual Pipes readWithProcessors(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
