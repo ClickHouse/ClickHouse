@@ -15,10 +15,10 @@ Some of the files might not download fully. Check the file sizes and re-download
 Some of the files might contain invalid rows. You can fix them as follows:
 
 ```bash
-sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
-sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
-mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
-mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
+$ sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
+$ sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
+$ mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
+$ mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 ```
 
 Then the data must be pre-processed in PostgreSQL. This will create selections of points in the polygons (to match points on the map with the boroughs of New York City) and combine all the data into a single denormalized flat table by using a JOIN. To do this, you will need to install PostgreSQL with PostGIS support.
@@ -29,13 +29,12 @@ It takes about 20-30 minutes to process each month's worth of data in PostgreSQL
 
 You can check the number of downloaded rows as follows:
 
-```
+```sql
 time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
+```
+```text
 ## Count
  1298979494
-(1 row)
-
-real    7m9.164s
 ```
 
 (This is slightly more than 1.1 billion rows reported by Mark Litwintschik in a series of blog posts.)
@@ -44,7 +43,7 @@ The data in PostgreSQL uses 370 GB of space.
 
 Exporting the data from PostgreSQL:
 
-``` sql
+```sql
 COPY
 (
     SELECT trips.id,
@@ -119,7 +118,7 @@ This takes about 5 hours. The resulting TSV file is 590612904969 bytes.
 
 Create a temporary table in ClickHouse:
 
-``` sql
+```sql
 CREATE TABLE trips
 (
 trip_id                 UInt32,
@@ -178,10 +177,8 @@ dropoff_puma            Nullable(String)
 
 It is needed for converting fields to more correct data types and, if possible, to eliminate NULLs.
 
-```
+```bash
 time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
-
-real    75m56.214s
 ```
 
 Data is read at a speed of 112-140 Mb/second.
