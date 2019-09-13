@@ -43,6 +43,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
         {"engine",                                     std::make_shared<DataTypeString>()},
+        {"disk_name",                                  std::make_shared<DataTypeString>()},
         {"path",                                       std::make_shared<DataTypeString>()},
 
         {"column",                                     std::make_shared<DataTypeString>()},
@@ -135,7 +136,9 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
             columns_[j++]->insert(info.database);
             columns_[j++]->insert(info.table);
             columns_[j++]->insert(info.engine);
+            columns_[j++]->insert(part->disk->getName());
             columns_[j++]->insert(part->getFullPath());
+
             columns_[j++]->insert(column.name);
             columns_[j++]->insert(column.type->getName());
 
