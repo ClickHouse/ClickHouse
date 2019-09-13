@@ -325,11 +325,11 @@ BlockOutputStreamPtr StorageFile::write(
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
 
-String StorageFile::getDataPath() const
+Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
         throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
-    return paths[0];
+    return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
