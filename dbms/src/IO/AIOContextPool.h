@@ -2,7 +2,6 @@
 
 #if defined(__linux__) || defined(__FreeBSD__)
 
-#include <ext/singleton.h>
 #include <condition_variable>
 #include <future>
 #include <mutex>
@@ -14,10 +13,8 @@
 namespace DB
 {
 
-class AIOContextPool : public ext::singleton<AIOContextPool>
+class AIOContextPool : private boost::noncopyable
 {
-    friend class ext::singleton<AIOContextPool>;
-
     static const auto max_concurrent_events = 128;
     static const auto timeout_sec = 1;
 
@@ -45,6 +42,8 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
     void reportExceptionToAnyProducer();
 
 public:
+    static AIOContextPool & instance();
+
     /// Request AIO read operation for iocb, returns a future with number of bytes read
     std::future<BytesRead> post(struct iocb & iocb);
 };

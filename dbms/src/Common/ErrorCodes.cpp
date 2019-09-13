@@ -447,6 +447,11 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 470;
     extern const int SETTINGS_ARE_NOT_SUPPORTED = 471;
     extern const int READONLY_SETTING = 472;
+    extern const int DEADLOCK_AVOIDED = 473;
+    extern const int INVALID_TEMPLATE_FORMAT = 474;
+    extern const int INVALID_WITH_FILL_EXPRESSION = 475;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY = 476;
+    extern const int INVALID_USAGE_OF_INPUT = 477;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

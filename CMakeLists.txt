@@ -1,3 +1,6 @@
+project(ClickHouse)
+cmake_minimum_required(VERSION 3.3)
+
 foreach(policy
         CMP0023
         CMP0048 # CMake 3.0
@@ -9,9 +12,6 @@ foreach(policy
         cmake_policy(SET ${policy} NEW)
     endif()
 endforeach()
-
-project(ClickHouse)
-cmake_minimum_required(VERSION 3.3)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -152,6 +152,9 @@ if (LINKER_NAME)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
+# Make sure the final executable has symbols exported
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
+
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 if(NOT AVAILABLE_PHYSICAL_MEMORY OR AVAILABLE_PHYSICAL_MEMORY GREATER 8000)
     option(COMPILER_PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
@@ -227,7 +230,6 @@ endif ()
 # Make this extra-checks for correct library dependencies.
 if (NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
@@ -343,7 +345,7 @@ include (cmake/find_hyperscan.cmake)
 include (cmake/find_simdjson.cmake)
 include (cmake/find_rapidjson.cmake)
 include (cmake/find_fastops.cmake)
-include (cmake/find_orc.cmake)
+#include (cmake/find_orc.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
@@ -359,6 +361,29 @@ include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
+
+# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
+
+if (USE_JEMALLOC)
+    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
+    set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
+elseif (USE_TCMALLOC)
+    if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
+        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
+    endif ()
+
+    if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
+        message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
+        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
+    else ()
+        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
+        set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
+    endif ()
+elseif (SANITIZE)
+    message (STATUS "Will use ${SANITIZE} sanitizer.")
+else ()
+    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
+endif ()
 
 include (cmake/print_flags.cmake)
 

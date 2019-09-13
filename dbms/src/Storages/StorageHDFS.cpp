@@ -9,12 +9,17 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadBufferFromHDFS.h>
 #include <IO/WriteBufferFromHDFS.h>
+#include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
-
+#include <Common/parseGlobs.h>
+#include <Poco/URI.h>
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+#include <hdfs/hdfs.h>
 
 namespace DB
 {
@@ -129,6 +134,51 @@ private:
     BlockOutputStreamPtr writer;
 };
 
+/* Recursive directory listing with matched paths as a result.
+ * Have the same method in StorageFile.
+ */
+Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
+{
+    const size_t first_glob = for_match.find_first_of("*?{");
+
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+    const String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
+
+    const size_t next_slash = suffix_with_globs.find('/', 1);
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+
+    HDFSFileInfo ls;
+    ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
+    Strings result;
+    for (int i = 0; i < ls.length; ++i)
+    {
+        const String full_path = String(ls.file_info[i].mName);
+        const size_t last_slash = full_path.rfind('/');
+        const String file_name = full_path.substr(last_slash);
+        const bool looking_for_directory = next_slash != std::string::npos;
+        const bool is_directory = ls.file_info[i].mKind == 'D';
+        /// Condition with type of current file_info means what kind of path is it in current iteration of ls
+        if (!is_directory && !looking_for_directory)
+        {
+            if (re2::RE2::FullMatch(file_name, matcher))
+            {
+                result.push_back(String(ls.file_info[i].mName));
+            }
+        }
+        else if (is_directory && looking_for_directory)
+        {
+            if (re2::RE2::FullMatch(file_name, matcher))
+            {
+                Strings result_part = LSWithRegexpMatching(full_path + "/", fs, suffix_with_globs.substr(next_slash));
+                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+            }
+        }
+    }
+
+    return result;
+}
+
 }
 
 
@@ -140,12 +190,22 @@ BlockInputStreams StorageHDFS::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return {std::make_shared<HDFSBlockInputStream>(
-        uri,
-        format_name,
-        getSampleBlock(),
-        context_,
-        max_block_size)};
+    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    const String path_from_uri = uri.substr(begin_of_path);
+    const String uri_without_path = uri.substr(0, begin_of_path);
+
+    HDFSBuilderPtr builder = createHDFSBuilder(uri_without_path + "/");
+    HDFSFSPtr fs = createHDFSFS(builder.get());
+
+    const Strings res_paths = LSWithRegexpMatching("/", fs, path_from_uri);
+    BlockInputStreams result;
+    for (const auto & res_path : res_paths)
+    {
+        result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, format_name, getSampleBlock(), context_,
+                                                               max_block_size));
+    }
+
+    return result;
 }
 
 void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)

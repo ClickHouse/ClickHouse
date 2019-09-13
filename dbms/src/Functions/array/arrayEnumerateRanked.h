@@ -336,7 +336,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         /// Skipping offsets if no data in this array
         if (prev_off == off)
         {
-            want_clear = true;
+
+            if (depth_to_look > 2)
+                want_clear = true;
 
             if (depth_to_look >= 2)
             {
