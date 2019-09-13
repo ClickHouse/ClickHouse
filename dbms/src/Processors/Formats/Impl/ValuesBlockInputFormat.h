@@ -34,13 +34,20 @@ public:
     String getName() const override { return "ValuesBlockInputFormat"; }
 
 private:
+    enum class ParserType
+    {
+        Streaming,
+        BatchTemplate,
+        SingleExpressionEvaluation
+    };
+
     typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
     Chunk generate() override;
 
-    void parseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
-    void readValueOrParseSeparateExpression(IColumn & column, size_t column_idx);
-    void parseExpression(IColumn & column, size_t column_idx, bool deduce_template);
+    void tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
+    void tryReadValue(IColumn & column, size_t column_idx);
+    void parseExpression(IColumn & column, size_t column_idx);
 
     inline void assertDelimiterAfterValue(size_t column_idx);
     inline bool checkDelimiterAfterValue(size_t column_idx);
@@ -63,7 +70,9 @@ private:
     size_t num_columns;
     size_t total_rows = 0;
 
+    std::vector<ParserType> parser_type_for_column;
     std::vector<size_t> attempts_to_deduce_template;
+    std::vector<size_t> attempts_to_deduce_template_cached;
     std::vector<size_t> rows_parsed_using_template;
 
     ParserExpression parser;

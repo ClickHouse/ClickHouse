@@ -35,12 +35,15 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
                                                const Context & context_, const FormatSettings & format_settings_)
         : IInputFormat(header_, buf), buf(in_), params(params_), context(std::make_unique<Context>(context_)),
           format_settings(format_settings_), num_columns(header_.columns()),
-          attempts_to_deduce_template(num_columns), rows_parsed_using_template(num_columns), templates(num_columns)
+          parser_type_for_column(num_columns, ParserType::Streaming),
+          attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
+          rows_parsed_using_template(num_columns), templates(num_columns)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(buf);
     /// TODO remove before merge
     const_cast<FormatSettings&>(this->format_settings).values.interpret_expressions = false;
+    const_cast<FormatSettings&>(this->format_settings).values.deduce_templates_of_expressions = true;
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -69,12 +72,15 @@ Chunk ValuesBlockInputFormat::generate()
                 PeekableReadBufferCheckpoint checkpoint{buf};
 
                 /// Parse value using fast streaming parser for literals and slow SQL parser for expressions.
-                /// If there is SQL expression in the first row, template of this expression will be deduced,
-                /// so it makes possible to parse next rows much faster if expressions in next rows have the same structure
-                if (templates[column_idx])
-                    parseExpressionUsingTemplate(columns[column_idx], column_idx);
-                else
-                    readValueOrParseSeparateExpression(*columns[column_idx], column_idx);
+                /// If there is SQL expression in some row, template of this expression will be deduced,
+                /// so it makes possible to parse the following rows much faster
+                /// if expressions in the following rows have the same structure
+                if (parser_type_for_column[column_idx] == ParserType::Streaming)
+                    tryReadValue(*columns[column_idx], column_idx);
+                else if (parser_type_for_column[column_idx] == ParserType::BatchTemplate)
+                    tryParseExpressionUsingTemplate(columns[column_idx], column_idx);
+                else /// if (parser_type_for_column[column_idx] == ParserType::SingleExpressionEvaluation)
+                    parseExpression(*columns[column_idx], column_idx);
             }
 
             skipWhitespaceIfAny(buf);
@@ -115,8 +121,10 @@ Chunk ValuesBlockInputFormat::generate()
     return Chunk{std::move(columns), rows_in_block};
 }
 
-void ValuesBlockInputFormat::parseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
+void ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
+    if (!templates[column_idx])
+        throw Exception("bug", ErrorCodes::LOGICAL_ERROR);
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
     if (templates[column_idx]->parseExpression(buf, format_settings))
     {
@@ -138,52 +146,39 @@ void ValuesBlockInputFormat::parseExpressionUsingTemplate(MutableColumnPtr & col
     buf.rollbackToCheckpoint();
 
     /// It will deduce new template or fallback to slow SQL parser
-    parseExpression(*column, column_idx, shouldDeduceNewTemplate(column_idx));
+    parseExpression(*column, column_idx);
 }
 
-void ValuesBlockInputFormat::readValueOrParseSeparateExpression(IColumn & column, size_t column_idx)
+void ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 {
-    //bool rollback_on_exception = false;
+    bool rollback_on_exception = false;
     try
     {
-        /// TODO remove before merge
-        throw Exception("always use templates", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
-        //const Block & header = getPort().getHeader();
-        //header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
-        //rollback_on_exception = true;
+        const Block & header = getPort().getHeader();
+        header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
+        rollback_on_exception = true;
 
-        //skipWhitespaceIfAny(buf);
-
-        //assertDelimiterAfterValue(column_idx);
+        skipWhitespaceIfAny(buf);
+        assertDelimiterAfterValue(column_idx);
     }
     catch (const Exception & e)
     {
-        //bool deduce_template = shouldDeduceNewTemplate(column_idx);
-        //if (!format_settings.values.interpret_expressions && !deduce_template)
-        //    throw;
-
-        /** The normal streaming parser could not parse the value.
-          * Let's try to parse it with a SQL parser as a constant expression.
-          * This is an exceptional case.
-          */
-        if (isParseError(e.code()))
-        {
-            //if (rollback_on_exception)
-            //    column.popBack(1);
-
-            buf.rollbackToCheckpoint();
-            parseExpression(column, column_idx, true);// deduce_template);
-        }
-        else
+        if (!isParseError(e.code()))
             throw;
+        if (rollback_on_exception)
+            column.popBack(1);
+
+        /// Switch to SQL parser and don't try to use streaming parser for complex expressions
+        /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
+        buf.rollbackToCheckpoint();
+        parseExpression(column, column_idx);
     }
 }
 
 void
-ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, bool deduce_template)
+ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
-    if (!deduce_template && !format_settings.values.interpret_expressions)
-        throw Exception("Interpreting expressions is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+    parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
@@ -210,46 +205,60 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
         throw Exception("Cannot parse expression of type " + type.getName() + " here: "
                         + String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
                         ErrorCodes::SYNTAX_ERROR);
-
-    //if (dynamic_cast<const ASTLiteral *>(ast.get()))
-    //{
-    //    /// Check if we can use fast streaming parser instead if using templates
-    //    bool rollback_on_exception = false;
-    //    bool ok = false;
-    //    try
-    //    {
-    //        header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
-    //        rollback_on_exception = true;
-    //        skipWhitespaceIfAny(buf);
-    //        if (checkDelimiterAfterValue(column_idx))
-    //            ok = true;
-    //    }
-    //    catch (const Exception & e)
-    //    {
-    //        if (!isParseError(e.code()))
-    //            throw;
-    //        if (rollback_on_exception)
-    //            column.popBack(1);
-    //    }
-    //    if (ok)
-    //        return;
-    //}
-
     ++token_iterator;
-    buf.position() = const_cast<char *>(token_iterator->begin);
 
-    if (deduce_template)
+    if (dynamic_cast<const ASTLiteral *>(ast.get()))
+    {
+        /// It's possible that streaming parsing has failed on some row (e.g. because of '+' sign before integer),
+        /// but it still can parse the following rows
+        /// Check if we can use fast streaming parser instead if using templates
+        bool rollback_on_exception = false;
+        bool ok = false;
+        try
+        {
+            header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
+            rollback_on_exception = true;
+            skipWhitespaceIfAny(buf);
+            if (checkDelimiterAfterValue(column_idx))
+                ok = true;
+        }
+        catch (const Exception & e)
+        {
+            if (!isParseError(e.code()))
+                throw;
+        }
+        if (ok)
+        {
+            parser_type_for_column[column_idx] = ParserType::Streaming;
+            return;
+        }
+        else if (rollback_on_exception)
+            column.popBack(1);
+    }
+
+    /// Try to deduce template of expression and use it to parse the following rows
+    if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
             throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
                                 ErrorCodes::LOGICAL_ERROR);
         try
         {
-            templates[column_idx].emplace(header.getByPosition(column_idx).type, TokenIterator(tokens), token_iterator, ast, *context, &templates_cache);
-            ++attempts_to_deduce_template[column_idx];
+            bool found_in_cache = false;
+            const auto & result_type = header.getByPosition(column_idx).type;
+            const char * delimiter = (column_idx + 1 == num_columns) ? ")" : ",";
+            auto structure = templates_cache.getFromCacheOrConstruct(result_type, TokenIterator(tokens), token_iterator,
+                                                                     ast, *context, &found_in_cache, delimiter);
+            templates[column_idx].emplace(structure);
+            if (found_in_cache)
+                ++attempts_to_deduce_template_cached[column_idx];
+            else
+                ++attempts_to_deduce_template[column_idx];
+
             buf.rollbackToCheckpoint();
             templates[column_idx]->parseExpression(buf, format_settings);
             ++rows_parsed_using_template[column_idx];
+            parser_type_for_column[column_idx] = ParserType::BatchTemplate;
             return;
         }
         catch (...)
@@ -260,6 +269,12 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx, boo
             templates[column_idx].reset();
         }
     }
+
+    if (!format_settings.values.interpret_expressions)
+        throw Exception("Interpreting expressions is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+
+    /// Try to evaluate single expression if other parsers don't work
+    buf.position() = const_cast<char *>(token_iterator->begin);
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
     Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
@@ -348,14 +363,20 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
         return false;
 
     /// TODO better heuristic
-    constexpr size_t max_attempts = 10;
-    constexpr size_t rows_per_attempt = 0;
-    if (attempts_to_deduce_template[column_idx] < max_attempts)
+
+    /// Using template from cache is approx 2x faster, than evaluating single expression
+    /// Construction of new template is approx 1.5x slower, than evaluating single expression
+    float attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+
+    constexpr size_t max_attempts = 100;
+    if (attempts_weighted < max_attempts)
         return true;
-    if (rows_parsed_using_template[column_idx] / attempts_to_deduce_template[column_idx] > rows_per_attempt)
+
+    if (rows_parsed_using_template[column_idx] / attempts_weighted > 1)
     {
         /// Try again
         attempts_to_deduce_template[column_idx] = 0;
+        attempts_to_deduce_template_cached[column_idx] = 0;
         rows_parsed_using_template[column_idx] = 0;
         return true;
     }

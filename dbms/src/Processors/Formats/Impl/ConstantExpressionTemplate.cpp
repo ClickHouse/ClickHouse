@@ -163,16 +163,14 @@ private:
                 array_of_nullable = true;
             }
 
-            bool force_signed = !context.getSettingsRef().input_format_values_accurate_types_of_literals;
-
             WhichDataType type_info{nested_type};
             /// Promote integers to 64 bit types
-            if (type_info.isNativeUInt() && !force_signed)
+            if (type_info.isNativeUInt())
             {
                 nested_type = std::make_shared<DataTypeUInt64>();
                 info.special_parser.nested_type = Field::Types::UInt64;
             }
-            else if (type_info.isNativeInt() || (type_info.isNativeUInt() && force_signed))
+            else if (type_info.isNativeInt())
             {
                 nested_type = std::make_shared<DataTypeInt64>();
                 info.special_parser.nested_type = Field::Types::Int64;
@@ -266,8 +264,9 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
                                                                       const LiteralsInfo & replaced_literals,
                                                                       const DataTypePtr & result_column_type,
-                                                                      TokenIterator expression_end)
+                                                                      const String & salt)
 {
+    /// TODO distinguish expressions with the same AST and different tokens (e.g. "CAST(expr, 'Type')" and "CAST(expr AS Type)")
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
@@ -276,10 +275,8 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());
 
-    /// TODO remove expression_end from hash
-    --expression_end;
     /// Allows distinguish expression in the last column in Values format
-    hash_state.update(expression_end->begin, expression_end->size());
+    hash_state.update(salt);
 
     IAST::Hash res;
     hash_state.get128(res.first, res.second);
@@ -288,31 +285,51 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
 
 
 
-ConstantExpressionTemplate::ConstantExpressionTemplate(DataTypePtr result_column_type,
+ConstantExpressionTemplate::TemplateStructurePtr
+ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & result_column_type,
+                                                           TokenIterator expression_begin,
+                                                           TokenIterator expression_end,
+                                                           const ASTPtr & expression_,
+                                                           const Context & context,
+                                                           bool * found_in_cache,
+                                                           const String & salt)
+{
+    TemplateStructurePtr res;
+    ASTPtr expression = expression_->clone();
+    ReplaceLiteralsVisitor visitor(context);
+    visitor.visit(expression, result_column_type->isNullable());
+
+    size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, salt);
+    auto iter = cache.find(template_hash);
+    if (iter == cache.end())
+    {
+        if (max_size <= cache.size())
+            cache.clear();
+        res = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
+        cache.insert({template_hash, res});
+        if (found_in_cache)
+            *found_in_cache = false;
+    }
+    else
+    {
+        /// FIXME process collisions correctly
+        res = iter->second;
+        if (found_in_cache)
+            *found_in_cache = true;
+    }
+
+    return res;
+}
+
+ConstantExpressionTemplate::ConstantExpressionTemplate(const DataTypePtr & result_column_type,
                                                        TokenIterator expression_begin, TokenIterator expression_end,
-                                                       const ASTPtr & expression_, const Context & context, Cache * cache)
+                                                       const ASTPtr & expression_, const Context & context)
 {
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context);
     visitor.visit(expression, result_column_type->isNullable());
 
-    if (cache)
-    {
-        size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, expression_end);
-        auto iter = cache->find(template_hash);
-        if (iter == cache->end())
-        {
-            if (max_cache_size <= cache->size())
-                cache->clear();
-            structure = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
-            cache->insert({template_hash, structure});
-        }
-        else    /// FIXME process collisions correctly
-            structure = iter->second;
-    }
-    else
-        structure = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
-
+    structure = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
     columns = structure->literals.cloneEmptyColumns();
 }
 
@@ -322,7 +339,10 @@ bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
     try
     {
         if (tryParseExpression(istr, settings, cur_column))
+        {
+            ++rows_count;
             return true;
+        }
     }
     catch (DB::Exception & e)
     {
@@ -373,7 +393,6 @@ bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const For
         if (!checkString(structure->tokens[cur_token++], istr))
             return false;
     }
-    ++rows_count;
 
     return true;
 }
