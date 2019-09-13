@@ -708,7 +708,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.disks {#system_tables-disks}
 
-Таблица содержит информацию о дисках, заданных в [конфигурации сервера](#table_engine/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Имеет следующие столбцы:
+Таблица содержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Имеет следующие столбцы:
 
 - `name String` — имя диска в конфигурации сервера.
 - `path String` — путь к точке монтирования на файловой системе.
@@ -719,7 +719,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.storage_policies {#system_tables-storage_policies}
 
-Таблица содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](#table_engine/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Данные в таблице денормализованны, имя одной политики хранения может содержаться несколько раз, по количеству томов в ней. Имеет следующие столбцы:
+Таблица содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Данные в таблице денормализованны, имя одной политики хранения может содержаться несколько раз, по количеству томов в ней. Имеет следующие столбцы:
 
 - `policy_name String` — имя политики хранения в конфигурации сервера.
 - `volume_name String` — имя тома, который содержится в данной политике хранения.
