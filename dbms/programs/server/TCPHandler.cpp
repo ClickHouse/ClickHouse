@@ -1000,8 +1000,7 @@ void TCPHandler::receiveUnexpectedData()
     auto skip_block_in = std::make_shared<NativeBlockInputStream>(
             *maybe_compressed_in,
             last_block_in.header,
-            client_revision,
-            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+            client_revision);
 
     Block skip_block = skip_block_in->read();
     throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
@@ -1028,8 +1027,7 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision,
-            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+            client_revision);
     }
 }
 
