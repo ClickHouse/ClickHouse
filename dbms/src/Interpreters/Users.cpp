@@ -341,8 +341,6 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         }
     }
 
-
-
     /// Read properties per "database.table"
     /// Only tables are expected to have properties, so that all the keys inside "database" are table names.
     const auto config_databases = config_elem + ".databases";
