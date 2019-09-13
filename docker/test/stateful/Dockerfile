@@ -11,12 +11,6 @@ COPY s3downloader /s3downloader
 
 ENV DATASETS="hits visits"
 
-# https://clang.llvm.org/docs/ThreadSanitizer.html
-# https://clang.llvm.org/docs/AddressSanitizer.html
-# https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
-# https://clang.llvm.org/docs/MemorySanitizer.html
-
-
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
