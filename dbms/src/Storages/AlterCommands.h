@@ -5,6 +5,9 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
+
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -25,8 +28,11 @@ struct AlterCommand
         MODIFY_ORDER_BY,
         ADD_INDEX,
         DROP_INDEX,
+        ADD_CONSTRAINT,
+        DROP_CONSTRAINT,
         MODIFY_TTL,
         UKNOWN_TYPE,
+        MODIFY_SETTING,
     };
 
     Type type = UKNOWN_TYPE;
@@ -62,6 +68,12 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
+    // For ADD CONSTRAINT
+    ASTPtr constraint_decl;
+
+    // For ADD/DROP CONSTRAINT
+    String constraint_name;
+
     /// For MODIFY TTL
     ASTPtr ttl;
 
@@ -70,6 +82,9 @@ struct AlterCommand
 
     /// For ADD and MODIFY
     CompressionCodecPtr codec;
+
+    /// For MODIFY SETTING
+    SettingsChanges settings_changes;
 
     AlterCommand() = default;
     AlterCommand(const Type type_, const String & column_name_, const DataTypePtr & data_type_,
@@ -84,10 +99,14 @@ struct AlterCommand
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-            ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
+        ConstraintsDescription & constraints_description, ASTPtr & order_by_ast,
+        ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
 
     /// Checks that not only metadata touched by that command
     bool isMutable() const;
+
+    /// checks that only settings changed by alter
+    bool isSettingsAlter() const;
 };
 
 class Context;
@@ -95,14 +114,18 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
-            ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
+    /// Used for primitive table engines, where only columns metadata can be changed
+    void applyForColumnsOnly(ColumnsDescription & columns_description) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
+        ConstraintsDescription & constraints_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast,
+        ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
 
-    /// For storages that don't support MODIFY_ORDER_BY.
-    void apply(ColumnsDescription & columns_description) const;
+    /// Apply alter commands only for settings. Exception will be thrown if any other part of table structure will be modified.
+    void applyForSettingsOnly(SettingsChanges & changes) const;
 
     void validate(const IStorage & table, const Context & context);
     bool isMutable() const;
+    bool isSettingsAlter() const;
 };
 
 }

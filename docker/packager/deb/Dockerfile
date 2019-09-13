@@ -71,7 +71,9 @@ RUN apt-get --allow-unauthenticated update -y \
             odbcinst \
             tzdata \
             gperf \
-            alien
+            alien \
+            libcapnp-dev
+
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]

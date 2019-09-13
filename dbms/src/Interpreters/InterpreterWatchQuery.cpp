@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int UNKNOWN_TABLE;
     extern const int TOO_MANY_COLUMNS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 BlockInputStreamPtr InterpreterWatchQuery::executeImpl()
@@ -34,6 +35,9 @@ BlockInputStreamPtr InterpreterWatchQuery::executeImpl()
 
 BlockIO InterpreterWatchQuery::execute()
 {
+    if (!context.getSettingsRef().allow_experimental_live_view)
+        throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
+
     BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
     String database;
