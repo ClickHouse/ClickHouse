@@ -452,7 +452,11 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION = 475;
     extern const int WITH_TIES_WITHOUT_ORDER_BY = 476;
     extern const int INVALID_USAGE_OF_INPUT = 477;
-    extern const int DICTIONARY_ACCESS_DENIED = 478;
+    extern const int UNKNOWN_POLICY = 478;
+    extern const int UNKNOWN_DISK = 479;
+    extern const int UNKNOWN_PROTOCOL = 480;
+    extern const int PATH_ACCESS_DENIED = 481;
+    extern const int DICTIONARY_ACCESS_DENIED = 482;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

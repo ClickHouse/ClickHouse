@@ -92,23 +92,26 @@ FROM
 ```
 
 
-### FROM Clause
+### FROM Clause {#select-from}
 
 If the FROM clause is omitted, data will be read from the `system.one` table.
-The 'system.one' table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
+The `system.one` table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
 
-The FROM clause specifies the table to read data from, or a subquery, or a table function; ARRAY JOIN and the regular JOIN may also be included (see below).
+The `FROM` clause specifies the source to read data from:
 
-Instead of a table, the SELECT subquery may be specified in brackets.
-In this case, the subquery processing pipeline will be built into the processing pipeline of an external query.
-In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write 'AS name' after a subquery, but the specified name isn't used anywhere.
+- Table
+- Subquery
+- [Table function](table_functions/index.md)
 
-A table function may be specified instead of a table. For more information, see the section "Table functions".
+`ARRAY JOIN` and the regular `JOIN` may also be included (see below).
+
+Instead of a table, the `SELECT` subquery may be specified in parenthesis.
+In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write `AS name` after a subquery, but the specified name isn't used anywhere.
 
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
-If a query does not list any columns (for example, SELECT count() FROM t), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
+If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The FINAL modifier can be used only for a SELECT from ReplacingMergeTree, SummingMergeTree, AggregatingMergeTree, CollapsingMergeTree and VersionedCollapsingMergeTree tables. When you specify FINAL, data is selected fully "merged". Keep in mind that using FINAL leads to a selection that includes columns related to the primary key, in addition to the columns specified in the SELECT. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using FINAL, the query is processed more slowly. In most cases, you should avoid using FINAL.
+The `FINAL` modifier can be used in the `SELECT` select query for aggregating engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to a selection that includes columns related to the primary key, in addition to the columns specified in the `SELECT`. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 
