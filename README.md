@@ -18,3 +18,4 @@ ClickHouse is an open-source column-oriented database management system that all
 * [ClickHouse Meetup in Hong Kong](https://www.meetup.com/Hong-Kong-Machine-Learning-Meetup/events/263580542/) on October 17.
 * [ClickHouse Meetup in Shenzhen](https://www.huodongxing.com/event/3483759917300) on October 20.
 * [ClickHouse Meetup in Shanghai](https://www.huodongxing.com/event/4483760336000) on October 27.
+* [ClickHouse Meetup in Tokyo](https://clickhouse.connpass.com/event/147001/) on November 14.

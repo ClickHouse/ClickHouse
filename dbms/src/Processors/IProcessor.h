@@ -183,6 +183,11 @@ public:
         throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual void work(size_t /*thread_num*/)
+    {
+        work();
+    }
+
     /** You may call this method if 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
       *
@@ -228,10 +233,17 @@ public:
     void setDescription(const std::string & description_) { processor_description = description_; }
     const std::string & getDescription() const { return processor_description; }
 
+    /// Helpers for pipeline executor.
+    void setStream(size_t value) { stream_number = value; }
+    size_t getStream() const { return stream_number; }
+    constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
+
 private:
     std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
+
+    size_t stream_number = NO_STREAM;
 };
 
 
