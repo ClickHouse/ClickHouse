@@ -28,7 +28,7 @@ file_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
 logging.getLogger().addHandler(file_handler)
 logging.getLogger().addHandler(logging.StreamHandler())
 
-comm_path = sys.argv[1]
+communication_port = int(sys.argv[1])
 bucket = sys.argv[2]
 
 def GetFreeTCPPortsAndIP(n):
@@ -43,41 +43,34 @@ def GetFreeTCPPortsAndIP(n):
     [ s.close() for s in sockets ]
     return result, addr
 
-(redirecting_to_http_port, redirecting_to_https_port, preserving_data_port, redirecting_preserving_data_port), localhost = GetFreeTCPPortsAndIP(4)
+(redirecting_to_http_port, simple_server_port, preserving_data_port, redirecting_preserving_data_port), localhost = GetFreeTCPPortsAndIP(4)
 data = {
     'redirecting_to_http_port': redirecting_to_http_port,
-    'redirecting_to_https_port': redirecting_to_https_port,
     'preserving_data_port': preserving_data_port,
     'redirecting_preserving_data_port': redirecting_preserving_data_port,
-    'localhost': localhost
 }
 redirecting_host = localhost
 
-with open(comm_path, 'w') as f:
-    f.write(json.dumps(data))
+
+class SimpleHTTPServerHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        logging.info('GET {}'.format(self.path))
+        if self.path == '/milovidov/test.csv':
+             self.send_response(200)
+             self.send_header('Content-type', 'text/plain')
+             self.end_headers()
+             self.wfile.write('42,87,44\n55,33,81\n1,0,9\n')
+        else:
+             self.send_response(404)
+             self.end_headers()
+        self.finish()
 
 
 class RedirectingToHTTPHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(307)
         self.send_header('Content-type', 'text/xml')
-        self.send_header('Location', 'http://storage.yandexcloud.net/milovidov/test.csv')
-        self.end_headers()
-        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>TemporaryRedirect</Code>
-  <Message>Please re-send this request to the specified temporary endpoint.
-  Continue to use the original request endpoint for future requests.</Message>
-  <Endpoint>storage.yandexcloud.net</Endpoint>
-</Error>'''.encode())
-        self.finish()
-
-
-class RedirectingToHTTPSHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(307)
-        self.send_header('Content-type', 'text/xml')
-        self.send_header('Location', 'https://storage.yandexcloud.net/milovidov/test.csv')
+        self.send_header('Location', 'http://{}:{}/milovidov/test.csv'.format(localhost, simple_server_port))
         self.end_headers()
         self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
 <Error>
@@ -135,8 +128,6 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
             data['received_data_completed'] = True
             data['finalize_data'] = post_data
             data['finalize_data_query'] = query
-            with open(comm_path, 'w') as f:
-                f.write(json.dumps(data))
         self.finish()
  
     def do_PUT(self):
@@ -152,8 +143,6 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
         assert self.headers['Expect'] == '100-continue'
         put_data = self.rfile.read()
         data.setdefault('received_data', []).append(put_data)
-        with open(comm_path, 'w') as f:
-            f.write(json.dumps(data))
         logging.info('PUT to {}'.format(path))
         self.server.storage[path] = put_data
         self.finish()
@@ -233,12 +222,21 @@ class RedirectingPreservingDataHandler(BaseHTTPRequestHandler):
         self.finish()
 
 
+class CommunicationServerHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps(data))
+        self.finish()
+
+
 servers = []
-servers.append(HTTPServer((redirecting_host, redirecting_to_https_port), RedirectingToHTTPSHandler))
-servers.append(HTTPServer((redirecting_host, redirecting_to_http_port), RedirectingToHTTPHandler))
-servers.append(HTTPServer((redirecting_host, preserving_data_port), PreservingDataHandler))
+servers.append(HTTPServer((localhost, communication_port), CommunicationServerHandler))
+servers.append(HTTPServer((localhost, redirecting_to_http_port), RedirectingToHTTPHandler))
+servers.append(HTTPServer((localhost, preserving_data_port), PreservingDataHandler))
 servers[-1].storage = {}
-servers.append(HTTPServer((redirecting_host, redirecting_preserving_data_port), RedirectingPreservingDataHandler))
+servers.append(HTTPServer((localhost, simple_server_port), SimpleHTTPServerHandler))
+servers.append(HTTPServer((localhost, redirecting_preserving_data_port), RedirectingPreservingDataHandler))
 jobs = [ threading.Thread(target=server.serve_forever) for server in servers ]
 [ job.start() for job in jobs ]
 
