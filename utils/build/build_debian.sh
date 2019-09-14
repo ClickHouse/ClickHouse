@@ -6,7 +6,9 @@
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/build/build_debian.sh | sh
 
 # install compiler and libs
-sudo apt install -y git bash cmake ninja-build gcc-7 g++-7 libicu-dev libreadline-dev gperf
+sudo apt install -y git bash cmake ninja-build  libicu-dev libreadline-dev gperf
+sudo apt install -y gcc-9 g++-9 ||:
+sudo apt install -y gcc-8 g++-8 ||:
 # for -DUNBUNDLED=1 mode:
 #sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev libsparsehash-dev librdkafka-dev libcapnp-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
 
@@ -24,7 +26,7 @@ fi
 # Build!
 mkdir -p build
 cd build
-cmake .. -DCMAKE_CXX_COMPILER=`which g++-7 g++-8 | head -n1` -DCMAKE_C_COMPILER=`which gcc-7 gcc-8 | head -n1`
+cmake .. -DCMAKE_CXX_COMPILER=`which g++-9 g++-8 | head -n1` -DCMAKE_C_COMPILER=`which gcc-9 gcc-8 | head -n1`
 cmake --build .
 cd ..
 
