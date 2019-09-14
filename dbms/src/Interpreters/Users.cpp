@@ -326,7 +326,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         }
     }
 
-    /// Fill list of allowed databases.
+    /// Fill list of allowed dictionaries.
     const auto config_dictionary_sub_elem = config_elem + ".allow_dictionaries";
     if (config.has(config_dictionary_sub_elem))
     {
