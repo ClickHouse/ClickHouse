@@ -67,7 +67,7 @@ struct User
     using DatabaseSet = std::unordered_set<std::string>;
     DatabaseSet databases;
 
-    /// List of allowed databases.
+    /// List of allowed dictionaries.
     using DictionarySet = std::unordered_set<std::string>;
     DictionarySet dictionaries;
 
