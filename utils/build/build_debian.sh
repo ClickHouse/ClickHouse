@@ -8,7 +8,7 @@
 # install compiler and libs
 sudo apt install -y git bash cmake ninja-build  libicu-dev libreadline-dev gperf
 sudo apt install -y gcc-9 g++-9 ||:
-sudo apt install -y gcc-8 g++-8 ||:
+[ -z `which g++-9` ] && sudo apt install -y gcc-8 g++-8 ||:
 # for -DUNBUNDLED=1 mode:
 #sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev libsparsehash-dev librdkafka-dev libcapnp-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
 
