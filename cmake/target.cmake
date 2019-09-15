@@ -1,9 +1,12 @@
 if (CMAKE_SYSTEM_NAME MATCHES "Linux")
     set (OS_LINUX 1)
+    add_compile_definitions(OS_LINUX)
 elseif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
     set (OS_FREEBSD 1)
+    add_compile_definitions(OS_FREEBSD)
 elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
     set (OS_DARWIN 1)
+    add_compile_definitions(OS_DARWIN)
 endif ()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

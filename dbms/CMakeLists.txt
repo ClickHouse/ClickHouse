@@ -132,6 +132,11 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctio
 list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
 list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
+if (NOT ENABLE_SSL)
+    list (REMOVE_ITEM clickhouse_common_io_sources src/Common/OpenSSLHelpers.cpp)
+    list (REMOVE_ITEM clickhouse_common_io_headers src/Common/OpenSSLHelpers.h)
+endif ()
+
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (OS_FREEBSD)
