@@ -17,12 +17,14 @@ namespace DB
     }
 }
 
-
+#if defined(OS_LINUX)
 static thread_local void * stack_address = nullptr;
 static thread_local size_t max_stack_size = 0;
+#endif
 
 void checkStackSize()
 {
+#if defined(OS_LINUX)
     using namespace DB;
 
     if (!stack_address)
@@ -59,4 +61,5 @@ void checkStackSize()
             << ", maximum stack size: " << max_stack_size;
         throw Exception(message.str(), ErrorCodes::TOO_DEEP_RECURSION);
     }
+#endif
 }
