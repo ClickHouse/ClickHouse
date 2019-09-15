@@ -14,6 +14,7 @@
   */
 void sleepForNanoseconds(uint64_t nanoseconds)
 {
+#if defined(OS_LINUX)
     constexpr auto clock_type = CLOCK_MONOTONIC;
 
     struct timespec current_time;
@@ -29,6 +30,11 @@ void sleepForNanoseconds(uint64_t nanoseconds)
     finish_time.tv_sec += (nanoseconds / resolution) + extra_second;
 
     while (clock_nanosleep(clock_type, TIMER_ABSTIME, &finish_time, nullptr) == EINTR);
+#elif defined(OS_DARWIN)
+    // TODO: implement me!
+#else
+#   error "sleepForNanoseconds not supported for this platform!"
+#endif
 }
 
 void sleepForMicroseconds(uint64_t microseconds)
