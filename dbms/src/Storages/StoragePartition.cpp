@@ -180,7 +180,7 @@ public:
         // Wait for concurrent view processing
         pool.wait();
 
-        size_t rows = storage.data[0];
+        size_t rows = storage.data[0].rows();
         for (auto & block : storage.data)
         {
             if (block.rows() != rows)

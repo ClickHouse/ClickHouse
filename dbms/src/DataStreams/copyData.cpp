@@ -1,6 +1,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
+#include <algorithm>
 
 
 namespace DB
@@ -22,14 +23,22 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCall
     from.readPrefix();
     to.writePrefix();
 
+    Stopwatch w;
+    UInt64 read_time = 0, write_time = 0;
+
     while (Block block = from.read())
     {
         if (is_cancelled())
             break;
 
+        read_time += w.elapsed();
+        w.restart();
         to.write(block);
+        write_time += w.elapsed();
         progress(block);
     }
+
+    std::cerr << "Copy read time = " << read_time / 1e6 << "ms, write_time = " << write_time / 1e6 << "ms." << std::endl;
 
     if (is_cancelled())
         return;

@@ -7,6 +7,7 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Core/iostream_debug_helpers.h>
+#include <DataStreams/NullBlockOutputStream.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -41,24 +42,22 @@ protected:
 
     Block readImpl() override
     {
-    begin:
         auto block = in->read();
         if (!block)
             return {};
         auto res = getHeader();
         storage.data.push_back(block);
         if (storage.data.size() < storage.window_size)
-            goto begin;
+            return res;
         if (storage.data.size() > storage.window_size)
             storage.data.pop_front();
 
-        for (size_t i = 0; i < res.columns(); ++i)
+        for (auto & ctn : res)
         {
-            auto & ctn = res.getByPosition(i);
             Columns columns;
             for (auto & b : storage.data)
             {
-                auto & sub_ctn = b.getByPosition(i);
+                auto & sub_ctn = b.getByName(ctn.name);
                 columns.push_back(sub_ctn.column);
             }
             ctn.column = ColumnTuple::create(columns);
@@ -79,7 +78,7 @@ private:
 class WindowBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit WindowBlockOutputStream(StorageWindow & storage_, BlockOutputStreamPtr & out_) : storage(storage_), out(out_) {}
+    explicit WindowBlockOutputStream(StorageWindow & storage_, const BlockOutputStreamPtr & out_) : storage(storage_), out(out_) { }
 
     Block getHeader() const override { return storage.getSampleBlock(); }
 
@@ -87,13 +86,20 @@ public:
 
     void write(const Block & block) override
     {
-        if (!block || block.rows() == 0)
+        if (!block)
             return;
-        storage.check(block, true);
-        if (storage.data.size() >= storage.window_size)
+        if (block.rows())
+        {
+            storage.check(block, true);
             storage.data.pop_back();
-        storage.data.push_back(block);
-        out->write(block);
+            storage.data.push_back(block);
+            out->write(block);
+        }
+        else
+        {
+            if (storage.data.size() < storage.window_size)
+                out->write(storage.data.back());
+        }
     }
 
     void writeSuffix() override { out->writeSuffix(); }
@@ -138,6 +144,8 @@ BlockInputStreams StorageWindow::read(
 
 BlockOutputStreamPtr StorageWindow::write(const ASTPtr & query, const Context & context)
 {
+    if (dest_table == "")
+        return std::make_shared<WindowBlockOutputStream>(*this, std::make_shared<NullBlockOutputStream>(Block{}));
     auto table = context.getTable("", dest_table);
     auto out = table->write(query, context);
     return std::make_shared<WindowBlockOutputStream>(*this, out);
@@ -163,6 +171,8 @@ void registerStorageWindow(StorageFactory & factory)
         auto source_table = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         auto dest_table = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         auto window_size = engine_args[2]->as<ASTLiteral &>().value.safeGet<UInt64>();
+        if (window_size == 0)
+            throw Exception("Window size cannot be 0", ErrorCodes::LOGICAL_ERROR);
 
         return StorageWindow::create(
             args.database_name, args.table_name, args.columns, source_table, dest_table, window_size, args.context);
