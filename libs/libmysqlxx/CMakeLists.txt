@@ -31,7 +31,6 @@ target_include_directories (mysqlxx PUBLIC include)
 if (USE_INTERNAL_MYSQL_LIBRARY)
     target_include_directories (mysqlxx PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include)
     target_include_directories (mysqlxx PUBLIC ${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include)
-    target_include_directories (mysqlxx PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c-cmake/common/include)
 else ()
     set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
