@@ -144,6 +144,7 @@ if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
     set(CLIENT_PLUGIN_DIALOG OFF)
     set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
     set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
+    set(SKIP_TESTS 1)
     add_subdirectory (mariadb-connector-c)
 endif ()
 
