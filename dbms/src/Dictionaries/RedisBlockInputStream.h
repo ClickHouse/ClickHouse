@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/ExternalResultDescription.h>
 #include <DataStreams/IBlockInputStream.h>
-
+#include "RedisDictionarySource.h"
 
 namespace Poco
 {
@@ -11,6 +11,7 @@ namespace Poco
     {
         class Array;
         class Client;
+        class RedisType;
     }
 }
 
@@ -20,9 +21,14 @@ namespace DB
     class RedisBlockInputStream final : public IBlockInputStream
     {
     public:
+        using RedisArray = Poco::Redis::Array;
+        using RedisTypePtr = Poco::Redis::RedisType::Ptr;
+        using RedisBulkString = Poco::Redis::BulkString;
+
         RedisBlockInputStream(
                 const std::shared_ptr<Poco::Redis::Client> & client_,
                 const Poco::Redis::Array & keys_,
+                const RedisStorageType & storage_type_,
                 const Block & sample_block,
                 const size_t max_block_size);
 
@@ -37,6 +43,7 @@ namespace DB
 
         std::shared_ptr<Poco::Redis::Client> client;
         Poco::Redis::Array keys;
+        RedisStorageType storage_type;
         const size_t max_block_size;
         ExternalResultDescription description;
         size_t cursor = 0;

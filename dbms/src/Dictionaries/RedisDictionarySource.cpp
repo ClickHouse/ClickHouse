@@ -57,7 +57,7 @@ namespace DB
     }
 
 
-    static const size_t max_block_size = 8192;
+    static const size_t max_block_size = 4;
 
 
     RedisDictionarySource::RedisDictionarySource(
@@ -65,7 +65,7 @@ namespace DB
             const std::string & host_,
             UInt16 port_,
             UInt8 db_index_,
-            RedisStorageType::Id storage_type_,
+            RedisStorageType storage_type_,
             const Block & sample_block_)
             : dict_struct{dict_struct_}
             , host{host_}
@@ -80,11 +80,12 @@ namespace DB
                             DB::toString(dict_struct.attributes.size()) + ", expected 1",
                             ErrorCodes::INVALID_CONFIG_PARAMETER};
 
-        {
         if (storage_type == RedisStorageType::HASH_MAP)
+        {
             if (!dict_struct.key.has_value())
                 throw Exception{"Redis source with storage type \'hash_map\' must have key",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
+
             if (dict_struct.key.value().size() > 2)
                 throw Exception{"Redis source with complex keys having more than 2 attributes are unsupported",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
@@ -93,7 +94,7 @@ namespace DB
 
         if (db_index != 0)
         {
-            Poco::Redis::Command command("SELECT");
+            RedisCommand command("SELECT");
             command << static_cast<Int64>(db_index);
             std::string reply = client->execute<std::string>(command);
             if (reply != "+OK\r\n")
@@ -132,55 +133,65 @@ namespace DB
 
     RedisDictionarySource::~RedisDictionarySource() = default;
 
-    static std::string storageTypeToKeyType(RedisStorageType::Id type)
+    static std::string storageTypeToKeyType(RedisStorageType type)
     {
         switch (type)
         {
-            case RedisStorageType::Id::SIMPLE:
+            case RedisStorageType::SIMPLE:
                 return "string";
-            case RedisStorageType::Id::HASH_MAP:
+            case RedisStorageType::HASH_MAP:
                 return "hash";
             default:
                 return "none";
         }
 
-        __builtin_unreachable();       
+        __builtin_unreachable();
     }
 
     BlockInputStreamPtr RedisDictionarySource::loadAll()
     {
-        Poco::Redis::Command command_for_keys("KEYS");
+        RedisCommand command_for_keys("KEYS");
         command_for_keys << "*";
 
         /// Get only keys for specified storage type.
-        auto all_keys = client->execute<Poco::Redis::Array>(command_for_keys);
-        Poco::Redis::Array keys;
+        auto all_keys = client->execute<RedisArray>(command_for_keys);
+        RedisArray keys;
         auto key_type = storageTypeToKeyType(storage_type);
         for (auto & key : all_keys)
-            if (key_type == client->execute<std::string>(Poco::Redis::Command("TYPE").addRedisType(key)))
+            if (key_type == client->execute<std::string>(RedisCommand("TYPE").addRedisType(key)))
                 keys.addRedisType(std::move(key));
 
         if (storage_type == RedisStorageType::HASH_MAP && !keys.isNull())
         {
-            Poco::Redis::Array hkeys;
+            RedisArray hkeys;
             for (const auto & key : keys)
             {
-                Poco::Redis::Command command_for_secondary_keys("HKEYS");
+                RedisCommand command_for_secondary_keys("HKEYS");
                 command_for_secondary_keys.addRedisType(key);
 
-                auto secondary_keys = client->execute<Poco::Redis::Array>(command_for_secondary_keys);
+                auto secondary_keys = client->execute<RedisArray>(command_for_secondary_keys);
 
-                Poco::Redis::Array primary_with_secondary;
+                RedisArray primary_with_secondary;
                 primary_with_secondary.addRedisType(key);
                 for (const auto & secondary_key : secondary_keys)
+                {
                     primary_with_secondary.addRedisType(secondary_key);
-
-                hkeys.add(std::move(primary_with_secondary));
+                    /// Do not store more than max_block_size values for one request.
+                    if (primary_with_secondary.size() == max_block_size + 1)
+                    {
+                        hkeys.add(std::move(primary_with_secondary));
+                        primary_with_secondary.clear();
+                        primary_with_secondary.addRedisType(key);
+                    }
+                }
+                if (primary_with_secondary.size() > 1)
+                    hkeys.add(std::move(primary_with_secondary));
             }
+
             keys = std::move(hkeys);
         }
 
-        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
+        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), storage_type, sample_block, max_block_size);
     }
 
 
@@ -192,12 +203,12 @@ namespace DB
         if (!dict_struct.id)
             throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
 
-        Poco::Redis::Array keys;
+        RedisArray keys;
 
         for (UInt64 id : ids)
             keys << DB::toString(id);
 
-        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
+        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), storage_type, sample_block, max_block_size);
     }
 
     std::string RedisDictionarySource::toString() const
@@ -205,12 +216,14 @@ namespace DB
         return "Redis: " + host + ':' + DB::toString(port);
     }
 
-    RedisStorageType::Id RedisDictionarySource::parseStorageType(const std::string & storage_type)
+    RedisStorageType RedisDictionarySource::parseStorageType(const std::string & storage_type_str)
     {
-        RedisStorageType::Id storage_type_id = RedisStorageType::valueOf(storage_type);
-        if (storage_type_id == RedisStorageType::UNKNOWN)
-            storage_type_id = RedisStorageType::SIMPLE;
-        return storage_type_id;
+        if (storage_type_str == "hash_map")
+            return RedisStorageType::HASH_MAP;
+        else if (!storage_type_str.empty() && storage_type_str != "simple")
+            throw Exception("Unknown storage type " + storage_type_str + " for Redis dictionary", ErrorCodes::INVALID_CONFIG_PARAMETER);
+
+        return RedisStorageType::SIMPLE;
     }
 }
 
