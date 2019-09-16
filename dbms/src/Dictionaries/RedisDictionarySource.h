@@ -18,30 +18,20 @@ namespace Poco
     namespace Redis
     {
         class Client;
+        class Array;
+        class Command;
     }
 }
 
 
 namespace DB
 {
-    namespace RedisStorageType
+    enum class RedisStorageType
     {
-        enum Id
-        {
             SIMPLE,
             HASH_MAP,
             UNKNOWN
-        };
-
-        Id valueOf(const std::string & value)
-        {
-            if (value == "simple")
-                return SIMPLE;
-            if (value == "hash_map")
-                return HASH_MAP;
-            return UNKNOWN;
-        }
-    }
+    };
 
     class RedisDictionarySource final : public IDictionarySource
     {
@@ -50,10 +40,13 @@ namespace DB
                 const std::string & host,
                 UInt16 port,
                 UInt8 db_index,
-                RedisStorageType::Id storage_type,
+                RedisStorageType storage_type,
                 const Block & sample_block);
 
     public:
+        using RedisArray = Poco::Redis::Array;
+        using RedisCommand = Poco::Redis::Command;
+
         RedisDictionarySource(
                 const DictionaryStructure & dict_struct,
                 const Poco::Util::AbstractConfiguration & config,
@@ -90,14 +83,14 @@ namespace DB
         std::string toString() const override;
 
     private:
-        static RedisStorageType::Id parseStorageType(const std::string& storage_type);
+        static RedisStorageType parseStorageType(const std::string& storage_type);
 
     private:
         const DictionaryStructure dict_struct;
         const std::string host;
         const UInt16 port;
         const UInt8 db_index;
-        const RedisStorageType::Id storage_type;
+        const RedisStorageType storage_type;
         Block sample_block;
 
         std::shared_ptr<Poco::Redis::Client> client;
