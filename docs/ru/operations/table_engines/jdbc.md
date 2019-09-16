@@ -27,53 +27,49 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 Создадим таблицу в на сервере MySQL с помощью консольного клиента MySQL:
 
-```
+```sql
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
     ->   `float` FLOAT NOT NULL,
     ->   `float_nullable` FLOAT NULL DEFAULT NULL,
     ->   PRIMARY KEY (`int_id`));
-Query OK, 0 rows affected (0,09 sec)
 
 mysql> insert into test (`int_id`, `float`) VALUES (1,2);
-Query OK, 1 row affected (0,00 sec)
 
 mysql> select * from test;
+```
+```text
 +--------+--------------+-------+----------------+
 | int_id | int_nullable | float | float_nullable |
 +--------+--------------+-------+----------------+
 |      1 |         NULL |     2 |           NULL |
 +--------+--------------+-------+----------------+
-1 row in set (0,00 sec)
 ```
 
 Создадим таблицу на сервере ClickHouse и получим из неё данные:
 
-```
+```sql
 CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
 
-Ok.
-
 DESCRIBE TABLE jdbc_table
-
+```
+```text
 ┌─name───────────────┬─type───────────────┬─default_type─┬─default_expression─┐
 │ int_id             │ Int32              │              │                    │
 │ int_nullable       │ Nullable(Int32)    │              │                    │
 │ float              │ Float32            │              │                    │
 │ float_nullable     │ Nullable(Float32)  │              │                    │
 └────────────────────┴────────────────────┴──────────────┴────────────────────┘
-
-10 rows in set. Elapsed: 0.031 sec.
-
+```
+```sql
 SELECT *
 FROM jdbc_table
-
+```
+```text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴────────────────┘
-
-1 rows in set. Elapsed: 0.055 sec.
 ```
 
 ## Смотрите также

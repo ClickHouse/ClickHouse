@@ -8,7 +8,7 @@
 
 ## Создание таблицы
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -41,15 +41,17 @@ ENGINE = ODBC(connection_settings, external_database, external_table)
 
 По умолчанию (если установлен из пакетов) ClickHouse запускается от имени пользователя `clickhouse`. Таким образом, вам нужно создать и настроить этого пользователя на сервере MySQL.
 
+```bash
+$ sudo mysql
 ```
-sudo mysql
+```sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
 Теперь настроим соединение в `/etc/odbc.ini`.
 
-```
+```bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -62,8 +64,10 @@ PASSWORD = clickhouse
 
 Вы можете проверить соединение с помощью утилиты `isql` из установки unixODBC.
 
+```bash
+$ isql -v mysqlconn
 ```
-isql -v mysqlconn
+```text
 +---------------------------------------+
 | Connected!                            |
 |                                       |
@@ -72,25 +76,24 @@ isql -v mysqlconn
 
 Таблица в MySQL:
 
-```
+```sql
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
     ->   `float` FLOAT NOT NULL,
     ->   `float_nullable` FLOAT NULL DEFAULT NULL,
     ->   PRIMARY KEY (`int_id`));
-Query OK, 0 rows affected (0,09 sec)
 
 mysql> insert into test (`int_id`, `float`) VALUES (1,2);
-Query OK, 1 row affected (0,00 sec)
 
 mysql> select * from test;
+```
+```text
 +--------+--------------+-------+----------------+
 | int_id | int_nullable | float | float_nullable |
 +--------+--------------+-------+----------------+
 |      1 |         NULL |     2 |           NULL |
 +--------+--------------+-------+----------------+
-1 row in set (0,00 sec)
 ```
 
 Таблица в ClickHouse, которая получает данные из таблицы MySQL:

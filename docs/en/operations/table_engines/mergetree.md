@@ -370,14 +370,14 @@ The `TTL` clause can be set for the whole table and for each individual column. 
 
 The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define the lifetime of data, use operations on this time column, for example:
 
-```
+```sql
 TTL time_column
 TTL time_column + interval
 ```
 
 To define `interval`, use [time interval](../../query_language/operators.md#operators-datetime) operators.
 
-```
+```sql
 TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
