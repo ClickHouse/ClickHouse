@@ -67,15 +67,15 @@ To manually compile ClickHouse, follow the instructions for [Linux](../developme
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
-```bash
-$ Client: dbms/programs/clickhouse-client
-$ Server: dbms/programs/clickhouse-server
+```text
+Client: dbms/programs/clickhouse-client
+Server: dbms/programs/clickhouse-server
 ```
 
 You'll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/dbms/programs/server/config.xml), by default they are:
-```bash
-$ /opt/clickhouse/data/default/
-$ /opt/clickhouse/metadata/default/
+```text
+/opt/clickhouse/data/default/
+/opt/clickhouse/metadata/default/
 ```
 
 On Gentoo you can just use `emerge clickhouse` to install ClickHouse from sources.
