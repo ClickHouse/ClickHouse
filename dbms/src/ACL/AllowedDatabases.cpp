@@ -1,4 +1,4 @@
-#include <ACL/Privileges.h>
+#include <ACL/AllowedDatabases.h>
 #include <Common/Exception.h>
 #include <Parsers/IAST.h>
 

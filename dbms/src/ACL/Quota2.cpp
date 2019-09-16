@@ -1,3 +1,4 @@
+#if 0
 #include <ACL/Quota2.h>
 #include <ACL/ACLAttributesType.h>
 #include <Common/Exception.h>
@@ -10,9 +11,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENT;
 }
-
-
-using Operation = Quota2::Operation;
 
 
 String Quota2::getResourceName(ResourceType resource_type)
@@ -58,7 +56,7 @@ ACLAttributesType Quota2::Attributes::getType() const
 }
 
 
-std::shared_ptr<IACLAttributes> Quota2::Attributes::clone() const
+std::shared_ptr<IControlAttributes> Quota2::Attributes::clone() const
 {
     auto result = std::make_shared<Attributes>();
     *result = *this;
@@ -66,7 +64,7 @@ std::shared_ptr<IACLAttributes> Quota2::Attributes::clone() const
 }
 
 
-bool Quota2::Attributes::equal(const IACLAttributes & other) const
+bool Quota2::Attributes::equal(const IControlAttributes & other) const
 {
     if (!ACLAttributable::Attributes::equal(other))
         return false;
@@ -78,13 +76,13 @@ bool Quota2::Attributes::equal(const IACLAttributes & other) const
 
 void Quota2::setConsumptionKey(ConsumptionKey consumption_key)
 {
-    setConsumptionKeyOp(consumption_key).execute();
+    setConsumptionKeyChanges(consumption_key).apply();
 }
 
 
-Operation Quota2::setConsumptionKeyOp(ConsumptionKey consumption_key)
+Quota2::Changes Quota2::setConsumptionKeyChanges(ConsumptionKey consumption_key)
 {
-    return prepareOperation([consumption_key](Attributes & attrs)
+    return prepareChanges([consumption_key](Attributes & attrs)
     {
         attrs.consumption_key = consumption_key;
     });
@@ -99,13 +97,13 @@ Quota2::ConsumptionKey Quota2::getConsumptionKey() const
 
 void Quota2::setAllowCustomConsumptionKey(bool allow)
 {
-    setAllowCustomConsumptionKeyOp(allow).execute();
+    setAllowCustomConsumptionKeyChanges(allow).apply();
 }
 
 
-Operation Quota2::setAllowCustomConsumptionKeyOp(bool allow)
+Quota2::Changes Quota2::setAllowCustomConsumptionKeyChanges(bool allow)
 {
-    return prepareOperation([allow](Attributes & attrs)
+    return prepareChanges([allow](Attributes & attrs)
     {
         attrs.allow_custom_consumption_key = allow;
     });
@@ -120,17 +118,17 @@ bool Quota2::isCustomConsumptionKeyAllowed() const
 
 void Quota2::setLimitForDuration(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit)
 {
-    setLimitForDurationOp(duration, resource_type, new_limit).execute();
+    setLimitForDurationChanges(duration, resource_type, new_limit).apply();
 }
 
 
-Operation Quota2::setLimitForDurationOp(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit)
+Quota2::Changes Quota2::setLimitForDurationChanges(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit)
 {
     if (duration <= std::chrono::seconds::zero())
         throw Exception("The duration of a quota interval should be positive", ErrorCodes::BAD_ARGUMENT);
     if (!new_limit)
         new_limit = NoLimits[resource_type];
-    return prepareOperation([duration, resource_type, new_limit](Attributes & attrs)
+    return prepareChanges([duration, resource_type, new_limit](Attributes & attrs)
     {
         auto & limits = attrs.limits_for_duration[duration];
         limits[resource_type] = new_limit;
@@ -153,8 +151,51 @@ std::vector<std::pair<std::chrono::seconds, Quota2::ResourceAmount>> Quota2::get
 }
 
 
+void Quota2::assignConsumer(const Role & role)
+{
+    assignConsumerChanges(role).apply();
+}
+
+
+void Quota2::unassignConsumer(const Role & role)
+{
+    unassignConsumerChanges(role).apply();
+}
+
+
+#if 0
+Quota2::Changes Quota2::assignConsumerChanges(const Role & role)
+{
+    Changes changes = prepareChanges([role](Attributes & attrs)
+    {
+        attrs.consuming_roles.push_back(role.getID());
+    });
+
+    changes.then([]
+    {
+        role.loadDataStrict(
+
+    }
+
+    return changes;
+}
+
+
+Quota2::Changes Quota2::unassignConsumerChanges(const Role & role)
+{
+
+}
+
+
+std::vector<Role> Quota2::getAssignedConsumers() const
+{
+
+}
+#endif
+
 ACLAttributesType Quota2::getType() const
 {
     return ACLAttributesType::QUOTA;
 }
 }
+#endif

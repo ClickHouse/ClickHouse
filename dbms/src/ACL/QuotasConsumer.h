@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ACL/Quota2.h>
-#include <ACL/IACLAttributesStorage.h>
+#include <ACL/IControlAttributesStorage.h>
 #include <Poco/Net/IPAddress.h>
 #include <atomic>
 #include <chrono>
@@ -11,7 +11,7 @@
 
 namespace DB
 {
-class IACLAttributableManager;
+class IControlAttributesDrivenManager;
 
 
 /// Consumes quotas and stores information how much amount of resources have been consumed and how mush are left.
@@ -50,7 +50,7 @@ private:
     const String custom_consumption_key;
 
     using AtomicIntervalPtr = std::atomic<Intervals *>;
-    using SubscriptionPtr = IACLAttributesStorage::SubscriptionPtr;
+    using SubscriptionPtr = IControlAttributesStorage::SubscriptionPtr;
 
     std::unique_ptr<AtomicIntervalPtr[]> intervals_for_quotas;
     std::unique_ptr<SubscriptionPtr[]> subscriptions;

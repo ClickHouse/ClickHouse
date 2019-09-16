@@ -1,5 +1,6 @@
+#if 0
 #include <ACL/QuotasConsumer.h>
-#include <ACL/IACLAttributableManager.h>
+#include <ACL/IControlAttributesDrivenManager.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <common/DateLUT.h>
@@ -355,3 +356,4 @@ void QuotasConsumer::consume(ResourceType resource_type, ResourceAmount amount, 
     throw Exception(message.str(), ErrorCodes::QUOTA_EXPIRED);
 }
 }
+#endif

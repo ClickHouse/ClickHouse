@@ -7,10 +7,12 @@
 namespace DB
 {
 /// Represents a role in Role-based Access Control.
-class RowLevelSecurityPolicy : public IAccessControlElement
+class RowPolicy : public IControlAttributesDriven
 {
 public:
-    struct Attributes : public IAccessControlElement::Attributes
+    static const Type TYPE;
+
+    struct Attributes : public IControlAttributes
     {
         /// Granted privileges. This doesn't include the privileges from the granted roles.
         Privileges privileges;

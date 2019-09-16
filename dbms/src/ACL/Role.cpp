@@ -1,20 +1,50 @@
 #include <ACL/Role.h>
-#include <ACL/ACLAttributesType.h>
-#include <Common/Exception.h>
+//#include <Common/Exception.h>
 
 
 namespace DB
 {
-using Operation = Role::Operation;
+namespace ErrorCodes
+{
+    extern const int ROLE_NOT_FOUND;
+    extern const int ROLE_ALREADY_EXISTS;
+}
 
 
+namespace ControlAttributesNames
+{
+    extern const size_t ROLE_NAMESPACE_IDX;
+}
+
+
+const Role::Type Role::Attributes::TYPE = {"Role",
+                                           &createImpl<Attributes>,
+                                           nullptr,
+                                           ErrorCodes::ROLE_NOT_FOUND,
+                                           ErrorCodes::ROLE_ALREADY_EXISTS,
+                                           ControlAttributesNames::ROLE_NAMESPACE_IDX};
+
+const Role::Type & Role::TYPE = Role::Attributes::TYPE;
+
+
+bool Role::Attributes::equal(const IControlAttributes & other) const
+{
+    if (!IControlAttributes::equal(other))
+        return false;
+    return true;
+    //const auto * o = dynamic_cast<const Attributes *>(&other);
+    //return o && (privileges == o->privileges) && (grant_options == o->grant_options) && (granted_roles == o->granted_roles);
+}
+
+
+#if 0
 ACLAttributesType Role::Attributes::getType() const
 {
     return ACLAttributesType::ROLE;
 }
 
 
-bool Role::Attributes::equal(const IACLAttributes & other) const
+bool Role::Attributes::equal(const IControlAttributes & other) const
 {
     if (!ACLAttributable::Attributes::equal(other))
         return false;
@@ -23,12 +53,6 @@ bool Role::Attributes::equal(const IACLAttributes & other) const
 }
 
 
-std::shared_ptr<IACLAttributes> Role::Attributes::clone() const
-{
-    auto result = std::make_shared<Attributes>();
-    *result = *this;
-    return result;
-}
 
 
 bool Role::Attributes::hasReferences(UUID ref_id) const
@@ -55,7 +79,7 @@ Role::AttributesPtr Role::getAttributesStrict() const
 }
 
 
-std::pair<Role::AttributesPtr, IACLAttributableManager *> Role::getAttributesWithManagerStrict() const
+std::pair<Role::AttributesPtr, IControlAttributesDrivenManager *> Role::getAttributesWithManagerStrict() const
 {
     auto [attrs, manager] = ACLAttributable::getAttributesWithManagerStrict();
     return {std::static_pointer_cast<const Attributes>(attrs), manager};
@@ -64,39 +88,39 @@ std::pair<Role::AttributesPtr, IACLAttributableManager *> Role::getAttributesWit
 
 void Role::grant(Privileges::Types access, const GrantParams & params)
 {
-    grantOp(access, params).execute();
+    grantChanges(access, params).apply();
 }
 
 
 void Role::grant(Privileges::Types access, const String & database, const GrantParams & params)
 {
-    grantOp(access, database, params).execute();
+    grantChanges(access, database, params).apply();
 }
 
 
 void Role::grant(Privileges::Types access, const String & database, const String & table, const GrantParams & params)
 {
-    grantOp(access, database, table, params).execute();
+    grantChanges(access, database, table, params).apply();
 }
 
 
 void Role::grant(
     Privileges::Types access, const String & database, const String & table, const String & column, const GrantParams & params)
 {
-    grantOp(access, database, table, column, params).execute();
+    grantChanges(access, database, table, column, params).apply();
 }
 
 
 void Role::grant(
     Privileges::Types access, const String & database, const String & table, const Strings & columns, const GrantParams & params)
 {
-    grantOp(access, database, table, columns, params).execute();
+    grantChanges(access, database, table, columns, params).apply();
 }
 
 
-Operation Role::grantOp(Privileges::Types access, const GrantParams & params)
+Role::Changes Role::grantChanges(Privileges::Types access, const GrantParams & params)
 {
-    return prepareOperation([access, params](Attributes & attrs)
+    return prepareChanges([access, params](Attributes & attrs)
     {
         attrs.privileges.grant(access);
         if (params.with_grant_option)
@@ -105,9 +129,9 @@ Operation Role::grantOp(Privileges::Types access, const GrantParams & params)
 }
 
 
-Operation Role::grantOp(Privileges::Types access, const String & database, const GrantParams & params)
+Role::Changes Role::grantChanges(Privileges::Types access, const String & database, const GrantParams & params)
 {
-    return prepareOperation([access, database, params](Attributes & attrs)
+    return prepareChanges([access, database, params](Attributes & attrs)
     {
         attrs.privileges.grant(access, database);
         if (params.with_grant_option)
@@ -116,9 +140,9 @@ Operation Role::grantOp(Privileges::Types access, const String & database, const
 }
 
 
-Operation Role::grantOp(Privileges::Types access, const String & database, const String & table, const GrantParams & params)
+Role::Changes Role::grantChanges(Privileges::Types access, const String & database, const String & table, const GrantParams & params)
 {
-    return prepareOperation([access, database, table, params](Attributes & attrs)
+    return prepareChanges([access, database, table, params](Attributes & attrs)
     {
         attrs.privileges.grant(access, database, table);
         if (params.with_grant_option)
@@ -127,9 +151,9 @@ Operation Role::grantOp(Privileges::Types access, const String & database, const
 }
 
 
-Operation Role::grantOp(Privileges::Types access, const String & database, const String & table, const String & column, const GrantParams & params)
+Role::Changes Role::grantChanges(Privileges::Types access, const String & database, const String & table, const String & column, const GrantParams & params)
 {
-    return prepareOperation([access, database, table, column, params](Attributes & attrs)
+    return prepareChanges([access, database, table, column, params](Attributes & attrs)
     {
         attrs.privileges.grant(access, database, table, column);
         if (params.with_grant_option)
@@ -138,9 +162,9 @@ Operation Role::grantOp(Privileges::Types access, const String & database, const
 }
 
 
-Operation Role::grantOp(Privileges::Types access, const String & database, const String & table, const Strings & columns, const GrantParams & params)
+Role::Changes Role::grantChanges(Privileges::Types access, const String & database, const String & table, const Strings & columns, const GrantParams & params)
 {
-    return prepareOperation([access, database, table, columns, params](Attributes & attrs)
+    return prepareChanges([access, database, table, columns, params](Attributes & attrs)
     {
         attrs.privileges.grant(access, database, table, columns);
         if (params.with_grant_option)
@@ -152,7 +176,7 @@ Operation Role::grantOp(Privileges::Types access, const String & database, const
 bool Role::revoke(Privileges::Types access, const RevokeParams & params)
 {
     bool revoked;
-    revokeOp(access, params, &revoked).execute();
+    revokeChanges(access, params, &revoked).apply();
     return revoked;
 }
 
@@ -160,7 +184,7 @@ bool Role::revoke(Privileges::Types access, const RevokeParams & params)
 bool Role::revoke(Privileges::Types access, const String & database, const RevokeParams & params)
 {
     bool revoked;
-    revokeOp(access, database, params, &revoked).execute();
+    revokeChanges(access, database, params, &revoked).apply();
     return revoked;
 }
 
@@ -168,7 +192,7 @@ bool Role::revoke(Privileges::Types access, const String & database, const Revok
 bool Role::revoke(Privileges::Types access, const String & database, const String & table, const RevokeParams & params)
 {
     bool revoked;
-    revokeOp(access, database, table, params, &revoked).execute();
+    revokeChanges(access, database, table, params, &revoked).apply();
     return revoked;
 }
 
@@ -177,7 +201,7 @@ bool Role::revoke(
     Privileges::Types access, const String & database, const String & table, const String & column, const RevokeParams & params)
 {
     bool revoked;
-    revokeOp(access, database, table, column, params, &revoked).execute();
+    revokeChanges(access, database, table, column, params, &revoked).apply();
     return revoked;
 }
 
@@ -186,14 +210,14 @@ bool Role::revoke(
     Privileges::Types access, const String & database, const String & table, const Strings & columns, const RevokeParams & params)
 {
     bool revoked;
-    revokeOp(access, database, table, columns, params, &revoked).execute();
+    revokeChanges(access, database, table, columns, params, &revoked).apply();
     return revoked;
 }
 
 
-Operation Role::revokeOp(Privileges::Types access, const RevokeParams & params, bool * revoked)
+Role::Changes Role::revokeChanges(Privileges::Types access, const RevokeParams & params, bool * revoked)
 {
-    return prepareOperation([access, params, revoked](Attributes & attrs)
+    return prepareChanges([access, params, revoked](Attributes & attrs)
     {
         bool r = attrs.grant_options.revoke(access);
         if (!params.only_grant_option)
@@ -204,9 +228,9 @@ Operation Role::revokeOp(Privileges::Types access, const RevokeParams & params, 
 }
 
 
-Operation Role::revokeOp(Privileges::Types access, const String & database, const RevokeParams & params, bool * revoked)
+Role::Changes Role::revokeChanges(Privileges::Types access, const String & database, const RevokeParams & params, bool * revoked)
 {
-    return prepareOperation([access, database, params, revoked](Attributes & attrs)
+    return prepareChanges([access, database, params, revoked](Attributes & attrs)
     {
         bool r = attrs.grant_options.revoke(access, database);
         if (!params.only_grant_option)
@@ -217,9 +241,9 @@ Operation Role::revokeOp(Privileges::Types access, const String & database, cons
 }
 
 
-Operation Role::revokeOp(Privileges::Types access, const String & database, const String & table, const RevokeParams & params, bool * revoked)
+Role::Changes Role::revokeChanges(Privileges::Types access, const String & database, const String & table, const RevokeParams & params, bool * revoked)
 {
-    return prepareOperation([access, database, table, params, revoked](Attributes & attrs)
+    return prepareChanges([access, database, table, params, revoked](Attributes & attrs)
     {
         bool r = attrs.grant_options.revoke(access, database, table);
         if (!params.only_grant_option)
@@ -230,9 +254,9 @@ Operation Role::revokeOp(Privileges::Types access, const String & database, cons
 }
 
 
-Operation Role::revokeOp(Privileges::Types access, const String & database, const String & table, const String & column, const RevokeParams & params, bool * revoked)
+Role::Changes Role::revokeChanges(Privileges::Types access, const String & database, const String & table, const String & column, const RevokeParams & params, bool * revoked)
 {
-    return prepareOperation([access, database, table, column, params, revoked](Attributes & attrs)
+    return prepareChanges([access, database, table, column, params, revoked](Attributes & attrs)
     {
         bool r = attrs.grant_options.revoke(access, database, table, column);
         if (!params.only_grant_option)
@@ -243,9 +267,9 @@ Operation Role::revokeOp(Privileges::Types access, const String & database, cons
 }
 
 
-Operation Role::revokeOp(Privileges::Types access, const String & database, const String & table, const Strings & columns, const RevokeParams & params, bool * revoked)
+Role::Changes Role::revokeChanges(Privileges::Types access, const String & database, const String & table, const Strings & columns, const RevokeParams & params, bool * revoked)
 {
-    return prepareOperation([access, database, table, columns, params, revoked](Attributes & attrs)
+    return prepareChanges([access, database, table, columns, params, revoked](Attributes & attrs)
     {
         bool r = attrs.grant_options.revoke(access, database, table, columns);
         if (!params.only_grant_option)
@@ -270,13 +294,13 @@ Privileges Role::getGrantOptions() const
 
 void Role::grantRole(const Role & role, const GrantRoleParams & params)
 {
-    grantRoleOp(role, params).execute();
+    grantRoleChanges(role, params).apply();
 }
 
 
-Operation Role::grantRoleOp(const Role & role, const GrantRoleParams & params)
+Role::Changes Role::grantRoleChanges(const Role & role, const GrantRoleParams & params)
 {
-    return prepareOperation([role, params](Attributes & attrs)
+    return prepareChanges([role, params](Attributes & attrs)
     {
         attrs.granted_roles[role.getID()].admin_option |= params.with_admin_option;
     });
@@ -286,14 +310,14 @@ Operation Role::grantRoleOp(const Role & role, const GrantRoleParams & params)
 bool Role::revokeRole(const Role & role, const RevokeRoleParams & params)
 {
     bool revoked;
-    revokeRoleOp(role, params, &revoked).execute();
+    revokeRoleChanges(role, params, &revoked).apply();
     return revoked;
 }
 
 
-Operation Role::revokeRoleOp(const Role & role, const RevokeRoleParams & params, bool * revoked)
+Role::Changes Role::revokeRoleChanges(const Role & role, const RevokeRoleParams & params, bool * revoked)
 {
-    return prepareOperation([role, params, revoked](Attributes & attrs)
+    return prepareChanges([role, params, revoked](Attributes & attrs)
     {
         bool r = false;
         auto it = attrs.granted_roles.find(role.getID());
@@ -351,4 +375,5 @@ ACLAttributesType Role::getType() const
 {
     return ACLAttributesType::ROLE;
 }
+#endif
 }

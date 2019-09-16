@@ -1,17 +1,40 @@
 #pragma once
 
-#include <ACL/ACLAttributable.h>
+#include <ACL/IControlAttributesDriven.h>
 #include <chrono>
 #include <map>
 
 
 namespace DB
 {
-/// Quota for resources consumption for specific interval.
-/// Used to limit resource usage by user.
-class Quota2 : public ACLAttributable
+class Role;
+
+
+/// Quota for resources consumption for specific interval. Used to limit resource usage by user.
+///
+/// Syntax:
+/// CREATE QUOTA [IF NOT EXISTS] name
+///     {{{QUERIES | ERRORS | RESULT ROWS | READ ROWS | RESULT BYTES | READ BYTES | EXECUTION TIME} number} [, ...] FOR INTERVAL number time_unit} [, ...]
+///     [KEYED BY USERNAME | KEYED BY IP | NOT KEYED]
+///     [ALLOW CUSTOM KEY | DISALLOW CUSTOM KEY]
+///     TO {rolename | username | CURRENT_USER | PUBLIC} [, ...]
+///     EXCEPT {rolename | username | CURRENT_USER} [, ...]
+///
+/// ALTER QUOTA name
+///     {{{QUERIES | ERRORS | RESULT ROWS | READ ROWS | RESULT BYTES | READ BYTES | EXECUTION TIME} number} [, ...] FOR INTERVAL number time_unit} [, ...]
+///     [KEYED BY USERNAME | KEYED BY IP | NOT KEYED]
+///     [ALLOW CUSTOM KEY | DISALLOW CUSTOM KEY]
+///     TO {rolename | username | CURRENT_USER | PUBLIC} [, ...]
+///     EXCEPT {rolename | username | CURRENT_USER} [, ...]
+///
+/// DROP QUOTA [IF EXISTS] name
+///
+/// SHOW CREATE QUOTA name
+class Quota2 : public IControlAttributesDriven
 {
 public:
+    static const Type TYPE;
+
     enum class ResourceType
     {
         QUERIES,             /// Number of queries.
@@ -35,52 +58,60 @@ public:
         Limits();
         ResourceAmount operator[](ResourceType resource_type) const { return limits[static_cast<size_t>(resource_type)]; }
         ResourceAmount & operator[](ResourceType resource_type) { return limits[static_cast<size_t>(resource_type)]; }
+
         friend bool operator ==(const Limits & lhs, const Limits & rhs);
         friend bool operator !=(const Limits & lhs, const Limits & rhs) { return !(lhs == rhs); }
+
+        static const Limits UNLIMITED;
     };
 
-    static const Limits NoLimits;
-
-    enum class ConsumptionKey
+    enum class KeyType
     {
-        NONE,       /// Resource usage is calculated in total.
+        NOT_KEYED,  /// Resource usage is calculated in total.
         USER_NAME,  /// Resource usage is calculated for each user name separately.
         IP_ADDRESS, /// Resource usage is calculated for each IP address separately.
     };
 
-    struct Attributes : public ACLAttributable::Attributes
+    struct Attributes : public IControlAttributes
     {
-        ConsumptionKey consumption_key = ConsumptionKey::NONE;
-        bool allow_custom_consumption_key = true;
-
+        KeyType key_type = KeyType::NOT_KEYED;
+        bool allow_custom_key = true;
         std::map<std::chrono::seconds, Limits> limits_for_duration;
+        std::vector<UUID> roles_allowed_to_consume;
+        std::vector<UUID> roles_disallowed_consume;
 
-        ACLAttributesType getType() const override;
-        std::shared_ptr<IACLAttributes> clone() const override;
+        const Type & getType() const override;
+        std::shared_ptr<IControlAttributes> clone() const override;
 
     protected:
-        bool equal(const IACLAttributes & other) const override;
+        bool equal(const IControlAttributes & other) const override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;
-    using ACLAttributable::ACLAttributable;
+    using IControlAttributesDriven::IControlAttributesDriven;
 
     AttributesPtr getAttributes() const;
-    AttributesPtr getAttributesStrict() const;
+    AttributesPtr tryGetAttributes() const;
+    const Type & getType() const override;
 
-    void setConsumptionKey(ConsumptionKey consumption_key);
-    Operation setConsumptionKeyOp(ConsumptionKey consumption_key);
-    ConsumptionKey getConsumptionKey() const;
+    void setKeyType(KeyType key_type);
+    Changes setKeyTypeChanges(KeyType key_type);
+    KeyType getKeyType() const;
 
-    void setAllowCustomConsumptionKey(bool allow);
-    Operation setAllowCustomConsumptionKeyOp(bool allow);
-    bool isCustomConsumptionKeyAllowed() const;
+    void setAllowCustomKey(bool allow);
+    Changes setAllowCustomKeyChanges(bool allow);
+    bool isCustomKeyAllowed() const;
 
-    void setLimitForDuration(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit);
-    Operation setLimitForDurationOp(std::chrono::seconds duration, ResourceType resource_type, ResourceAmount new_limit);
-    std::vector<std::pair<std::chrono::seconds, ResourceAmount>> getLimits(ResourceType resource_type) const;
+    void setLimits(const std::vector<std::pair<std::chrono::seconds, Limits>> & limits);
+    Changes setLimitsChanges(const std::vector<std::pair<std::chrono::seconds, Limits>> & limits);
+    std::vector<std::pair<std::chrono::seconds, Limits> getLimits() const;
 
-private:
-    ACLAttributesType getType() const override;
+    void setRolesAllowedToConsume(const std::vector<Role> & roles);
+    Changes setRolesAllowedToConsume(const std::vector<Role> & roles);
+    std::vector<Role> getRolesAllowedToConsume() const;
+
+    void setRolesDisallowedToConsume(const std::vector<Role> & roles);
+    Changes setRolesDisallowedToConsume(const std::vector<Role> & roles);
+    std::vector<Role> getRolesDisallowedToConsume() const;
 };
 }

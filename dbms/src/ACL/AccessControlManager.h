@@ -2,22 +2,24 @@
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <ACL/IAccessControlElement.h>
 
 
 namespace DB
 {
-class IACLAttributesStorage;
+class IControlAttributesStorage;
 
 
-class IACLAttributableManager
+class AccessControlManager : public IControlAttributesStorageManager
 {
 public:
-    virtual ~IACLAttributableManager() {}
+    using Storage = IControlAttributesStorage;
+    using StoragePtr = std::shared_ptr<IControlAttributesStorage>;
+    using ElementType = IAccessControlElement::Type;
 
     //std::pair<StoragePtr, UUID> findElement(const String & name, ElementType type);
-
-    virtual IACLAttributesStorage * findStorage(UUID id) const = 0;
-    virtual const std::vector<IACLAttributesStorage *> & getAllStorages() const = 0;
+    Storage * findStorage(UUID id) const;
+    String findNameInCache(UUID id) const;
 
     //void checkNewName(UUID id, const String & new_name, ElementType type);
 };

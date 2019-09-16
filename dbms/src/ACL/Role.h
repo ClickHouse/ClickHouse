@@ -1,17 +1,22 @@
 #pragma once
 
-#include <ACL/ACLAttributable.h>
-#include <ACL/Privileges.h>
+#include <ACL/IControlAttributesDriven.h>
+//#include <ACL/Privileges.h>
 
 
 namespace DB
 {
 /// Represents a role in Role-based Access Control.
-class Role : public ACLAttributable
+/// Syntax:
+/// CREATE ROLE [IF NOT EXISTS] name [, name ...]
+///
+/// DROP ROLE name [, name ...]
+class Role : public IControlAttributesDriven
 {
 public:
-    struct Attributes : public ACLAttributable::Attributes
+    struct Attributes : public IControlAttributes
     {
+#if 0
         /// Granted privileges. This doesn't include the privileges from the granted roles.
         Privileges privileges;
         Privileges grant_options;
@@ -31,29 +36,34 @@ public:
         /// Applied row-level security policies.
         //std::unordered_set<UUID> applied_row_level_security_plocies;
 
-        /// Quota. Zero means no quota.
-        UUID quota;
+        /// Assigned quotas.
+        std::vector<UUID> assigned_quotas;
 
         /// Applied setting profiles.
         //std::unordered_set<UUID> applied_settings_profiles;
         /// Settings settings;
         /// SettingsConstraints settings_constraints;
+#endif
 
-        ACLAttributesType getType() const override;
-        std::shared_ptr<IACLAttributes> clone() const override;
+        static const Type TYPE;
+        const Type & getType() const override { return TYPE; }
+        std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
+#if 0
         bool hasReferences(UUID ref_id) const override;
         void removeReferences(UUID ref_id) override;
-
+#endif
     protected:
-        bool equal(const IACLAttributes & other) const override;
+        bool equal(const IControlAttributes & other) const override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;
-    using ACLAttributable::ACLAttributable;
+    using IControlAttributesDriven::IControlAttributesDriven;
+    static const Type & TYPE;
+    const Type & getType() const override { return Attributes::TYPE; }
+    AttributesPtr getAttributes() const { return getAttributesImpl<Attributes>(); }
+    AttributesPtr tryGetAttributes() const { return tryGetAttributesImpl<Attributes>(); }
 
-    AttributesPtr getAttributes() const;
-    AttributesPtr getAttributesStrict() const;
-
+#if 0
     struct GrantParams
     {
         bool with_grant_option = false;
@@ -66,11 +76,11 @@ public:
     void grant(Privileges::Types access, const String & database, const String & table, const GrantParams & params = {});
     void grant(Privileges::Types access, const String & database, const String & table, const String & column, const GrantParams & params = {});
     void grant(Privileges::Types access, const String & database, const String & table, const Strings & columns, const GrantParams & params = {});
-    Operation grantOp(Privileges::Types access, const GrantParams & params = {});
-    Operation grantOp(Privileges::Types access, const String & database, const GrantParams & params = {});
-    Operation grantOp(Privileges::Types access, const String & database, const String & table, const GrantParams & params = {});
-    Operation grantOp(Privileges::Types access, const String & database, const String & table, const String & column, const GrantParams & params = {});
-    Operation grantOp(Privileges::Types access, const String & database, const String & table, const Strings & columns, const GrantParams & params = {});
+    Changes grantChanges(Privileges::Types access, const GrantParams & params = {});
+    Changes grantChanges(Privileges::Types access, const String & database, const GrantParams & params = {});
+    Changes grantChanges(Privileges::Types access, const String & database, const String & table, const GrantParams & params = {});
+    Changes grantChanges(Privileges::Types access, const String & database, const String & table, const String & column, const GrantParams & params = {});
+    Changes grantChanges(Privileges::Types access, const String & database, const String & table, const Strings & columns, const GrantParams & params = {});
 
     struct RevokeParams
     {
@@ -85,11 +95,11 @@ public:
     bool revoke(Privileges::Types access, const String & database, const String & table, const RevokeParams & params = {});
     bool revoke(Privileges::Types access, const String & database, const String & table, const String & column, const RevokeParams & params = {});
     bool revoke(Privileges::Types access, const String & database, const String & table, const Strings & columns, const RevokeParams & params = {});
-    Operation revokeOp(Privileges::Types access, const RevokeParams & params = {}, bool * revoked = nullptr);
-    Operation revokeOp(Privileges::Types access, const String & database, const RevokeParams & params = {}, bool * revoked = nullptr);
-    Operation revokeOp(Privileges::Types access, const String & database, const String & table, const RevokeParams & params = {}, bool * revoked = nullptr);
-    Operation revokeOp(Privileges::Types access, const String & database, const String & table, const String & column, const RevokeParams & params = {}, bool * revoked = nullptr);
-    Operation revokeOp(Privileges::Types access, const String & database, const String & table, const Strings & columns, const RevokeParams & params = {}, bool * revoked = nullptr);
+    Changes revokeChanges(Privileges::Types access, const RevokeParams & params = {}, bool * revoked = nullptr);
+    Changes revokeChanges(Privileges::Types access, const String & database, const RevokeParams & params = {}, bool * revoked = nullptr);
+    Changes revokeChanges(Privileges::Types access, const String & database, const String & table, const RevokeParams & params = {}, bool * revoked = nullptr);
+    Changes revokeChanges(Privileges::Types access, const String & database, const String & table, const String & column, const RevokeParams & params = {}, bool * revoked = nullptr);
+    Changes revokeChanges(Privileges::Types access, const String & database, const String & table, const Strings & columns, const RevokeParams & params = {}, bool * revoked = nullptr);
 
     Privileges getPrivileges() const;
     Privileges getGrantOptions() const;
@@ -102,7 +112,7 @@ public:
 
     /// Grants another role to this role.
     void grantRole(const Role & role, const GrantRoleParams & params = {});
-    Operation grantRoleOp(const Role & role, const GrantRoleParams & params = {});
+    Changes grantRoleChanges(const Role & role, const GrantRoleParams & params = {});
 
     struct RevokeRoleParams
     {
@@ -113,14 +123,15 @@ public:
     /// Revokes granted role from this role.
     /// Returns false if this role didn't use to have the specified roles granted.
     bool revokeRole(const Role & role, const RevokeRoleParams & params = {});
-    Operation revokeRoleOp(const Role & role, const RevokeRoleParams & params = {}, bool * revoked = nullptr);
+    Changes revokeRoleChanges(const Role & role, const RevokeRoleParams & params = {}, bool * revoked = nullptr);
 
     std::vector<Role> getGrantedRoles() const;
     std::vector<Role> getGrantedRolesWithAdminOption() const;
 
 protected:
     ACLAttributesType getType() const override;
-    std::pair<AttributesPtr, IACLAttributableManager *> getAttributesWithManagerStrict() const;
+    std::pair<AttributesPtr, IControlAttributesDrivenManager *> getAttributesWithManagerStrict() const;
+#endif
 };
 
 }
