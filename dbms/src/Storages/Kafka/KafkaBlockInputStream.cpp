@@ -1,7 +1,7 @@
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 
+#include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
@@ -49,10 +49,13 @@ void KafkaBlockInputStream::readPrefixImpl()
 
     buffer->subscribe(storage.getTopics());
 
-    const auto & limits_ = getLimits();
-    const size_t poll_timeout = buffer->pollTimeout();
-    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits_.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
-    rows_portion_size = std::max(rows_portion_size, 1ul);
+    broken = true;
+}
+
+Block KafkaBlockInputStream::readImpl()
+{
+    if (!buffer)
+        return Block();
 
     auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
     auto read_callback = [this]
@@ -67,33 +70,48 @@ void KafkaBlockInputStream::readPrefixImpl()
             virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
     };
 
-    auto child = FormatFactory::instance().getInput(
-        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, rows_portion_size, read_callback);
-    child->setLimits(limits_);
-    addChild(child);
+    auto blocks = std::make_shared<Blocks>();
 
-    broken = true;
-}
+    auto read_whole_message = [&, this]
+    {
+        auto child = FormatFactory::instance().getInput(
+            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
+        UInt64 rows = 0;
 
-Block KafkaBlockInputStream::readImpl()
-{
-    if (!buffer)
-        return Block();
+        do
+        {
+            Block block = child->read();
+            Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"})
+                                      .cloneWithColumns(std::move(virtual_columns));
+            virtual_columns
+                = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
 
-    Block block = children.back()->read();
-    if (!block)
-        return block;
+            for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+                block.insert(column);
 
-    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneWithColumns(std::move(virtual_columns));
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
+            /// FIXME: materialize MATERIALIZED columns here.
 
-    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
-        block.insert(column);
+            rows += block.rows();
+            blocks->emplace_back(std::move(block));
+        } while (blocks->back());
 
-    /// FIXME: materialize MATERIALIZED columns here.
+        return rows;
+    };
+
+    UInt64 total_rows = 0;
+    while(total_rows < max_block_size)
+    {
+        buffer->allowNext();
+
+        auto new_rows = read_whole_message();
+        total_rows += new_rows;
+
+        if (!new_rows || !checkTimeLimit())
+            break;
+    }
 
     return ConvertingBlockInputStream(
-               context, std::make_shared<OneBlockInputStream>(block), getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name)
+               context, std::make_shared<BlocksBlockInputStream>(blocks), getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name)
         .read();
 }
 

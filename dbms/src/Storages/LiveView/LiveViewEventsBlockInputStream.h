@@ -45,13 +45,13 @@ public:
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
     LiveViewEventsBlockInputStream(std::shared_ptr<StorageLiveView> storage_,
-        std::shared_ptr<BlocksPtr> blocks_ptr_,
+        BlocksPtr blocks_ptr_,
         std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
         std::shared_ptr<bool> active_ptr_,
         const bool has_limit_, const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_,
         const UInt64 temporary_live_view_timeout_sec_)
-        : storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
+        : storage(std::move(storage_)), blocks_ptr(blocks_ptr_),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
           active_ptr(std::move(active_ptr_)), has_limit(has_limit_),
           limit(limit_),
@@ -93,9 +93,9 @@ public:
     {
         active = active_ptr.lock();
         {
-            if (!blocks || blocks.get() != (*blocks_ptr).get())
+            if (!blocks || blocks.get() != blocks_ptr.get())
             {
-                blocks = (*blocks_ptr);
+                blocks = blocks_ptr;
                 blocks_metadata = (*blocks_metadata_ptr);
             }
         }
@@ -143,7 +143,7 @@ protected:
             std::lock_guard lock(storage->mutex);
             if (!active)
                 return { Block(), false };
-            blocks = (*blocks_ptr);
+            blocks = blocks_ptr;
             blocks_metadata = (*blocks_metadata_ptr);
             it = blocks->begin();
             begin = blocks->begin();
@@ -163,9 +163,9 @@ protected:
                     return { Block(), false };
                 /// If we are done iterating over our blocks
                 /// and there are new blocks availble then get them
-                if (blocks.get() != (*blocks_ptr).get())
+                if (blocks.get() != blocks_ptr.get())
                 {
-                    blocks = (*blocks_ptr);
+                    blocks = blocks_ptr;
                     blocks_metadata = (*blocks_metadata_ptr);
                     it = blocks->begin();
                     begin = blocks->begin();
@@ -227,7 +227,7 @@ protected:
 
 private:
     std::shared_ptr<StorageLiveView> storage;
-    std::shared_ptr<BlocksPtr> blocks_ptr;
+    BlocksPtr blocks_ptr;
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
     std::weak_ptr<bool> active_ptr;
     std::shared_ptr<bool> active;
