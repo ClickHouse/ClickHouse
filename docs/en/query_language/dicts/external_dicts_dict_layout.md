@@ -99,7 +99,7 @@ This storage method works the same way as hashed and allows using date/time (arb
 
 Example: The table contains discounts for each advertiser in the format:
 
-```
+```text
 +---------------+---------------------+-------------------+--------+
 | advertiser id | discount start date | discount end date | amount |
 +===============+=====================+===================+========+
@@ -133,7 +133,7 @@ Example:
 
 To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
 
-```
+```sql
 dictGetT('dict_name', 'attr_name', id, date)
 ```
 
@@ -227,7 +227,7 @@ This type of storage is for mapping network prefixes (IP addresses) to metadata 
 
 Example: The table contains network prefixes and their corresponding AS number and country code:
 
-```
+```text
   +-----------------+-------+--------+
   | prefix          | asn   | cca2   |
   +=================+=======+========+
@@ -270,13 +270,13 @@ The key must have only one String type attribute that contains an allowed IP pre
 
 For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
 
-```
+```sql
 dictGetT('dict_name', 'attr_name', tuple(ip))
 ```
 
 The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
 
-```
+```sql
 dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 

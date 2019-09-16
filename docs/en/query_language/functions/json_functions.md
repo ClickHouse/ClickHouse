@@ -35,7 +35,7 @@ Returns the value of a field, including separators.
 
 Examples:
 
-```
+```sql
 visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
@@ -46,7 +46,7 @@ Parses the string in double quotes. The value is unescaped. If unescaping failed
 
 Examples:
 
-```
+```sql
 visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
 visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
 visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
@@ -65,7 +65,7 @@ If the value does not exist, `0` will be returned.
 
 Examples:
 
-```
+```sql
 select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
 select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 ```
@@ -82,7 +82,7 @@ You may use integers to access both JSON arrays and JSON objects.
 
 So, for example:
 
-```
+```sql
 select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
 select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
 select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
@@ -98,7 +98,7 @@ If the value does not exist or has a wrong type, `0` will be returned.
 
 Examples:
 
-```
+```sql
 select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
@@ -111,7 +111,7 @@ If the value does not exist, `Null` will be returned.
 
 Examples:
 
-```
+```sql
 select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
 select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
@@ -128,7 +128,7 @@ If the value does not exist or has a wrong type, `0` will be returned.
 
 Examples:
 
-```
+```sql
 select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
 select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
 select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
@@ -144,7 +144,7 @@ The value is unescaped. If unescaping failed, it returns an empty string.
 
 Examples:
 
-```
+```sql
 select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
 select JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
 select JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
@@ -163,7 +163,7 @@ This means
 
 Examples:
 
-```
+```sql
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
@@ -179,7 +179,7 @@ Parse key-value pairs from a JSON where the values are of the given ClickHouse d
 
 Example:
 
-```
+```sql
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
@@ -191,7 +191,7 @@ If the part does not exist or has a wrong type, an empty string will be returned
 
 Example:
 
-```
+```sql
 select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
