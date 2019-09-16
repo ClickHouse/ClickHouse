@@ -1241,9 +1241,7 @@ void StorageMergeTree::movePartitionTo(const StoragePtr & dest_table, const ASTP
                 dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
 
             transaction.commit(&data_parts_lock);
-
-            /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
-            removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+            removePartsFromWorkingSet(src_parts, true, data_parts_lock);
         }
 
         PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
