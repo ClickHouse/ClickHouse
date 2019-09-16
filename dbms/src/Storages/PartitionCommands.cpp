@@ -39,6 +39,30 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.part = command_ast->part;
         return res;
     }
+    else if (command_ast->type == ASTAlterCommand::MOVE_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = MOVE_PARTITION;
+        res.partition = command_ast->partition;
+        res.part = command_ast->part;
+        switch (command_ast->move_destination_type)
+        {
+            case ASTAlterCommand::MoveDestinationType::DISK:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::DISK;
+                break;
+            case ASTAlterCommand::MoveDestinationType::VOLUME:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::VOLUME;
+                break;
+            case ASTAlterCommand::MoveDestinationType::PARTITION:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::PARTITION;
+                res.to_database = command_ast->to_database;
+                res.to_table = command_ast->to_table;
+                break;
+        }
+        if (res.move_destination_type != PartitionCommand::MoveDestinationType::PARTITION)
+            res.move_destination_name = command_ast->move_destination_name;
+        return res;
+    }
     else if (command_ast->type == ASTAlterCommand::REPLACE_PARTITION)
     {
         PartitionCommand res;
@@ -47,15 +71,6 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.replace = command_ast->replace;
         res.from_database = command_ast->from_database;
         res.from_table = command_ast->from_table;
-        return res;
-    }
-    else if (command_ast->type == ASTAlterCommand::MOVE_PARTITION)
-    {
-        PartitionCommand res;
-        res.type = MOVE_PARTITION;
-        res.partition = command_ast->partition;
-        res.to_database = command_ast->to_database;
-        res.to_table = command_ast->to_table;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)

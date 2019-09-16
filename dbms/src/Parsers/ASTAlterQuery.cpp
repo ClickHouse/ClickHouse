@@ -1,5 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <iomanip>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -167,31 +168,37 @@ void ASTAlterCommand::formatImpl(
                       << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::REPLACE_PARTITION)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (replace ? "REPLACE" : "ATTACH") << " PARTITION "
-                      << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(settings, state, frame);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
-        if (!from_database.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_database)
-                          << (settings.hilite ? hilite_none : "") << ".";
-        }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(from_table) << (settings.hilite ? hilite_none : "");
-    }
     else if (type == ASTAlterCommand::MOVE_PARTITION)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MOVE PARTITION "
-                      << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MOVE "
+                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-        if (!to_database.empty())
+        settings.ostr << " TO ";
+        switch (move_destination_type)
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
-                          << (settings.hilite ? hilite_none : "") << ".";
+            case MoveDestinationType::DISK:
+                settings.ostr << "DISK ";
+                break;
+            case MoveDestinationType::VOLUME:
+                settings.ostr << "VOLUME ";
+                break;
+            case MoveDestinationType::PARTITION:
+                if (!to_database.empty())
+                {
+                    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
+                                  << (settings.hilite ? hilite_none : "") << ".";
+                }
+                settings.ostr << (settings.hilite ? hilite_identifier : "")
+                              << backQuoteIfNeed(to_table)
+                              << (settings.hilite ? hilite_none : "");
+                return;
         }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_table) << (settings.hilite ? hilite_none : "");
+        if (move_destination_type != MoveDestinationType::PARTITION)
+        {
+            WriteBufferFromOwnString move_destination_name_buf;
+            writeQuoted(move_destination_name, move_destination_name_buf);
+            settings.ostr << move_destination_name_buf.str();
+        }
     }
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
