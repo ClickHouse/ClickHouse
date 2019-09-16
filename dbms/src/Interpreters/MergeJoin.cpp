@@ -36,6 +36,7 @@ public:
     {}
 
     size_t position() const { return impl.pos; }
+    size_t end() const { return impl.rows; }
     bool atEnd() const { return impl.pos >= impl.rows; }
     void nextN(size_t num) { impl.pos += num; }
 
@@ -100,7 +101,20 @@ private:
     SortCursorImpl impl;
 };
 
-static void makeSortAndMerge(const Names & keys, SortDescription & sort, SortDescription & merge)
+namespace
+{
+
+MutableColumns makeMutableColumns(const Block & block)
+{
+    MutableColumns columns;
+    columns.reserve(block.columns());
+
+    for (const auto & src_column : block)
+        columns.push_back(src_column.column->cloneEmpty());
+    return columns;
+}
+
+void makeSortAndMerge(const Names & keys, SortDescription & sort, SortDescription & merge)
 {
     NameSet unique_keys;
     for (auto & key_name : keys)
@@ -115,10 +129,80 @@ static void makeSortAndMerge(const Names & keys, SortDescription & sort, SortDes
     }
 }
 
+void copyLeftRange(const Block & block, MutableColumns & columns, size_t start, size_t rows_to_add)
+{
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        const auto & src_column = block.getByPosition(i);
+        auto & dst_column = columns[i];
+
+        size_t row_pos = start;
+        for (size_t row = 0; row < rows_to_add; ++row, ++row_pos)
+            dst_column->insertFrom(*src_column.column, row_pos);
+    }
+}
+
+void copyRightRange(const Block & right_block, const Block & right_columns_to_add, MutableColumns & columns,
+                    size_t row_position, size_t rows_to_add)
+{
+    for (size_t i = 0; i < right_columns_to_add.columns(); ++i)
+    {
+        const auto & src_column = right_block.getByName(right_columns_to_add.getByPosition(i).name);
+        auto & dst_column = columns[i];
+
+        for (size_t row = 0; row < rows_to_add; ++row)
+            dst_column->insertFrom(*src_column.column, row_position);
+    }
+}
+
+void joinEqualsAnyLeft(const Block & right_block, const Block & right_columns_to_add, MutableColumns & right_columns, const Range & range)
+{
+    copyRightRange(right_block, right_columns_to_add, right_columns, range.right_start, range.left_length);
+}
+
+void joinEquals(const Block & left_block, const Block & right_block, const Block & right_columns_to_add,
+                MutableColumns & left_columns, MutableColumns & right_columns, const Range & range, bool is_all)
+{
+    size_t left_rows_to_add = range.left_length;
+    size_t right_rows_to_add = is_all ? range.right_length : 1;
+
+    size_t row_position = range.right_start;
+    for (size_t right_row = 0; right_row < right_rows_to_add; ++right_row, ++row_position)
+    {
+        copyLeftRange(left_block, left_columns, range.left_start, left_rows_to_add);
+        copyRightRange(right_block, right_columns_to_add, right_columns, row_position, left_rows_to_add);
+    }
+}
+
+void appendNulls(MutableColumns & right_columns, size_t rows_to_add)
+{
+    for (auto & column : right_columns)
+        for (size_t i = 0; i < rows_to_add; ++i)
+            column->insertDefault();
+}
+
+void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, MutableColumns & right_columns,
+                      size_t start, size_t end, bool copy_left)
+{
+    if (end <= start)
+        return;
+
+    size_t rows_to_add = end - start;
+    if (copy_left)
+        copyLeftRange(left_block, left_columns, start, rows_to_add);
+    appendNulls(right_columns, rows_to_add);
+}
+
+}
+
+
 
 MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block)
     : table_join(table_join_)
     , nullable_right_side(table_join->forceNullabelRight())
+    , is_all(table_join->strictness() == ASTTableJoin::Strictness::All)
+    , is_inner(isInner(table_join->kind()))
+    , is_left(isLeft(table_join->kind()))
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
         throw Exception("Partial merge supported for LEFT and INNER JOINs only", ErrorCodes::NOT_IMPLEMENTED);
@@ -148,6 +232,9 @@ void MergeJoin::setTotals(const Block & totals_block)
 void MergeJoin::mergeRightBlocks()
 {
     const size_t max_merged_block_size = 128 * 1024 * 1024;
+
+    if (right_blocks.empty())
+        return;
 
     Blocks unsorted_blocks;
     unsorted_blocks.reserve(right_blocks.size());
@@ -183,26 +270,27 @@ void MergeJoin::joinBlock(Block & block)
 
     std::shared_lock lock(rwlock);
 
-    if (isLeft(table_join->kind()))
-    {
-        MutableColumns right_columns = makeMutableColumns(right_columns_to_add);
+    MutableColumns left_columns = makeMutableColumns(block);
+    MutableColumns right_columns = makeMutableColumns(right_columns_to_add);
+    MergeJoinCursor left_cursor(block, left_merge_description);
 
-        MergeJoinCursor left_cursor(block, left_merge_description);
+    if (is_left)
+    {
         for (auto it = right_blocks.begin(); it != right_blocks.end(); ++it)
         {
             if (left_cursor.atEnd())
                 break;
-            leftJoin(left_cursor, *it, right_columns);
+            leftJoin(left_cursor, block, *it, left_columns, right_columns);
         }
 
-        appendRightColumns(block, std::move(right_columns));
-    }
-    else if (isInner(table_join->kind()))
-    {
-        MutableColumns left_columns = makeMutableColumns(block);
-        MutableColumns right_columns = makeMutableColumns(right_columns_to_add);
+        joinInequalsLeft(block, left_columns, right_columns, left_cursor.position(), left_cursor.end(), is_all);
+        //left_cursor.nextN(left_cursor.end() - left_cursor.position());
 
-        MergeJoinCursor left_cursor(block, left_merge_description);
+        changeLeftColumns(block, std::move(left_columns));
+        addRightColumns(block, std::move(right_columns));
+    }
+    else if (is_inner)
+    {
         for (auto it = right_blocks.begin(); it != right_blocks.end(); ++it)
         {
             if (left_cursor.atEnd())
@@ -210,32 +298,36 @@ void MergeJoin::joinBlock(Block & block)
             innerJoin(left_cursor, block, *it, left_columns, right_columns);
         }
 
-        block.clear();
-        appendRightColumns(block, std::move(left_columns));
-        appendRightColumns(block, std::move(right_columns));
+        changeLeftColumns(block, std::move(left_columns));
+        addRightColumns(block, std::move(right_columns));
     }
 }
 
-void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & right_block, MutableColumns & right_columns)
+void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                         MutableColumns & left_columns, MutableColumns & right_columns)
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
-        size_t left_position = left_cursor.position();
+        size_t left_position = left_cursor.position(); /// save inequal position
         Range range = left_cursor.getNextEqualRange(right_cursor);
 
-        if (left_position < range.left_start)
-            appendRightNulls(right_columns, range.left_start - left_position);
+        joinInequalsLeft(left_block, left_columns, right_columns, left_position, range.left_start, is_all);
 
         if (range.empty())
             break;
 
-        leftJoinEquals(right_block, right_columns, range);
+        if (is_all)
+            joinEquals(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, is_all);
+        else
+            joinEqualsAnyLeft(right_block, right_columns_to_add, right_columns, range);
+
         right_cursor.nextN(range.right_length);
 
-        /// TODO: Do not run over last left keys for ALL JOIN (cause of possible duplicates in next right block)
-        //if (!right_cursor.atEnd())
+        /// Do not run over last left keys for ALL JOIN (cause of possible duplicates in next right block)
+        if (is_all && right_cursor.atEnd())
+            break;
         left_cursor.nextN(range.left_length);
     }
 }
@@ -251,91 +343,29 @@ void MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
         if (range.empty())
             break;
 
-        innerJoinEquals(left_block, right_block, left_columns, right_columns, range);
+        joinEquals(left_block, right_block, right_columns_to_add, left_columns, right_columns, range, is_all);
         right_cursor.nextN(range.right_length);
 
-        /// TODO: Do not run over last left keys for ALL JOIN (cause of possible duplicates in next right block)
-        //if (!right_cursor.atEnd())
+        /// Do not run over last left keys for ALL JOIN (cause of possible duplicates in next right block)
+        if (is_all && right_cursor.atEnd())
+            break;
         left_cursor.nextN(range.left_length);
     }
 }
 
-MutableColumns MergeJoin::makeMutableColumns(const Block & block)
+void MergeJoin::changeLeftColumns(Block & block, MutableColumns && columns)
 {
-    MutableColumns columns;
-    columns.reserve(block.columns());
-
-    for (const auto & src_column : block)
-        columns.push_back(src_column.column->cloneEmpty());
-    return columns;
+    if (is_left && !is_all)
+        return;
+    block.setColumns(std::move(columns));
 }
 
-void MergeJoin::appendRightColumns(Block & block, MutableColumns && right_columns)
+void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 {
     for (size_t i = 0; i < right_columns_to_add.columns(); ++i)
     {
         const auto & column = right_columns_to_add.getByPosition(i);
         block.insert(ColumnWithTypeAndName{std::move(right_columns[i]), column.type, column.name});
-    }
-}
-
-void MergeJoin::appendRightNulls(MutableColumns & right_columns, size_t rows_to_add)
-{
-    for (auto & column : right_columns)
-        for (size_t i = 0; i < rows_to_add; ++i)
-            column->insertDefault();
-}
-
-void MergeJoin::leftJoinEquals(const Block & right_block, MutableColumns & right_columns, const Range & range)
-{
-    bool any = table_join->strictness() == ASTTableJoin::Strictness::Any;
-
-    size_t left_rows_to_insert = range.left_length;
-    size_t right_rows_to_insert = any ? 1 : range.right_length;
-
-    size_t row_position = range.right_start;
-    for (size_t right_row = 0; right_row < right_rows_to_insert; ++right_row, ++row_position)
-    {
-        for (size_t i = 0; i < right_columns_to_add.columns(); ++i)
-        {
-            const auto & src_column = right_block.getByName(right_columns_to_add.getByPosition(i).name);
-            auto & dst_column = right_columns[i];
-
-            for (size_t left_row = 0; left_row < left_rows_to_insert; ++left_row)
-                dst_column->insertFrom(*src_column.column, row_position);
-        }
-    }
-}
-
-void MergeJoin::innerJoinEquals(const Block & left_block, const Block & right_block,
-                                MutableColumns & left_columns, MutableColumns & right_columns, const Range & range)
-{
-    bool any = table_join->strictness() == ASTTableJoin::Strictness::Any;
-
-    size_t left_rows_to_insert = range.left_length;
-    size_t right_rows_to_insert = any ? 1 : range.right_length;
-
-    size_t row_position = range.right_start;
-    for (size_t right_row = 0; right_row < right_rows_to_insert; ++right_row, ++row_position)
-    {
-        for (size_t i = 0; i < left_block.columns(); ++i)
-        {
-            const auto & src_column = left_block.getByPosition(i);
-            auto & dst_column = left_columns[i];
-
-            size_t row_pos = range.left_start;
-            for (size_t row = 0; row < left_rows_to_insert; ++row, ++row_pos)
-                dst_column->insertFrom(*src_column.column, row_pos);
-        }
-
-        for (size_t i = 0; i < right_columns_to_add.columns(); ++i)
-        {
-            const auto & src_column = right_block.getByName(right_columns_to_add.getByPosition(i).name);
-            auto & dst_column = right_columns[i];
-
-            for (size_t row = 0; row < left_rows_to_insert; ++row)
-                dst_column->insertFrom(*src_column.column, row_position);
-        }
     }
 }
 
