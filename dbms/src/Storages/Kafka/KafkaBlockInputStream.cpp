@@ -78,9 +78,8 @@ Block KafkaBlockInputStream::readImpl()
             storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
         UInt64 rows = 0;
 
-        do
+        while (Block block = child->read())
         {
-            Block block = child->read();
             Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"})
                                       .cloneWithColumns(std::move(virtual_columns));
             virtual_columns
@@ -93,25 +92,28 @@ Block KafkaBlockInputStream::readImpl()
 
             rows += block.rows();
             blocks->emplace_back(std::move(block));
-        } while (blocks->back());
+        }
 
         return rows;
     };
 
     UInt64 total_rows = 0;
-    while(total_rows < max_block_size)
+    while (total_rows < max_block_size)
     {
-        buffer->allowNext();
-
         auto new_rows = read_whole_message();
         total_rows += new_rows;
+
+        buffer->allowNext();
 
         if (!new_rows || !checkTimeLimit())
             break;
     }
 
     return ConvertingBlockInputStream(
-               context, std::make_shared<BlocksBlockInputStream>(blocks), getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name)
+               context,
+               std::make_shared<BlocksBlockInputStream>(blocks, getHeader()),
+               getHeader(),
+               ConvertingBlockInputStream::MatchColumnsMode::Name)
         .read();
 }
 
