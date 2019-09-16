@@ -190,7 +190,7 @@ public:
         while (unlikely(head->pos + size > head->end))
         {
             char * prev_end = head->pos;
-            addChunk(size);
+            addChunk(begin ? (head->pos - begin) + size : size);
 
             if (begin)
                 begin = insert(begin, prev_end - begin);
