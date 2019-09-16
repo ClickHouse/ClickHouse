@@ -37,22 +37,21 @@ private:
     Block right_columns_to_add;
     BlocksList right_blocks;
     Block totals;
-    bool nullable_right_side;
     size_t right_blocks_row_count = 0;
     size_t right_blocks_bytes = 0;
+    const bool nullable_right_side;
+    const bool is_all;
+    const bool is_inner;
+    const bool is_left;
 
-    MutableColumns makeMutableColumns(const Block & block);
-    void appendRightColumns(Block & block, MutableColumns && right_columns);
+    void changeLeftColumns(Block & block, MutableColumns && columns);
+    void addRightColumns(Block & block, MutableColumns && columns);
 
     void mergeRightBlocks();
-    void leftJoin(MergeJoinCursor & left_cursor, const Block & right_block, MutableColumns & right_columns);
+    void leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
+                  MutableColumns & left_columns, MutableColumns & right_columns);
     void innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                    MutableColumns & left_columns, MutableColumns & right_columns);
-
-    void appendRightNulls(MutableColumns & right_columns, size_t rows_to_add);
-    void leftJoinEquals(const Block & right_block, MutableColumns & right_columns, const MergeJoinEqualRange & range);
-    void innerJoinEquals(const Block & left_block, const Block & right_block,
-                         MutableColumns & left_columns, MutableColumns & right_columns, const MergeJoinEqualRange & range);
 };
 
 }
