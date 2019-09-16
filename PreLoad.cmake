@@ -12,8 +12,7 @@
 # https://youtrack.jetbrains.com/issue/CPP-2659
 # https://youtrack.jetbrains.com/issue/CPP-870
 
-string(TOLOWER "${CMAKE_COMMAND}" CMAKE_COMMAND_LOWER)
-if (NOT ${CMAKE_COMMAND_LOWER} MATCHES "clion")
+if (NOT DEFINED ENV{CLION_IDE})
     find_program(NINJA_PATH ninja)
     if (NINJA_PATH)
         set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "" FORCE)

@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -269,6 +270,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Create directories for 'path' and for default database, if not exist.
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
+
+    /// Check that we have read and write access to all data paths
+    auto disk_selector = global_context->getDiskSelector();
+    for (const auto & [name, disk] : disk_selector.getDisksMap())
+    {
+        Poco::File disk_path(disk->getPath());
+        if (!disk_path.canRead() || !disk_path.canWrite())
+            throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
+    }
 
     StatusFile status{path + "status"};
 
