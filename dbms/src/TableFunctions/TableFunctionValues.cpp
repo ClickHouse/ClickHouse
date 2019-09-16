@@ -33,6 +33,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
         for (size_t i = 1; i < args.size(); ++i)
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
+
             Field value = convertFieldToType(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get());
             res_columns[0]->insert(value);
         }
