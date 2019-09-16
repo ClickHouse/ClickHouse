@@ -138,4 +138,14 @@ bool UsersManager::hasAccessToDatabase(const std::string & user_name, const std:
     return user->databases.empty() || user->databases.count(database_name);
 }
 
+bool UsersManager::hasAccessToDictionary(const std::string & user_name, const std::string & dictionary_name) const
+{
+    auto it = users.find(user_name);
+
+    if (users.end() == it)
+        throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
+
+    auto user = it->second;
+    return user->dictionaries.empty() || user->dictionaries.count(dictionary_name);
+}
 }
