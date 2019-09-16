@@ -287,3 +287,8 @@ ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler 
     };
 }
 
+GlobalThreadPool & GlobalThreadPool::instance()
+{
+    static GlobalThreadPool ret;
+    return ret;
+}

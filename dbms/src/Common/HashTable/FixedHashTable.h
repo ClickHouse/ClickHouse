@@ -28,7 +28,6 @@ struct FixedHashTableCell
     {
         Key key;
 
-        value_type & getValueMutable() { return key; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedHashTableCell *) { key = key_; }
     };

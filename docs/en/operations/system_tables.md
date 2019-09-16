@@ -62,7 +62,7 @@ Columns:
 
 Please note that `errors_count` is updated once per query to the cluster, but `estimated_recovery_time` is recalculated on-demand. So there could be a case of non-zero `errors_count` and zero `estimated_recovery_time`, that next query will zero `errors_count` and try to use replica as if it has no errors.
 
-** See also **
+**See also**
 
 - [Table engine Distributed](table_engines/distributed.md)
 - [distributed_replica_error_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
