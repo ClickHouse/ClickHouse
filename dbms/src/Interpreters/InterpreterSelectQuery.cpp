@@ -1117,9 +1117,9 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
                 }
 
-                if (auto join = expressions.before_join->getTableJoin())
+                if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
                 {
-                    if (auto stream = join->createStreamWithNonJoinedDataIfFullOrRightJoin(header_before_join, settings.max_block_size))
+                    if (auto stream = join->createStreamWithNonJoinedRows(header_before_join, settings.max_block_size))
                     {
                         if constexpr (pipeline_with_processors)
                         {

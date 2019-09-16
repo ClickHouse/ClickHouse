@@ -5,6 +5,7 @@
 
 #include <Core/Names.h>
 #include <Columns/IColumn.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 namespace DB
 {
@@ -32,6 +33,8 @@ public:
     virtual void joinTotals(Block & block) const = 0;
 
     virtual size_t getTotalRowCount() const = 0;
+
+    virtual BlockInputStreamPtr createStreamWithNonJoinedRows(const Block &, UInt64) const { return {}; }
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;

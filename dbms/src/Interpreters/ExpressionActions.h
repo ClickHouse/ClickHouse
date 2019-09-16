@@ -21,6 +21,8 @@ namespace ErrorCodes
 }
 
 class AnalyzedJoin;
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
 
 class IPreparedFunction;
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
@@ -101,6 +103,7 @@ public:
 
     /// For JOIN
     std::shared_ptr<const AnalyzedJoin> table_join;
+    JoinPtr join;
 
     /// For PROJECT.
     NamesWithAliases projection;
@@ -116,7 +119,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> join);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -232,7 +235,7 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    std::shared_ptr<const AnalyzedJoin> getTableJoin() const;
+    JoinPtr getTableJoinAlgo() const;
 
     const Settings & getSettings() const { return settings; }
 

@@ -60,14 +60,14 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 }
 
 
-Join::Join(const AnalyzedJoin & join_options_, const Block & right_sample_block, bool any_take_last_row_)
-    : join_options(join_options_)
-    , kind(join_options_.kind())
-    , strictness(join_options_.strictness())
-    , key_names_right(join_options_.keyNamesRight())
-    , required_right_keys(join_options_.requiredRightKeys())
-    , nullable_right_side(join_options_.forceNullabelRight())
-    , nullable_left_side(join_options_.forceNullabelLeft())
+Join::Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_)
+    : table_join(table_join_)
+    , kind(table_join->kind())
+    , strictness(table_join->strictness())
+    , key_names_right(table_join->keyNamesRight())
+    , required_right_keys(table_join->requiredRightKeys())
+    , nullable_right_side(table_join->forceNullabelRight())
+    , nullable_left_side(table_join->forceNullabelLeft())
     , any_take_last_row(any_take_last_row_)
     , log(&Logger::get("Join"))
 {
@@ -493,7 +493,7 @@ bool Join::addJoinedBlock(const Block & block)
             blocks_nullmaps.emplace_back(stored_block, null_map_holder);
     }
 
-    return join_options.sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 
@@ -937,7 +937,7 @@ void Join::joinBlock(Block & block)
 {
     std::shared_lock lock(rwlock);
 
-    const Names & key_names_left = join_options.keyNamesLeft();
+    const Names & key_names_left = table_join->keyNamesLeft();
     JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
     if (joinDispatch(kind, strictness, maps, [&](auto kind_, auto strictness_, auto & map)
@@ -1043,7 +1043,7 @@ public:
         : parent(parent_)
         , max_block_size(max_block_size_)
     {
-        const Names & key_names_left = parent_.join_options.keyNamesLeft();
+        const Names & key_names_left = parent_.table_join->keyNamesLeft();
 
         /** left_sample_block contains keys and "left" columns.
           * result_sample_block - keys, "left" columns, and "right" columns.
@@ -1337,8 +1337,9 @@ private:
 
 BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const
 {
-    return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
+    if (isRightOrFull(table_join->kind()))
+        return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
+    return {};
 }
-
 
 }

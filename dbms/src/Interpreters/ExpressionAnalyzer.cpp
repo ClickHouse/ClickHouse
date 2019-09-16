@@ -408,9 +408,9 @@ bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & cha
     return true;
 }
 
-void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions) const
+void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr join) const
 {
-    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join));
+    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join, join));
 }
 
 bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -419,13 +419,13 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     if (!ast_join)
         return false;
 
-    makeTableJoin(*ast_join);
+    JoinPtr table_join = makeTableJoin(*ast_join);
 
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions);
-    addJoinAction(step.actions);
+    addJoinAction(step.actions, table_join);
     return true;
 }
 
@@ -465,7 +465,7 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
-void SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
@@ -491,10 +491,10 @@ void SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryEl
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
-        subquery_for_join.join = analyzedJoin().makeJoin(subquery_for_join.sample_block);
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block);
     }
 
-    syntax->analyzed_join->setJoin(subquery_for_join.join);
+    return subquery_for_join.join;
 }
 
 void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element,

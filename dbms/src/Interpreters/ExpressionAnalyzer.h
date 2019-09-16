@@ -20,6 +20,8 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct ASTTableJoin;
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
 
 class ASTFunction;
 class ASTExpressionList;
@@ -123,7 +125,7 @@ protected:
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void addJoinAction(ExpressionActionsPtr & actions) const;
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
@@ -215,7 +217,7 @@ private:
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
-    void makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
     void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
                              SubqueryForSet & subquery_for_set) const;
 
