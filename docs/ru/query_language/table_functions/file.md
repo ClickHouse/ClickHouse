@@ -3,7 +3,7 @@
 
 Создаёт таблицу из файла.
 
-```
+```sql
 file(path, format, structure)
 ```
 
@@ -33,12 +33,12 @@ $ cat /var/lib/clickhouse/user_files/test.csv
 
 Таблица из `test.csv` и выборка первых двух строк из неё:
 
-``` sql
+```sql
 SELECT *
 FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2
 ```
-```
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │

@@ -51,7 +51,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы `db2.name2`.
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
 ```
 

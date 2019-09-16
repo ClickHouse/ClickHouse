@@ -131,7 +131,7 @@ If you have a problems with encodings when using Oracle, see the corresponding [
 
 Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
-```sql
+```text
 [gregtest]
 Driver = /usr/lib/psqlodbca.so
 Servername = localhost

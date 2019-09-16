@@ -86,7 +86,6 @@ Returns 0 if the the element is not in the array, or 1 if it is.
 SELECT has([1, 2, NULL], NULL)
 ```
 ```text
-
 ┌─has([1, 2, NULL], NULL)─┐
 │                       1 │
 └─────────────────────────┘

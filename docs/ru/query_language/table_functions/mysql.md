@@ -2,7 +2,7 @@
 
 Позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
 
-```
+```sql
 mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
@@ -32,25 +32,24 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 Таблица в MySQL:
 
-```
+```sql
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
     ->   `float` FLOAT NOT NULL,
     ->   `float_nullable` FLOAT NULL DEFAULT NULL,
     ->   PRIMARY KEY (`int_id`));
-Query OK, 0 rows affected (0,09 sec)
 
 mysql> insert into test (`int_id`, `float`) VALUES (1,2);
-Query OK, 1 row affected (0,00 sec)
 
 mysql> select * from test;
+```
+```text
 +--------+--------------+-------+----------------+
 | int_id | int_nullable | float | float_nullable |
 +--------+--------------+-------+----------------+
 |      1 |         NULL |     2 |           NULL |
 +--------+--------------+-------+----------------+
-1 row in set (0,00 sec)
 ```
 
 Получение данных в ClickHouse:
