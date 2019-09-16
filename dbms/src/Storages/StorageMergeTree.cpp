@@ -1234,6 +1234,9 @@ void StorageMergeTree::movePartitionTo(const StoragePtr & dest_table, const ASTP
             removePartsFromWorkingSet(src_parts, true, data_parts_lock);
         }
 
+        clearOldMutations(true);
+        clearOldPartsFromFilesystem();
+
         PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
     }
     catch (...)
