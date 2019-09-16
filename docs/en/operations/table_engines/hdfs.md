@@ -5,7 +5,7 @@ to the [File](file.md) and [URL](url.md) engines, but provides Hadoop-specific f
 
 ## Usage
 
-```
+```sql
 ENGINE = HDFS(URI, format)
 ```
 The `URI` parameter is the whole file URI in HDFS.
@@ -18,22 +18,22 @@ The `format` parameter specifies one of the available file formats. To perform
 
 **1.** Set up the `hdfs_engine_table` table:
 
-``` sql
+```sql
 CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
 ```
 
 **2.** Fill file:
-``` sql
+```sql
 INSERT INTO hdfs_engine_table VALUES ('one', 1), ('two', 2), ('three', 3)
 ```
 
 **3.** Query the data:
 
-``` sql
+```sql
 SELECT * FROM hdfs_engine_table LIMIT 2
 ```
 
-```
+```text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │

@@ -101,7 +101,7 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 !!! attention
     Do not use this method in new projects. If possible, switch old projects to the method described above.
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -119,7 +119,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Example**
 
-```
+```sql
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
