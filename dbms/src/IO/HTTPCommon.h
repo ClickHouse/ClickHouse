@@ -50,11 +50,13 @@ HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts &
 /// As previous method creates session, but tooks it from pool
 PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size);
 
+bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status);
+
 /** Used to receive response (response headers and possibly body)
   *  after sending data (request headers and possibly body).
   * Throws exception in case of non HTTP_OK (200) response code.
   * Returned istream lives in 'session' object.
   */
 std::istream * receiveResponse(
-    Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response);
+    Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 }
