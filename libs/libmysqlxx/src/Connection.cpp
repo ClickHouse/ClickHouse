@@ -26,6 +26,11 @@ LibrarySingleton::~LibrarySingleton()
     mysql_library_end();
 }
 
+auto & LibrarySingleton::instance()
+{
+    static LibrarySingleton instance;
+    return instance;
+}
 
 Connection::Connection()
     : driver(std::make_unique<MYSQL>())

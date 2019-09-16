@@ -112,14 +112,12 @@ void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeout
         }
     };
 
-    class HTTPSessionPool : public ext::singleton<HTTPSessionPool>
+    class HTTPSessionPool : private boost::noncopyable
     {
     private:
         using Key = std::tuple<std::string, UInt16, bool>;
         using PoolPtr = std::shared_ptr<SingleEndpointHTTPSessionPool>;
         using Entry = SingleEndpointHTTPSessionPool::Entry;
-
-        friend class ext::singleton<HTTPSessionPool>;
 
         struct Hasher
         {
@@ -140,6 +138,12 @@ void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeout
         HTTPSessionPool() = default;
 
     public:
+        static auto & instance()
+        {
+            static HTTPSessionPool instance;
+            return instance;
+        }
+
         Entry getSession(
             const Poco::URI & uri,
             const ConnectionTimeouts & timeouts,

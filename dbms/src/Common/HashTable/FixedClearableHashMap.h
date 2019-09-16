@@ -36,7 +36,6 @@ struct FixedClearableHashMapCell
         }
         Key key;
         FixedClearableHashMapCell * ptr;
-        Key & getFirstMutable() { return key; }
         const Key & getFirst() const { return key; }
         Mapped & getSecond() { return ptr->mapped; }
         const Mapped & getSecond() const { return *ptr->mapped; }
