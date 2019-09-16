@@ -18,7 +18,7 @@ struct MergeJoinEqualRange;
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
 
     bool addJoinedBlock(const Block & block) override;
     void joinBlock(Block &) override;
@@ -28,7 +28,7 @@ public:
 
 private:
     mutable std::shared_mutex rwlock;
-    const AnalyzedJoin & table_join;
+    std::shared_ptr<AnalyzedJoin> table_join;
     SortDescription left_sort_description;
     SortDescription right_sort_description;
     SortDescription left_merge_description;

@@ -51,7 +51,7 @@ StorageJoin::StorageJoin(
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
     table_join = std::make_shared<AnalyzedJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<Join>(*table_join, getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
@@ -63,7 +63,7 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<Join>(*table_join, getSampleBlock().sortColumns());
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns());
 }
 
 

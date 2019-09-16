@@ -57,8 +57,6 @@ class AnalyzedJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    JoinPtr join;
-
 public:
     AnalyzedJoin(const Settings &);
 
@@ -108,13 +106,8 @@ public:
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
-    JoinPtr getJoin() const { return join; }
-    void setJoin(const JoinPtr & join_) { join = join_; }
-
-    JoinPtr makeJoin(const Block & right_sample_block) const;
-    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
-
     static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
+    friend JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block);
 };
 
 struct ASTTableExpression;

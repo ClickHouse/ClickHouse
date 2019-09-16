@@ -232,23 +232,7 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->table_join.strictness == y->table_join.strictness
         && x->key_names_left == y->key_names_left
         && x->key_names_right == y->key_names_right
-        && x->columns_added_by_join == y->columns_added_by_join
-        && x->join == y->join;
-}
-
-BlockInputStreamPtr AnalyzedJoin::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
-{
-    if (isRightOrFull(table_join.kind))
-        if (auto hash_join = typeid_cast<Join *>(join.get()))
-            return hash_join->createStreamWithNonJoinedRows(source_header, max_block_size);
-    return {};
-}
-
-JoinPtr AnalyzedJoin::makeJoin(const Block & right_sample_block) const
-{
-    if (partial_merge_join)
-        return std::make_shared<MergeJoin>(*this, right_sample_block);
-    return std::make_shared<Join>(*this, right_sample_block);
+        && x->columns_added_by_join == y->columns_added_by_join;
 }
 
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
@@ -274,6 +258,13 @@ NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpressio
     }
 
     return names_and_type_list;
+}
+
+JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
+{
+    if (table_join->partial_merge_join)
+        return std::make_shared<MergeJoin>(table_join, right_sample_block);
+    return std::make_shared<Join>(table_join, right_sample_block);
 }
 
 }

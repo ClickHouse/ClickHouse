@@ -116,16 +116,16 @@ static void makeSortAndMerge(const Names & keys, SortDescription & sort, SortDes
 }
 
 
-MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sample_block)
+MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block)
     : table_join(table_join_)
-    , nullable_right_side(table_join_.forceNullabelRight())
+    , nullable_right_side(table_join->forceNullabelRight())
 {
-    if (!isLeft(table_join.kind()) && !isInner(table_join.kind()))
+    if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
         throw Exception("Partial merge supported for LEFT and INNER JOINs only", ErrorCodes::NOT_IMPLEMENTED);
 
-    JoinCommon::extractKeysForJoin(table_join.keyNamesRight(), right_sample_block, right_table_keys, right_columns_to_add);
+    JoinCommon::extractKeysForJoin(table_join->keyNamesRight(), right_sample_block, right_table_keys, right_columns_to_add);
 
-    const NameSet required_right_keys = table_join.requiredRightKeys();
+    const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
         if (required_right_keys.count(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
@@ -135,8 +135,8 @@ MergeJoin::MergeJoin(const AnalyzedJoin & table_join_, const Block & right_sampl
     if (nullable_right_side)
         JoinCommon::convertColumnsToNullable(right_columns_to_add);
 
-    makeSortAndMerge(table_join.keyNamesLeft(), left_sort_description, left_merge_description);
-    makeSortAndMerge(table_join.keyNamesRight(), right_sort_description, right_merge_description);
+    makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
+    makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
 }
 
 void MergeJoin::setTotals(const Block & totals_block)
@@ -173,17 +173,17 @@ bool MergeJoin::addJoinedBlock(const Block & src_block)
     right_blocks_row_count += block.rows();
     right_blocks_bytes += block.bytes();
 
-    return table_join.sizeLimits().check(right_blocks_row_count, right_blocks_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return table_join->sizeLimits().check(right_blocks_row_count, right_blocks_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 void MergeJoin::joinBlock(Block & block)
 {
-    JoinCommon::checkTypesOfKeys(block, table_join.keyNamesLeft(), right_table_keys, table_join.keyNamesRight());
+    JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
     sortBlock(block, left_sort_description);
 
     std::shared_lock lock(rwlock);
 
-    if (isLeft(table_join.kind()))
+    if (isLeft(table_join->kind()))
     {
         MutableColumns right_columns = makeMutableColumns(right_columns_to_add);
 
@@ -197,7 +197,7 @@ void MergeJoin::joinBlock(Block & block)
 
         appendRightColumns(block, std::move(right_columns));
     }
-    else if (isInner(table_join.kind()))
+    else if (isInner(table_join->kind()))
     {
         MutableColumns left_columns = makeMutableColumns(block);
         MutableColumns right_columns = makeMutableColumns(right_columns_to_add);
@@ -288,7 +288,7 @@ void MergeJoin::appendRightNulls(MutableColumns & right_columns, size_t rows_to_
 
 void MergeJoin::leftJoinEquals(const Block & right_block, MutableColumns & right_columns, const Range & range)
 {
-    bool any = table_join.strictness() == ASTTableJoin::Strictness::Any;
+    bool any = table_join->strictness() == ASTTableJoin::Strictness::Any;
 
     size_t left_rows_to_insert = range.left_length;
     size_t right_rows_to_insert = any ? 1 : range.right_length;
@@ -310,7 +310,7 @@ void MergeJoin::leftJoinEquals(const Block & right_block, MutableColumns & right
 void MergeJoin::innerJoinEquals(const Block & left_block, const Block & right_block,
                                 MutableColumns & left_columns, MutableColumns & right_columns, const Range & range)
 {
-    bool any = table_join.strictness() == ASTTableJoin::Strictness::Any;
+    bool any = table_join->strictness() == ASTTableJoin::Strictness::Any;
 
     size_t left_rows_to_insert = range.left_length;
     size_t right_rows_to_insert = any ? 1 : range.right_length;

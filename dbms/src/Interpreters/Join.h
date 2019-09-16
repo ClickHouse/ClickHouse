@@ -124,7 +124,7 @@ using MappedAsof =      WithFlags<AsofRowRefs, false>;
 class Join : public IJoin
 {
 public:
-    Join(const AnalyzedJoin & join_options, const Block & right_sample_block, bool any_take_last_row_ = false);
+    Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
     bool empty() { return type == Type::EMPTY; }
 
@@ -156,7 +156,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const override;
@@ -274,12 +274,12 @@ private:
     friend class NonJoinedBlockInputStream;
     friend class JoinBlockInputStream;
 
-    const AnalyzedJoin & join_options;
+    std::shared_ptr<AnalyzedJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
-    const Names key_names_right;
+    const Names & key_names_right;
     /// Names right-side table keys that are needed in result (would be attached after joined columns).
     const NameSet required_right_keys;
 
