@@ -73,4 +73,10 @@ FunctionBuilderPtr FunctionFactory::tryGet(
     return {};
 }
 
+FunctionFactory & FunctionFactory::instance()
+{
+    static FunctionFactory ret;
+    return ret;
+}
+
 }

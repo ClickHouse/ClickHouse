@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -100,3 +102,4 @@ size_t getLengthEncodedStringSize(const String & s)
 }
 
 }
+#endif

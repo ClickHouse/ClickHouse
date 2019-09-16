@@ -38,6 +38,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ## pointInEllipses
 
 Checks whether the point belongs to at least one of the ellipses.
+Coordinates are geometric in the Cartesian coordinate system.
 
 ```
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
@@ -47,7 +48,7 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 - `x, y` — Coordinates of a point on the plane.
 - `xᵢ, yᵢ` — Coordinates of the center of the `i`-th ellipsis.
-- `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in meters.
+- `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in units of x, y coordinates.
 
 The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
@@ -58,13 +59,13 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 **Example**
 
 ``` sql
-SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 ```
 
 ```
-┌─pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1., 2.)─┐
-│                                                                   1 │
-└─────────────────────────────────────────────────────────────────────┘
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## pointInPolygon
