@@ -182,7 +182,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage,
     bool has_query_tail,
-    ReadBuffer * istr)
+    ReadBuffer * istr,
+    bool allow_processors)
 {
     time_t current_time = time(nullptr);
 
@@ -300,7 +301,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = settings.experimental_use_processors && interpreter->canExecuteWithProcessors();
+        bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
 
         if (use_processors)
             pipeline = interpreter->executeWithProcessors();
@@ -549,11 +550,12 @@ BlockIO executeQuery(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data)
+    bool may_have_embedded_data,
+    bool allow_processors)
 {
     BlockIO streams;
     std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
-        internal, stage, !may_have_embedded_data, nullptr);
+        internal, stage, !may_have_embedded_data, nullptr, allow_processors);
     return streams;
 }
 
@@ -604,7 +606,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr, true);
 
     auto & pipeline = streams.pipeline;
 

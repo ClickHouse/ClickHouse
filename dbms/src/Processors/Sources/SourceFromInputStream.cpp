@@ -123,7 +123,9 @@ Chunk SourceFromInputStream::generate()
         return {};
     }
 
+#ifndef NDEBUG
     assertBlocksHaveEqualStructure(getPort().getHeader(), block, "SourceFromInputStream");
+#endif
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
