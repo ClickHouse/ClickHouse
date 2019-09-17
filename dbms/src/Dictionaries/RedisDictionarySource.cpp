@@ -57,8 +57,7 @@ namespace DB
     }
 
 
-    static const size_t max_block_size = 4;
-
+    static const size_t max_block_size = 8192;
 
     RedisDictionarySource::RedisDictionarySource(
             const DictionaryStructure & dict_struct_,
@@ -155,13 +154,16 @@ namespace DB
 
         /// Get only keys for specified storage type.
         auto all_keys = client->execute<RedisArray>(command_for_keys);
+        if (all_keys.isNull())
+            return std::make_shared<RedisBlockInputStream>(client, RedisArray{}, storage_type, sample_block, max_block_size);
+
         RedisArray keys;
         auto key_type = storageTypeToKeyType(storage_type);
         for (auto & key : all_keys)
             if (key_type == client->execute<std::string>(RedisCommand("TYPE").addRedisType(key)))
                 keys.addRedisType(std::move(key));
 
-        if (storage_type == RedisStorageType::HASH_MAP && !keys.isNull())
+        if (storage_type == RedisStorageType::HASH_MAP)
         {
             RedisArray hkeys;
             for (const auto & key : keys)

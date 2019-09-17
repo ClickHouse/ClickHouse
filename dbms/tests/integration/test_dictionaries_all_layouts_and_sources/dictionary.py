@@ -44,6 +44,9 @@ class Row(object):
         for field, value in zip(fields, values):
             self.data[field.name] = value
 
+    def has_field(self, name):
+        return name in self.data
+
     def get_value_by_name(self, name):
         return self.data[name]
 
@@ -97,6 +100,7 @@ class DictionaryStructure(object):
         self.range_key = None
         self.ordinary_fields = []
         self.range_fields = []
+        self.has_hierarchy = False
 
         for field in fields:
             if field.is_key:
@@ -105,6 +109,9 @@ class DictionaryStructure(object):
                 self.range_fields.append(field)
             else:
                 self.ordinary_fields.append(field)
+            
+            if field.hierarchical:
+                self.has_hierarchy = True
 
             if field.is_range_key:
                 if self.range_key is not None:
@@ -286,14 +293,13 @@ class DictionaryStructure(object):
 
 
 class Dictionary(object):
-    def __init__(self, name, structure, source, config_path, table_name, fields=None, values=None):
+    def __init__(self, name, structure, source, config_path, table_name, fields):
         self.name = name
         self.structure = copy.deepcopy(structure)
         self.source = copy.deepcopy(source)
         self.config_path = config_path
         self.table_name = table_name
         self.fields = fields
-        self.values = values
 
     def generate_config(self):
         with open(self.config_path, 'w') as result:
@@ -343,3 +349,6 @@ class Dictionary(object):
 
     def is_complex(self):
         return self.structure.layout.is_complex
+    
+    def get_fields(self):
+        return self.fields
