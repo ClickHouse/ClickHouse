@@ -988,11 +988,11 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
                     case PartitionCommand::MoveDestinationType::VOLUME:
                         movePartitionToVolume(command.partition, command.move_destination_name, command.part, context);
                         break;
-                    case PartitionCommand::MoveDestinationType::PARTITION:
+                    case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
                         String dest_database = command.to_database.empty() ? context.getCurrentDatabase() : command.to_database;
                         auto dest_storage = context.getTable(dest_database, command.to_table);
-                        movePartitionTo(dest_storage, command.partition, context);
+                        movePartitionToTable(dest_storage, command.partition, context);
                         break;
                 }
 
@@ -1170,7 +1170,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
-void StorageMergeTree::movePartitionTo(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context)
+void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context)
 {
     auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
     auto lock2 = dest_table->lockStructureForShare(false, context.getCurrentQueryId());
@@ -1220,13 +1220,10 @@ void StorageMergeTree::movePartitionTo(const StoragePtr & dest_table, const ASTP
     try
     {
         {
-            /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
-            ///  and we should be able to rollback already added (Precomitted) parts
             Transaction transaction(*dest_table_storage);
 
             auto data_parts_lock = lockParts();
 
-            /// Populate transaction
             for (MutableDataPartPtr & part : dst_parts)
                 dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
 

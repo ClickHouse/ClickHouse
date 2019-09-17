@@ -61,7 +61,7 @@ struct PartitionCommand
     {
         DISK,
         VOLUME,
-        PARTITION,
+        TABLE,
     };
 
     MoveDestinationType move_destination_type;

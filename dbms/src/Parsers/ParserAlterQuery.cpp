@@ -63,13 +63,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_if_exists("IF EXISTS");
     ParserKeyword s_from("FROM");
-    ParserKeyword s_to("TO");
     ParserKeyword s_in_partition("IN PARTITION");
     ParserKeyword s_with("WITH");
     ParserKeyword s_name("NAME");
 
     ParserKeyword s_to_disk("TO DISK");
     ParserKeyword s_to_volume("TO VOLUME");
+    ParserKeyword s_to_table("TO TABLE");
 
     ParserKeyword s_delete_where("DELETE WHERE");
     ParserKeyword s_update("UPDATE");
@@ -240,12 +240,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 command->move_destination_type = ASTAlterCommand::MoveDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
                 command->move_destination_type = ASTAlterCommand::MoveDestinationType::VOLUME;
-            else if (s_to.ignore(pos) && parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
-                command->move_destination_type = ASTAlterCommand::MoveDestinationType::PARTITION;
+            else if (s_to_table.ignore(pos))
+            {
+                if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
+                    return false;
+                command->move_destination_type = ASTAlterCommand::MoveDestinationType::TABLE;
+            }
             else
                 return false;
 
-            if (command->move_destination_type != ASTAlterCommand::MoveDestinationType::PARTITION)
+            if (command->move_destination_type != ASTAlterCommand::MoveDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -265,14 +269,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 command->move_destination_type = ASTAlterCommand::MoveDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
                 command->move_destination_type = ASTAlterCommand::MoveDestinationType::VOLUME;
-            else if (s_to.ignore(pos) && parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
+            else if (s_to_table.ignore(pos))
             {
-                command->move_destination_type = ASTAlterCommand::MoveDestinationType::PARTITION;
+                if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
+                    return false;
+                command->move_destination_type = ASTAlterCommand::MoveDestinationType::TABLE;
             }
             else
                 return false;
 
-            if (command->move_destination_type != ASTAlterCommand::MoveDestinationType::PARTITION)
+            if (command->move_destination_type != ASTAlterCommand::MoveDestinationType::TABLE)
             {
                 ASTPtr ast_space_name;
                 if (!parser_string_literal.parse(pos, ast_space_name, expected))

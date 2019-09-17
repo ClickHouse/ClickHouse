@@ -182,7 +182,8 @@ void ASTAlterCommand::formatImpl(
             case MoveDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
-            case MoveDestinationType::PARTITION:
+            case MoveDestinationType::TABLE:
+                settings.ostr << "TABLE ";
                 if (!to_database.empty())
                 {
                     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
@@ -193,7 +194,7 @@ void ASTAlterCommand::formatImpl(
                               << (settings.hilite ? hilite_none : "");
                 return;
         }
-        if (move_destination_type != MoveDestinationType::PARTITION)
+        if (move_destination_type != MoveDestinationType::TABLE)
         {
             WriteBufferFromOwnString move_destination_name_buf;
             writeQuoted(move_destination_name, move_destination_name_buf);

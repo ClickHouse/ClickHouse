@@ -273,7 +273,7 @@ For the query to run successfully, the following conditions must be met:
 #### MOVE PARTITION {#alter_move-partition}
 
 ``` sql
-ALTER TABLE table_source MOVE PARTITION partition_expr TO table_dest
+ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
 This query move the data partition from the `table_source` to `table_dest` with deleting the data from `table_source`.
