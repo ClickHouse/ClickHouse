@@ -48,6 +48,16 @@ ColumnRawPtrs temporaryMaterializeColumns(const Block & block, const Names & nam
     return ptrs;
 }
 
+void removeLowCardinalityInplace(Block & block)
+{
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto & col = block.getByPosition(i);
+        col.column = recursiveRemoveLowCardinality(col.column);
+        col.type = recursiveRemoveLowCardinality(col.type);
+    }
+}
+
 ColumnRawPtrs extractKeysForJoin(const Names & key_names_right, const Block & right_sample_block,
                                  Block & sample_block_with_keys, Block & sample_block_with_columns_to_add)
 {

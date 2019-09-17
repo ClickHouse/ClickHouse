@@ -49,9 +49,9 @@ private:
 
     void mergeRightBlocks();
     void leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                  MutableColumns & left_columns, MutableColumns & right_columns);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
     void innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                   MutableColumns & left_columns, MutableColumns & right_columns);
+                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
 };
 
 }
