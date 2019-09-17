@@ -467,11 +467,10 @@ public:
             return count;
         if (isSmall())
         {
-            std::vector<T> ans;
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if ((UInt32)val >= range_start && (UInt32)val < range_end)
+                if (UInt32(val) >= range_start && UInt32(val) < range_end)
                 {
                     r1.add(val);
                     count++;
@@ -483,10 +482,47 @@ public:
             roaring_uint32_iterator_t iterator;
             roaring_init_iterator(rb, &iterator);
             roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
-            while (iterator.has_value)
+            while (iterator.has_value && UInt32(iterator.current_value) < range_end)
             {
-                if ((UInt32)iterator.current_value >= range_end)
-                    break;
+                r1.add(iterator.current_value);
+                roaring_advance_uint32_iterator(&iterator);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Return new set of the smallest `limit` values in set which is no less than `range_start`.
+     */
+    UInt64 rb_limit(UInt32 range_start, UInt32 limit, RoaringBitmapWithSmallSet& r1) const
+    {
+        UInt64 count = 0;
+        if (isSmall())
+        {
+            std::vector<T> ans;
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if (UInt32(val) >= range_start)
+                {
+                    ans.push_back(val);
+                }
+            }
+            sort(ans.begin(), ans.end());
+            if (limit > ans.size())
+                limit = ans.size();
+            for (size_t i=0; i<limit; i++)
+                r1.add(ans[i]);
+            count = UInt64(limit);
+        }
+        else
+        {
+            roaring_uint32_iterator_t iterator;
+            roaring_init_iterator(rb, &iterator);
+            roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
+            while (UInt32(count) < limit && iterator.has_value)
+            {
                 r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
                 count++;
