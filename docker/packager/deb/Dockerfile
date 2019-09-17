@@ -78,8 +78,10 @@ RUN apt-get --allow-unauthenticated update -y \
             gperf \
             alien \
             libcapnp-dev \
-            cmake
+            cmake \
+            gdb
 
 
 COPY build.sh /
+
 CMD ["/bin/bash", "/build.sh"]
