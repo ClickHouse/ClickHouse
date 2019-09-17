@@ -1,7 +1,7 @@
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 
-#include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
@@ -70,38 +70,47 @@ Block KafkaBlockInputStream::readImpl()
             virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
     };
 
-    auto blocks = std::make_shared<Blocks>();
-
-    auto read_whole_message = [&, this]
+    auto merge_blocks = [] (Block & block1, Block && block2)
     {
+        auto columns1 = block1.mutateColumns();
+        auto columns2 = block2.mutateColumns();
+        for (size_t i = 0; i < columns1.size(); ++i)
+            columns1[i]->insertRangeFrom(*columns2[i], 0, columns2[i]->size());
+        block1.setColumns(std::move(columns1));
+    };
+
+    auto read_kafka_message = [&, this]
+    {
+        Block result;
         auto child = FormatFactory::instance().getInput(
             storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
-        UInt64 rows = 0;
+        const auto virtual_header = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"});
 
-        while (Block block = child->read())
+        while (auto block = child->read())
         {
-            Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"})
-                                      .cloneWithColumns(std::move(virtual_columns));
-            virtual_columns
-                = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
+            auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
+            virtual_columns = virtual_header.cloneEmptyColumns();
 
             for (const auto & column : virtual_block.getColumnsWithTypeAndName())
                 block.insert(column);
 
             /// FIXME: materialize MATERIALIZED columns here.
 
-            rows += block.rows();
-            blocks->emplace_back(std::move(block));
+            merge_blocks(result, std::move(block));
         }
 
-        return rows;
+        return result;
     };
+
+    Block single_block;
 
     UInt64 total_rows = 0;
     while (total_rows < max_block_size)
     {
-        auto new_rows = read_whole_message();
+        auto new_block = read_kafka_message();
+        auto new_rows = new_block.rows();
         total_rows += new_rows;
+        merge_blocks(single_block, std::move(new_block));
 
         buffer->allowNext();
 
@@ -111,7 +120,7 @@ Block KafkaBlockInputStream::readImpl()
 
     return ConvertingBlockInputStream(
                context,
-               std::make_shared<BlocksBlockInputStream>(blocks, getHeader()),
+               std::make_shared<OneBlockInputStream>(single_block),
                getHeader(),
                ConvertingBlockInputStream::MatchColumnsMode::Name)
         .read();
