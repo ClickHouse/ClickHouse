@@ -402,14 +402,20 @@ class SourceRedis(ExternalSource):
     def prepare(self, structure, table_name, cluster):
         self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port)
         self.prepared = True
+        self.ordered_names = structure.get_ordered_names()
 
-    def load_kv_data(self, values):
+    def load_data(self, data, table_name):
         self.client.flushdb()
-        if len(values[0]) == 2:
-            self.client.mset({value[0]: value[1] for value in values})
-        else:
-            for value in values:
-                self.client.hset(value[0], value[1], value[2])
+        for row in list(data):
+            values = []
+            for name in self.ordered_names:
+                values.append(str(row.data[name]))
+            print 'values: ', values
+            if len(values) == 2:
+                self.client.set(*values)
+                print 'kek: ', self.client.get(values[0])
+            else:
+                self.client.hset(*values)
 
     def compatible_with_layout(self, layout):
         if (
