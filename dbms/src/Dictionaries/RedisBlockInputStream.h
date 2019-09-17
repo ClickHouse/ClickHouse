@@ -8,14 +8,13 @@
 #   include <DataStreams/IBlockInputStream.h>
 #   include "RedisDictionarySource.h"
 #   include <Poco/Redis/Array.h>
+#   include <Poco/Redis/Type.h>
 
 namespace Poco
 {
     namespace Redis
     {
-        class Array;
         class Client;
-        class RedisType;
     }
 }
 
@@ -26,6 +25,7 @@ namespace DB
     {
     public:
         using RedisArray = Poco::Redis::Array;
+        using RedisBulkString = Poco::Redis::BulkString;
 
         RedisBlockInputStream(
                 const std::shared_ptr<Poco::Redis::Client> & client_,
