@@ -13,7 +13,7 @@ namespace DB
     {
         auto createTableSource = [=](const DictionaryStructure & dict_struct,
                                      const Poco::Util::AbstractConfiguration & config,
-                                     const std::string & config_prefix,
+                                     const String & config_prefix,
                                      Block & sample_block,
                                      const Context & /* context */) -> DictionarySourcePtr {
 #if USE_POCO_REDIS
@@ -52,8 +52,8 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int UNSUPPORTED_METHOD;
-        extern const int CANNOT_SELECT;
         extern const int INVALID_CONFIG_PARAMETER;
+        extern const int INTERNAL_REDIS_ERROR;
     }
 
 
@@ -61,7 +61,7 @@ namespace DB
 
     RedisDictionarySource::RedisDictionarySource(
             const DictionaryStructure & dict_struct_,
-            const std::string & host_,
+            const String & host_,
             UInt16 port_,
             UInt8 db_index_,
             RedisStorageType storage_type_,
@@ -81,12 +81,12 @@ namespace DB
 
         if (storage_type == RedisStorageType::HASH_MAP)
         {
-            if (!dict_struct.key.has_value())
+            if (!dict_struct.key)
                 throw Exception{"Redis source with storage type \'hash_map\' must have key",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
 
-            if (dict_struct.key.value().size() > 2)
-                throw Exception{"Redis source with complex keys having more than 2 attributes are unsupported",
+            if (dict_struct.key->size() != 2)
+                throw Exception{"Redis source with storage type \'hash_map\' requiers 2 keys",
                                 ErrorCodes::INVALID_CONFIG_PARAMETER};
             // suppose key[0] is primary key, key[1] is secondary key
         }
@@ -95,10 +95,10 @@ namespace DB
         {
             RedisCommand command("SELECT");
             command << static_cast<Int64>(db_index);
-            std::string reply = client->execute<std::string>(command);
+            String reply = client->execute<String>(command);
             if (reply != "+OK\r\n")
-                throw Exception{"Selecting db with index " + DB::toString(db_index) + " failed with reason " + reply,
-                                ErrorCodes::CANNOT_SELECT};
+                throw Exception{"Selecting database with index " + DB::toString(db_index)
+                    + " failed with reason " + reply, ErrorCodes::INTERNAL_REDIS_ERROR};
         }
     }
 
@@ -106,7 +106,7 @@ namespace DB
     RedisDictionarySource::RedisDictionarySource(
             const DictionaryStructure & dict_struct_,
             const Poco::Util::AbstractConfiguration & config_,
-            const std::string & config_prefix_,
+            const String & config_prefix_,
             Block & sample_block_)
             : RedisDictionarySource(
             dict_struct_,
@@ -132,7 +132,7 @@ namespace DB
 
     RedisDictionarySource::~RedisDictionarySource() = default;
 
-    static std::string storageTypeToKeyType(RedisStorageType type)
+    static String storageTypeToKeyType(RedisStorageType type)
     {
         switch (type)
         {
@@ -160,7 +160,7 @@ namespace DB
         RedisArray keys;
         auto key_type = storageTypeToKeyType(storage_type);
         for (auto & key : all_keys)
-            if (key_type == client->execute<std::string>(RedisCommand("TYPE").addRedisType(key)))
+            if (key_type == client->execute<String>(RedisCommand("TYPE").addRedisType(key)))
                 keys.addRedisType(std::move(key));
 
         if (storage_type == RedisStorageType::HASH_MAP)
@@ -213,12 +213,12 @@ namespace DB
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), storage_type, sample_block, max_block_size);
     }
 
-    std::string RedisDictionarySource::toString() const
+    String RedisDictionarySource::toString() const
     {
         return "Redis: " + host + ':' + DB::toString(port);
     }
 
-    RedisStorageType RedisDictionarySource::parseStorageType(const std::string & storage_type_str)
+    RedisStorageType RedisDictionarySource::parseStorageType(const String & storage_type_str)
     {
         if (storage_type_str == "hash_map")
             return RedisStorageType::HASH_MAP;
