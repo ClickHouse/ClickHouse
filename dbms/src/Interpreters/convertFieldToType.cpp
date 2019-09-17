@@ -187,6 +187,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
+        if (which_type.isDateOrDateTime() && src.getType() == Field::Types::UInt64)
+        {
+            /// We don't need any conversion UInt64 is under type of Date and DateTime
+            return src;
+        }
+
         if (src.getType() == Field::Types::String)
         {
             if (which_type.isDate())
