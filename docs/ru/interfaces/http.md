@@ -63,7 +63,6 @@ ECT 1
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
-```text
 ┏━━━┓
 ┃ 1 ┃
 ┡━━━┩
