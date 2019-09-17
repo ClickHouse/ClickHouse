@@ -4,7 +4,6 @@ set(LIBUNWIND_CXX_SOURCES
     ${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp
     ${LIBUNWIND_SOURCE_DIR}/src/Unwind-EHABI.cpp
     ${LIBUNWIND_SOURCE_DIR}/src/Unwind-seh.cpp)
-
 if (APPLE)
     set(LIBUNWIND_CXX_SOURCES ${LIBUNWIND_CXX_SOURCES} ${LIBUNWIND_SOURCE_DIR}/src/Unwind_AppleExtras.cpp)
 endif ()
