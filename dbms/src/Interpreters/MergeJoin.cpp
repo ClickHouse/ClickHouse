@@ -1,5 +1,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SortCursor.h>
+#include <Columns/ColumnNullable.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/sortBlock.h>
@@ -104,13 +105,16 @@ private:
 namespace
 {
 
-MutableColumns makeMutableColumns(const Block & block)
+MutableColumns makeMutableColumns(const Block & block, size_t rows_to_reserve = 0)
 {
     MutableColumns columns;
     columns.reserve(block.columns());
 
     for (const auto & src_column : block)
+    {
         columns.push_back(src_column.column->cloneEmpty());
+        columns.back()->reserve(rows_to_reserve);
+    }
     return columns;
 }
 
@@ -133,12 +137,8 @@ void copyLeftRange(const Block & block, MutableColumns & columns, size_t start, 
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        const auto & src_column = block.getByPosition(i);
-        auto & dst_column = columns[i];
-
-        size_t row_pos = start;
-        for (size_t row = 0; row < rows_to_add; ++row, ++row_pos)
-            dst_column->insertFrom(*src_column.column, row_pos);
+        const auto & src_column = block.getByPosition(i).column;
+        columns[i]->insertRangeFrom(*src_column, start, rows_to_add);
     }
 }
 
@@ -147,11 +147,14 @@ void copyRightRange(const Block & right_block, const Block & right_columns_to_ad
 {
     for (size_t i = 0; i < right_columns_to_add.columns(); ++i)
     {
-        const auto & src_column = right_block.getByName(right_columns_to_add.getByPosition(i).name);
+        const auto & src_column = right_block.getByName(right_columns_to_add.getByPosition(i).name).column;
         auto & dst_column = columns[i];
+        auto * dst_nullable = typeid_cast<ColumnNullable *>(dst_column.get());
 
-        for (size_t row = 0; row < rows_to_add; ++row)
-            dst_column->insertFrom(*src_column.column, row_position);
+        if (dst_nullable && !isColumnNullable(*src_column))
+            dst_nullable->insertRangeFromNotNullable(*src_column, row_position, rows_to_add);
+        else
+            dst_column->insertRangeFrom(*src_column, row_position, rows_to_add);
     }
 }
 
@@ -270,8 +273,9 @@ void MergeJoin::joinBlock(Block & block)
 
     std::shared_lock lock(rwlock);
 
-    MutableColumns left_columns = makeMutableColumns(block);
-    MutableColumns right_columns = makeMutableColumns(right_columns_to_add);
+    size_t rows_to_reserve = is_left ? block.rows() : 0;
+    MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));
+    MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
     MergeJoinCursor left_cursor(block, left_merge_description);
 
     if (is_left)
