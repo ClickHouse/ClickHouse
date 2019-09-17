@@ -62,11 +62,9 @@ RUN apt-get --allow-unauthenticated update -y \
             zlib1g-dev \
             liblz4-dev \
             libdouble-conversion-dev \
-            libsparsehash-dev \
             librdkafka-dev \
             libpoconetssl50 \
             libpoco-dev \
-            libsparsehash-dev \
             libgoogle-perftools-dev \
             libzstd-dev \
             libltdl-dev \
