@@ -83,7 +83,7 @@ RUN apt-get --allow-unauthenticated update -y \
             pigz
 
 
-# Special dpkg-deb (https://github.com/alesapin/dpkg) version which is able
+# Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
 RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/dpkg-deb
