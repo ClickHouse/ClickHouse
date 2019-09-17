@@ -1,4 +1,5 @@
 #include "RedisBlockInputStream.h"
+
 #if USE_POCO_REDIS
 
 #    include <string>

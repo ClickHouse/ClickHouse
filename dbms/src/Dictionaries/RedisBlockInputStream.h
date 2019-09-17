@@ -1,9 +1,13 @@
 #pragma once
 
+#include "config_core.h"
 #include <Core/Block.h>
-#include <Core/ExternalResultDescription.h>
-#include <DataStreams/IBlockInputStream.h>
-#include "RedisDictionarySource.h"
+
+#if USE_POCO_REDIS
+#   include <Core/ExternalResultDescription.h>
+#   include <DataStreams/IBlockInputStream.h>
+#   include "RedisDictionarySource.h"
+#   include <Poco/Redis/Array.h>
 
 namespace Poco
 {
@@ -11,6 +15,7 @@ namespace Poco
     {
         class Array;
         class Client;
+        class RedisType;
     }
 }
 
@@ -48,3 +53,5 @@ namespace DB
     };
 
 }
+
+#endif

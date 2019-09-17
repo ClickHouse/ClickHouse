@@ -19,10 +19,10 @@ namespace DB
 #if USE_POCO_REDIS
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
 #else
-        (void)dict_struct;
-        (void)config;
-        (void)config_prefix;
-        (void)sample_block;
+        UNUSED(dict_struct);
+        UNUSED(config);
+        UNUSED(config_prefix);
+        UNUSED(sample_block);
         throw Exception{"Dictionary source of type `redis` is disabled because poco library was built without redis support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
