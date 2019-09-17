@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Parsers/queryToString.h>
@@ -75,8 +76,14 @@ static void assertIndexColumnsType(const Block & header)
     {
         WhichDataType which(columns_data_types[index]);
 
+        if (which.isArray())
+        {
+            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(columns_data_types[index].get());
+            which = WhichDataType(array_type->getNestedType());
+        }
+
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
-            !which.isDateOrDateTime() && !which.isEnum())
+            !which.isDateOrDateTime() && !which.isEnum() && !which.isArray())
             throw Exception("Unexpected type " + columns_data_types[index]->getName() + " of bloom filter index.",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
