@@ -56,6 +56,9 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
         <allow_databases>
            <database>test</database>
         </allow_databases>
+        <allow_dictionaries>
+           <dictionary>test</dictionary>
+        </allow_dictionaries>
     </web>
 </users>
 ```
@@ -92,6 +95,8 @@ Next the user settings profile is specified (see the section "[Settings profiles
 Then specify the quota to be used (see the section "[Quotas](quotas.md#quotas)"). You can specify the default quota: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
 
 In the optional `<allow_databases>` section, you can also specify a list of databases that the user can access. By default, all databases are available to the user. You can specify the `default` database. In this case, the user will receive access to the database by default.
+
+In the optional `<allow_dictionaries>` section, you can also specify a list of dictionaries that the user can access. By default, all dictionaries are available to the user.
 
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
