@@ -1,11 +1,15 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/bit_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -41,12 +45,37 @@ struct BloomFilterHash
             const auto & value = field.safeGet<String>();
             return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
         }
+        else if (which.isArray())
+        {
+            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(data_type);
+            if (!array_type)
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+            return hashWithField(&*array_type->getNestedType(), field);
+        }
         else
             throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
+        WhichDataType which(data_type);
+        if (which.isArray())
+        {
+            const ColumnArray * array_col = typeid_cast<const ColumnArray *>(column.get());
+            const IColumn * nested_col = nullptr;
+
+            if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+            nested_col = array_col->getDataPtr().get();
+            if (!nested_col)
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+            const auto & offsets = array_col->getOffsets();
+            size_t offset = (pos == 0) ? 0 : offsets[pos - 1];
+            limit = std::max(nested_col->size() - offset, limit);
+        }
+
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();
         getAnyTypeHash<true>(&*data_type, &*column, index_column_vec, pos);
@@ -58,7 +87,8 @@ struct BloomFilterHash
     {
         WhichDataType which(data_type);
 
-        if      (which.isUInt8()) getNumberTypeHash<UInt8, is_first>(column, vec, pos);
+        if      (which.isArray()) getArrayTypeHash<is_first>(data_type, column, vec, pos);
+        else if (which.isUInt8()) getNumberTypeHash<UInt8, is_first>(column, vec, pos);
         else if (which.isUInt16()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);
         else if (which.isUInt32()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isUInt64()) getNumberTypeHash<UInt64, is_first>(column, vec, pos);
@@ -75,6 +105,31 @@ struct BloomFilterHash
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
         else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    template <bool is_first>
+    static void getArrayTypeHash(const IDataType * data_type, const IColumn * column, ColumnUInt64::Container & vec, size_t pos)
+    {
+        const ColumnArray * array_col = typeid_cast<const ColumnArray *>(column);
+        const IColumn * nested_col = nullptr;
+        const IDataType * nested_type = nullptr;
+
+        if (const ColumnNullable *nullable = checkAndGetColumn<ColumnNullable>(array_col->getData()))
+        {
+            nested_col = nullable->getNestedColumnPtr().get();
+            nested_type = static_cast<const DataTypeNullable *>(data_type)->getNestedType().get();
+        }
+        else
+        {
+            nested_col = array_col->getDataPtr().get();
+            nested_type = static_cast<const DataTypeArray *>(data_type)->getNestedType().get();
+        }
+
+        if (!nested_col)
+            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+
+        getAnyTypeHash<is_first>(nested_type, nested_col, vec, pos);
     }
 
     template <typename Type, bool is_first>
