@@ -46,6 +46,7 @@ namespace JoinCommon
 void convertColumnToNullable(ColumnWithTypeAndName & column);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
 ColumnRawPtrs temporaryMaterializeColumns(const Block & block, const Names & names, Columns & materialized);
+void removeLowCardinalityInplace(Block & block);
 
 /// Split key and other columns by keys name list
 ColumnRawPtrs extractKeysForJoin(const Names & key_names_right, const Block & right_sample_block,

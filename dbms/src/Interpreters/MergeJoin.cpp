@@ -217,6 +217,7 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
         if (required_right_keys.count(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
 
+    JoinCommon::removeLowCardinalityInplace(right_columns_to_add);
     JoinCommon::createMissedColumns(right_columns_to_add);
 
     if (nullable_right_side)
@@ -254,7 +255,9 @@ void MergeJoin::mergeRightBlocks()
 
 bool MergeJoin::addJoinedBlock(const Block & src_block)
 {
-    Block block = src_block;
+    Block block = materializeBlock(src_block);
+    JoinCommon::removeLowCardinalityInplace(block);
+
     sortBlock(block, right_sort_description);
 
     std::unique_lock lock(rwlock);
@@ -269,6 +272,9 @@ bool MergeJoin::addJoinedBlock(const Block & src_block)
 void MergeJoin::joinBlock(Block & block)
 {
     JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+    materializeBlockInplace(block);
+    JoinCommon::removeLowCardinalityInplace(block);
+
     sortBlock(block, left_sort_description);
 
     std::shared_lock lock(rwlock);
@@ -277,6 +283,7 @@ void MergeJoin::joinBlock(Block & block)
     MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));
     MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
     MergeJoinCursor left_cursor(block, left_merge_description);
+    size_t left_key_tail = 0;
 
     if (is_left)
     {
@@ -284,9 +291,10 @@ void MergeJoin::joinBlock(Block & block)
         {
             if (left_cursor.atEnd())
                 break;
-            leftJoin(left_cursor, block, *it, left_columns, right_columns);
+            leftJoin(left_cursor, block, *it, left_columns, right_columns, left_key_tail);
         }
 
+        left_cursor.nextN(left_key_tail);
         joinInequalsLeft(block, left_columns, right_columns, left_cursor.position(), left_cursor.end(), is_all);
         //left_cursor.nextN(left_cursor.end() - left_cursor.position());
 
@@ -299,16 +307,17 @@ void MergeJoin::joinBlock(Block & block)
         {
             if (left_cursor.atEnd())
                 break;
-            innerJoin(left_cursor, block, *it, left_columns, right_columns);
+            innerJoin(left_cursor, block, *it, left_columns, right_columns, left_key_tail);
         }
 
+        left_cursor.nextN(left_key_tail);
         changeLeftColumns(block, std::move(left_columns));
         addRightColumns(block, std::move(right_columns));
     }
 }
 
 void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                         MutableColumns & left_columns, MutableColumns & right_columns)
+                         MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
 
@@ -331,13 +340,16 @@ void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         /// Do not run over last left keys for ALL JOIN (cause of possible duplicates in next right block)
         if (is_all && right_cursor.atEnd())
+        {
+            left_key_tail = range.left_length;
             break;
+        }
         left_cursor.nextN(range.left_length);
     }
 }
 
 void MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
-                          MutableColumns & left_columns, MutableColumns & right_columns)
+                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
 
@@ -352,7 +364,10 @@ void MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
 
         /// Do not run over last left keys for ALL JOIN (cause of possible duplicates in next right block)
         if (is_all && right_cursor.atEnd())
+        {
+            left_key_tail = range.left_length;
             break;
+        }
         left_cursor.nextN(range.left_length);
     }
 }
