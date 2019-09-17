@@ -80,7 +80,9 @@ RUN apt-get --allow-unauthenticated update -y \
             libcapnp-dev \
             cmake \
             gdb  \
-            pigz
+            pigz \
+            moreutils
+
 
 
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
