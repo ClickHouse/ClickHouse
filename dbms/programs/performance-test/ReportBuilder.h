@@ -14,12 +14,12 @@ class ReportBuilder
 public:
 
     std::string buildFullReport(
-            const PerformanceTestInfo & test_info,
-            std::vector<TestStats> & stats,
-            const std::vector<std::size_t> & queries_to_run,
-            const Connections & connections,
-            const ConnectionTimeouts & timeouts,
-            StudentTTest & t_test) const;
+        const PerformanceTestInfo & test_info,
+        std::vector<TestStats> & stats,
+        const std::vector<std::size_t> & queries_to_run,
+        const Connections & connections,
+        const ConnectionTimeouts & timeouts,
+        StudentTTest & t_test) const;
 
 
     std::string buildCompactReport(
@@ -30,16 +30,19 @@ public:
 
 private:
 
-    std::string getCurrentTime() const;
+    std::string getCurrentTime() const
+    {
+        return DateLUT::instance().timeToString(time(nullptr));
+    }
 
     void buildRunsReport(
-            const PerformanceTestInfo & test_info,
-            std::vector<TestStats> & stats,
-            const std::vector<std::size_t> & queries_to_run,
-            const Connections & connections,
-            const ConnectionTimeouts & timeouts,
-            JSONString & json_output,
-            StudentTTest & t_test) const;
+        const PerformanceTestInfo & test_info,
+        std::vector<TestStats> & stats,
+        const std::vector<std::size_t> & queries_to_run,
+        const Connections & connections,
+        const ConnectionTimeouts & timeouts,
+        JSONString & json_output,
+        StudentTTest & t_test) const;
 
 };
 

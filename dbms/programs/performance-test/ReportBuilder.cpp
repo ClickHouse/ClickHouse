@@ -39,11 +39,6 @@ bool isASCIIString(const std::string & str)
 
 }
 
-std::string ReportBuilder::getCurrentTime() const
-{
-    return DateLUT::instance().timeToString(time(nullptr));
-}
-
 std::string ReportBuilder::buildFullReport(
         const PerformanceTestInfo & test_info,
         std::vector<TestStats> & stats,
@@ -133,7 +128,7 @@ void ReportBuilder::buildRunsReport(
                 std::stringstream ss;
                 ss << version_major << "." << version_minor << "." << version_patch;
                 std::string connection_server_version = ss.str();
-                
+
                 connection_runJSON.set("server_version", connection_server_version);
 
                 bool t_test_status = test_info.stop_conditions_by_run[run_index][connection_index].isInitializedTTestWithConfidenceLevel();
@@ -174,9 +169,9 @@ void ReportBuilder::buildRunsReport(
                     if (statistics.total_time != 0)
                     {
                         connection_runJSON.set("queries_number", statistics.queries);
-                        connection_runJSON.set("queries_per_second", static_cast<double>(statistics.queries) / statistics.total_time);
-                        connection_runJSON.set("rows_per_second", static_cast<double>(statistics.total_rows_read) / statistics.total_time);
-                        connection_runJSON.set("bytes_per_second", static_cast<double>(statistics.total_bytes_read) / statistics.total_time);
+                        connection_runJSON.set("queries_per_second", (statistics.queries) / statistics.total_time);
+                        connection_runJSON.set("rows_per_second", (statistics.total_rows_read) / statistics.total_time);
+                        connection_runJSON.set("bytes_per_second", (statistics.total_bytes_read) / statistics.total_time);
                     }
                 }
                 else

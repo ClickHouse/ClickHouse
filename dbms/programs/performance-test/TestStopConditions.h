@@ -16,58 +16,39 @@ class ConnectionTestStopConditions
 {
 public:
 
-#define DEFINE_REPORT_FUNC(FUNC_NAME, CONDITION)                      \
-    void FUNC_NAME(UInt64 value)                                      \
-    {                                                                 \
-        conditions_all_of.reportMinimalThresholdCondition(value, conditions_all_of.CONDITION); \
-        conditions_any_of.reportMinimalThresholdCondition(value, conditions_any_of.CONDITION); \
-    }
+/// This generates simple report functions for minimal threshold conditions
+#define DEFINE_REPORT_FUNC(REPORT_FUNC, CONDITION)                                                       \
+    void REPORT_FUNC(UInt64 value)                                                                       \
+    {                                                                                                    \
+        conditions_all_of.reportMinimalThresholdCondition(value, conditions_all_of.CONDITION);           \
+        conditions_any_of.reportMinimalThresholdCondition(value, conditions_any_of.CONDITION);           \
+    }                                                                                                    \
 
-    DEFINE_REPORT_FUNC(reportRowsRead, rows_read)
-    DEFINE_REPORT_FUNC(reportIterations, iterations)
-    DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms)
-    DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed)
-    DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms)
-    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
-    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
+    DEFINE_REPORT_FUNC(reportRowsRead, rows_read);
+    DEFINE_REPORT_FUNC(reportIterations, iterations);
+    DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms);
+    DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed);
+    DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms);
+    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms);
+    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms);
 
-#undef REPORT
+#undef DEFINE_REPORT_FUNC
 
-#define DEFINE_INITIALIZED_FUNC(FUNC_NAME, CONDITION)                 \
-    bool FUNC_NAME() const                                            \
-    {                                                                 \
-        return conditions_all_of.CONDITION.initialized || conditions_any_of.CONDITION.initialized; \
-    }
+/// This is not that necessary, but may be useful for debugging and future improvement
+#define DEFINE_IS_FUNCS(INITIALIZED_FUNC, FULFILLED_FUNC, CONDITION)                                     \
+    bool INITIALIZED_FUNC() const                                                                        \
+    {                                                                                                    \
+        return conditions_all_of.CONDITION.initialized || conditions_any_of.CONDITION.initialized;       \
+    }                                                                                                    \
+    bool FULFILLED_FUNC() const                                                                          \
+    {                                                                                                    \
+        return conditions_all_of.CONDITION.fulfilled || conditions_any_of.CONDITION.fulfilled;           \
+    }                                                                                                    \
 
-    DEFINE_INITIALIZED_FUNC(isInitializedRowsRead, rows_read)
-    DEFINE_INITIALIZED_FUNC(isInitializedIterations, iterations)
-    DEFINE_INITIALIZED_FUNC(isInitializedTotalTime, total_time_ms)
-    DEFINE_INITIALIZED_FUNC(isInitializedBytesReadUncompressed, bytes_read_uncompressed)
-    DEFINE_INITIALIZED_FUNC(isInitializedMinTimeNotChangingFor, min_time_not_changing_for_ms)
-    DEFINE_INITIALIZED_FUNC(isInitializedMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
-    DEFINE_INITIALIZED_FUNC(isInitializedAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
-    DEFINE_INITIALIZED_FUNC(isInitializedTTestWithConfidenceLevel, t_test_with_confidence_level)
+    DEFINE_IS_FUNCS(isInitializedTTestWithConfidenceLevel, isFulfilledTTestWithConfidenceLevel, t_test_with_confidence_level);
 
+#undef DEFINE_IS_FUNCS
 
-#undef INITIALIZED
-
-#define DEFINE_FULFILLED_FUNC(FUNC_NAME, CONDITION)                   \
-    bool FUNC_NAME() const                                            \
-    {                                                                 \
-        return conditions_all_of.CONDITION.fulfilled || conditions_any_of.CONDITION.fulfilled; \
-    }
-
-    DEFINE_FULFILLED_FUNC(isFullfiledRowsRead, rows_read)
-    DEFINE_FULFILLED_FUNC(isFullfiledIterations, iterations)
-    DEFINE_FULFILLED_FUNC(isFullfiledTotalTime, total_time_ms)
-    DEFINE_FULFILLED_FUNC(isFullfiledBytesReadUncompressed, bytes_read_uncompressed)
-    DEFINE_FULFILLED_FUNC(isFullfiledMinTimeNotChangingFor, min_time_not_changing_for_ms)
-    DEFINE_FULFILLED_FUNC(isFullfiledMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
-    DEFINE_FULFILLED_FUNC(isFullfiledAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
-    DEFINE_FULFILLED_FUNC(isFullfiledTTestWithConfidenceLevel, t_test_with_confidence_level)
-
-
-#undef FULFILLED
 
     void reportTTest(StudentTTest & t_test)
     {

@@ -27,13 +27,21 @@ UInt64 ConnectionTestStopConditions::getMaxExecTime() const
 {
     const StopCondition & all_of_time = conditions_all_of.total_time_ms;
     const StopCondition & any_of_time = conditions_any_of.total_time_ms;
+    bool is_single_in_all_off = all_of_time.initialized && conditions_all_of.initialized_count == 1;
 
-    if (any_of_time.initialized || (all_of_time.initialized && conditions_all_of.initialized_count == 1))
-        return std::max(all_of_time.value, any_of_time.value);
+    /// max time is set in all_of and is single.
+    if (!any_of_time.initialized && is_single_in_all_off)
+        return all_of_time.value;
+
+    /// max time is set in any_of and doesn't exist or single in all_of section
+    if (any_of_time.initialized && !is_single_in_all_off)
+        return any_of_time.value;
+
+    /// max time is set in any_of and there is a single max time condition in all_of
+    if (any_of_time.initialized && is_single_in_all_off)
+        return std::max(any_of_time.value, all_of_time.value);
 
     return 0;
-
 }
 
 }
-
