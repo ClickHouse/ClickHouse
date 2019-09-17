@@ -98,7 +98,6 @@ struct HashTableCell
     HashTableCell(const Key & key_, const State &) : key(key_) {}
 
     /// Get what the value_type of the container will be.
-    value_type & getValueMutable() { return key; }
     const value_type & getValue() const { return key; }
 
     /// Get the key.
@@ -225,8 +224,18 @@ private:
 
 public:
     bool hasZero() const { return has_zero; }
-    void setHasZero() { has_zero = true; }
-    void clearHasZero() { has_zero = false; }
+
+    void setHasZero()
+    {
+        has_zero = true;
+        new (zeroValue()) Cell();
+    }
+
+    void clearHasZero()
+    {
+        has_zero = false;
+        zeroValue()->~Cell();
+    }
 
     Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
     const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
