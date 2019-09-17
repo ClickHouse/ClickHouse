@@ -53,13 +53,13 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
             case ASTAlterCommand::MoveDestinationType::VOLUME:
                 res.move_destination_type = PartitionCommand::MoveDestinationType::VOLUME;
                 break;
-            case ASTAlterCommand::MoveDestinationType::PARTITION:
-                res.move_destination_type = PartitionCommand::MoveDestinationType::PARTITION;
+            case ASTAlterCommand::MoveDestinationType::TABLE:
+                res.move_destination_type = PartitionCommand::MoveDestinationType::TABLE;
                 res.to_database = command_ast->to_database;
                 res.to_table = command_ast->to_table;
                 break;
         }
-        if (res.move_destination_type != PartitionCommand::MoveDestinationType::PARTITION)
+        if (res.move_destination_type != PartitionCommand::MoveDestinationType::TABLE)
             res.move_destination_name = command_ast->move_destination_name;
         return res;
     }

@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-# Because REPLACE PARTITION does not forces immediate removal of replaced data parts from local filesystem
-# (it tries to do it as quick as possible, but it still performed in separate thread asynchronously)
-# and when we do DETACH TABLE / ATTACH TABLE or SYSTEM RESTART REPLICA, these files may be discovered
-# and discarded after restart with Warning/Error messages in log. This is Ok.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -48,7 +44,7 @@ $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM test.dst;"
 
 
 $CLICKHOUSE_CLIENT --query="SELECT 'MOVE simple';"
-query_with_retry "ALTER TABLE test.src MOVE PARTITION 1 TO test.dst;"
+query_with_retry "ALTER TABLE test.src MOVE PARTITION 1 TO TABLE test.dst;"
 
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA test.dst;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM test.src;"
