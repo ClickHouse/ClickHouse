@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_core.h"
 #include <Core/Block.h>
 
 #if USE_POCO_REDIS

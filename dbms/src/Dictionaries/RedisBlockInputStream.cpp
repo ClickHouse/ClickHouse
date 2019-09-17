@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "RedisBlockInputStream.h"
 #if USE_POCO_REDIS
 
 #    include <string>
@@ -17,7 +17,6 @@
 #    include <ext/range.h>
 
 #    include "DictionaryStructure.h"
-#    include "RedisBlockInputStream.h"
 
 
 namespace DB

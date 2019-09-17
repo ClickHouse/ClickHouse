@@ -11,7 +11,6 @@ namespace Poco
     {
         class Array;
         class Client;
-        class RedisType;
     }
 }
 
@@ -22,8 +21,6 @@ namespace DB
     {
     public:
         using RedisArray = Poco::Redis::Array;
-        using RedisTypePtr = Poco::Redis::RedisType::Ptr;
-        using RedisBulkString = Poco::Redis::BulkString;
 
         RedisBlockInputStream(
                 const std::shared_ptr<Poco::Redis::Client> & client_,
