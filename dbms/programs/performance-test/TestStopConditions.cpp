@@ -25,14 +25,15 @@ bool ConnectionTestStopConditions::areFulfilled() const
 
 UInt64 ConnectionTestStopConditions::getMaxExecTime() const
 {
-    UInt64 all_of_time = conditions_all_of.total_time_ms.value;
-    if (all_of_time == 0 && conditions_all_of.initialized_count != 0) /// max time is not set in all conditions
-        return 0;
-    else if(all_of_time != 0 && conditions_all_of.initialized_count > 1) /// max time is set, but we have other conditions
-        return 0;
+    const StopCondition & all_of_time = conditions_all_of.total_time_ms;
+    const StopCondition & any_of_time = conditions_any_of.total_time_ms;
 
-    UInt64 any_of_time = conditions_any_of.total_time_ms.value;
-    return std::max(all_of_time, any_of_time);
-}
+    if (any_of_time.initialized || (all_of_time.initialized && conditions_all_of.initialized_count == 1))
+        return std::max(all_of_time.value, any_of_time.value);
+
+    return 0;
 
 }
+
+}
+

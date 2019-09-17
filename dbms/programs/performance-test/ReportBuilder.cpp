@@ -151,7 +151,7 @@ void ReportBuilder::buildRunsReport(
                 if (test_info.exec_type == ExecutionType::Loop)
                 {
                     /// in seconds
-                    connection_runJSON.set("min_time", statistics.min_time / 1000.0);
+                    connection_runJSON.set("min_time", statistics.min_time / 1000000.0);
 
                     if (statistics.sampler.size() != 0)
                     {

@@ -15,12 +15,6 @@ using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 class ConnectionTestStopConditions
 {
 public:
-    void loadFromConfig(ConfigurationPtr & stop_conditions_config);
-
-    inline bool empty() const
-    {
-        return !conditions_all_of.initialized_count && !conditions_any_of.initialized_count;
-    }
 
 #define DEFINE_REPORT_FUNC(FUNC_NAME, CONDITION)                      \
     void FUNC_NAME(UInt64 value)                                      \
@@ -45,14 +39,14 @@ public:
         return conditions_all_of.CONDITION.initialized || conditions_any_of.CONDITION.initialized; \
     }
 
-        DEFINE_INITIALIZED_FUNC(isInitializedRowsRead, rows_read)
-        DEFINE_INITIALIZED_FUNC(isInitializedIterations, iterations)
-        DEFINE_INITIALIZED_FUNC(isInitializedTotalTime, total_time_ms)
-        DEFINE_INITIALIZED_FUNC(isInitializedBytesReadUncompressed, bytes_read_uncompressed)
-        DEFINE_INITIALIZED_FUNC(isInitializedMinTimeNotChangingFor, min_time_not_changing_for_ms)
-        DEFINE_INITIALIZED_FUNC(isInitializedMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
-        DEFINE_INITIALIZED_FUNC(isInitializedAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
-        DEFINE_INITIALIZED_FUNC(isInitializedTTestWithConfidenceLevel, t_test_with_confidence_level)
+    DEFINE_INITIALIZED_FUNC(isInitializedRowsRead, rows_read)
+    DEFINE_INITIALIZED_FUNC(isInitializedIterations, iterations)
+    DEFINE_INITIALIZED_FUNC(isInitializedTotalTime, total_time_ms)
+    DEFINE_INITIALIZED_FUNC(isInitializedBytesReadUncompressed, bytes_read_uncompressed)
+    DEFINE_INITIALIZED_FUNC(isInitializedMinTimeNotChangingFor, min_time_not_changing_for_ms)
+    DEFINE_INITIALIZED_FUNC(isInitializedMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
+    DEFINE_INITIALIZED_FUNC(isInitializedAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
+    DEFINE_INITIALIZED_FUNC(isInitializedTTestWithConfidenceLevel, t_test_with_confidence_level)
 
 
 #undef INITIALIZED
@@ -81,13 +75,19 @@ public:
         conditions_any_of.reportTTestCondition(t_test, conditions_any_of.t_test_with_confidence_level);
     }
 
-    bool areFulfilled() const;
-
     void reset()
     {
         conditions_all_of.reset();
         conditions_any_of.reset();
     }
+
+    inline bool empty() const
+    {
+        return !conditions_all_of.initialized_count && !conditions_any_of.initialized_count;
+    }
+
+    void loadFromConfig(ConfigurationPtr & stop_conditions_config);
+    bool areFulfilled() const;
 
     /// Return max exec time for these conditions
     /// Return zero if max time cannot be determined

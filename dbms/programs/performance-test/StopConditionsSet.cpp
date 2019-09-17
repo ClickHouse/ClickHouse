@@ -79,7 +79,7 @@ void StopConditionsSet::reset()
     average_speed_not_changing_for_ms.fulfilled = false;
 }
 
-void StopConditionsSet::reportMinimalThresholdCondition(UInt64 value, StopConditionsSet::StopCondition & condition)
+void StopConditionsSet::reportMinimalThresholdCondition(UInt64 value, StopCondition & condition)
 {
     if (condition.initialized && !condition.fulfilled && value >= condition.value)
     {
@@ -88,7 +88,7 @@ void StopConditionsSet::reportMinimalThresholdCondition(UInt64 value, StopCondit
     }
 }
 
-void StopConditionsSet::reportTTestCondition(StudentTTest & t_test, StopConditionsSet::StopCondition & condition)
+void StopConditionsSet::reportTTestCondition(StudentTTest & t_test, StopCondition & condition)
 {
     if (condition.initialized && !condition.fulfilled &&
         t_test.distributionsDiffer(ConnectionTestStats::t_test_confidence_level,

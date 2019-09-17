@@ -42,7 +42,7 @@ void waitQuery(Connection & connection)
                 finished = true;
                 break;
             case Protocol::Server::Exception:
-                throw *packet.exception;
+                packet.exception->rethrow();
         }
 
         if (finished)
@@ -119,7 +119,8 @@ bool PerformanceTest::checkPreconditions() const
 
             for (auto & connection : connections)
             {
-                connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+                connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete,
+                        &test_info.settings, nullptr, false);
 
                 while (true)
                 {
@@ -205,7 +206,8 @@ void PerformanceTest::prepare() const
 
         for (auto & connection : connections)
         {
-            connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+            connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete,
+                    &test_info.settings, nullptr, false);
             waitQuery(*connection);
         }
 
@@ -222,7 +224,8 @@ void PerformanceTest::finish() const
 
         for (auto & connection : connections)
         {
-            connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+            connection->sendQuery(timeouts, query, "", QueryProcessingStage::Complete,
+                    &test_info.settings, nullptr, false);
             waitQuery(*connection);
         }
 
@@ -371,7 +374,8 @@ void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes
             /// Executes once on every connection and than continues randomly if execution type is loop
             for (size_t i = 0; i < connections.size(); ++i)
             {
-                executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions_by_connections, interrupt_listener, context, test_info.settings, i);
+                executeQuery(connections, query, statistics_by_connections, t_test,
+                        stop_conditions_by_connections, interrupt_listener, context, test_info.settings, i);
                 stop_conditions_by_connections[i].reportIterations(statistics_by_connections[i].queries);
             }
 
@@ -388,7 +392,9 @@ void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes
                     connection_index = distribution(generator);
                     if (stop_conditions_by_connections[connection_index].areFulfilled())
                         continue;
-                    executeQuery(connections, query, statistics_by_connections, t_test, stop_conditions_by_connections, interrupt_listener, context, test_info.settings, connection_index);
+
+                    executeQuery(connections, query, statistics_by_connections, t_test,
+                            stop_conditions_by_connections,interrupt_listener, context, test_info.settings, connection_index);
                     stop_conditions_by_connections[connection_index].reportIterations(statistics_by_connections[connection_index].queries);
 
                     if (stop_conditions_by_connections[connection_index].isInitializedTTestWithConfidenceLevel())

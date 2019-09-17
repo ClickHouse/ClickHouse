@@ -21,7 +21,7 @@ std::vector<XMLConfigurationPtr> ConfigPreprocessor::processConfig(
 
         const auto path = Poco::Path(path_str);
         test->setString("path", path.absolute().toString());
-        if (test->getString("name", "") == "")
+        if (test->getString("name", "").empty())
             test->setString("name", path.getBaseName());
     }
 

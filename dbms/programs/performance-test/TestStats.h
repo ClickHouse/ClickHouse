@@ -65,7 +65,7 @@ struct ConnectionTestStats
 
     void updateMinTime(UInt64 min_time_candidate);
 
-    void updateAverageSpeed(
+    static void updateAverageSpeed(
         double new_speed_info,
         Stopwatch & avg_speed_watch,
         size_t & number_of_info_batches,
@@ -73,7 +73,7 @@ struct ConnectionTestStats
         double & avg_speed_first,
         double & avg_speed_value);
 
-    void updateMaxSpeed(
+    static void updateMaxSpeed(
         size_t max_speed_candidate,
         Stopwatch & max_speed_watch,
         UInt64 & max_speed);

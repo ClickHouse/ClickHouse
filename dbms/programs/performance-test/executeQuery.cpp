@@ -77,7 +77,6 @@ void executeQuery(
     stream.readSuffix();
 
     double seconds = statistic.watch_per_query.elapsedSeconds();
-//    std::cerr << seconds  << " " << statistic.query_id << " conn. " << connection_index << " " << query << "\n"  ;
     if (!statistic.last_query_was_cancelled)
         statistic.updateQueryInfo();
 

@@ -62,7 +62,10 @@ void ConnectionTestStats::updateMinTime(UInt64 min_time_candidate)
     if (min_time_candidate < min_time)
     {
         min_time = min_time_candidate;
-        min_time_watch.restart();
+
+        /// We restart watch only when difference is more than a millisecond
+        if ((min_time_candidate / 1000UL) < (min_time / 1000UL))
+            min_time_watch.restart();
     }
 }
 
@@ -133,10 +136,8 @@ void ConnectionTestStats::add(size_t rows_read_inc, size_t bytes_read_inc)
 void ConnectionTestStats::updateQueryInfo()
 {
     ++queries;
-
-    double seconds = watch_per_query.elapsedSeconds();
-    sampler.insert(seconds);
-    updateMinTime(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
+    sampler.insert(watch_per_query.elapsedSeconds());
+    updateMinTime(watch_per_query.elapsedMicroseconds());
 }
 
 
