@@ -92,23 +92,26 @@ FROM
 ```
 
 
-### FROM Clause
+### FROM Clause {#select-from}
 
 If the FROM clause is omitted, data will be read from the `system.one` table.
-The 'system.one' table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
+The `system.one` table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
 
-The FROM clause specifies the table to read data from, or a subquery, or a table function; ARRAY JOIN and the regular JOIN may also be included (see below).
+The `FROM` clause specifies the source to read data from:
 
-Instead of a table, the SELECT subquery may be specified in brackets.
-In this case, the subquery processing pipeline will be built into the processing pipeline of an external query.
-In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write 'AS name' after a subquery, but the specified name isn't used anywhere.
+- Table
+- Subquery
+- [Table function](table_functions/index.md)
 
-A table function may be specified instead of a table. For more information, see the section "Table functions".
+`ARRAY JOIN` and the regular `JOIN` may also be included (see below).
+
+Instead of a table, the `SELECT` subquery may be specified in parenthesis.
+In contrast to standard SQL, a synonym does not need to be specified after a subquery. For compatibility, it is possible to write `AS name` after a subquery, but the specified name isn't used anywhere.
 
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
-If a query does not list any columns (for example, SELECT count() FROM t), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
+If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree table. When you specify FINAL, data is selected fully "collapsed". Keep in mind that using FINAL leads to a selection that includes columns related to the primary key, in addition to the columns specified in the SELECT. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using FINAL, the query is processed more slowly. In most cases, you should avoid using FINAL. For more information, see the section "CollapsingMergeTree engine".
+The `FINAL` modifier can be used in the `SELECT` select query for aggregating engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to a selection that includes columns related to the primary key, in addition to the columns specified in the `SELECT`. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
 
 ### SAMPLE Clause {#select-sample-clause}
 
@@ -547,18 +550,35 @@ ClickHouse doesn't directly support syntax with commas, so we don't recommend us
 
 Tables for `ASOF JOIN` must have an ordered sequence column. This column cannot be alone in a table, and should be one of the data types: `UInt32`, `UInt64`, `Float32`, `Float64`, `Date`, and `DateTime`.
 
-Use the following syntax for `ASOF JOIN`:
+You can use the following types of syntax:
 
-```
-SELECT expression_list FROM table_1 ASOF JOIN table_2 USING(equi_column1, ... equi_columnN, asof_column)
-```
+- `ASOF JOIN ... ON`
 
-`ASOF JOIN` uses `equi_columnX` for joining on equality (`user_id` in our example) and `asof_column` for joining on the closest match.
+    ```sql
+    SELECT expressions_list
+    FROM table_1
+    ASOF LEFT JOIN table_2
+    ON equi_cond AND closest_match_cond
+    ```
+
+    You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. There is just `table_2.some_col <= table_1.some_col` and `table_1.some_col >= table2.some_col` types of conditions are available. You cannot apply other conditions like `>` or `!=`.
+
+- `ASOF JOIN ... USING`
+
+    ```sql
+    SELECT expressions_list
+    FROM table_1
+    ASOF JOIN table_2
+    USING (equi_column1, ... equi_columnN, asof_column)
+    ```
+
+    `ASOF JOIN` uses `equi_columnX` for joining on equality and `asof_column` for joining on the closest match with the `table_1.asof_column >= table2.asof_column` condition. The `asof_column` column must be the last in the `USING` clause.
 
 For example, consider the following tables:
 
 ```
-     table_1               table_2
+     table_1                           table_2
+
   event   | ev_time | user_id       event   | ev_time | user_id
 ----------|---------|----------   ----------|---------|----------             
               ...                               ...
@@ -568,13 +588,11 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
               ...                               ...
 ```
 
-`ASOF JOIN` takes the timestamp of a user event from `table_1` and finds an event in `table_2` where the timestamp is closest (equal or less) to the timestamp of the event from `table_1`. Herewith the `user_id` column is used for joining on equality and the `ev_time` column is used  for joining on the closest match.
- In our example, `event_1_1` can be joined with `event_2_1`, `event_1_2` can be joined with `event_2_3`, but `event_2_2` cannot be joined.
+`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest (equal or less) to the timestamp of the event from `table_1`. Herewith the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1`, `event_1_2` can be joined with `event_2_3`, but `event_2_2` cannot be joined.
 
-Implementation details:
 
-- `asof_column` should be last in the `USING` clause.
-- `ASOF` join is not supported in the [Join](../operations/table_engines/join.md) table engine.
+!!! note "Note"
+    `ASOF` join is **not** supported in the [Join](../operations/table_engines/join.md) table engine.
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
@@ -807,8 +825,7 @@ When merging data flushed to the disk, as well as when merging results from remo
 
 When external aggregation is enabled, if there was less than `max_bytes_before_external_group_by` of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
 
-If you have an `ORDER BY` with a small `LIMIT` after `GROUP BY`, then the `ORDER BY` clause will not use significant amounts of RAM.
-But if the `ORDER BY` doesn't have `LIMIT`, don't forget to enable external sorting (`max_bytes_before_external_sort`).
+If you have an `ORDER BY` with a `LIMIT` after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` doesn't have `LIMIT`, don't forget to enable external sorting (`max_bytes_before_external_sort`).
 
 ### LIMIT BY Clause
 
@@ -1256,9 +1273,9 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 
 In addition to results, you can also get minimum and maximum values for the results columns. To do this, set the **extremes** setting to 1. Minimums and maximums are calculated for numeric types, dates, and dates with times. For other columns, the default values are output.
 
-An extra two rows are calculated – the minimums and maximums, respectively. These extra two rows are output in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separate from the other rows. They are not output for other formats.
+An extra two rows are calculated – the minimums and maximums, respectively. These extra two rows are output in `JSON*`, `TabSeparated*`, and `Pretty*` [formats](../interfaces/formats.md), separate from the other rows. They are not output for other formats.
 
-In `JSON*` formats, the extreme values are output in a separate 'extremes' field. In `TabSeparated*` formats, the row comes after the main result, and after 'totals' if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after 'totals' if present.
+In `JSON*` formats, the extreme values are output in a separate 'extremes' field. In `TabSeparated*` formats, the row comes after the main result, and after 'totals' if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after `totals` if present.
 
 Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. However, when using `LIMIT offset, size`, the rows before `offset` are included in `extremes`. In stream requests, the result may also include a small number of rows that passed through `LIMIT`.
 

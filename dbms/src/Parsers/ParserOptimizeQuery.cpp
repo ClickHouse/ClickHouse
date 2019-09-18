@@ -58,8 +58,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
 
-    getIdentifierName(database, query->database);
-    getIdentifierName(table, query->table);
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(table, query->table);
 
     query->cluster = cluster_str;
     query->partition = partition;

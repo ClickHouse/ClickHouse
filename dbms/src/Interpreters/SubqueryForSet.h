@@ -12,7 +12,6 @@ class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
 class InterpreterSelectWithUnionQuery;
-struct JoinedColumn;
 
 
 /// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
@@ -32,8 +31,7 @@ struct SubqueryForSet
     StoragePtr table;
 
     void makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
-                    const std::list<JoinedColumn> & columns_from_joined_table,
-                    const NameSet & required_columns_from_joined_table);
+                    NamesWithAliases && joined_block_aliases_);
 
     Block renamedSampleBlock() const { return sample_block; }
     void renameColumns(Block & block);

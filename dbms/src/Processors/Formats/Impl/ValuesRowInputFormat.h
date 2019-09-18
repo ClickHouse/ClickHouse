@@ -21,7 +21,7 @@ public:
       * If interpret_expressions is true, it will, in addition, try to use SQL parser and interpreter
       *  in case when streaming parser could not parse field (this is very slow).
       */
-    ValuesRowInputFormat(ReadBuffer & in_, Block header, Params params, const Context & context_, const FormatSettings & format_settings);
+    ValuesRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const Context & context_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ValuesRowInputFormat"; }
 

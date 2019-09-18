@@ -24,6 +24,7 @@
 #include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
+#include <DataStreams/FillingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -44,10 +45,12 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
+#include <Interpreters/AnalyzedJoin.h>
 
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageValues.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -56,7 +59,9 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Columns/Collator.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Parsers/queryToString.h>
 #include <ext/map.h>
 #include <memory>
@@ -79,7 +84,11 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
+#include <Processors/Transforms/FillingTransform.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Transforms/FinishSortingTransform.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataStreams/materializeBlock.h>
 
 
 namespace DB
@@ -98,6 +107,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -142,7 +152,7 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
 
     /// Using separate expression analyzer to prevent any possible alias injection
     auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-    ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+    SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context);
     ExpressionActionsChain new_chain(context);
     analyzer.appendSelect(new_chain, false);
     actions = new_chain.getLastActions();
@@ -155,9 +165,9 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const SelectQueryOptions & options,
-    const Names & required_result_column_names)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options, required_result_column_names)
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options_, required_result_column_names_)
 {
 }
 
@@ -165,16 +175,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const BlockInputStreamPtr & input_,
-    const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options.copy().noSubquery())
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
-    const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options.copy().noSubquery())
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -210,6 +220,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input(input_)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
+    checkStackSize();
+
     initSettings();
     const Settings & settings = context.getSettingsRef();
 
@@ -264,23 +276,36 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
         else
         {
-            /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
             String database_name;
             String table_name;
 
-            getDatabaseAndTableNames(database_name, table_name);
+            getDatabaseAndTableNames(query, database_name, table_name, context);
 
-            storage = context.getTable(database_name, table_name);
+            if (auto view_source = context.getViewSource())
+            {
+                auto & storage_values = static_cast<const StorageValues &>(*view_source);
+                if (storage_values.getDatabaseName() == database_name && storage_values.getTableName() == table_name)
+                {
+                    /// Read from view source.
+                    storage = context.getViewSource();
+                }
+            }
+
+            if (!storage)
+            {
+                /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
+                storage = context.getTable(database_name, table_name);
+            }
         }
     }
 
     if (storage)
-        table_lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
+        table_lock = storage->lockStructureForShare(false, context.getInitialQueryId());
 
     syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
-        query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
-    query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(),
+        query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
+    query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
+        query_ptr, syntax_analyzer_result, context,
         NameSet(required_result_column_names.begin(), required_result_column_names.end()),
         options.subquery_depth, !options.only_analyze);
 
@@ -303,7 +328,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (!options.only_analyze || options.modify_inplace)
     {
-        if (query_analyzer->isRewriteSubqueriesPredicate())
+        if (syntax_analyzer_result->rewrite_subqueries)
         {
             /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
             if (is_subquery)
@@ -322,23 +347,26 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             interpreter_subquery->ignoreWithTotals();
     }
 
-    required_columns = query_analyzer->getRequiredSourceColumns();
+    required_columns = syntax_analyzer_result->requiredSourceColumns();
 
     if (storage)
         source_header = storage->getSampleBlockForColumns(required_columns);
 
     /// Calculate structure of the result.
+    result_header = getSampleBlockImpl();
+    for (auto & col : result_header)
     {
-        Pipeline pipeline;
-        executeImpl(pipeline, nullptr, true);
-        result_header = pipeline.firstStream()->getHeader();
+        if (!col.column)
+            col.column = col.type->createColumn();
+        else if (isColumnConst(*col.column) && !col.column->empty())
+            col.column = col.column->cloneEmpty();
     }
 }
 
 
-void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
+void InterpreterSelectQuery::getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context)
 {
-    if (auto db_and_table = getDatabaseAndTable(getSelectQuery(), 0))
+    if (auto db_and_table = getDatabaseAndTable(query, 0))
     {
         table_name = db_and_table->table;
         database_name = db_and_table->database;
@@ -364,8 +392,8 @@ Block InterpreterSelectQuery::getSampleBlock()
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, options.only_analyze);
-    executeUnion(pipeline);
+    executeImpl(pipeline, input);
+    executeUnion(pipeline, getSampleBlock());
 
     BlockIO res;
     res.in = pipeline.firstStream();
@@ -375,28 +403,104 @@ BlockIO InterpreterSelectQuery::execute()
 BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, options.only_analyze);
+    executeImpl(pipeline, input);
+    unifyStreams(pipeline, getSampleBlock());
     return pipeline.streams;
 }
 
 QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
-    executeImpl(query_pipeline, input, options.only_analyze);
+    query_pipeline.setMaxThreads(context.getSettingsRef().max_threads);
+    executeImpl(query_pipeline, input);
     return query_pipeline;
 }
 
+
+Block InterpreterSelectQuery::getSampleBlockImpl()
+{
+    /// Need to create sets before analyzeExpressions(). Otherwise some sets for index won't be created.
+    query_analyzer->makeSetsForIndex(getSelectQuery().where());
+    query_analyzer->makeSetsForIndex(getSelectQuery().prewhere());
+
+    auto analysis_result = analyzeExpressions(
+            getSelectQuery(),
+            *query_analyzer,
+            QueryProcessingStage::Enum::FetchColumns,
+            options.to_stage,
+            context,
+            storage,
+            true,  // only_types
+            {}     // filter_info
+        );
+
+    if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
+    {
+        auto header = source_header;
+
+        if (analysis_result.prewhere_info)
+        {
+            analysis_result.prewhere_info->prewhere_actions->execute(header);
+            header = materializeBlock(header);
+            if (analysis_result.prewhere_info->remove_prewhere_column)
+                header.erase(analysis_result.prewhere_info->prewhere_column_name);
+        }
+        return header;
+    }
+
+    if (options.to_stage == QueryProcessingStage::Enum::WithMergeableState)
+    {
+        if (!analysis_result.need_aggregate)
+            return analysis_result.before_order_and_select->getSampleBlock();
+
+        auto header = analysis_result.before_aggregation->getSampleBlock();
+
+        Names key_names;
+        AggregateDescriptions aggregates;
+        query_analyzer->getAggregateInfo(key_names, aggregates);
+
+        Block res;
+
+        for (auto & key : key_names)
+            res.insert({nullptr, header.getByName(key).type, key});
+
+        for (auto & aggregate : aggregates)
+        {
+            size_t arguments_size = aggregate.argument_names.size();
+            DataTypes argument_types(arguments_size);
+            for (size_t j = 0; j < arguments_size; ++j)
+                argument_types[j] = header.getByName(aggregate.argument_names[j]).type;
+
+            DataTypePtr type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
+
+            res.insert({nullptr, type, aggregate.column_name});
+        }
+
+        return res;
+    }
+
+    return analysis_result.final_projection->getSampleBlock();
+}
+
 InterpreterSelectQuery::AnalysisResult
-InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run, const FilterInfoPtr & filter_info)
+InterpreterSelectQuery::analyzeExpressions(
+    const ASTSelectQuery & query,
+    SelectQueryExpressionAnalyzer & query_analyzer,
+    QueryProcessingStage::Enum from_stage,
+    QueryProcessingStage::Enum to_stage,
+    const Context & context,
+    const StoragePtr & storage,
+    bool only_types,
+    const FilterInfoPtr & filter_info)
 {
     AnalysisResult res;
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     res.first_stage = from_stage < QueryProcessingStage::WithMergeableState
-        && options.to_stage >= QueryProcessingStage::WithMergeableState;
+        && to_stage >= QueryProcessingStage::WithMergeableState;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
     res.second_stage = from_stage <= QueryProcessingStage::WithMergeableState
-        && options.to_stage > QueryProcessingStage::WithMergeableState;
+        && to_stage > QueryProcessingStage::WithMergeableState;
 
     /** First we compose a chain of actions and remember the necessary steps from it.
         *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
@@ -451,8 +555,6 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
 
     {
         ExpressionActionsChain chain(context);
-        auto & query = getSelectQuery();
-
         Names additional_required_columns_after_prewhere;
 
         if (storage && query.sample_size())
@@ -469,14 +571,14 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
                 columns_for_final.begin(), columns_for_final.end());
         }
 
-        if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        if (storage && filter_info)
         {
             has_filter = true;
 
             /// XXX: aggregated copy-paste from ExpressionAnalyzer::appendSmth()
             if (chain.steps.empty())
             {
-                chain.steps.emplace_back(std::make_shared<ExpressionActions>(source_columns, context));
+                chain.steps.emplace_back(std::make_shared<ExpressionActions>(NamesAndTypesList(), context));
             }
             ExpressionActionsChain::Step & step = chain.steps.back();
 
@@ -489,7 +591,7 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
             chain.addStep();
         }
 
-        if (query_analyzer->appendPrewhere(chain, !res.first_stage, additional_required_columns_after_prewhere))
+        if (query_analyzer.appendPrewhere(chain, !res.first_stage, additional_required_columns_after_prewhere))
         {
             has_prewhere = true;
 
@@ -499,11 +601,11 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
             chain.addStep();
         }
 
-        res.need_aggregate = query_analyzer->hasAggregation();
+        res.need_aggregate = query_analyzer.hasAggregation();
 
-        query_analyzer->appendArrayJoin(chain, dry_run || !res.first_stage);
+        query_analyzer.appendArrayJoin(chain, only_types || !res.first_stage);
 
-        if (query_analyzer->appendJoin(chain, dry_run || !res.first_stage))
+        if (query_analyzer.appendJoin(chain, only_types || !res.first_stage))
         {
             res.before_join = chain.getLastActions();
             if (!res.hasJoin())
@@ -511,7 +613,7 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
             chain.addStep();
         }
 
-        if (query_analyzer->appendWhere(chain, dry_run || !res.first_stage))
+        if (query_analyzer.appendWhere(chain, only_types || !res.first_stage))
         {
             where_step_num = chain.steps.size() - 1;
             has_where = res.has_where = true;
@@ -521,13 +623,13 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
 
         if (res.need_aggregate)
         {
-            query_analyzer->appendGroupBy(chain, dry_run || !res.first_stage);
-            query_analyzer->appendAggregateFunctionsArguments(chain, dry_run || !res.first_stage);
+            query_analyzer.appendGroupBy(chain, only_types || !res.first_stage);
+            query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !res.first_stage);
             res.before_aggregation = chain.getLastActions();
 
             finalizeChain(chain);
 
-            if (query_analyzer->appendHaving(chain, dry_run || !res.second_stage))
+            if (query_analyzer.appendHaving(chain, only_types || !res.second_stage))
             {
                 res.has_having = true;
                 res.before_having = chain.getLastActions();
@@ -536,20 +638,20 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
         }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
-        query_analyzer->appendSelect(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
+        query_analyzer.appendSelect(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage));
         res.selected_columns = chain.getLastStep().required_output;
-        res.has_order_by = query_analyzer->appendOrderBy(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
+        res.has_order_by = query_analyzer.appendOrderBy(chain, only_types || (res.need_aggregate ? !res.second_stage : !res.first_stage));
         res.before_order_and_select = chain.getLastActions();
         chain.addStep();
 
-        if (query_analyzer->appendLimitBy(chain, dry_run || !res.second_stage))
+        if (query_analyzer.appendLimitBy(chain, only_types || !res.second_stage))
         {
             res.has_limit_by = true;
             res.before_limit_by = chain.getLastActions();
             chain.addStep();
         }
 
-        query_analyzer->appendProjectResult(chain);
+        query_analyzer.appendProjectResult(chain);
         res.final_projection = chain.getLastActions();
 
         finalizeChain(chain);
@@ -563,7 +665,7 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
     if (res.has_having)
         res.before_having->prependProjectInput();
 
-    res.subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    res.subqueries_for_sets = query_analyzer.getSubqueriesForSets();
 
     /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
     if (res.prewhere_info)
@@ -584,8 +686,62 @@ InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage
     return res;
 }
 
+static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
 
-static SortDescription getSortDescription(const ASTSelectQuery & query)
+    if (!isColumnedAsNumber(type))
+        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    return field;
+}
+
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const Context & context)
+{
+    FillColumnDescription descr;
+    if (order_by_elem.fill_from)
+        descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
+    if (order_by_elem.fill_to)
+        descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
+    if (order_by_elem.fill_step)
+        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
+    else
+        descr.fill_step = order_by_elem.direction;
+
+    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
+        throw Exception("WITH FILL STEP value cannot be zero", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    if (order_by_elem.direction == 1)
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
+            throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
+        {
+            throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
+    else
+    {
+        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
+            throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
+        {
+            throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        }
+    }
+
+    return descr;
+}
+
+static SortDescription getSortDescription(const ASTSelectQuery & query, const Context & context)
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
@@ -598,12 +754,18 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
         if (order_by_elem.collation)
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
 
-        order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+        if (order_by_elem.with_fill)
+        {
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
+            order_descr.emplace_back(name, order_by_elem.direction,
+                order_by_elem.nulls_direction, collator, true, fill_desc);
+        }
+        else
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
 }
-
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
 {
@@ -639,7 +801,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
-    if (!query.distinct && !query.limitBy())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         return limit_length + limit_offset;
@@ -648,41 +810,34 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 }
 
 
-static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query, const Context & context)
+static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, const ASTSelectQuery & query,
+    const Context & context, const SyntaxAnalyzerResultPtr & global_syntax_result)
 {
     if (!merge_tree.hasSortingKey())
         return {};
 
-    auto order_descr = getSortDescription(query);
+    auto order_descr = getSortDescription(query, context);
     SortDescription prefix_order_descr;
     int read_direction = order_descr.at(0).direction;
 
     const auto & sorting_key_columns = merge_tree.getSortingKeyColumns();
     size_t prefix_size = std::min(order_descr.size(), sorting_key_columns.size());
 
-    auto order_by_expr = query.orderBy();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(order_by_expr, merge_tree.getColumns().getAllPhysical());
     for (size_t i = 0; i < prefix_size; ++i)
     {
-        /// Read in pk order in case of exact match with order key element
+        if (global_syntax_result->array_join_result_to_source.count(order_descr[i].column_name))
+            break;
+
+        /// Optimize in case of exact match with order key element
         ///  or in some simple cases when order key element is wrapped into monotonic function.
         int current_direction = order_descr[i].direction;
         if (order_descr[i].column_name == sorting_key_columns[i] && current_direction == read_direction)
             prefix_order_descr.push_back(order_descr[i]);
         else
         {
-            const auto & ast = query.orderBy()->children[i];
-            ExpressionActionsPtr actions;
-            try
-            {
-                actions = ExpressionAnalyzer(ast->children.at(0), syntax_result, context).getActions(false);
-            }
-            catch (const Exception &)
-            {
-                /// Can't analyze order expression at this stage.
-                /// May be some actions required for order will be executed later.
-                break;
-            }
+            auto ast = query.orderBy()->children[i]->children.at(0);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(ast, global_syntax_result->required_source_columns);
+            auto actions = ExpressionAnalyzer(ast, syntax_result, context).getActions(true);
 
             const auto & input_columns = actions->getRequiredColumnsWithTypes();
             if (input_columns.size() != 1 || input_columns.front().name != sorting_key_columns[i])
@@ -737,7 +892,7 @@ static SortingInfoPtr optimizeReadInOrder(const MergeTreeData & merge_tree, cons
 
 
 template <typename TPipeline>
-void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run)
+void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input)
 {
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
@@ -761,10 +916,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     /// Turn off, if the table filter is applied.
     if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
-        if (!dry_run)
+        if (!options.only_analyze)
             from_stage = storage->getQueryProcessingStage(context);
 
-        query_analyzer->makeSetsForIndex();
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
 
         auto optimize_prewhere = [&](auto & merge_tree)
         {
@@ -775,7 +931,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
             if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                MergeTreeWhereOptimizer{current_info, context, merge_tree, query_analyzer->getRequiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{current_info, context, merge_tree, syntax_analyzer_result->requiredSourceColumns(), log};
         };
 
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
@@ -794,20 +950,28 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     }
 
     SortingInfoPtr sorting_info;
-    if (settings.optimize_read_in_order && storage && query.orderBy() && !query.groupBy() && !query.final())
+    if (settings.optimize_read_in_order && storage && query.orderBy() && !query_analyzer->hasAggregation() && !query.final() && !query.join())
     {
         if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context);
+            sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
     }
 
-    if (dry_run)
+    if (options.only_analyze)
     {
         if constexpr (pipeline_with_processors)
             pipeline.init({std::make_shared<NullSource>(source_header)});
         else
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
 
-        expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true, filter_info);
+        expressions = analyzeExpressions(
+                getSelectQuery(),
+                *query_analyzer,
+                QueryProcessingStage::FetchColumns,
+                options.to_stage,
+                context,
+                storage,
+                true,
+                filter_info);
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
@@ -827,6 +991,21 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
                     pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
+
+            // To remove additional columns in dry run
+            // For example, sample column which can be removed in this stage
+            if (expressions.prewhere_info->remove_columns_actions)
+            {
+                if constexpr (pipeline_with_processors)
+                {
+                    pipeline.addSimpleTransform([&](const Block & header)
+                    {
+                        return std::make_shared<ExpressionTransform>(header, expressions.prewhere_info->remove_columns_actions);
+                    });
+                }
+                else
+                    pipeline.streams.back() = std::make_shared<ExpressionBlockInputStream>(pipeline.streams.back(), expressions.prewhere_info->remove_columns_actions);
+            }
         }
     }
     else
@@ -839,7 +1018,15 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 pipeline.streams.push_back(prepared_input);
         }
 
-        expressions = analyzeExpressions(from_stage, false, filter_info);
+        expressions = analyzeExpressions(
+                getSelectQuery(),
+                *query_analyzer,
+                from_stage,
+                options.to_stage,
+                context,
+                storage,
+                false,
+                filter_info);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             options.to_stage == QueryProcessingStage::WithMergeableState)
@@ -931,20 +1118,18 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
                 }
 
-                const auto & join = query.join()->table_join->as<ASTTableJoin &>();
-                if (isRightOrFull(join.kind))
+                if (auto join = expressions.before_join->getTableJoin())
                 {
-                    auto stream = expressions.before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
-                            header_before_join, settings.max_block_size);
-
-                    if constexpr (pipeline_with_processors)
+                    if (auto stream = join->createStreamWithNonJoinedDataIfFullOrRightJoin(header_before_join, settings.max_block_size))
                     {
-                        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                        pipeline.addDelayedStream(source);
+                        if constexpr (pipeline_with_processors)
+                        {
+                            auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+                            pipeline.addDelayedStream(source);
+                        }
+                        else
+                            pipeline.stream_with_non_joined_data = std::move(stream);
                     }
-                    else
-                        pipeline.stream_with_non_joined_data = std::move(stream);
-
                 }
             }
 
@@ -1068,7 +1253,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
-            if (query.limitLength() && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
+            if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
             {
                 executePreLimit(pipeline);
             }
@@ -1086,7 +1271,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if constexpr (pipeline_with_processors)
                     pipeline.resize(1);
                 else
-                    executeUnion(pipeline);
+                    executeUnion(pipeline, {});
             }
 
             /** If there was more than one stream,
@@ -1100,6 +1285,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeExpression(pipeline, expressions.before_limit_by);
                 executeLimitBy(pipeline);
             }
+
+            executeWithFill(pipeline);
 
             /** We must do projection after DISTINCT because projection may remove some columns.
               */
@@ -1116,7 +1303,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     if (query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
 }
-
 
 template <typename TPipeline>
 void InterpreterSelectQuery::executeFetchColumns(
@@ -1315,11 +1501,12 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
-    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
+    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY, WITH TIES but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
      */
     if (!query.distinct
+        && !query.limit_with_ties
         && !query.prewhere()
         && !query.where()
         && !query.groupBy()
@@ -1390,12 +1577,22 @@ void InterpreterSelectQuery::executeFetchColumns(
             streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
             if (query_info.prewhere_info)
+            {
                 streams.back() = std::make_shared<FilterBlockInputStream>(
                     streams.back(),
                     prewhere_info->prewhere_actions,
                     prewhere_info->prewhere_column_name,
                     prewhere_info->remove_prewhere_column);
 
+                // To remove additional columns
+                // In some cases, we did not read any marks so that the pipeline.streams is empty
+                // Thus, some columns in prewhere are not removed as expected
+                // This leads to mismatched header in distributed table
+                if (query_info.prewhere_info->remove_columns_actions)
+                {
+                    streams.back() = std::make_shared<ExpressionBlockInputStream>(streams.back(), query_info.prewhere_info->remove_columns_actions);
+                }
+            }
         }
 
         for (auto & stream : streams)
@@ -1439,12 +1636,19 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if constexpr (pipeline_with_processors)
         {
+            if (streams.size() == 1)
+                pipeline.setMaxThreads(streams.size());
+
             /// Unify streams. They must have same headers.
             if (streams.size() > 1)
             {
                 /// Unify streams in case they have different headers.
                 auto first_header = streams.at(0)->getHeader();
-                for (size_t i = 1; i < streams.size(); ++i)
+
+                if (first_header.columns() > 1 && first_header.has("_dummy"))
+                    first_header.erase("_dummy");
+
+                for (size_t i = 0; i < streams.size(); ++i)
                 {
                     auto & stream = streams[i];
                     auto header = stream->getHeader();
@@ -1457,6 +1661,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             Processors sources;
             sources.reserve(streams.size());
 
+            /// Pin sources for merge tree tables.
+            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+
             for (auto & stream : streams)
             {
                 bool force_add_agg_info = processing_stage == QueryProcessingStage::WithMergeableState;
@@ -1465,8 +1672,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (processing_stage == QueryProcessingStage::Complete)
                     source->addTotalsPort();
 
-                sources.emplace_back(std::move(source));
+                if (pin_sources)
+                    source->setStream(sources.size());
 
+                sources.emplace_back(std::move(source));
             }
 
             pipeline.init(std::move(sources));
@@ -1544,11 +1753,10 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 
     Aggregator::Params params(header, keys, aggregates,
         overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-        settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath(), settings.max_threads);
+        context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.streams.size() > 1)
@@ -1611,11 +1819,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
     Aggregator::Params params(header_before_aggregation, keys, aggregates,
                               overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                              settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context.getTemporaryPath(), settings.max_threads);
+                              context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
@@ -1624,9 +1831,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumMainStreams() > 1)
     {
-        pipeline.resize(max_streams);
+        /// Add resize transform to uniformly distribute data between aggregating streams.
+        pipeline.resize(pipeline.getNumMainStreams(), true);
 
-        auto many_data = std::make_shared<ManyAggregatedData>(max_streams);
+        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumMainStreams());
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                 : static_cast<size_t>(settings.max_threads);
@@ -1685,7 +1893,7 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
     if (!settings.distributed_aggregation_memory_efficient)
     {
         /// We union several sources into one, parallelizing the work.
-        executeUnion(pipeline);
+        executeUnion(pipeline, {});
 
         /// Now merge the aggregated blocks
         pipeline.firstStream() = std::make_shared<MergingAggregatedBlockInputStream>(pipeline.firstStream(), params, final, settings.max_threads);
@@ -1787,7 +1995,7 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 
 void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
-    executeUnion(pipeline);
+    executeUnion(pipeline, {});
 
     const Settings & settings = context.getSettingsRef();
 
@@ -1816,7 +2024,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(QueryPipeline & pipeline, bo
 
 void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificator modificator)
 {
-    executeUnion(pipeline);
+    executeUnion(pipeline, {});
 
     Names key_names;
     AggregateDescriptions aggregates;
@@ -1833,10 +2041,9 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificato
 
     Aggregator::Params params(header, keys, aggregates,
         false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-        settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath(), settings.max_threads);
+        context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     if (modificator == Modificator::ROLLUP)
         pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
@@ -1863,10 +2070,9 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 
     Aggregator::Params params(header_before_transform, keys, aggregates,
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                              settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
                               SettingUInt64(0), SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context.getTemporaryPath(), settings.max_threads);
+                              context.getTemporaryPath(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
@@ -1902,7 +2108,7 @@ void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const E
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query);
+    SortDescription order_descr = getSortDescription(query, context);
     const Settings & settings = context.getSettingsRef();
     UInt64 limit = getLimitForSorting(query, context);
 
@@ -1915,13 +2121,12 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
          * At this stage we merge per-thread streams into one.
          */
 
-        if (sorting_info->prefix_order_descr.size() < order_descr.size())
+        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+        if (need_finish_sorting)
         {
             pipeline.transform([&](auto & stream)
             {
-                stream = std::make_shared<FinishSortingBlockInputStream>(
-                    stream, sorting_info->prefix_order_descr,
-                    order_descr, settings.max_block_size, limit);
+                stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
             });
         }
 
@@ -1932,10 +2137,18 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
                 stream = std::make_shared<AsynchronousBlockInputStream>(stream);
             });
 
+            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
             pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
-                pipeline.streams, order_descr,
-                settings.max_block_size, limit);
+                pipeline.streams, sorting_info->prefix_order_descr,
+                settings.max_block_size, limit_for_merging);
             pipeline.streams.resize(1);
+        }
+
+        if (need_finish_sorting)
+        {
+            pipeline.firstStream() = std::make_shared<FinishSortingBlockInputStream>(
+                pipeline.firstStream(), sorting_info->prefix_order_descr,
+                order_descr, settings.max_block_size, limit);
         }
     }
     else
@@ -1954,22 +2167,20 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
         });
 
         /// If there are several streams, we merge them into one
-        executeUnion(pipeline);
+        executeUnion(pipeline, {});
 
         /// Merge the sorted blocks.
         pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
             pipeline.firstStream(), order_descr, settings.max_block_size, limit,
             settings.max_bytes_before_remerge_sort,
-            settings.max_bytes_before_external_sort, context.getTemporaryPath());
+            settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     }
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr /* sorting_info */)
+void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info)
 {
-    /// TODO: Implement optimization using sorting_info
-
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query);
+    SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
@@ -1979,6 +2190,50 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 //    limits.mode = IBlockInputStream::LIMITS_TOTAL;
 //    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
+    if (sorting_info)
+    {
+        /* Case of sorting with optimization using sorting key.
+         * We have several threads, each of them reads batch of parts in direct
+         *  or reverse order of sorting key using one input stream per part
+         *  and then merge them into one sorted stream.
+         * At this stage we merge per-thread streams into one.
+         */
+
+        bool need_finish_sorting = (sorting_info->prefix_order_descr.size() < order_descr.size());
+
+        if (need_finish_sorting)
+        {
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+            {
+                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
+                return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
+            });
+        }
+
+        if (pipeline.getNumStreams() > 1)
+        {
+            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
+            auto transform = std::make_shared<MergingSortedTransform>(
+                pipeline.getHeader(),
+                pipeline.getNumStreams(),
+                sorting_info->prefix_order_descr,
+                settings.max_block_size, limit_for_merging);
+
+            pipeline.addPipe({ std::move(transform) });
+        }
+
+        if (need_finish_sorting)
+        {
+            pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+            {
+                return std::make_shared<FinishSortingTransform>(
+                    header, sorting_info->prefix_order_descr,
+                    order_descr, settings.max_block_size, limit);
+            });
+        }
+
+        return;
+    }
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
@@ -1998,7 +2253,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
         return std::make_shared<MergeSortingTransform>(
                 header, order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
-                settings.max_bytes_before_external_sort, context.getTemporaryPath());
+                settings.max_bytes_before_external_sort, context.getTemporaryPath(), settings.min_free_disk_space_for_temporary_data);
     });
 }
 
@@ -2006,7 +2261,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, SortingInfoP
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query);
+    SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
@@ -2014,7 +2269,7 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        unifyStreams(pipeline);
+        unifyStreams(pipeline, pipeline.firstStream()->getHeader());
 
         /** MergingSortedBlockInputStream reads the sources sequentially.
           * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
@@ -2033,7 +2288,7 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    SortDescription order_descr = getSortDescription(query);
+    SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
@@ -2080,7 +2335,7 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
         UInt64 limit_for_distinct = 0;
 
         /// If after this stage of DISTINCT ORDER BY is not executed, then you can get no more than limit_length + limit_offset of different rows.
-        if (!query.orderBy() || !before_order)
+        if ((!query.orderBy() || !before_order) && !query.limit_with_ties)
             limit_for_distinct = limit_length + limit_offset;
 
         pipeline.transform([&](auto & stream)
@@ -2118,12 +2373,15 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
 }
 
 
-void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
+void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, Block header)
 {
     /// If there are still several streams, then we combine them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        unifyStreams(pipeline);
+        if (!header)
+            header = pipeline.firstStream()->getHeader();
+
+        unifyStreams(pipeline, std::move(header));
 
         pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
@@ -2146,9 +2404,16 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        SortDescription sort_descr;
+        if (query.limit_with_ties)
+        {
+            if (!query.orderBy())
+                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+            sort_descr = getSortDescription(query, context);
+        }
         pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false, false, query.limit_with_ties, sort_descr);
         });
     }
 }
@@ -2260,16 +2525,72 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
+        SortDescription order_descr;
+        if (query.limit_with_ties)
+        {
+            if (!query.orderBy())
+                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+            order_descr = getSortDescription(query, context);
+        }
+
         UInt64 limit_length;
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
 
         pipeline.transform([&](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
         });
     }
 }
+
+
+void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
+{
+    auto & query = getSelectQuery();
+    if (query.orderBy())
+    {
+        SortDescription order_descr = getSortDescription(query, context);
+        SortDescription fill_descr;
+        for (auto & desc : order_descr)
+        {
+            if (desc.with_fill)
+                fill_descr.push_back(desc);
+        }
+
+        if (fill_descr.empty())
+            return;
+
+        pipeline.transform([&](auto & stream)
+        {
+            stream = std::make_shared<FillingBlockInputStream>(stream, fill_descr);
+        });
+    }
+}
+
+void InterpreterSelectQuery::executeWithFill(QueryPipeline & pipeline)
+{
+    auto & query = getSelectQuery();
+    if (query.orderBy())
+    {
+        SortDescription order_descr = getSortDescription(query, context);
+        SortDescription fill_descr;
+        for (auto & desc : order_descr)
+        {
+            if (desc.with_fill)
+                fill_descr.push_back(desc);
+        }
+
+        if (fill_descr.empty())
+            return;
+
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<FillingTransform>(header, fill_descr);
+        });
+    }
+}
+
 
 void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
 {
@@ -2298,13 +2619,21 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
 
+        SortDescription order_descr;
+        if (query.limit_with_ties)
+        {
+            if (!query.orderBy())
+                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+            order_descr = getSortDescription(query, context);
+        }
+
         pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipeline::StreamType::Main)
                 return nullptr;
 
             return std::make_shared<LimitTransform>(
-                    header, limit_length, limit_offset, always_read_till_end);
+                    header, limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
         });
     }
 }
@@ -2333,7 +2662,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
-    executeUnion(pipeline);
+    executeUnion(pipeline, {});
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets, context);
 }
@@ -2351,20 +2680,22 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
 }
 
 
-void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline)
+void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
 {
-    if (pipeline.hasMoreThanOneStream())
+    /// Unify streams in case they have different headers.
+
+    /// TODO: remove previos addition of _dummy column.
+    if (header.columns() > 1 && header.has("_dummy"))
+        header.erase("_dummy");
+
+    for (size_t i = 0; i < pipeline.streams.size(); ++i)
     {
-        /// Unify streams in case they have different headers.
-        auto first_header = pipeline.streams.at(0)->getHeader();
-        for (size_t i = 1; i < pipeline.streams.size(); ++i)
-        {
-            auto & stream = pipeline.streams[i];
-            auto header = stream->getHeader();
-            auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
-            if (!blocksHaveEqualStructure(first_header, header))
-                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
-        }
+        auto & stream = pipeline.streams[i];
+        auto stream_header = stream->getHeader();
+        auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
+
+        if (!blocksHaveEqualStructure(header, stream_header))
+            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header, mode);
     }
 }
 

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <queue>
-#include <stack>
 #include <Processors/IProcessor.h>
-#include <mutex>
+#include <Processors/Executors/ThreadsQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
 #include <common/logger_useful.h>
 
-#include <boost/lockfree/stack.hpp>
+#include <queue>
+#include <stack>
+#include <mutex>
 
 namespace DB
 {
@@ -24,7 +24,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors);
+    explicit PipelineExecutor(Processors & processors_);
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -35,14 +35,11 @@ public:
     const Processors & getProcessors() const { return processors; }
 
     /// Cancel execution. May be called from another thread.
-    void cancel()
-    {
-        cancelled = true;
-        finish();
-    }
+    void cancel();
 
 private:
     Processors & processors;
+    std::mutex processors_mutex;
 
     struct Edge
     {
@@ -75,8 +72,8 @@ private:
         std::exception_ptr exception;
         std::function<void()> job;
 
-        IProcessor * processor;
-        UInt64 processors_id;
+        IProcessor * processor = nullptr;
+        UInt64 processors_id = 0;
 
         /// Counters for profiling.
         size_t num_executed_jobs = 0;
@@ -125,16 +122,14 @@ private:
     /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     /// Stores processors need to be prepared. Preparing status is already set for them.
     TaskQueue task_queue;
+
+    ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
-    std::condition_variable task_queue_condvar;
 
     std::atomic_bool cancelled;
     std::atomic_bool finished;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
-
-    /// Num threads waiting condvar. Last thread finish execution if task_queue is empty.
-    size_t num_waiting_threads = 0;
 
     /// Things to stop execution to expand pipeline.
     struct ExpandPipelineTask
@@ -158,9 +153,16 @@ private:
         /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
         /// This can be solved by using atomic shard ptr.
         std::list<ExpandPipelineTask> task_list;
+
+        std::condition_variable condvar;
+        std::mutex mutex;
+        bool wake_flag = false;
+
+        std::queue<ExecutionState *> pinned_tasks;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
+    std::mutex executor_contexts_mutex;
 
     /// Processor ptr -> node number
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
@@ -180,7 +182,7 @@ private:
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(size_t pid, Stack & children, Stack & parents, size_t thread_number, bool async);
+    bool prepareProcessor(UInt64 pid, Stack & children, Stack & parents, size_t thread_number, bool async);
     void doExpandPipeline(ExpandPipelineTask * task, bool processing);
 
     void executeImpl(size_t num_threads);

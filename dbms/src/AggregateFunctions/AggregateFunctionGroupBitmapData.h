@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <roaring/roaring.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -87,10 +88,11 @@ public:
 
         if (is_large)
         {
-            toLarge();
-            UInt32 cardinality;
-            readBinary(cardinality, in);
-            db_roaring_bitmap_add_many(in, rb, cardinality);
+            std::string s;
+            readStringBinary(s,in);
+            rb = roaring_bitmap_portable_deserialize(s.c_str());
+            for (const auto & x : small) //merge from small
+                roaring_bitmap_add(rb, x.getValue());
         }
         else
             small.read(in);
@@ -102,9 +104,10 @@ public:
 
         if (isLarge())
         {
-            UInt32 cardinality = roaring_bitmap_get_cardinality(rb);
-            writePODBinary(cardinality, out);
-            db_ra_to_uint32_array(out, &rb->high_low_container);
+            uint32_t expectedsize = roaring_bitmap_portable_size_in_bytes(rb);
+            std::string s(expectedsize,0);
+            roaring_bitmap_portable_serialize(rb, const_cast<char*>(s.data()));
+            writeStringBinary(s,out);
         }
         else
             small.write(out);
@@ -447,6 +450,44 @@ public:
             while (iterator.has_value)
             {
                 res_data.emplace_back(iterator.current_value);
+                roaring_advance_uint32_iterator(&iterator);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Return new set with specified range (not include the range_end)
+     */
+    UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet& r1) const
+    {
+        UInt64 count = 0;
+        if (range_start >= range_end)
+            return count;
+        if (isSmall())
+        {
+            std::vector<T> ans;
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if ((UInt32)val >= range_start && (UInt32)val < range_end)
+                {
+                    r1.add(val);
+                    count++;
+                }
+            }
+        }
+        else
+        {
+            roaring_uint32_iterator_t iterator;
+            roaring_init_iterator(rb, &iterator);
+            roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
+            while (iterator.has_value)
+            {
+                if ((UInt32)iterator.current_value >= range_end)
+                    break;
+                r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
                 count++;
             }

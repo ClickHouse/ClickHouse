@@ -4,6 +4,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitors.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
+    extern const int CANNOT_PARSE_BOOL;
 }
 
 
@@ -61,6 +63,30 @@ template <typename Type>
 void SettingNumber<Type>::set(const String & x)
 {
     set(parse<Type>(x));
+}
+
+template <>
+void SettingNumber<bool>::set(const String & x)
+{
+    if (x.size() == 1)
+    {
+        if (x[0] == '0')
+            set(false);
+        else if (x[0] == '1')
+            set(true);
+        else
+            throw Exception("Cannot parse bool from string '" + x + "'", ErrorCodes::CANNOT_PARSE_BOOL);
+    }
+    else
+    {
+        ReadBufferFromString buf(x);
+        if (checkStringCaseInsensitive("true", buf))
+            set(true);
+        else if (checkStringCaseInsensitive("false", buf))
+            set(false);
+        else
+            throw Exception("Cannot parse bool from string '" + x + "'", ErrorCodes::CANNOT_PARSE_BOOL);
+    }
 }
 
 template <typename Type>

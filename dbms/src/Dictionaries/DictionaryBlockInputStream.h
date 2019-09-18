@@ -202,11 +202,11 @@ private:
 
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
-    std::shared_ptr<const IDictionaryBase> dictionary, UInt64 max_block_size, PaddedPODArray<Key> && ids, const Names & column_names)
-    : DictionaryBlockInputStreamBase(ids.size(), max_block_size)
-    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary))
-    , column_names(column_names)
-    , ids(std::move(ids))
+    std::shared_ptr<const IDictionaryBase> dictionary_, UInt64 max_block_size_, PaddedPODArray<Key> && ids_, const Names & column_names_)
+    : DictionaryBlockInputStreamBase(ids_.size(), max_block_size_)
+    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary_))
+    , column_names(column_names_)
+    , ids(std::move(ids_))
     , logger(&Poco::Logger::get("DictionaryBlockInputStream"))
     , fill_block_function(
           &DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<DictionaryGetter, DictionaryDecimalGetter, DictionaryStringGetter>)
@@ -216,13 +216,13 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
 
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
-    std::shared_ptr<const IDictionaryBase> dictionary,
-    UInt64 max_block_size,
+    std::shared_ptr<const IDictionaryBase> dictionary_,
+    UInt64 max_block_size_,
     const std::vector<StringRef> & keys,
-    const Names & column_names)
-    : DictionaryBlockInputStreamBase(keys.size(), max_block_size)
-    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary))
-    , column_names(column_names)
+    const Names & column_names_)
+    : DictionaryBlockInputStreamBase(keys.size(), max_block_size_)
+    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary_))
+    , column_names(column_names_)
     , logger(&Poco::Logger::get("DictionaryBlockInputStream"))
     , fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, DecimalGetterByKey, StringGetterByKey>)
     , key_type(DictionaryKeyType::ComplexKey)
@@ -233,20 +233,20 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
 
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
-    std::shared_ptr<const IDictionaryBase> dictionary,
-    UInt64 max_block_size,
-    const Columns & data_columns,
-    const Names & column_names,
-    GetColumnsFunction && get_key_columns_function,
-    GetColumnsFunction && get_view_columns_function)
-    : DictionaryBlockInputStreamBase(data_columns.front()->size(), max_block_size)
-    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary))
-    , column_names(column_names)
+    std::shared_ptr<const IDictionaryBase> dictionary_,
+    UInt64 max_block_size_,
+    const Columns & data_columns_,
+    const Names & column_names_,
+    GetColumnsFunction && get_key_columns_function_,
+    GetColumnsFunction && get_view_columns_function_)
+    : DictionaryBlockInputStreamBase(data_columns_.front()->size(), max_block_size_)
+    , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary_))
+    , column_names(column_names_)
     , logger(&Poco::Logger::get("DictionaryBlockInputStream"))
     , fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, DecimalGetterByKey, StringGetterByKey>)
-    , data_columns(data_columns)
-    , get_key_columns_function(get_key_columns_function)
-    , get_view_columns_function(get_view_columns_function)
+    , data_columns(data_columns_)
+    , get_key_columns_function(get_key_columns_function_)
+    , get_view_columns_function(get_view_columns_function_)
     , key_type(DictionaryKeyType::Callback)
 {
 }
@@ -422,58 +422,58 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     column = getColumnFromAttribute<TYPE, Getter<TYPE>>(&DictionaryType::get##TYPE, ids_to_fill, keys, data_types, attribute, *dictionary)
             switch (attribute.underlying_type)
             {
-                case AttributeUnderlyingType::UInt8:
+                case AttributeUnderlyingType::utUInt8:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt8);
                     break;
-                case AttributeUnderlyingType::UInt16:
+                case AttributeUnderlyingType::utUInt16:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt16);
                     break;
-                case AttributeUnderlyingType::UInt32:
+                case AttributeUnderlyingType::utUInt32:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt32);
                     break;
-                case AttributeUnderlyingType::UInt64:
+                case AttributeUnderlyingType::utUInt64:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt64);
                     break;
-                case AttributeUnderlyingType::UInt128:
+                case AttributeUnderlyingType::utUInt128:
                     GET_COLUMN_FORM_ATTRIBUTE(UInt128);
                     break;
-                case AttributeUnderlyingType::Int8:
+                case AttributeUnderlyingType::utInt8:
                     GET_COLUMN_FORM_ATTRIBUTE(Int8);
                     break;
-                case AttributeUnderlyingType::Int16:
+                case AttributeUnderlyingType::utInt16:
                     GET_COLUMN_FORM_ATTRIBUTE(Int16);
                     break;
-                case AttributeUnderlyingType::Int32:
+                case AttributeUnderlyingType::utInt32:
                     GET_COLUMN_FORM_ATTRIBUTE(Int32);
                     break;
-                case AttributeUnderlyingType::Int64:
+                case AttributeUnderlyingType::utInt64:
                     GET_COLUMN_FORM_ATTRIBUTE(Int64);
                     break;
-                case AttributeUnderlyingType::Float32:
+                case AttributeUnderlyingType::utFloat32:
                     GET_COLUMN_FORM_ATTRIBUTE(Float32);
                     break;
-                case AttributeUnderlyingType::Float64:
+                case AttributeUnderlyingType::utFloat64:
                     GET_COLUMN_FORM_ATTRIBUTE(Float64);
                     break;
-                case AttributeUnderlyingType::Decimal32:
+                case AttributeUnderlyingType::utDecimal32:
                 {
                     column = getColumnFromAttribute<Decimal32, DecimalGetter<Decimal32>>(
                         &DictionaryType::getDecimal32, ids_to_fill, keys, data_types, attribute, *dictionary);
                     break;
                 }
-                case AttributeUnderlyingType::Decimal64:
+                case AttributeUnderlyingType::utDecimal64:
                 {
                     column = getColumnFromAttribute<Decimal64, DecimalGetter<Decimal64>>(
                         &DictionaryType::getDecimal64, ids_to_fill, keys, data_types, attribute, *dictionary);
                     break;
                 }
-                case AttributeUnderlyingType::Decimal128:
+                case AttributeUnderlyingType::utDecimal128:
                 {
                     column = getColumnFromAttribute<Decimal128, DecimalGetter<Decimal128>>(
                         &DictionaryType::getDecimal128, ids_to_fill, keys, data_types, attribute, *dictionary);
                     break;
                 }
-                case AttributeUnderlyingType::String:
+                case AttributeUnderlyingType::utString:
                 {
                     column = getColumnFromStringAttribute<StringGetter>(
                         &DictionaryType::getString, ids_to_fill, keys, data_types, attribute, *dictionary);

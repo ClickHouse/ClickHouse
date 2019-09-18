@@ -1,5 +1,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <IO/WriteHelpers.h>    // toString
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -16,6 +17,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -32,6 +34,33 @@ static bool isParseError(int code)
 }
 
 
+static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
+{
+    switch (mode)
+    {
+        case OverflowMode::THROW:
+            throw Exception(message, code);
+        case OverflowMode::BREAK:
+            return false;
+        default:
+            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+
+static bool checkTimeLimit(const IRowInputFormat::Params & params, const Stopwatch & stopwatch)
+{
+    if (params.max_execution_time != 0
+        && stopwatch.elapsed() > static_cast<UInt64>(params.max_execution_time.totalMicroseconds()) * 1000)
+        return handleOverflowMode(params.timeout_overflow_mode,
+              "Timeout exceeded: elapsed " + toString(stopwatch.elapsedSeconds())
+              + " seconds, maximum: " + toString(params.max_execution_time.totalMicroseconds() / 1000000.0),
+              ErrorCodes::TIMEOUT_EXCEEDED);
+
+    return true;
+}
+
+
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
@@ -43,12 +72,19 @@ Chunk IRowInputFormat::generate()
     MutableColumns columns = header.cloneEmptyColumns();
     size_t prev_rows = total_rows;
 
-    auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
+    ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
 
     try
     {
-        for (size_t rows = 0; rows < params.max_block_size; ++rows)
+        for (size_t rows = 0, batch = 0; rows < params.max_block_size; ++rows, ++batch)
         {
+            if (params.rows_portion_size && batch == params.rows_portion_size)
+            {
+                batch = 0;
+                if (!checkTimeLimit(params, total_stopwatch) || isCancelled())
+                    break;
+            }
+
             try
             {
                 ++total_rows;
@@ -56,6 +92,8 @@ Chunk IRowInputFormat::generate()
                 RowReadExtension info;
                 if (!readRow(columns, info))
                     break;
+                if (params.callback)
+                    params.callback();
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
@@ -64,7 +102,7 @@ Chunk IRowInputFormat::generate()
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
                             throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-                        chunk_missing_values->setBit(column_idx, column_size - 1);
+                        block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
             }
@@ -134,12 +172,18 @@ Chunk IRowInputFormat::generate()
 
     if (columns.empty() || columns[0]->empty())
     {
+        if (params.allow_errors_num > 0 || params.allow_errors_ratio > 0)
+        {
+            Logger * log = &Logger::get("IRowInputFormat");
+            LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
+        }
+
         readSuffix();
         return {};
     }
 
     Chunk chunk(std::move(columns), total_rows - prev_rows);
-    chunk.setChunkInfo(std::move(chunk_missing_values));
+    //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 

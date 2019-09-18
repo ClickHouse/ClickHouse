@@ -5,12 +5,17 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
 #include "OwnPatternFormatter.h"
-#include "OwnSplitChannel.h"
 #include <Poco/ConsoleChannel.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/Path.h>
+
+namespace DB
+{
+    class SensitiveDataMasker;
+}
+
 
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
@@ -22,18 +27,28 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
+void Loggers::setTextLog(std::shared_ptr<DB::TextLog> log)
+{
+    text_log = log;
+}
+
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
 {
+    if (split)
+        if (auto log = text_log.lock())
+            split->addTextLog(log);
+
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger)
         return;
+
     config_logger = current_logger;
 
     bool is_daemon = config.getBool("application.runAsDaemon", false);
 
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
-    Poco::AutoPtr<DB::OwnSplitChannel> split = new DB::OwnSplitChannel;
+    split = new DB::OwnSplitChannel();
 
     auto log_level = config.getString("logger.level", "trace");
     const auto log_path = config.getString("logger.log", "");
@@ -158,6 +173,7 @@ void Loggers::closeLogs(Poco::Logger & logger)
         log_file->close();
     if (error_log_file)
         error_log_file->close();
+    // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
         logger.warning("Logging to console but received signal to close log file (ignoring).");

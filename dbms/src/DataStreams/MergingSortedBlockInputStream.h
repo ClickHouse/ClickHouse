@@ -5,6 +5,7 @@
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <common/logger_useful.h>
+#include <Common/SharedBlockRowRef.h>
 
 #include <Core/Row.h>
 #include <Core/SortDescription.h>
@@ -21,39 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-}
-
-
-/// Allows you refer to the row in the block and hold the block ownership,
-///  and thus avoid creating a temporary row object.
-/// Do not use std::shared_ptr, since there is no need for a place for `weak_count` and `deleter`;
-///  does not use Poco::SharedPtr, since you need to allocate a block and `refcount` in one piece;
-///  does not use Poco::AutoPtr, since it does not have a `move` constructor and there are extra checks for nullptr;
-/// The reference counter is not atomic, since it is used from one thread.
-namespace detail
-{
-struct SharedBlock : Block
-{
-    int refcount = 0;
-
-    ColumnRawPtrs all_columns;
-    ColumnRawPtrs sort_columns;
-
-    SharedBlock(Block && block) : Block(std::move(block)) {}
-};
-}
-
-using SharedBlockPtr = boost::intrusive_ptr<detail::SharedBlock>;
-
-inline void intrusive_ptr_add_ref(detail::SharedBlock * ptr)
-{
-    ++ptr->refcount;
-}
-
-inline void intrusive_ptr_release(detail::SharedBlock * ptr)
-{
-    if (0 == --ptr->refcount)
-        delete ptr;
 }
 
 
@@ -78,44 +46,6 @@ public:
     Block getHeader() const override { return header; }
 
 protected:
-    struct RowRef
-    {
-        ColumnRawPtrs * columns = nullptr;
-        size_t row_num = 0;
-        SharedBlockPtr shared_block;
-
-        void swap(RowRef & other)
-        {
-            std::swap(columns, other.columns);
-            std::swap(row_num, other.row_num);
-            std::swap(shared_block, other.shared_block);
-        }
-
-        /// The number and types of columns must match.
-        bool operator==(const RowRef & other) const
-        {
-            size_t size = columns->size();
-            for (size_t i = 0; i < size; ++i)
-                if (0 != (*columns)[i]->compareAt(row_num, other.row_num, *(*other.columns)[i], 1))
-                    return false;
-            return true;
-        }
-
-        bool operator!=(const RowRef & other) const
-        {
-            return !(*this == other);
-        }
-
-        void reset()
-        {
-            RowRef empty;
-            swap(empty);
-        }
-
-        bool empty() const { return columns == nullptr; }
-        size_t size() const { return empty() ? 0 : columns->size(); }
-    };
-
     /// Simple class, which allows to check stop condition during merge process
     /// in simple case it just compare amount of merged rows with max_block_size
     /// in `count_average` case it compares amount of merged rows with linear combination
@@ -147,7 +77,6 @@ protected:
             return sum_blocks_granularity == 0;
         }
     };
-
 
     Block readImpl() override;
 
@@ -230,7 +159,7 @@ protected:
     }
 
     template <typename TSortCursor>
-    void setRowRef(RowRef & row_ref, TSortCursor & cursor)
+    void setRowRef(SharedBlockRowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;
         row_ref.shared_block = source_blocks[cursor.impl->order];
@@ -238,7 +167,7 @@ protected:
     }
 
     template <typename TSortCursor>
-    void setPrimaryKeyRef(RowRef & row_ref, TSortCursor & cursor)
+    void setPrimaryKeyRef(SharedBlockRowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;
         row_ref.shared_block = source_blocks[cursor.impl->order];

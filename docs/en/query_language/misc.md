@@ -177,10 +177,13 @@ Changes already made by the mutation are not rolled back.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
-Asks the table engine to do something for optimization.
-Supported only by `*MergeTree` engines, in which this query initializes a non-scheduled merge of data parts.
-If you specify a `PARTITION`, only the specified partition will be optimized.
-If you specify `FINAL`, optimization will be performed even when all the data is already in one part.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine of [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines are not supported.
+
+When `OPTIMIZE` is used with [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
+
+- If `OPTIMIZE` doesn't perform merging for any reason, it doesn't notify the client about it. To enable notification use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
+- If you specify a `PARTITION`, only the specified partition is optimized.
+- If you specify `FINAL`, optimization is performed even when all the data is already in one part.
 
 !!! warning
     OPTIMIZE can't fix the "Too many parts" error.
@@ -195,18 +198,21 @@ RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
 All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
 
-## SET
+## SET {#query-set}
 
-``` sql
+```sql
 SET param = value
 ```
 
-Allows you to set `param` to `value`. You can also make all the settings from the specified settings profile in a single query. To do this, specify 'profile' as the setting name. For more information, see the section "Settings".
-The setting is made for the session, or for the server (globally) if `GLOBAL` is specified.
-When making a global setting, the setting is not applied to sessions already running, including the current session. It will only be used for new sessions.
+Assigns `value` to the `param` [setting](../operations/settings/index.md) for the current session. You cannot change [server settings](../operations/server_settings/index.md) this way.
 
-When the server is restarted, global settings made using `SET` are lost.
-To make settings that persist after a server restart, you can only use the server's config file.
+You can also set all the values from the specified settings profile in a single query.
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+For more information, see [Settings](../operations/settings/settings.md).
 
 ## SHOW CREATE TABLE
 

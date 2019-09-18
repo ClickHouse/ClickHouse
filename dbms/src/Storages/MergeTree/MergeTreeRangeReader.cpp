@@ -13,9 +13,9 @@ namespace DB
 {
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
-        size_t from_mark, MergeTreeReader * merge_tree_reader)
+        size_t from_mark, MergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
-        , merge_tree_reader(merge_tree_reader)
+        , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , continue_reading(false), is_finished(false)
 {
@@ -108,10 +108,10 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Block & block)
 
 
 MergeTreeRangeReader::Stream::Stream(
-        size_t from_mark, size_t to_mark,  MergeTreeReader * merge_tree_reader)
+        size_t from_mark, size_t to_mark, MergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
-        , merge_tree_reader(merge_tree_reader)
+        , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
         , stream(from_mark, merge_tree_reader)
@@ -406,15 +406,15 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
 
 MergeTreeRangeReader::MergeTreeRangeReader(
-        MergeTreeReader * merge_tree_reader, MergeTreeRangeReader * prev_reader,
-        ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
-        const String * prewhere_column_name, const Names * ordered_names,
-        bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain)
-        : merge_tree_reader(merge_tree_reader), index_granularity(&(merge_tree_reader->data_part->index_granularity))
-        , prev_reader(prev_reader), prewhere_column_name(prewhere_column_name)
-        , ordered_names(ordered_names), alias_actions(alias_actions), prewhere_actions(std::move(prewhere_actions))
-        , always_reorder(always_reorder), remove_prewhere_column(remove_prewhere_column)
-        , last_reader_in_chain(last_reader_in_chain), is_initialized(true)
+        MergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
+        ExpressionActionsPtr alias_actions_, ExpressionActionsPtr prewhere_actions_,
+        const String * prewhere_column_name_, const Names * ordered_names_,
+        bool always_reorder_, bool remove_prewhere_column_, bool last_reader_in_chain_)
+        : merge_tree_reader(merge_tree_reader_), index_granularity(&(merge_tree_reader->data_part->index_granularity))
+        , prev_reader(prev_reader_), prewhere_column_name(prewhere_column_name_)
+        , ordered_names(ordered_names_), alias_actions(alias_actions_), prewhere_actions(std::move(prewhere_actions_))
+        , always_reorder(always_reorder_), remove_prewhere_column(remove_prewhere_column_)
+        , last_reader_in_chain(last_reader_in_chain_), is_initialized(true)
 {
 }
 

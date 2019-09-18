@@ -30,6 +30,9 @@ public:
     /// Query has additional data, which will be sent later
     bool has_tail = false;
 
+    /// Try to find table function input() in SELECT part
+    void tryFindInputFunction(ASTPtr & input_function) const;
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + database) + delim + table; }
 

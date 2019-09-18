@@ -38,6 +38,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ## pointInEllipses
 
 Checks whether the point belongs to at least one of the ellipses.
+Coordinates are geometric in the Cartesian coordinate system.
 
 ```
 pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
@@ -47,7 +48,7 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 - `x, y` — Coordinates of a point on the plane.
 - `xᵢ, yᵢ` — Coordinates of the center of the `i`-th ellipsis.
-- `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in meters.
+- `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in units of x, y coordinates.
 
 The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
@@ -58,13 +59,13 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 **Example**
 
 ``` sql
-SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 ```
 
 ```
-┌─pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1., 2.)─┐
-│                                                                   1 │
-└─────────────────────────────────────────────────────────────────────┘
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## pointInPolygon
@@ -181,6 +182,38 @@ SELECT geoToH3(37.79506683, 55.71290588, 15) as h3Index
 ┌────────────h3Index─┐
 │ 644325524701193974 │
 └────────────────────┘
+```
+
+## geohashesInBox
+
+Returns an array of geohash-encoded strings of given precision that fall inside and intersect boundaries of given box, basically a 2D grid flattened into array.
+
+**Input values**
+
+- longitude_min - min longitude, floating value in range `[-180°, 180°]`
+- latitude_min - min latitude, floating value in range `[-90°, 90°]`
+- longitude_max - max longitude, floating value in range `[-180°, 180°]`
+- latitude_max - max latitude, floating value in range `[-90°, 90°]`
+- precision - geohash precision, `UInt8` in range `[1, 12]`
+
+Please note that all coordinate parameters should be of the same type: either `Float32` or `Float64`.
+
+**Returned values**
+
+- array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
+- [] - empty array if *min* values of *latitude* and *longitude* aren't less than corresponding *max* values.
+
+Please note that function will throw an exception if resulting array is over 10'000'000 items long.
+
+**Example**
+
+```
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
+```
+```
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/geo/) <!--hide-->

@@ -1,9 +1,19 @@
 #pragma once
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 
+#include <ext/scope_guard.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <random>
+#include <sstream>
 #include <Common/MemoryTracker.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Common/PODArray.h>
 #include <Core/Types.h>
+#include <Interpreters/Context.h>
 #include <IO/copyData.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -14,9 +24,7 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
-#include <random>
-#include <sstream>
-#include <IO/LimitReadBuffer.h>
+#include <Poco/SHA1Engine.h>
 
 /// Implementation of MySQL wire protocol.
 /// Works only on little-endian architecture.
@@ -27,6 +35,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
+    extern const int OPENSSL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace MySQLProtocol
@@ -39,11 +50,6 @@ const size_t MYSQL_ERRMSG_SIZE = 512;
 const size_t PACKET_HEADER_SIZE = 4;
 const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
-namespace Authentication
-{
-    const String Native = "mysql_native_password";
-    const String SHA256 = "sha256_password"; /// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
-}
 
 enum CharacterSet
 {
@@ -137,10 +143,10 @@ public:
 class PacketPayloadReadBuffer : public ReadBuffer
 {
 public:
-    PacketPayloadReadBuffer(ReadBuffer & in, uint8_t & sequence_id)
-        : ReadBuffer(in.position(), 0)  // not in.buffer().begin(), because working buffer may include previous packet
-        , in(in)
-        , sequence_id(sequence_id)
+    PacketPayloadReadBuffer(ReadBuffer & in_, uint8_t & sequence_id_)
+        : ReadBuffer(in_.position(), 0)  // not in.buffer().begin(), because working buffer may include previous packet
+        , in(in_)
+        , sequence_id(sequence_id_)
     {
     }
 
@@ -148,6 +154,8 @@ private:
     ReadBuffer & in;
     uint8_t & sequence_id;
     const size_t max_packet_size = MAX_PACKET_LENGTH;
+
+    bool has_read_header = false;
 
     // Size of packet which is being read now.
     size_t payload_length = 0;
@@ -158,8 +166,9 @@ private:
 protected:
     bool nextImpl() override
     {
-        if (payload_length == 0 || (payload_length == max_packet_size && offset == payload_length))
+        if (!has_read_header || (payload_length == max_packet_size && offset == payload_length))
         {
+            has_read_header = true;
             working_buffer.resize(0);
             offset = 0;
             payload_length = 0;
@@ -171,10 +180,6 @@ protected:
                 tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
                 throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
-            else if (payload_length == 0)
-            {
-                return false;
-            }
 
             size_t packet_sequence_id = 0;
             in.read(reinterpret_cast<char &>(packet_sequence_id));
@@ -185,6 +190,9 @@ protected:
                 throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
             sequence_id++;
+
+            if (payload_length == 0)
+                return false;
         }
         else if (offset == payload_length)
         {
@@ -208,6 +216,7 @@ class ClientPacket
 {
 public:
     ClientPacket() = default;
+
     ClientPacket(ClientPacket &&) = default;
 
     virtual void read(ReadBuffer & in, uint8_t & sequence_id)
@@ -245,27 +254,19 @@ public:
 class PacketPayloadWriteBuffer : public WriteBuffer
 {
 public:
-    PacketPayloadWriteBuffer(WriteBuffer & out, size_t payload_length, uint8_t & sequence_id)
-        : WriteBuffer(out.position(), 0)
-        , out(out)
-        , sequence_id(sequence_id)
-        , total_left(payload_length)
+    PacketPayloadWriteBuffer(WriteBuffer & out_, size_t payload_length_, uint8_t & sequence_id_)
+        : WriteBuffer(out_.position(), 0), out(out_), sequence_id(sequence_id_), total_left(payload_length_)
     {
-        startPacket();
+        startNewPacket();
+        setWorkingBuffer();
+        pos = out.position();
     }
 
-    void checkPayloadSize()
+    bool remainingPayloadSize()
     {
-        if (bytes_written + offset() < payload_length)
-        {
-            std::stringstream ss;
-            ss << "Incomplete payload. Written " << bytes << " bytes, expected " << payload_length << " bytes.";
-            throw Exception(ss.str(), 0);
-
-        }
+        return total_left;
     }
 
-    ~PacketPayloadWriteBuffer() override { next(); }
 private:
     WriteBuffer & out;
     uint8_t & sequence_id;
@@ -273,8 +274,9 @@ private:
     size_t total_left = 0;
     size_t payload_length = 0;
     size_t bytes_written = 0;
+    bool eof = false;
 
-    void startPacket()
+    void startNewPacket()
     {
         payload_length = std::min(total_left, MAX_PACKET_LENGTH);
         bytes_written = 0;
@@ -282,33 +284,38 @@ private:
 
         out.write(reinterpret_cast<char *>(&payload_length), 3);
         out.write(sequence_id++);
-
-        working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
-        pos = working_buffer.begin();
+        bytes += 4;
     }
+
+    /// Sets working buffer to the rest of current packet payload.
+    void setWorkingBuffer()
+    {
+        out.nextIfAtEnd();
+        working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
+
+        if (payload_length - bytes_written == 0)
+        {
+            /// Finished writing packet. Due to an implementation of WriteBuffer, working_buffer cannot be empty. Further write attempts will throw Exception.
+            eof = true;
+            working_buffer.resize(1);
+        }
+    }
+
 protected:
     void nextImpl() override
     {
-        int written = pos - working_buffer.begin();
+        const int written = pos - working_buffer.begin();
+        if (eof)
+            throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+
         out.position() += written;
         bytes_written += written;
 
-        if (bytes_written < payload_length)
-        {
-            out.nextIfAtEnd();
-            working_buffer = WriteBuffer::Buffer(out.position(), out.position() + std::min(payload_length - bytes_written, out.available()));
-        }
-        else if (total_left > 0 || payload_length == MAX_PACKET_LENGTH)
-        {
-            // Starting new packet, since packets of size greater than MAX_PACKET_LENGTH should be split.
-            startPacket();
-        }
-        else
-        {
-            // Finished writing packet. Buffer is set to empty to prevent rewriting (pos will be set to the beginning of a working buffer in next()).
-            // Further attempts to write will stall in the infinite loop.
-            working_buffer = WriteBuffer::Buffer(out.position(), out.position());
-        }
+        /// Packets of size greater than MAX_PACKET_LENGTH are split into few packets of size MAX_PACKET_LENGTH and las packet of size < MAX_PACKET_LENGTH.
+        if (bytes_written == payload_length && (total_left > 0 || payload_length == MAX_PACKET_LENGTH))
+            startNewPacket();
+
+        setWorkingBuffer();
     }
 };
 
@@ -320,7 +327,13 @@ public:
     {
         PacketPayloadWriteBuffer buf(buffer, getPayloadSize(), sequence_id);
         writePayloadImpl(buf);
-        buf.checkPayloadSize();
+        buf.next();
+        if (buf.remainingPayloadSize())
+        {
+            std::stringstream ss;
+            ss << "Incomplete payload. Written " << getPayloadSize() - buf.remainingPayloadSize() << " bytes, expected " << getPayloadSize() << " bytes.";
+            throw Exception(ss.str(), 0);
+        }
     }
 
     virtual ~WritePacket() = default;
@@ -344,18 +357,18 @@ public:
     size_t max_packet_size = MAX_PACKET_LENGTH;
 
     /// For reading and writing.
-    PacketSender(ReadBuffer & in, WriteBuffer & out, uint8_t & sequence_id)
-        : sequence_id(sequence_id)
-        , in(&in)
-        , out(&out)
+    PacketSender(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_)
+        : sequence_id(sequence_id_)
+        , in(&in_)
+        , out(&out_)
     {
     }
 
     /// For writing.
-    PacketSender(WriteBuffer & out, uint8_t & sequence_id)
-        : sequence_id(sequence_id)
+    PacketSender(WriteBuffer & out_, uint8_t & sequence_id_)
+        : sequence_id(sequence_id_)
         , in(nullptr)
-        , out(&out)
+        , out(&out_)
     {
     }
 
@@ -418,15 +431,15 @@ class Handshake : public WritePacket
     String auth_plugin_name;
     String auth_plugin_data;
 public:
-    explicit Handshake(uint32_t capability_flags, uint32_t connection_id, String server_version, String auth_plugin_name, String auth_plugin_data)
+    explicit Handshake(uint32_t capability_flags_, uint32_t connection_id_, String server_version_, String auth_plugin_name_, String auth_plugin_data_)
         : protocol_version(0xa)
-        , server_version(std::move(server_version))
-        , connection_id(connection_id)
-        , capability_flags(capability_flags)
+        , server_version(std::move(server_version_))
+        , connection_id(connection_id_)
+        , capability_flags(capability_flags_)
         , character_set(CharacterSet::utf8_general_ci)
         , status_flags(0)
-        , auth_plugin_name(std::move(auth_plugin_name))
-        , auth_plugin_data(std::move(auth_plugin_data))
+        , auth_plugin_name(std::move(auth_plugin_name_))
+        , auth_plugin_data(std::move(auth_plugin_data_))
     {
     }
 
@@ -449,9 +462,6 @@ protected:
         buffer.write(static_cast<char>(auth_plugin_data.size()));
         writeChar(0x0, 10, buffer);
         writeString(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH), buffer);
-        // A workaround for PHP mysqlnd extension bug which occurs when sha256_password is used as a default authentication plugin.
-        // Instead of using client response for mysql_native_password plugin, the server will always generate authentication method mismatch
-        // and switch to sha256_password to simulate that mysql_native_password is used as a default plugin.
         writeString(auth_plugin_name, buffer);
         writeChar(0x0, 1, buffer);
     }
@@ -529,8 +539,8 @@ class AuthSwitchRequest : public WritePacket
     String plugin_name;
     String auth_plugin_data;
 public:
-    AuthSwitchRequest(String plugin_name, String auth_plugin_data)
-        : plugin_name(std::move(plugin_name)), auth_plugin_data(std::move(auth_plugin_data))
+    AuthSwitchRequest(String plugin_name_, String auth_plugin_data_)
+        : plugin_name(std::move(plugin_name_)), auth_plugin_data(std::move(auth_plugin_data_))
     {
     }
 
@@ -563,7 +573,7 @@ class AuthMoreData : public WritePacket
 {
     String data;
 public:
-    explicit AuthMoreData(String data): data(std::move(data)) {}
+    explicit AuthMoreData(String data_): data(std::move(data_)) {}
 
 protected:
     size_t getPayloadSize() const override
@@ -589,20 +599,20 @@ class OK_Packet : public WritePacket
     String session_state_changes;
     String info;
 public:
-    OK_Packet(uint8_t header,
-        uint32_t capabilities,
-        uint64_t affected_rows,
-        uint32_t status_flags,
-        int16_t warnings,
-        String session_state_changes = "",
-        String info = "")
-        : header(header)
-        , capabilities(capabilities)
-        , affected_rows(affected_rows)
-        , warnings(warnings)
-        , status_flags(status_flags)
-        , session_state_changes(std::move(session_state_changes))
-        , info(std::move(info))
+    OK_Packet(uint8_t header_,
+        uint32_t capabilities_,
+        uint64_t affected_rows_,
+        uint32_t status_flags_,
+        int16_t warnings_,
+        String session_state_changes_ = "",
+        String info_ = "")
+        : header(header_)
+        , capabilities(capabilities_)
+        , affected_rows(affected_rows_)
+        , warnings(warnings_)
+        , status_flags(status_flags_)
+        , session_state_changes(std::move(session_state_changes_))
+        , info(std::move(info_))
     {
     }
 
@@ -668,7 +678,7 @@ class EOF_Packet : public WritePacket
     int warnings;
     int status_flags;
 public:
-    EOF_Packet(int warnings, int status_flags) : warnings(warnings), status_flags(status_flags)
+    EOF_Packet(int warnings_, int status_flags_) : warnings(warnings_), status_flags(status_flags_)
     {}
 
 protected:
@@ -691,8 +701,8 @@ class ERR_Packet : public WritePacket
     String sql_state;
     String error_message;
 public:
-    ERR_Packet(int error_code, String sql_state, String error_message)
-        : error_code(error_code), sql_state(std::move(sql_state)), error_message(std::move(error_message))
+    ERR_Packet(int error_code_, String sql_state_, String error_message_)
+        : error_code(error_code_), sql_state(std::move(sql_state_)), error_message(std::move(error_message_))
     {
     }
 
@@ -727,32 +737,32 @@ class ColumnDefinition : public WritePacket
     uint8_t decimals = 0x00;
 public:
     ColumnDefinition(
-        String schema,
-        String table,
-        String org_table,
-        String name,
-        String org_name,
-        uint16_t character_set,
-        uint32_t column_length,
-        ColumnType column_type,
-        uint16_t flags,
-        uint8_t decimals)
+        String schema_,
+        String table_,
+        String org_table_,
+        String name_,
+        String org_name_,
+        uint16_t character_set_,
+        uint32_t column_length_,
+        ColumnType column_type_,
+        uint16_t flags_,
+        uint8_t decimals_)
 
-        : schema(std::move(schema)), table(std::move(table)), org_table(std::move(org_table)), name(std::move(name)),
-          org_name(std::move(org_name)), character_set(character_set), column_length(column_length), column_type(column_type), flags(flags),
-          decimals(decimals)
+        : schema(std::move(schema_)), table(std::move(table_)), org_table(std::move(org_table_)), name(std::move(name_)),
+          org_name(std::move(org_name_)), character_set(character_set_), column_length(column_length_), column_type(column_type_), flags(flags_),
+          decimals(decimals_)
     {
     }
 
     /// Should be used when column metadata (original name, table, original table, database) is unknown.
     ColumnDefinition(
-        String name,
-        uint16_t character_set,
-        uint32_t column_length,
-        ColumnType column_type,
-        uint16_t flags,
-        uint8_t decimals)
-        : ColumnDefinition("", "", "", std::move(name), "", character_set, column_length, column_type, flags, decimals)
+        String name_,
+        uint16_t character_set_,
+        uint32_t column_length_,
+        ColumnType column_type_,
+        uint16_t flags_,
+        uint8_t decimals_)
+        : ColumnDefinition("", "", "", std::move(name_), "", character_set_, column_length_, column_type_, flags_, decimals_)
     {
     }
 
@@ -798,7 +808,7 @@ class LengthEncodedNumber : public WritePacket
 {
     uint64_t value;
 public:
-    explicit LengthEncodedNumber(uint64_t value): value(value)
+    explicit LengthEncodedNumber(uint64_t value_): value(value_)
     {
     }
 
@@ -840,5 +850,231 @@ protected:
     }
 };
 
+namespace Authentication
+{
+
+class IPlugin
+{
+public:
+    virtual String getName() = 0;
+
+    virtual String getAuthPluginData() = 0;
+
+    virtual void authenticate(const String & user_name, std::optional<String> auth_response, Context & context, std::shared_ptr<PacketSender> packet_sender, bool is_secure_connection,
+                              const Poco::Net::SocketAddress & address) = 0;
+
+    virtual ~IPlugin() = default;
+};
+
+/// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
+class Native41 : public IPlugin
+{
+public:
+    Native41()
+    {
+        scramble.resize(SCRAMBLE_LENGTH + 1, 0);
+        Poco::RandomInputStream generator;
+
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+            generator >> scramble[i];
+    }
+
+    String getName() override
+    {
+        return "mysql_native_password";
+    }
+
+    String getAuthPluginData() override
+    {
+        return scramble;
+    }
+
+    void authenticate(
+        const String & user_name,
+        std::optional<String> auth_response,
+        Context & context,
+        std::shared_ptr<PacketSender> packet_sender,
+        bool /* is_secure_connection */,
+        const Poco::Net::SocketAddress & address) override
+    {
+        if (!auth_response)
+        {
+            packet_sender->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+            AuthSwitchResponse response;
+            packet_sender->receivePacket(response);
+            auth_response = response.value;
+        }
+
+        if (auth_response->empty())
+        {
+            context.setUser(user_name, "", address, "");
+            return;
+        }
+
+        if (auth_response->size() != Poco::SHA1Engine::DIGEST_SIZE)
+            throw Exception("Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE) + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
+                            ErrorCodes::UNKNOWN_EXCEPTION);
+
+        auto user = context.getUser(user_name);
+
+        if (user->password_double_sha1_hex.empty())
+            throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
+
+        Poco::SHA1Engine::Digest double_sha1_value = Poco::DigestEngine::digestFromHex(user->password_double_sha1_hex);
+        assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
+
+        Poco::SHA1Engine engine;
+        engine.update(scramble.data(), SCRAMBLE_LENGTH);
+        engine.update(double_sha1_value.data(), double_sha1_value.size());
+
+        String password_sha1(Poco::SHA1Engine::DIGEST_SIZE, 0x0);
+        const Poco::SHA1Engine::Digest & digest = engine.digest();
+        for (size_t i = 0; i < password_sha1.size(); i++)
+        {
+            password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
+        }
+        context.setUser(user_name, password_sha1, address, "");
+    }
+private:
+    String scramble;
+};
+
+/// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
+/// https://dev.mysql.com/doc/internals/en/sha256.html
+class Sha256Password : public IPlugin
+{
+public:
+    Sha256Password(RSA & public_key_, RSA & private_key_, Logger * log_)
+        : public_key(public_key_)
+        , private_key(private_key_)
+        , log(log_)
+    {
+        /** Native authentication sent 20 bytes + '\0' character = 21 bytes.
+         *  This plugin must do the same to stay consistent with historical behavior if it is set to operate as a default plugin. [1]
+         *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L3994
+         */
+        scramble.resize(SCRAMBLE_LENGTH + 1, 0);
+        Poco::RandomInputStream generator;
+
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+            generator >> scramble[i];
+    }
+
+    String getName() override
+    {
+        return "sha256_password";
+    }
+
+    String getAuthPluginData() override
+    {
+        return scramble;
+    }
+
+    void authenticate(
+        const String & user_name,
+        std::optional<String> auth_response,
+        Context & context,
+        std::shared_ptr<PacketSender> packet_sender,
+        bool is_secure_connection,
+        const Poco::Net::SocketAddress & address) override
+    {
+        if (!auth_response)
+        {
+            packet_sender->sendPacket(AuthSwitchRequest(getName(), scramble), true);
+
+            if (packet_sender->in->eof())
+                throw Exception("Client doesn't support authentication method " + getName() + " used by ClickHouse. Specifying user password using 'password_double_sha1_hex' may fix the problem.",
+                    ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
+
+            AuthSwitchResponse response;
+            packet_sender->receivePacket(response);
+            auth_response = response.value;
+            LOG_TRACE(log, "Authentication method mismatch.");
+        }
+        else
+        {
+            LOG_TRACE(log, "Authentication method match.");
+        }
+
+        if (auth_response == "\1")
+        {
+            LOG_TRACE(log, "Client requests public key.");
+
+            BIO * mem = BIO_new(BIO_s_mem());
+            SCOPE_EXIT(BIO_free(mem));
+            if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
+            {
+                throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            }
+            char * pem_buf = nullptr;
+            long pem_size = BIO_get_mem_data(mem, &pem_buf);
+            String pem(pem_buf, pem_size);
+
+            LOG_TRACE(log, "Key: " << pem);
+
+            AuthMoreData data(pem);
+            packet_sender->sendPacket(data, true);
+
+            AuthSwitchResponse response;
+            packet_sender->receivePacket(response);
+            auth_response = response.value;
+        }
+        else
+        {
+            LOG_TRACE(log, "Client didn't request public key.");
+        }
+
+        String password;
+
+        /** Decrypt password, if it's not empty.
+         *  The original intention was that the password is a string[NUL] but this never got enforced properly so now we have to accept that
+         *  an empty packet is a blank password, thus the check for auth_response.empty() has to be made too.
+         *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L4017
+         */
+        if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
+        {
+            LOG_TRACE(log, "Received nonempty password");
+            auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
+
+            unsigned char plaintext[RSA_size(&private_key)];
+            int plaintext_size = RSA_private_decrypt(auth_response->size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
+            if (plaintext_size == -1)
+            {
+                throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            }
+
+            password.resize(plaintext_size);
+            for (int i = 0; i < plaintext_size; i++)
+            {
+                password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
+            }
+        }
+        else if (is_secure_connection)
+        {
+            password = *auth_response;
+        }
+        else
+        {
+            LOG_TRACE(log, "Received empty password");
+        }
+
+        if (!password.empty() && password.back() == 0)
+        {
+            password.pop_back();
+        }
+
+        context.setUser(user_name, password, address, "");
+    }
+
+private:
+    RSA & public_key;
+    RSA & private_key;
+    Logger * log;
+    String scramble;
+};
+
+}
+
 }
 }
+#endif

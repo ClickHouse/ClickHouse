@@ -34,13 +34,13 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_CHILD_PROCESS;
 }
 
-ShellCommand::ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd, bool terminate_in_destructor_)
-    : pid(pid)
+ShellCommand::ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_)
+    : pid(pid_)
     , terminate_in_destructor(terminate_in_destructor_)
     , log(&Poco::Logger::get("ShellCommand"))
-    , in(in_fd)
-    , out(out_fd)
-    , err(err_fd) {}
+    , in(in_fd_)
+    , out(out_fd_)
+    , err(err_fd_) {}
 
 ShellCommand::~ShellCommand()
 {

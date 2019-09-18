@@ -1,3 +1,5 @@
+SET any_join_distinct_right_table_keys = 1;
+
 USE test;
 
 DROP TABLE IF EXISTS join;

@@ -15,6 +15,7 @@ struct PartLogElement
         DOWNLOAD_PART = 3,
         REMOVE_PART = 4,
         MUTATE_PART = 5,
+        MOVE_PART = 6,
     };
 
     Type event_type = NEW_PART;
@@ -26,6 +27,7 @@ struct PartLogElement
     String table_name;
     String part_name;
     String partition_id;
+    String path_on_disk;
 
     /// Size of the part
     UInt64 rows = 0;

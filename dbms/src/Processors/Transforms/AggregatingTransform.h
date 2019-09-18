@@ -24,8 +24,8 @@ struct AggregatingTransformParams
     Aggregator aggregator;
     bool final;
 
-    AggregatingTransformParams(const Aggregator::Params & params, bool final)
-        : params(params), aggregator(params), final(final) {}
+    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
+        : params(params_), aggregator(params), final(final_) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
 };
@@ -33,12 +33,16 @@ struct AggregatingTransformParams
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
+    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
+
+        for (auto & mut : mutexes)
+            mut = std::make_unique<std::mutex>();
     }
 };
 
@@ -71,7 +75,6 @@ private:
     AggregatingTransformParamsPtr params;
     Logger * log = &Logger::get("AggregatingTransform");
 
-    StringRefs key;
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
     bool no_more_keys = false;

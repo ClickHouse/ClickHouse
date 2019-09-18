@@ -35,6 +35,7 @@
                 <value>Parquet</value>
                 <value>ODBCDriver2</value>
                 <value>Null</value>
+                <value>MySQLWire</value>
             </values>
         </substitution>
     </substitutions>

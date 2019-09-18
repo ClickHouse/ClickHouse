@@ -6,9 +6,9 @@
 namespace DB
 {
 
-SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info)
+SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_)
     : ISource(stream_->getHeader())
-    , force_add_aggregating_info(force_add_aggregating_info)
+    , force_add_aggregating_info(force_add_aggregating_info_)
     , stream(std::move(stream_))
 {
     auto & sample = getPort().getHeader();
@@ -123,7 +123,9 @@ Chunk SourceFromInputStream::generate()
         return {};
     }
 
+#ifndef NDEBUG
     assertBlocksHaveEqualStructure(getPort().getHeader(), block, "SourceFromInputStream");
+#endif
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);

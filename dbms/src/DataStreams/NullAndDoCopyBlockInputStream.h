@@ -33,6 +33,8 @@ public:
     String getName() const override { return "NullAndDoCopy"; }
 
     Block getHeader() const override { return {}; }
+    Block getTotals() override { return {}; }
+    Block getExtremes() override { return {}; }
 
 protected:
     Block readImpl() override

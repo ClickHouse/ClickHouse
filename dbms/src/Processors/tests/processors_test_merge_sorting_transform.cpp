@@ -31,9 +31,9 @@ class NumbersSource : public ISource
 public:
     String getName() const override { return "Numbers"; }
 
-    NumbersSource(UInt64 count, UInt64 block_size, unsigned sleep_useconds)
+    NumbersSource(UInt64 count_, UInt64 block_size_, unsigned sleep_useconds_)
             : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-            count(count), block_size(block_size), sleep_useconds(sleep_useconds)
+            count(count_), block_size(block_size_), sleep_useconds(sleep_useconds_)
     {
     }
 
@@ -133,7 +133,7 @@ try
         SortDescription description = {{0, 1, 1}};
         auto transform = std::make_shared<MergeSortingTransform>(
                 source->getPort().getHeader(), description,
-                max_merged_block_size, limit, max_bytes_before_remerge, max_bytes_before_external_sort, ".");
+                max_merged_block_size, limit, max_bytes_before_remerge, max_bytes_before_external_sort, ".", 0);
         auto sink = std::make_shared<CheckSortedSink>();
 
         connect(source->getPort(), transform->getInputs().front());

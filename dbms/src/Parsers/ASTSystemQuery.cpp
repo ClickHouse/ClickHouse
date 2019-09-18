@@ -55,6 +55,14 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "STOP MERGES";
         case Type::START_MERGES:
             return "START MERGES";
+        case Type::STOP_TTL_MERGES:
+            return "STOP TTL MERGES";
+        case Type::START_TTL_MERGES:
+            return "START TTL MERGES";
+        case Type::STOP_MOVES:
+            return "STOP MOVES";
+        case Type::START_MOVES:
+            return "START MOVES";
         case Type::STOP_FETCHES:
             return "STOP FETCHES";
         case Type::START_FETCHES:
@@ -100,6 +108,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
 
     if (   type == Type::STOP_MERGES
         || type == Type::START_MERGES
+        || type == Type::STOP_TTL_MERGES
+        || type == Type::START_TTL_MERGES
+        || type == Type::STOP_MOVES
+        || type == Type::START_MOVES
         || type == Type::STOP_FETCHES
         || type == Type::START_FETCHES
         || type == Type::STOP_REPLICATED_SENDS

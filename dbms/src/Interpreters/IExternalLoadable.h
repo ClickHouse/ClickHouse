@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <boost/noncopyable.hpp>
+#include <pcg_random.hpp>
 #include <Core/Types.h>
 
 
@@ -22,6 +23,17 @@ struct ExternalLoadableLifetime
     UInt64 max_sec;
 
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+};
+
+
+/// Delay before trying to load again after error.
+struct ExternalLoadableBackoff
+{
+    UInt64 backoff_initial_sec = 5;
+    UInt64 backoff_max_sec = 10 * 60; /// 10 minutes
+
+    /// Calculates time to try loading again after error.
+    UInt64 calculateDuration(pcg64 & rnd_engine, size_t error_count = 1) const;
 };
 
 

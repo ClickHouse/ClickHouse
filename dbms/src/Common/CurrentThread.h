@@ -33,6 +33,9 @@ class InternalTextLogsQueue;
 class CurrentThread
 {
 public:
+    /// Return true in case of successful initializaiton
+    static bool isInitialized();
+
     /// Handler to current thread
     static ThreadStatus & get();
 
@@ -49,7 +52,12 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
-    static Int64 & getUntrackedMemory();
+
+    static inline Int64 & getUntrackedMemory()
+    {
+        /// It assumes that (current_thread != nullptr) is already checked with getMemoryTracker()
+        return current_thread->untracked_memory;
+    }
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);

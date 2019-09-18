@@ -52,10 +52,10 @@ class ZooKeeper
 public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    ZooKeeper(const std::string & hosts, const std::string & identity = "",
-              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT,
-              int32_t operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT,
-              const std::string & chroot = "",
+    ZooKeeper(const std::string & hosts_, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = DEFAULT_SESSION_TIMEOUT,
+              int32_t operation_timeout_ms_ = DEFAULT_OPERATION_TIMEOUT,
+              const std::string & chroot_ = "",
               const std::string & implementation = "zookeeper");
 
     /** Config of the form:
