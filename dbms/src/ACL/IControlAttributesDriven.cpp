@@ -1,3 +1,4 @@
+#if 0
 #include <ACL/IControlAttributesDriven.h>
 #include <ACL/IControlAttributesStorageManager.h>
 #include <Common/Exception.h>
@@ -373,4 +374,15 @@ IControlAttributesStorage::Changes & IControlAttributesDriven::Changes::findStor
     all_changes.push_back({&storage, {}});
     return all_changes.back().second;
 }
+
+
+/*
+void IControlAttributesStorage::throwCannotInsertNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
+{
+    throw Exception(
+        String(type.name) + " " + backQuoteIfNeed(name) + ": cannot create because this name is already used by " + existing_type.name + " "
+            + backQuoteIfNeed(existing_name),
+        existing_type.error_code_already_exists);
+}*/
 }
+#endif

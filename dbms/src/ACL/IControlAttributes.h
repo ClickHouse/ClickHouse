@@ -11,7 +11,6 @@ namespace DB
 /// Attributes are part of the element's data that can be stored and loaded to a file or another storage.
 struct IControlAttributes : public std::enable_shared_from_this<IControlAttributes>
 {
-    UUID id;
     String name;
 
     virtual ~IControlAttributes() {}
@@ -66,9 +65,7 @@ using ControlAttributesPtr = std::shared_ptr<const IControlAttributes>;
 template <typename AttributesT>
 std::shared_ptr<IControlAttributes> IControlAttributes::cloneImpl() const
 {
-    auto result = std::make_shared<AttributesT>();
-    *result = *this;
-    return result;
+    return std::make_shared<AttributesT>(*cast<AttributesT>());
 }
 
 

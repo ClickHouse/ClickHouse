@@ -1,6 +1,7 @@
 #include <ACL/IControlAttributesStorage.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/UUIDGenerator.h>
 
 
 namespace DB
@@ -33,33 +34,23 @@ ControlAttributesPtr IControlAttributesStorage::tryRead(const UUID & id, const T
 }
 
 
+void IControlAttributesStorage::update(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+{
+    updateImpl(id, type, update_func);
+}
+
+
+UUID IControlAttributesStorage::generateRandomID()
+{
+    static Poco::UUIDGenerator generator;
+    UUID id;
+    generator.createRandom().copyTo(reinterpret_cast<char *>(&id));
+    return id;
+}
+
 void IControlAttributesStorage::throwNotFound(const UUID & id, const Type & type)
 {
     throw Exception(String(type.name) + " {" + toString(id) + "} not found", type.error_code_not_found);
-}
-
-
-void IControlAttributesStorage::throwNotFound(const String & name, const Type & type)
-{
-    throw Exception(String(type.name) + " " + backQuoteIfNeed(name) + " not found", type.error_code_not_found);
-}
-
-
-void IControlAttributesStorage::throwCannotInsertIDIsUsed(const UUID & id, const Type & type, const String & existing_name, const Type & existing_type)
-{
-    throw Exception(
-        String(type.name) + " {" + toString(id) + "}: cannot create because this ID is already used by " + existing_type.name + " "
-            + backQuoteIfNeed(existing_name),
-        existing_type.error_code_already_exists);
-}
-
-
-void IControlAttributesStorage::throwCannotInsertNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
-{
-    throw Exception(
-        String(type.name) + " " + backQuoteIfNeed(name) + ": cannot create because this name is already used by " + existing_type.name + " "
-            + backQuoteIfNeed(existing_name),
-        existing_type.error_code_already_exists);
 }
 
 

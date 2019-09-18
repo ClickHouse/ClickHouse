@@ -22,10 +22,12 @@ public:
     using Storage = IControlAttributesStorage;
     using Manager = IControlAttributesStorageManager;
 
+    struct CreateTag {};
+
     IControlAttributesDriven();
-    IControlAttributesDriven(const UUID & id_, Manager & manager_, Storage * storage_ = nullptr);
     IControlAttributesDriven(const String & name_, Manager & manager_, Storage * storage_ = nullptr);
-    IControlAttributesDriven(Manager & manager_, Storage * storage_ = nullptr);
+    IControlAttributesDriven(const UUID & id_, Manager & manager_, Storage * storage_ = nullptr);
+    IControlAttributesDriven(CreateTag{}, const Attributes & attrs, Manager & manager_, Storage * storage_ = nullptr);
     IControlAttributesDriven(const IControlAttributesDriven & src);
     IControlAttributesDriven & operator =(const IControlAttributesDriven & src);
     IControlAttributesDriven(IControlAttributesDriven && src);
@@ -96,6 +98,7 @@ private:
     std::optional<String> name;
     Manager * manager = nullptr;
     mutable Storage * storage = nullptr;
+    mutable AttributesPtr attrs;
 };
 
 

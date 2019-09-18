@@ -1,3 +1,4 @@
+#if 0
 #include <ACL/Role.h>
 //#include <Common/Exception.h>
 
@@ -377,3 +378,4 @@ ACLAttributesType Role::getType() const
 }
 #endif
 }
+#endif

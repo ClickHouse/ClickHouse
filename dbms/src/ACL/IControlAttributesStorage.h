@@ -52,29 +52,21 @@ public:
     template <typename AttributesT>
     void tryRead(const UUID & id, std::shared_ptr<const AttributesT> & attrs) const;
 
-    enum class ChangeType
-    {
-        INSERT, /// insert new attributes of type `attributes_type` with `id`, throw an exception if this `id` is already in use
-        UPDATE, /// update existing attributes, throw an exception if the new name is already in use
-        REMOVE, /// remove existing attributes, throw an exception if they don't exist and `if_exists == false`
-        REMOVE_REFERENCES, /// update all attributes having references to this `id`, remove these references
-    };
+    /// Inserts attributes to the storage.
+    /// Returns `{id, true}` if successfully inserted or `{id, false}` if such name is already used by `id`.
+    virtual std::pair<UUID, bool> insert(const Attributes & attrs) = 0;
 
-    struct Change
-    {
-        ChangeType change_type = ChangeType::UPDATE;
-        UUID id = UUID(UInt128(0));
-        const Type * type = nullptr; /// not used if change_type == REMOVE_REFERENCES
-        AttributesPtr insert_attrs; /// only used if change_type == INSERT
-        std::function<void(Attributes &)> update_func; /// only used if change_type == UPDATE
-        bool if_exists = false; /// don't throw if entry isn't found. Only used if change_type == UPDATE or REMOVE
-        bool if_not_exists = false; /// don't throw if entry already exists. Only used if change_type == INSERT
-    };
+    /// Drops the attributes from the storage. Returns true if successfully dropped, or false if not found.
+    virtual bool remove(const UUID & id) = 0;
 
-    using Changes = std::vector<Change>;
+    /// Updates the attributes in the storage.
+    void update(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func);
 
-    /// Changes the attributes atomically.
-    virtual void write(const Changes & changes) = 0;
+    /// Updates the attributes in the storage.
+    /// `UpdateFunc` must be declared as `void updateFunc(AttributesT & attrs);` where `AttributesT` is a class
+    /// derived from IControlAttributes.
+    template <typename UpdateFunc>
+    void update(const UUID & id, const UpdateFunc & update_func);
 
     class Subscription
     {
@@ -99,15 +91,14 @@ public:
 
 protected:
     virtual AttributesPtr tryReadImpl(const UUID & id) const = 0;
+    virtual void updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func) = 0;
 
     using OnChangedHandler = std::function<void(const AttributesPtr &)>;
     virtual SubscriptionPtr subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const = 0;
     virtual SubscriptionPtr subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const = 0;
 
+    static UUID generateRandomID();
     [[noreturn]] static void throwNotFound(const UUID & id, const Type & type);
-    [[noreturn]] static void throwNotFound(const String & name, const Type & type);
-    [[noreturn]] static void throwCannotInsertIDIsUsed(const UUID & id, const Type & type, const String & existing_name, const Type & existing_type);
-    [[noreturn]] static void throwCannotInsertNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type);
     [[noreturn]] static void throwCannotRenameNewNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type);
 };
 

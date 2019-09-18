@@ -1,29 +1,16 @@
 #include <ACL/IControlAttributes.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/UUIDGenerator.h>
 
 
 namespace DB
 {
-namespace
-{
-    UUID randomID()
-    {
-        static Poco::UUIDGenerator generator;
-        UUID id;
-        generator.createRandom().copyTo(reinterpret_cast<char *>(&id));
-        return id;
-    }
-}
-
-
 String backQuoteIfNeed(const String & x);
 
 
 bool IControlAttributes::equal(const IControlAttributes & other) const
 {
-    return (id == other.id) && (name == other.name) && (getType() == other.getType());
+    return (name == other.name) && (getType() == other.getType());
 }
 
 
@@ -52,7 +39,7 @@ void IControlAttributes::checkIsDerived(const Type & base_type) const
     {
         const Type & type = getType();
         throw Exception(
-            String(type.name) + " " + backQuoteIfNeed(name) + " {" + toString(id) + "}: expected to be of type " + base_type.name,
+            String(type.name) + " " + backQuoteIfNeed(name) + ": expected to be of type " + base_type.name,
             base_type.error_code_not_found);
     }
 }

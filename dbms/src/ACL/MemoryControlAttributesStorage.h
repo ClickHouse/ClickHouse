@@ -20,17 +20,17 @@ public:
     std::vector<UUID> findPrefixed(const String & prefix, const Type & type) const override;
     std::optional<UUID> find(const String & name, const Type & type) const override;
     bool exists(const UUID & id) const override;
-    void write(const Changes & changes) override;
+    std::pair<UUID, bool> insert(const Attributes & attrs) override;
+    bool remove(const UUID & id) override;
 
 protected:
     AttributesPtr tryReadImpl(const UUID & id) const override;
+    void updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func) override;
     SubscriptionPtr subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const override;
     SubscriptionPtr subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const override;
 
 private:
     const String storage_name{"Memory"};
-
-    class PreparedChanges;
 
     struct Entry
     {

@@ -5,286 +5,6 @@
 
 namespace DB
 {
-class MemoryControlAttributesStorage::PreparedChanges
-{
-public:
-    PreparedChanges(MemoryControlAttributesStorage & storage_) : storage(storage_) {}
-
-    void insert(const AttributesPtr & new_attrs, bool if_not_exists)
-    {
-        const UUID & id = new_attrs->id;
-        const Type & type = new_attrs->getType();
-        auto it = new_or_updated.find(id);
-        if (it != new_or_updated.end())
-        {
-            auto existing = it->second;
-            throwCannotInsertIDIsUsed(id, type, existing->name, existing->getType());
-        }
-
-        auto it2 = storage.entries.find(id);
-        if (it2 != storage.entries.end())
-        {
-            auto existing = it2->second.attrs;
-            throwCannotInsertIDIsUsed(id, type, existing->name, existing->getType());
-        }
-
-        if (!isNameUnique(new_attrs))
-        {
-            if (if_not_exists)
-                return;
-            throwCannotInsertNameIsUsed(new_attrs.name, new_attrs.getType(), attrs_with_same_name->name, attrs_with_same_name->getType());
-        }
-
-        new_or_updated[id] = new_attrs;
-    }
-
-    void remove(const UUID & id, const Type & type, bool if_exists)
-    {
-        auto it = new_or_updated.find(id);
-        if (it != new_or_updated.end())
-        {
-            auto existing = it->second;
-            if (existing->isDerived(type))
-            {
-                removed.insert(id);
-                new_or_updated.erase(it);
-                return;
-            }
-            if (if_exists)
-                return;
-            throwNotFound(existing->name, type);
-        }
-
-        auto it2 = storage.entries.find(id);
-        if (it2 != storage.entries.end())
-        {
-            auto existing = it2->second.attrs;
-            if (existing->isDerived(type))
-            {
-                removed.insert(id);
-                return;
-            }
-            if (if_exists)
-                return;
-            throwNotFound(existing->name, type);
-        }
-
-        if (if_exists)
-            return;
-        throwNotFound(id, type);
-    }
-
-    void update(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func, bool if_exists)
-    {
-        auto it = new_or_updated.find(id);
-        if (it != new_or_updated.end())
-        {
-            auto existing = it->second;
-            if (existing->isDerived(type))
-            {
-                update_func(*existing);
-                checkNameIsUnique(*existing);
-                return;
-            }
-            if (if_exists)
-                return;
-            throwNotFound(existing->name, type);
-        }
-
-        auto it2 = storage.entries.find(id);
-        if (it2 != storage.entries.end())
-        {
-            auto existing = it2->second.attrs;
-            if (existing->isDerived(type))
-            {
-                auto cloned = existing->clone();
-                new_or_updated[id] = cloned;
-                update_func(*cloned);
-                checkNameIsUnique(*cloned);
-                return;
-            }
-            if (if_exists)
-                return;
-            throwNotFound(existing->name, type);
-        }
-
-        if (if_exists)
-            return;
-        throwNotFound(id, type);
-    }
-
-    void removeReferences(const UUID & id)
-    {
-        for (auto & other_id_and_attrs : new_or_updated)
-        {
-            const auto & other_attrs = other_id_and_attrs.second;
-            if (other_attrs->hasReferences(id))
-                other_attrs->removeReferences(id);
-        }
-        for (const auto & other_id_and_entry : storage.entries)
-        {
-            const auto & other_attrs = other_id_and_entry.second.attrs;
-            if (!removed.count(other_attrs->id) && !new_or_updated.count(other_attrs->id) && other_attrs->hasReferences(id))
-            {
-                auto cloned_attrs = other_attrs->clone();
-                new_or_updated.try_emplace(cloned_attrs->id, cloned_attrs);
-                cloned_attrs->removeReferences(id);
-            }
-        }
-    }
-
-    void apply()
-    {
-        for (const auto & id : removed)
-        {
-            auto entry_it = storage.entries.find(id);
-            if (entry_it != storage.entries.end())
-            {
-                Entry & entry = entry_it->second;
-                const auto & attrs = entry.attrs;
-                size_t namespace_idx = attrs->getType().namespace_idx;
-                if (namespace_idx < storage.all_names.size())
-                {
-                    auto & names = storage.all_names[namespace_idx];
-                    names.erase(attrs->name);
-                }
-                for (const auto & on_changed_handler : entry.on_changed_handlers)
-                    changed_notify_list.push_back({on_changed_handler, nullptr});
-                storage.entries.erase(entry_it);
-            }
-        }
-
-        for (const auto & [id, new_attrs] : new_or_updated)
-        {
-            size_t namespace_idx = new_attrs->getType().namespace_idx;
-            if (namespace_idx >= storage.all_names.size())
-                storage.all_names.resize(namespace_idx + 1);
-            auto & names = storage.all_names[namespace_idx];
-            AttributesPtr old_attrs;
-
-            auto entry_it = storage.entries.find(id);
-            if (entry_it == storage.entries.end())
-            {
-                names[new_attrs->name] = id;
-                storage.entries[id].attrs = new_attrs;
-            }
-            else
-            {
-                Entry & entry = entry_it->second;
-                old_attrs = entry.attrs;
-                if (*new_attrs != *old_attrs)
-                {
-                    if (new_attrs->name != old_attrs->name)
-                    {
-                        names.erase(old_attrs->name);
-                        names.emplace(new_attrs->name, id);
-                    }
-                    entry.attrs = new_attrs;
-                    for (const auto & on_changed_handler : entry.on_changed_handlers)
-                        changed_notify_list.push_back({on_changed_handler, new_attrs});
-                }
-            }
-
-            if (namespace_idx < storage.on_new_handlers.size())
-            {
-                for (auto it = storage.on_new_handlers[namespace_idx].lower_bound(new_attrs->name); it != storage.on_new_handlers[namespace_idx].end(); ++it)
-                {
-                    const String & prefix = it->first;
-                    if (startsWith(new_attrs->name, prefix) && (!old_attrs || !startsWith(old_attrs->name, prefix)))
-                        new_notify_list.push_back({it->second, id});
-                }
-            }
-        }
-    }
-
-    void notify()
-    {
-        for (const auto & [fn, param] : changed_notify_list)
-            fn(param);
-        for (const auto & [fn, param] : new_notify_list)
-            fn(param);
-    }
-
-private:
-    bool isNameUnique(const Attributes & new_attrs, AttributesPtr & attrs_with_same_name) const
-    {
-        attrs_with_same_name = nullptr;
-        size_t namespace_idx = new_attrs.getType().namespace_idx;
-        for (const auto & other_ids_and_attrs : new_or_updated)
-        {
-            const auto & other_attrs = *other_ids_and_attrs.second;
-            if ((other_attrs.name == new_attrs.name) && (other_attrs.getType().namespace_idx == namespace_idx) && (other_attrs.id != new_attrs.id))
-            {
-                attrs_with_same_name = other_attrs;
-                return false;
-            }
-        }
-
-        if (namespace_idx < storage.all_names.size())
-        {
-            auto it = storage.all_names[namespace_idx].find(new_attrs.name);
-            if (it != storage.all_names[namespace_idx].end())
-            {
-                const auto & other_id = it->second;
-                if ((other_id != new_attrs.id) && !removed.count(other_id) && !new_or_updated.count(other_id))
-                {
-                    attrs_with_same_name = *storage.entries[other_id].attrs;
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    void checkNameIsUnique(const Attributes & new_attrs) const
-    {
-        AttributesPtr attrs_with_same_name;
-        if (!isNameUnique(new_attrs, attrs_with_same_name))
-            throwCannotRenameNewNameIsUsed(new_attrs.name, new_attrs.getType(), attrs_with_same_name->name, attrs_with_same_name->getType());
-    }
-
-    MemoryControlAttributesStorage & storage;
-    std::unordered_map<UUID, std::shared_ptr<Attributes>> new_or_updated;
-    std::unordered_set<UUID> removed;
-    std::vector<std::pair<OnNewHandler, UUID>> new_notify_list;
-    std::vector<std::pair<OnChangedHandler, AttributesPtr>> changed_notify_list;
-};
-
-
-class MemoryControlAttributesStorage::SubscriptionForNew : public IControlAttributesStorage::Subscription
-{
-public:
-    SubscriptionForNew(
-        const MemoryControlAttributesStorage * storage_, size_t namespace_idx_, const std::multimap<String, OnNewHandler>::iterator & handler_it_)
-        : storage(storage_), namespace_idx(namespace_idx_), handler_it(handler_it_)
-    {
-    }
-    ~SubscriptionForNew() override { storage->removeSubscription(namespace_idx, handler_it); }
-
-private:
-    const MemoryControlAttributesStorage * storage;
-    size_t namespace_idx;
-    std::multimap<String, OnNewHandler>::iterator handler_it;
-};
-
-
-class MemoryControlAttributesStorage::SubscriptionForChanges : public IControlAttributesStorage::Subscription
-{
-public:
-    SubscriptionForChanges(
-        const MemoryControlAttributesStorage * storage_, const UUID & id_, const std::list<OnChangedHandler>::iterator & handler_it_)
-        : storage(storage_), id(id_), handler_it(handler_it_)
-    {
-    }
-    ~SubscriptionForChanges() override { storage->removeSubscription(id, handler_it); }
-
-private:
-    const MemoryControlAttributesStorage * storage;
-    UUID id;
-    std::list<OnChangedHandler>::iterator handler_it;
-};
-
-
 MemoryControlAttributesStorage::MemoryControlAttributesStorage() {}
 MemoryControlAttributesStorage::~MemoryControlAttributesStorage() {}
 
@@ -355,28 +75,164 @@ ControlAttributesPtr MemoryControlAttributesStorage::tryReadImpl(const UUID & id
 }
 
 
-void MemoryControlAttributesStorage::write(const Changes & changes)
+std::pair<UUID, bool> MemoryControlAttributesStorage::insert(const Attributes & attrs)
 {
     std::unique_lock lock{mutex};
-    PreparedChanges prepared_changes(*this);
+    size_t namespace_idx = attrs.getType().namespace_idx;
+    if (namespace_idx >= all_names.size())
+        all_names.resize(namespace_idx + 1);
 
-    for (const Change & change : changes)
+    /// Check the name is unique.
+    auto & names = all_names[namespace_idx];
+    auto it = names.find(attrs.name);
+    if (it != names.end())
+        return {it->second, false};
+
+    /// Generate a new ID.
+    UUID id;
+    do
     {
-        switch (change.change_type)
+        id = generateRandomID();
+    }
+    while (entries.count(id) /* Nearly impossible */);
+
+    /// Do insertion.
+    names[attrs.name] = id;
+    entries[id].attrs = attrs.clone();
+
+    /// Prepare list of notifications.
+    std::vector<OnNewHandler> notify_list;
+    if (namespace_idx < on_new_handlers.size())
+    {
+        for (auto handler_it = on_new_handlers[namespace_idx].lower_bound(attrs.name); handler_it != on_new_handlers[namespace_idx].end(); ++handler_it)
         {
-            case ChangeType::INSERT: prepared_changes.insert(change.id, *change.type); break;
-            case ChangeType::REMOVE: prepared_changes.remove(change.id, *change.type, change.if_exists); break;
-            case ChangeType::UPDATE: prepared_changes.update(change.id, *change.type, change.update_func, change.if_exists); break;
-            case ChangeType::REMOVE_REFERENCES: prepared_changes.removeReferences(change.id); break;
+            const String & prefix = handler_it->first;
+            if (!startsWith(attrs.name, prefix))
+                break;
+            notify_list.push_back(handler_it->second);
         }
     }
 
-    prepared_changes.apply();
-
-    /// Unlock the `mutex` before notifying the subscribers.
+    /// Notify the subscribers with the `mutex` unlocked.
     lock.unlock();
-    prepared_changes.notify();
+    for (const auto & fn : notify_list)
+        fn(id);
+    return {id, true};
 }
+
+
+bool MemoryControlAttributesStorage::remove(const UUID & id)
+{
+    std::unique_lock lock{mutex};
+    auto it = entries.find(id);
+    if (it == entries.end())
+        return false;
+
+    Entry & entry = it->second;
+    size_t namespace_idx = entry.attrs->getType().namespace_idx;
+    auto & names = all_names[namespace_idx];
+
+    /// Prepare list of notifications.
+    std::vector<std::pair<OnChangedHandler, AttributesPtr>> notify_list;
+    for (auto handler : entry.on_changed_handlers)
+        notify_list.emplace_back(handler, nullptr);
+
+    /// Do removing.
+    names.erase(entry.attrs->name);
+    entries.erase(it);
+
+    /// Remove references too (this is an optional part).
+    for (auto & other_id_and_entry : entries)
+    {
+        auto & other_entry = other_id_and_entry.second;
+        if (other_entry.attrs->hasReferences(id))
+        {
+            auto other_attrs = other_entry.attrs->clone();
+            other_entry.attrs = other_attrs;
+            other_attrs->removeReferences(id);
+            for (auto handler : other_entry.on_changed_handlers)
+                notify_list.emplace_back(handler, other_attrs);
+        }
+    }
+
+    /// Notify the subscribers with the `mutex` unlocked.
+    lock.unlock();
+    for (const auto & [fn, param] : notify_list)
+        fn(param);
+    return true;
+}
+
+
+void MemoryControlAttributesStorage::updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+{
+    std::unique_lock lock{mutex};
+
+    auto it = entries.find(id);
+    if (it == entries.end())
+        throwNotFound(id, type);
+
+    Entry & entry = it->second;
+    entry.attrs->checkIsDerived(type);
+    size_t namespace_idx = entry.attrs->getType().namespace_idx;
+    auto & names = all_names[namespace_idx];
+
+    auto old_attrs = entry.attrs;
+    auto new_attrs = old_attrs->clone();
+    update_func(*new_attrs);
+
+    if (*new_attrs == *old_attrs)
+        return;
+
+    std::vector<OnNewHandler> new_notify_list;
+    if (new_attrs->name != old_attrs->name)
+    {
+        if (names.count(new_attrs->name))
+            throwCannotRenameNewNameIsUsed(
+                old_attrs->name, old_attrs->getType(), new_attrs->name, entries.at(names.at(new_attrs->name)).attrs->getType());
+
+        names.erase(old_attrs->name);
+        names.emplace(new_attrs->name, id);
+
+        if (namespace_idx < on_new_handlers.size())
+        {
+            for (auto handler_it = on_new_handlers[namespace_idx].lower_bound(new_attrs->name); handler_it != on_new_handlers[namespace_idx].end(); ++handler_it)
+            {
+                const String & prefix = handler_it->first;
+                if (!startsWith(new_attrs->name, prefix))
+                    break;
+                if (!startsWith(old_attrs->name, prefix))
+                    new_notify_list.push_back(handler_it->second);
+            }
+        }
+    }
+
+    entry.attrs = new_attrs;
+    std::vector<OnChangedHandler> changed_notify_list{entry.on_changed_handlers.begin(), entry.on_changed_handlers.end()};
+
+    /// Notify the subscribers with the `mutex` unlocked.
+    lock.unlock();
+    for (const auto & fn : changed_notify_list)
+        fn(new_attrs);
+    for (const auto & fn : new_notify_list)
+        fn(id);
+}
+
+
+class MemoryControlAttributesStorage::SubscriptionForNew : public IControlAttributesStorage::Subscription
+{
+public:
+    SubscriptionForNew(
+        const MemoryControlAttributesStorage * storage_, size_t namespace_idx_, const std::multimap<String, OnNewHandler>::iterator & handler_it_)
+        : storage(storage_), namespace_idx(namespace_idx_), handler_it(handler_it_)
+    {
+    }
+    ~SubscriptionForNew() override { storage->removeSubscription(namespace_idx, handler_it); }
+
+private:
+    const MemoryControlAttributesStorage * storage;
+    size_t namespace_idx;
+    std::multimap<String, OnNewHandler>::iterator handler_it;
+};
 
 
 IControlAttributesStorage::SubscriptionPtr MemoryControlAttributesStorage::subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const
@@ -396,6 +252,23 @@ void MemoryControlAttributesStorage::removeSubscription(size_t namespace_idx, co
         return;
     on_new_handlers[namespace_idx].erase(handler_it);
 }
+
+
+class MemoryControlAttributesStorage::SubscriptionForChanges : public IControlAttributesStorage::Subscription
+{
+public:
+    SubscriptionForChanges(
+        const MemoryControlAttributesStorage * storage_, const UUID & id_, const std::list<OnChangedHandler>::iterator & handler_it_)
+        : storage(storage_), id(id_), handler_it(handler_it_)
+    {
+    }
+    ~SubscriptionForChanges() override { storage->removeSubscription(id, handler_it); }
+
+private:
+    const MemoryControlAttributesStorage * storage;
+    UUID id;
+    std::list<OnChangedHandler>::iterator handler_it;
+};
 
 
 IControlAttributesStorage::SubscriptionPtr MemoryControlAttributesStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const
