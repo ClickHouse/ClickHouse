@@ -93,8 +93,8 @@ namespace detail
         std::unique_ptr<ReadBuffer> impl;
         std::function<void(std::ostream &)> out_stream_callback;
         const Poco::Net::HTTPBasicCredentials & credentials;
+        std::vector<Poco::Net::HTTPCookie> cookies;
 
-    protected:
         std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -122,6 +122,7 @@ namespace detail
             try
             {
                 istr = receiveResponse(*sess, request, response, true);
+		response.getCookies(cookies);
 
                 return istr;
 
@@ -178,7 +179,6 @@ namespace detail
             }
         }
 
-
         bool nextImpl() override
         {
             if (!impl->next())
@@ -186,6 +186,14 @@ namespace detail
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
             return true;
+        }
+
+        std::string getResponseCookie(const std::string & name, const std::string & def) const
+        {
+            for (const auto & cookie : cookies)
+                if (cookie.getName() == name)
+                    return cookie.getValue();
+            return def;
         }
     };
 }

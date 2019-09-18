@@ -151,6 +151,7 @@ macro(add_object_library name common_path)
         add_glob(${name}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
         add_glob(${name}_sources ${common_path}/*.cpp ${common_path}/*.c ${common_path}/*.h)
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
+        target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
     endif ()
 endmacro()
 
@@ -174,6 +175,7 @@ add_object_library(clickhouse_processors_formats src/Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl src/Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms src/Processors/Transforms)
 add_object_library(clickhouse_processors_sources src/Processors/Sources)
+
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
@@ -393,7 +395,7 @@ if (OPENSSL_CRYPTO_LIBRARY)
 endif ()
 
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
-dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
 if (USE_PROTOBUF)
     dbms_target_link_libraries (PRIVATE ${Protobuf_LIBRARY})

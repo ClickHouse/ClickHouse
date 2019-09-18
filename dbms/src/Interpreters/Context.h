@@ -13,6 +13,7 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -253,6 +254,8 @@ public:
     bool hasDatabaseAccessRights(const String & database_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
+    bool hasDictionaryAccessRights(const String & dictionary_name) const;
+
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
       * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
       * made this check.
@@ -484,6 +487,16 @@ public:
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
+
+    DiskSpace::DiskSelector & getDiskSelector() const;
+
+    /// Provides storage disks
+    const DiskSpace::DiskPtr & getDisk(const String & name) const;
+
+    DiskSpace::StoragePolicySelector & getStoragePolicySelector() const;
+
+    /// Provides storage politics schemes
+    const DiskSpace::StoragePolicyPtr & getStoragePolicy(const String &name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
