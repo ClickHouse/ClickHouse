@@ -64,9 +64,11 @@ public:
     {
         ChangeType change_type = ChangeType::UPDATE;
         UUID id = UUID(UInt128(0));
-        const Type * type = nullptr; /// not used if type == REMOVE_REFERENCES
-        std::function<void(IControlAttributes &)> update_func; /// only used if type == UPDATE
-        bool if_exists = false; /// don't throw if entry isn't found. Only used if type == UPDATE or REMOVE
+        const Type * type = nullptr; /// not used if change_type == REMOVE_REFERENCES
+        AttributesPtr insert_attrs; /// only used if change_type == INSERT
+        std::function<void(Attributes &)> update_func; /// only used if change_type == UPDATE
+        bool if_exists = false; /// don't throw if entry isn't found. Only used if change_type == UPDATE or REMOVE
+        bool if_not_exists = false; /// don't throw if entry already exists. Only used if change_type == INSERT
     };
 
     using Changes = std::vector<Change>;
@@ -105,6 +107,7 @@ protected:
     [[noreturn]] static void throwNotFound(const UUID & id, const Type & type);
     [[noreturn]] static void throwNotFound(const String & name, const Type & type);
     [[noreturn]] static void throwCannotInsertIDIsUsed(const UUID & id, const Type & type, const String & existing_name, const Type & existing_type);
+    [[noreturn]] static void throwCannotInsertNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type);
     [[noreturn]] static void throwCannotRenameNewNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type);
 };
 

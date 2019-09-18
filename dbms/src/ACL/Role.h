@@ -57,7 +57,9 @@ public:
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;
+
     using IControlAttributesDriven::IControlAttributesDriven;
+
     static const Type & TYPE;
     const Type & getType() const override { return Attributes::TYPE; }
     AttributesPtr getAttributes() const { return getAttributesImpl<Attributes>(); }
@@ -133,5 +135,13 @@ protected:
     std::pair<AttributesPtr, IControlAttributesDrivenManager *> getAttributesWithManagerStrict() const;
 #endif
 };
+
+void f()
+{
+    Role role1;
+    Role role2 = role1;
+    IControlAttributesStorageManager * mgr = nullptr;
+    Role role3("sd", *mgr);
+}
 
 }

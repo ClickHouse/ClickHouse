@@ -18,10 +18,7 @@ struct IControlAttributes : public std::enable_shared_from_this<IControlAttribut
 
     struct Type
     {
-        using CreateFunc = std::shared_ptr<IControlAttributes> (*)(const UUID &);
-
         const char * name;
-        const CreateFunc create_func;
         const Type * const base_type;
         const int error_code_not_found;
         const int error_code_already_exists;
@@ -58,9 +55,6 @@ struct IControlAttributes : public std::enable_shared_from_this<IControlAttribut
 
 protected:
     template <typename AttributesT>
-    static std::shared_ptr<IControlAttributes> createImpl(const UUID & id);
-
-    template <typename AttributesT>
     std::shared_ptr<IControlAttributes> cloneImpl() const;
 
     virtual bool equal(const IControlAttributes & other) const;
@@ -70,17 +64,9 @@ using ControlAttributesPtr = std::shared_ptr<const IControlAttributes>;
 
 
 template <typename AttributesT>
-static std::shared_ptr<IControlAttributes> IControlAttributes::createImpl(const UUID & id)
-{
-    auto result = std::make_shared<AttributesT>();
-    result->id = id;
-    return result;
-}
-
-template <typename AttributesT>
 std::shared_ptr<IControlAttributes> IControlAttributes::cloneImpl() const
 {
-    auto result = createImpl<AttributesT>(id);
+    auto result = std::make_shared<AttributesT>();
     *result = *this;
     return result;
 }

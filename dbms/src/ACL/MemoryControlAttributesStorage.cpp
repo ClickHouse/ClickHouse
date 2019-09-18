@@ -10,8 +10,10 @@ class MemoryControlAttributesStorage::PreparedChanges
 public:
     PreparedChanges(MemoryControlAttributesStorage & storage_) : storage(storage_) {}
 
-    void insert(const UUID & id, const Type & type)
+    void insert(const AttributesPtr & new_attrs, bool if_not_exists)
     {
+        const UUID & id = new_attrs->id;
+        const Type & type = new_attrs->getType();
         auto it = new_or_updated.find(id);
         if (it != new_or_updated.end())
         {
@@ -26,9 +28,14 @@ public:
             throwCannotInsertIDIsUsed(id, type, existing->name, existing->getType());
         }
 
-        auto created = type.create_func(id);
-        new_or_updated[id] = created;
-        checkNameIsUnique(*created);
+        if (!isNameUnique(new_attrs))
+        {
+            if (if_not_exists)
+                return;
+            throwCannotInsertNameIsUsed(new_attrs.name, new_attrs.getType(), attrs_with_same_name->name, attrs_with_same_name->getType());
+        }
+
+        new_or_updated[id] = new_attrs;
     }
 
     void remove(const UUID & id, const Type & type, bool if_exists)
@@ -67,7 +74,7 @@ public:
         throwNotFound(id, type);
     }
 
-    void update(const UUID & id, const Type & type, const std::function<void(IControlAttributes &)> & update_func, bool if_exists)
+    void update(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func, bool if_exists)
     {
         auto it = new_or_updated.find(id);
         if (it != new_or_updated.end())
@@ -199,14 +206,18 @@ public:
     }
 
 private:
-    void checkNameIsUnique(const IControlAttributes & new_attrs) const
+    bool isNameUnique(const Attributes & new_attrs, AttributesPtr & attrs_with_same_name) const
     {
+        attrs_with_same_name = nullptr;
         size_t namespace_idx = new_attrs.getType().namespace_idx;
         for (const auto & other_ids_and_attrs : new_or_updated)
         {
             const auto & other_attrs = *other_ids_and_attrs.second;
             if ((other_attrs.name == new_attrs.name) && (other_attrs.getType().namespace_idx == namespace_idx) && (other_attrs.id != new_attrs.id))
-                throwCannotRenameNewNameIsUsed(new_attrs.name, new_attrs.getType(), other_attrs.name, other_attrs.getType());
+            {
+                attrs_with_same_name = other_attrs;
+                return false;
+            }
         }
 
         if (namespace_idx < storage.all_names.size())
@@ -217,15 +228,23 @@ private:
                 const auto & other_id = it->second;
                 if ((other_id != new_attrs.id) && !removed.count(other_id) && !new_or_updated.count(other_id))
                 {
-                    const auto & other_attrs = *storage.entries[other_id].attrs;
-                    throwCannotRenameNewNameIsUsed(new_attrs.name, new_attrs.getType(), other_attrs.name, other_attrs.getType());
+                    attrs_with_same_name = *storage.entries[other_id].attrs;
+                    return false;
                 }
             }
         }
+        return true;
+    }
+
+    void checkNameIsUnique(const Attributes & new_attrs) const
+    {
+        AttributesPtr attrs_with_same_name;
+        if (!isNameUnique(new_attrs, attrs_with_same_name))
+            throwCannotRenameNewNameIsUsed(new_attrs.name, new_attrs.getType(), attrs_with_same_name->name, attrs_with_same_name->getType());
     }
 
     MemoryControlAttributesStorage & storage;
-    std::unordered_map<UUID, std::shared_ptr<IControlAttributes>> new_or_updated;
+    std::unordered_map<UUID, std::shared_ptr<Attributes>> new_or_updated;
     std::unordered_set<UUID> removed;
     std::vector<std::pair<OnNewHandler, UUID>> new_notify_list;
     std::vector<std::pair<OnChangedHandler, AttributesPtr>> changed_notify_list;

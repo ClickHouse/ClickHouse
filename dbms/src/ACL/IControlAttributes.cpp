@@ -1,10 +1,23 @@
 #include <ACL/IControlAttributes.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/UUIDGenerator.h>
 
 
 namespace DB
 {
+namespace
+{
+    UUID randomID()
+    {
+        static Poco::UUIDGenerator generator;
+        UUID id;
+        generator.createRandom().copyTo(reinterpret_cast<char *>(&id));
+        return id;
+    }
+}
+
+
 String backQuoteIfNeed(const String & x);
 
 

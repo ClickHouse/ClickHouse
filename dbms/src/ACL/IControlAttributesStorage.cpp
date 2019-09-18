@@ -54,6 +54,15 @@ void IControlAttributesStorage::throwCannotInsertIDIsUsed(const UUID & id, const
 }
 
 
+void IControlAttributesStorage::throwCannotInsertNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
+{
+    throw Exception(
+        String(type.name) + " " + backQuoteIfNeed(name) + ": cannot create because this name is already used by " + existing_type.name + " "
+            + backQuoteIfNeed(existing_name),
+        existing_type.error_code_already_exists);
+}
+
+
 void IControlAttributesStorage::throwCannotRenameNewNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
 {
     throw Exception(

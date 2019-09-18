@@ -11,47 +11,31 @@ String backQuoteIfNeed(const String & x);
 
 IControlAttributesDriven::IControlAttributesDriven()
 {
-    atomic_data.store({UInt128{0}, nullptr, std::nullopt});
 }
 
 
-IControlAttributesDriven::IControlAttributesDriven(const UUID & id_, Manager & manager_)
+IControlAttributesDriven::IControlAttributesDriven(const UUID & id_, Manager & manager_, Storage * storage_)
+    : id(id_), manager(&manager_), storage(storage_)
 {
-    atomic_data.store({id_, &manager_, std::nullopt});
 }
 
 
-IControlAttributesDriven::IControlAttributesDriven(const UUID & id_, Manager & manager_, Storage & storage_)
+IControlAttributesDriven::IControlAttributesDriven(const String & name_, Manager & manager_, Storage * storage_)
+    : name(name_), manager(&manager_), storage(storage_)
 {
-    atomic_data.store({id_, &manager_, &storage_});
 }
 
 
-IControlAttributesDriven::IControlAttributesDriven(const String & name_, Manager & manager_)
+IControlAttributesDriven::IControlAttributesDriven(Manager & manager_, Storage * storage_)
+    : manager(&manager_), storage(storage_)
 {
-    auto [id, storage] = manager_.find(name_);
-    atomic_data.store({id, &manager_, storage});
 }
 
 
-IControlAttributesDriven::IControlAttributesDriven(Manager & manager_, Storage & storage_)
-{
-    id =
-    atomic_data.store({UUID(UInt128(0)), &manager_, std::nullopt})
-}
-
-
-IControlAttributesDriven::IControlAttributesDriven(const IControlAttributesDriven & src)
-{
-    *this = src;
-}
-
-
-IControlAttributesDriven & IControlAttributesDriven::operator =(const IControlAttributesDriven & src)
-{
-    atomic_data.store(src.atomic_data.load());
-    return *this;
-}
+IControlAttributesDriven::IControlAttributesDriven(const IControlAttributesDriven & src) = default;
+IControlAttributesDriven & IControlAttributesDriven::operator =(const IControlAttributesDriven & src) = default;
+IControlAttributesDriven::IControlAttributesDriven(IControlAttributesDriven && src) = default;
+IControlAttributesDriven & IControlAttributesDriven::operator =(IControlAttributesDriven & src) = default;
 
 
 IControlAttributesDriven::~IControlAttributesDriven()
@@ -61,98 +45,104 @@ IControlAttributesDriven::~IControlAttributesDriven()
 
 UUID IControlAttributesDriven::getID() const
 {
-    return UUID(loadData().id);
+    tryGetID();
+    if (!id)
+        throwNotFound();
+    return *id;
+}
+
+
+std::optional<UUID> IControlAttributesDriven::tryGetID() const
+{
+    if (!id)
+    {
+        if (name)
+        {
+            if (storage)
+                id = storage->find(*name, getType());
+            else if (manager)
+                std::tie(id, storage) = manager->findInAllStorages(*name, getType());
+        }
+    }
+    return id;
+}
+
+
+IControlAttributesStorageManager & IControlAttributesDriven::getManager() const
+{
+    assert(manager);
+    return *manager;
 }
 
 
 IControlAttributesStorageManager * IControlAttributesDriven::tryGetManager() const
 {
-    return loadData().manager;
+    return manager;
 }
 
 
-IControlAttributesDriven::Data IControlAttributesDriven::loadData() const
+IControlAttributesStorage & IControlAttributesDriven::getStorage() const
 {
-    return atomic_data.load();
+    tryGetStorage();
+    if (!storage)
+        throwNotFound();
+    return *storage;
 }
 
 
-IControlAttributesDriven::Data IControlAttributesDriven::loadDataTryGetStorage() const
+IControlAttributesStorage * IControlAttributesDriven::tryGetStorage() const
 {
-    Data data = atomic_data.load();
-    while (!data.storage)
+    if (!storage)
     {
-        Data new_data = data;
-        new_data = data;
-        if (new_data.manager && (new_data.id != UInt128(0)))
-            new_data.storage = new_data.manager->findStorage(UUID(data.id));
-        else
-            new_data.storage = nullptr;
-        atomic_data.compare_exchange_strong(data, new_data);
+        if (manager)
+        {
+            if (id)
+                storage = manager->findStorage(*id);
+            else if (name)
+                std::tie(id, storage) = manager->findInAllStorages(*name, getType());
+        }
     }
-    return data;
-}
-
-
-IControlAttributesDriven::Data IControlAttributesDriven::loadDataGetStorage() const
-{
-    Data data = loadDataTryGetStorage();
-    if (!*data.storage)
-    {
-        const Type & type = getType();
-        throw Exception(String(type.name) + " {" + toString(data.id) + "} not found", type.error_code_not_found);
-    }
-    return data;
-}
-
-
-IControlAttributesDriven::IDAndStorage IControlAttributesDriven::getIDAndStorage() const
-{
-    Data data = loadDataGetStorage();
-    return {UUID(data.id), **data.storage};
-}
-
-
-IControlAttributesDriven::IDAndStorageAndManager IControlAttributesDriven::getIDAndStorageAndManager() const
-{
-    Data data = loadDataGetStorage();
-    return {UUID(data.id), **data.storage, *data.manager};
-}
-
-
-IControlAttributesDriven::AttributesAndManager IControlAttributesDriven::getAttributesAndManager() const
-{
-    Data data = loadDataGetStorage();
-    auto attrs = (*data.storage)->read(UUID(data.id), getType());
-    return {attrs, *data.manager};
+    return storage;
 }
 
 
 ControlAttributesPtr IControlAttributesDriven::getAttributes() const
 {
-    Data data = loadDataGetStorage();
-    return (*data.storage)->read(UUID(data.id), getType());
+    auto attrs = tryGetAttributes();
+    if (!attrs)
+        throwNotFound();
+    return attrs;
 }
 
 
 ControlAttributesPtr IControlAttributesDriven::tryGetAttributes() const
 {
-    Data data = loadDataTryGetStorage();
-    if (!*data.storage)
-        return nullptr;
-    return (*data.storage)->tryRead(UUID(data.id), getType());
+    tryGetStorage();
+    tryGetID();
+    return (storage && id) ? storage->tryRead(*id, getType()) : nullptr;
 }
 
 
-void IControlAttributesDriven::insert()
+void IControlAttributesDriven::insert(const AttributesPtr & new_attrs, bool if_not_exists = false)
 {
-    insertChanges().apply();
+    insertChanges(new_attrs, if_not_exists).apply();
 }
 
 
-IControlAttributesDriven::Changes IControlAttributesDriven::insertChanges()
+IControlAttributesDriven::Changes IControlAttributesDriven::insertChanges(const AttributesPtr & new_attrs, bool if_not_exists = false)
 {
-    return Changes{getIDAndStorage(), Changes::InsertTag{}, getType()};
+    assert (new_attrs->isDerived(getType()));
+    assert(id == new_attrs->id);
+    if (!isNameUnique(*new_attrs))
+    {
+        if (if_not_exists)
+            return {};
+        throw Exception(
+            String(type.name) + " " + backQuoteIfNeed(attrs->name) + ": cannot rename to " + backQuoteIfNeed(new_name)
+                + " because " + existing_type.name + " " + backQuoteIfNeed(new_name) + " already exists",
+            existing_type.error_code_already_exists);
+    }
+    return {Changes::InsertTag{}, getStorage(), new_attrs, if_not_exists};
 }
 
 
@@ -165,31 +155,42 @@ void IControlAttributesDriven::setName(const String & new_name)
 IControlAttributesDriven::Changes IControlAttributesDriven::setNameChanges(const String & new_name)
 {
     /// Check that the new name is unique through all the storages.
-    auto && [id, storage, manager] = getIDAndStorageAndManager();
-    for (auto * any_storage : manager.get().getAllStorages())
+    AttributesPtr attrs_with_same_name;
+    if (!isNameUniqueInAllStorages(new_name, attrs_with_same_name))
     {
-        auto existing_id = any_storage->find(new_name, getType());
+        const Type & type = getType();
+        const Type & existing_type = attrs_with_same_name->getType();
+        throw Exception(
+            String(type.name) + " " + backQuoteIfNeed(new_name) + ": cannot rename to " + backQuoteIfNeed(new_name)
+                + " because " + existing_type.name + " " + backQuoteIfNeed(new_name) + " already exists",
+            existing_type.error_code_already_exists);
+    }
+
+    auto update_func = [new_name](IControlAttributes & attrs) { attrs.name = new_name; };
+    return {Changes::UpdateTag, getStorage(), getID(), getType(), update_func};
+}
+
+
+bool IControlAttributesDriven::isNameUniqueInAllStorages(const String & new_name, AttributesPtr & attrs_with_same_name)
+{
+    for (auto * stor : getManager().getAllStorages())
+    {
+        auto existing_id = stor->find(new_name, getType());
         if (existing_id && (*existing_id != id))
         {
-            auto existing_attrs = any_storage->tryRead(*existing_id);
+            auto existing_attrs = stor->tryRead(*existing_id);
             if (existing_attrs)
             {
-                auto attrs = storage.get().tryRead(id);
+                auto attrs = tryGetAttributes();
                 if (attrs)
                 {
-                    const Type & type = getType();
-                    const Type & existing_type = existing_attrs->getType();
-                    throw Exception(
-                        String(type.name) + " " + backQuoteIfNeed(attrs->name) + ": cannot rename to " + backQuoteIfNeed(new_name)
-                            + " because " + existing_type.name + " " + backQuoteIfNeed(new_name) + " already exists",
-                        existing_type.error_code_already_exists);
+                    attrs_with_same_name = attrs;
+                    return false;
                 }
             }
         }
     }
-
-    auto update_func = [new_name](IControlAttributes & attrs) { attrs.name = new_name; };
-    return {{id, storage}, update_func, getType()};
+    return true;
 }
 
 
@@ -207,37 +208,54 @@ void IControlAttributesDriven::drop(bool if_exists)
 
 IControlAttributesDriven::Changes IControlAttributesDriven::dropChanges(bool if_exists)
 {
-    auto && [id, storage, manager] = getIDAndStorageAndManager();
-    Changes changes{{id, storage}, Changes::RemoveTag{}, getType(), if_exists};
+    tryGetStorage();
+    tryGetID();
+    if (!storage || !id)
+    {
+        if (if_exists)
+            return {};
+        throwNotFound();
+    }
+
+    Changes changes{Changes::RemoveTag{}, *storage, *id, getType(), if_exists};
 
     /// We need to remove references too.
-    for (auto * any_storage : manager.get().getAllStorages())
-        changes.then({id, *any_storage}, Changes::RemoveReferencesTag{});
+    for (auto * stor : getManager().getAllStorages())
+        changes.then(Changes::RemoveReferencesTag{}, *id, *stor);
     return changes;
 }
 
 
-IControlAttributesDriven::Changes::Changes(const IDAndStorage & id_and_storage, InsertTag, const Type & type)
+void IControlAttributesDriven::throwNotFound()
 {
-    then(id_and_storage, InsertTag{}, type);
+    const Type & type = getType();
+    throw Exception(
+        String(type.name) + " " + (name ? backQuoteIfNeed(*name) : (id ? "{" + toString(*id) + "}" : "{}")) + " not found",
+        type.error_code_not_found);
 }
 
 
-IControlAttributesDriven::Changes::Changes(const IDAndStorage & id_and_storage, const std::function<void(IControlAttributes &)> & update_func, const Type & type, bool if_exists)
+IControlAttributesDriven::Changes::Changes(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists)
 {
-    then(id_and_storage, update_func, type, if_exists);
+    then(InsertTag{}, storage, new_attrs, if_not_exists);
 }
 
 
-IControlAttributesDriven::Changes::Changes(const IDAndStorage & id_and_storage, RemoveTag, const Type & type, bool if_exists)
+IControlAttributesDriven::Changes::Changes(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IControlAttributes &)> & update_func, bool if_exists)
 {
-    then(id_and_storage, RemoveTag{}, type, if_exists);
+    then(UpdateTag{}, storage, id, type, update_func, if_exists);
 }
 
 
-IControlAttributesDriven::Changes::Changes(const IDAndStorage & id_and_storage, RemoveReferencesTag)
+IControlAttributesDriven::Changes::Changes(RemoveTag, Storage & storage, const UUID & id, const Type & type, bool if_exists)
 {
-    then(id_and_storage, RemoveReferencesTag{});
+    then(RemoveTag{}, storage, id, type, if_exists);
+}
+
+
+IControlAttributesDriven::Changes::Changes(RemoveReferencesTag, Storage & storage, const UUID & id)
+{
+    then(RemoveReferencesTag{}, storage, id);
 }
 
 
@@ -286,21 +304,23 @@ IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(Chan
 }
 
 
-IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(const IDAndStorage & id_and_storage, InsertTag, const Type & type)
+IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists)
 {
-    auto & change = addChange(id_and_storage.second);
+    auto & change = addChange(storage);
     change.change_type = Storage::ChangeType::INSERT;
-    change.id = id_and_storage.first;
-    change.type = &type;
+    change.insert_attrs = new_attrs;
+    change.id = new_attrs->id;
+    change.type = new_attrs->getType();
+    change.if_not_exists = if_not_exists;
     return *this;
 }
 
 
-IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(const IDAndStorage & id_and_storage, const std::function<void(IControlAttributes &)> & update_func, const Type & type, bool if_exists)
+IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IControlAttributes &)> & update_func, bool if_exists)
 {
-    auto & change = addChange(id_and_storage.second);
+    auto & change = addChange(storage);
     change.change_type = Storage::ChangeType::UPDATE;
-    change.id = id_and_storage.first;
+    change.id = id;
     change.type = &type;
     change.update_func = update_func;
     change.if_exists = if_exists;
@@ -308,22 +328,22 @@ IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(cons
 }
 
 
-IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(const IDAndStorage & id_and_storage, RemoveTag, const Type & type, bool if_exists)
+IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(RemoveTag, Storage & storage, const UUID & id, const Type & type, bool if_exists)
 {
-    auto & change = addChange(id_and_storage.second);
+    auto & change = addChange(storage);
     change.change_type = Storage::ChangeType::REMOVE;
-    change.id = id_and_storage.first;
+    change.id = id;
     change.type = &type;
     change.if_exists = if_exists;
     return *this;
 }
 
 
-IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(const IDAndStorage & id_and_storage, RemoveReferencesTag)
+IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(RemoveReferencesTag, Storage & storage, const UUID & id)
 {
     auto & change = addChange(id_and_storage.second);
     change.change_type = Storage::ChangeType::REMOVE_REFERENCES;
-    change.id = id_and_storage.first;
+    change.id = id;
     return *this;
 }
 
@@ -345,10 +365,10 @@ IControlAttributesStorage::Change & IControlAttributesDriven::Changes::addChange
 
 IControlAttributesStorage::Changes & IControlAttributesDriven::Changes::findStoragePosition(Storage & storage)
 {
-    for (auto & [stg, changes] : all_changes)
+    for (auto & [stor, chn] : all_changes)
     {
-        if (stg == &storage)
-            return changes;
+        if (stor == &storage)
+            return chn;
     }
     all_changes.push_back({&storage, {}});
     return all_changes.back().second;
