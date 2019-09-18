@@ -790,7 +790,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
     if (query.limitLength())
     {
         length = getLimitUIntValue(query.limitLength(), context);
-        if (query.limitOffset())
+        if (query.limitOffset() && length)
             offset = getLimitUIntValue(query.limitOffset(), context);
     }
 
