@@ -176,6 +176,7 @@ add_object_library(clickhouse_processors_formats_impl src/Processors/Formats/Imp
 add_object_library(clickhouse_processors_transforms src/Processors/Transforms)
 add_object_library(clickhouse_processors_sources src/Processors/Sources)
 
+
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
     set (all_modules dbms)
@@ -394,7 +395,7 @@ if (OPENSSL_CRYPTO_LIBRARY)
 endif ()
 
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
-dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
 if (USE_PROTOBUF)
     dbms_target_link_libraries (PRIVATE ${Protobuf_LIBRARY})
