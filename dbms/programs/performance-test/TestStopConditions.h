@@ -24,13 +24,13 @@ public:
         conditions_any_of.reportMinimalThresholdCondition(value, conditions_any_of.CONDITION);           \
     }                                                                                                    \
 
-    DEFINE_REPORT_FUNC(reportRowsRead, rows_read);
-    DEFINE_REPORT_FUNC(reportIterations, iterations);
-    DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms);
-    DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed);
-    DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms);
-    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms);
-    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms);
+    DEFINE_REPORT_FUNC(reportRowsRead, rows_read)
+    DEFINE_REPORT_FUNC(reportIterations, iterations)
+    DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms)
+    DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed)
+    DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms)
+    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
+    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
 
 #undef DEFINE_REPORT_FUNC
 
@@ -45,7 +45,7 @@ public:
         return conditions_all_of.CONDITION.fulfilled || conditions_any_of.CONDITION.fulfilled;           \
     }                                                                                                    \
 
-    DEFINE_IS_FUNCS(isInitializedTTestWithConfidenceLevel, isFulfilledTTestWithConfidenceLevel, t_test_with_confidence_level);
+    DEFINE_IS_FUNCS(isInitializedTTestWithConfidenceLevel, isFulfilledTTestWithConfidenceLevel, t_test_with_confidence_level)
 
 #undef DEFINE_IS_FUNCS
 
