@@ -56,11 +56,11 @@ set(ORC_SOURCE_WRAP_DIR ${ORC_SOURCE_DIR}/wrap)
 set(ORC_BUILD_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src)
 set(ORC_BUILD_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include)
 
-set(GOOGLE_PROTOBUF_DIR ${ClickHouse_SOURCE_DIR}/contrib/protobuf/src/)
+set(GOOGLE_PROTOBUF_DIR ${Protobuf_INCLUDE_DIR}/)
 set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
 
-set(PROTOBUF_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/../protobuf/cmake/protoc)
+set(PROTOBUF_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
 set(PROTO_DIR ${ORC_SOURCE_DIR}/../proto)
 
 
@@ -70,14 +70,10 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
         "${PROTO_DIR}/orc_proto.proto")
 
-include_directories(SYSTEM ${ORC_INCLUDE_DIR})
-include_directories(SYSTEM ${ORC_SOURCE_SRC_DIR})
-include_directories(SYSTEM ${ORC_SOURCE_WRAP_DIR})
-include_directories(SYSTEM ${GOOGLE_PROTOBUF_DIR})
-include_directories(SYSTEM ${ORC_BUILD_SRC_DIR})
-include_directories(SYSTEM ${ORC_BUILD_INCLUDE_DIR})
-include_directories(SYSTEM ${ORC_ADDITION_SOURCE_DIR})
-include_directories(SYSTEM ${ARROW_SRC_DIR})
+include(${ClickHouse_SOURCE_DIR}/contrib/orc/cmake_modules/CheckSourceCompiles.cmake)
+include(orc_check.cmake)
+configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in"  "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")
+configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
 
 
 set(ORC_SRCS
@@ -232,6 +228,14 @@ if (ARROW_WITH_ZSTD)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${ZSTD_LIBRARY})
 endif()
 
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_WRAP_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
 
 # === parquet
 
