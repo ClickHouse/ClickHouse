@@ -30,6 +30,7 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/Join.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -407,9 +408,9 @@ bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & cha
     return true;
 }
 
-void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions) const
+void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, JoinPtr join) const
 {
-    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join));
+    actions->add(ExpressionAction::ordinaryJoin(syntax->analyzed_join, join));
 }
 
 bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -418,13 +419,13 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     if (!ast_join)
         return false;
 
-    makeTableJoin(*ast_join);
+    JoinPtr table_join = makeTableJoin(*ast_join);
 
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     getRootActions(analyzedJoin().leftKeysList(), only_types, step.actions);
-    addJoinAction(step.actions);
+    addJoinAction(step.actions, table_join);
     return true;
 }
 
@@ -464,40 +465,40 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
-void SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
+JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQueryElement & join_element)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
     String join_subquery_id = toString(join_hash.first) + "_" + toString(join_hash.second);
 
-    SubqueryForSet & subquery_for_set = subqueries_for_sets[join_subquery_id];
+    SubqueryForSet & subquery_for_join = subqueries_for_sets[join_subquery_id];
 
     /// Special case - if table name is specified on the right of JOIN, then the table has the type Join (the previously prepared mapping).
-    if (!subquery_for_set.join)
-        subquery_for_set.join = tryGetStorageJoin(join_element, context);
+    if (!subquery_for_join.join)
+        subquery_for_join.join = tryGetStorageJoin(join_element, context);
 
-    if (!subquery_for_set.join)
+    if (!subquery_for_join.join)
     {
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(context, analyzedJoin());
 
-        if (!subquery_for_set.source)
-            makeSubqueryForJoin(join_element, joined_block_actions, subquery_for_set);
-
-        /// Test actions on sample block (early error detection)
-        Block sample_block = subquery_for_set.renamedSampleBlock();
-        joined_block_actions->execute(sample_block);
+        if (!subquery_for_join.source)
+        {
+            NamesWithAliases required_columns_with_aliases =
+                analyzedJoin().getRequiredColumns(joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
+            makeSubqueryForJoin(join_element, std::move(required_columns_with_aliases), subquery_for_join);
+        }
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-        subquery_for_set.join = analyzedJoin().makeHashJoin(sample_block, settings.size_limits_for_join);
-        subquery_for_set.joined_block_actions = joined_block_actions;
+        subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block);
     }
 
-    syntax->analyzed_join->setHashJoin(subquery_for_set.join);
+    return subquery_for_join.join;
 }
 
 void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element,
-                                                        const ExpressionActionsPtr & joined_block_actions,
+                                                        NamesWithAliases && required_columns_with_aliases,
                                                         SubqueryForSet & subquery_for_set) const
 {
     /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
@@ -505,10 +506,6 @@ void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQ
         *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
         * - this function shows the expression JOIN _data1.
         */
-
-    NamesWithAliases required_columns_with_aliases =
-        analyzedJoin().getRequiredColumns(joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
-
     Names original_columns;
     for (auto & pr : required_columns_with_aliases)
         original_columns.push_back(pr.first);
