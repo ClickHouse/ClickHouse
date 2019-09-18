@@ -436,7 +436,11 @@ if (USE_JEMALLOC)
     target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
 endif ()
 
-dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
+# fleece
+target_link_libraries(clickhouse_datatypes PRIVATE ${FLEECE_LIBRARY})
+target_include_directories(clickhouse_datatypes PRIVATE ${FLEECE_INCLUDE_DIR})
+
+target_include_directories (clickhouse_datatypes PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
