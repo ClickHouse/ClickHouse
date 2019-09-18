@@ -1,4 +1,4 @@
-#include <Interpreters/IJoin.h>
+#include <Interpreters/join_common.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
