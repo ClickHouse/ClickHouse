@@ -66,8 +66,8 @@ Join::Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample
     , strictness(table_join->strictness())
     , key_names_right(table_join->keyNamesRight())
     , required_right_keys(table_join->requiredRightKeys())
-    , nullable_right_side(table_join->forceNullabelRight())
-    , nullable_left_side(table_join->forceNullabelLeft())
+    , nullable_right_side(table_join->forceNullableRight())
+    , nullable_left_side(table_join->forceNullableLeft())
     , any_take_last_row(any_take_last_row_)
     , log(&Logger::get("Join"))
 {
