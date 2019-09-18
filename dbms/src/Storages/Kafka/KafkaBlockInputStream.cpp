@@ -72,9 +72,19 @@ Block KafkaBlockInputStream::readImpl()
 
     auto merge_blocks = [] (Block & block1, Block && block2)
     {
+        if (!block1)
+        {
+            // Need to make sure that resulting block has the same structure
+            block1 = std::move(block2);
+            return;
+        }
+
+        if (!block2)
+            return;
+
         auto columns1 = block1.mutateColumns();
         auto columns2 = block2.mutateColumns();
-        for (size_t i = 0; i < columns1.size(); ++i)
+        for (size_t i = 0, s = columns1.size(); i < s; ++i)
             columns1[i]->insertRangeFrom(*columns2[i], 0, columns2[i]->size());
         block1.setColumns(std::move(columns1));
     };
@@ -117,6 +127,9 @@ Block KafkaBlockInputStream::readImpl()
         if (!new_rows || !checkTimeLimit())
             break;
     }
+
+    if (!single_block)
+        return Block();
 
     return ConvertingBlockInputStream(
                context,
