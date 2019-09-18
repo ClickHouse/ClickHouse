@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/Join.h>
+#include <Interpreters/join_common.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/NullableUtils.h>
@@ -249,7 +250,9 @@ size_t Join::getTotalByteCount() const
 
 void Join::setSampleBlock(const Block & block)
 {
+    /// You have to restore this lock if you call the fuction outside of ctor.
     //std::unique_lock lock(rwlock);
+
     LOG_DEBUG(log, "setSampleBlock: " << block.dumpStructure());
 
     if (!empty())

@@ -4,6 +4,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/sortBlock.h>
+#include <Interpreters/join_common.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/MergeSortingBlockInputStream.h>
 
