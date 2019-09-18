@@ -123,6 +123,7 @@
 * Fix two vulnerabilities in Codecs in decompression phase. [#6670](https://github.com/yandex/ClickHouse/pull/6670) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Improvement
+* Correct implementation of ternary logic for `AND/OR`. [#6048](https://github.com/yandex/ClickHouse/pull/6048) ([Alexander Kazakov](https://github.com/Akazz))
 * Now values and rows with expired TTL will be removed after `OPTIMIZE ... FINAL` query from old parts without TTL infos or with outdated TTL infos, e.g. after `ALTER ... MODIFY TTL` query. Added queries `SYSTEM STOP/START TTL MERGES` to disallow/allow assign merges with TTL and filter expired values in all merges. [#6274](https://github.com/yandex/ClickHouse/pull/6274) ([Anton Popov](https://github.com/CurtizJ))
 * Remove `dry_run` flag from `InterpreterSelectQuery`. ... [#6375](https://github.com/yandex/ClickHouse/pull/6375) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Support `ASOF JOIN` with `ON` section. [#6211](https://github.com/yandex/ClickHouse/pull/6211) ([Artem Zuikov](https://github.com/4ertus2))
@@ -279,11 +280,9 @@
 * Fix splitted build. [#6618](https://github.com/yandex/ClickHouse/pull/6618) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Other build fixes: [#6186](https://github.com/yandex/ClickHouse/pull/6186) ([Amos Bird](https://github.com/amosbird)) [#6486](https://github.com/yandex/ClickHouse/pull/6486) [#6348](https://github.com/yandex/ClickHouse/pull/6348) ([vxider](https://github.com/Vxider)) [#6744](https://github.com/yandex/ClickHouse/pull/6744) ([Ivan](https://github.com/abyss7)) [#6016](https://github.com/yandex/ClickHouse/pull/6016) [#6421](https://github.com/yandex/ClickHouse/pull/6421) [#6491](https://github.com/yandex/ClickHouse/pull/6491) ([proller](https://github.com/proller))
 
-### SQL compatibility
-* Correct implementation of ternary logic for `AND/OR`. [#6048](https://github.com/yandex/ClickHouse/pull/6048) ([Alexander Kazakov](https://github.com/Akazz))
-
 ### Backward Incompatible Change
 * Disable `ANY RIGHT JOIN` and `ANY FULL JOIN` by default. Set `any_join_get_any_from_right_table` setting to enable them. [#5126](https://github.com/yandex/ClickHouse/issues/5126) [#6351](https://github.com/yandex/ClickHouse/pull/6351) ([Artem Zuikov](https://github.com/4ertus2))
+
 
 ## ClickHouse release 19.13.3.26, 2019-08-22
 
