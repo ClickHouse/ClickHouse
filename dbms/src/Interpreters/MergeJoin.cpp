@@ -56,7 +56,7 @@ public:
 
     bool sameNext(size_t lhs_pos) const
     {
-        if (impl.isLast())
+        if (lhs_pos + 1 >= impl.rows)
             return false;
 
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
@@ -71,10 +71,8 @@ public:
             return 0;
 
         size_t pos = impl.pos;
-        for (; pos < impl.rows; ++pos)
-            if (!sameNext(pos))
-                break;
-
+        while (sameNext(pos))
+            ++pos;
         return pos - impl.pos + 1;
     }
 
