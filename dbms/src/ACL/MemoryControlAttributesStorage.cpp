@@ -1,12 +1,18 @@
 #include <ACL/MemoryControlAttributesStorage.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <unordered_set>
 
 
 namespace DB
 {
 MemoryControlAttributesStorage::MemoryControlAttributesStorage() {}
 MemoryControlAttributesStorage::~MemoryControlAttributesStorage() {}
+
+
+const String & MemoryControlAttributesStorage::getStorageName() const
+{
+    static const String storage_name = "Memory";
+    return storage_name;
+}
 
 
 std::vector<UUID> MemoryControlAttributesStorage::findPrefixed(const String & prefix, const Type & type) const
@@ -64,20 +70,10 @@ bool MemoryControlAttributesStorage::exists(const UUID & id) const
 }
 
 
-ControlAttributesPtr MemoryControlAttributesStorage::tryReadImpl(const UUID & id) const
-{
-    std::lock_guard lock{mutex};
-    auto it = entries.find(id);
-    if (it == entries.end())
-        return nullptr;
-    const Entry & entry = it->second;
-    return entry.attrs;
-}
-
-
-std::pair<UUID, bool> MemoryControlAttributesStorage::insert(const Attributes & attrs)
+std::pair<UUID, bool> MemoryControlAttributesStorage::tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision)
 {
     std::unique_lock lock{mutex};
+    caused_name_collision = nullptr;
     size_t namespace_idx = attrs.getType().namespace_idx;
     if (namespace_idx >= all_names.size())
         all_names.resize(namespace_idx + 1);
@@ -86,7 +82,10 @@ std::pair<UUID, bool> MemoryControlAttributesStorage::insert(const Attributes & 
     auto & names = all_names[namespace_idx];
     auto it = names.find(attrs.name);
     if (it != names.end())
+    {
+        caused_name_collision = entries.at(it->second).attrs;
         return {it->second, false};
+    }
 
     /// Generate a new ID.
     UUID id;
@@ -121,7 +120,7 @@ std::pair<UUID, bool> MemoryControlAttributesStorage::insert(const Attributes & 
 }
 
 
-bool MemoryControlAttributesStorage::remove(const UUID & id)
+bool MemoryControlAttributesStorage::tryRemoveImpl(const UUID & id)
 {
     std::unique_lock lock{mutex};
     auto it = entries.find(id);
@@ -160,6 +159,17 @@ bool MemoryControlAttributesStorage::remove(const UUID & id)
     for (const auto & [fn, param] : notify_list)
         fn(param);
     return true;
+}
+
+
+ControlAttributesPtr MemoryControlAttributesStorage::tryReadImpl(const UUID & id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries.find(id);
+    if (it == entries.end())
+        return nullptr;
+    const Entry & entry = it->second;
+    return entry.attrs;
 }
 
 

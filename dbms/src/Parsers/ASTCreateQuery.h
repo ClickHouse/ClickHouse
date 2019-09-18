@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <ACL/Role.h>
 
 
 namespace DB
@@ -65,6 +66,7 @@ public:
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
+    Role::AttributesPtr role_attributes;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }

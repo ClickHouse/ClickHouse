@@ -43,6 +43,7 @@ struct ContextShared;
 class Context;
 class IRuntimeComponentsFactory;
 class QuotaForIntervals;
+class AccessControlManager;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
 class ExternalModels;
@@ -209,6 +210,9 @@ public:
 
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
+
+    AccessControlManager & getAccessControlManager();
+    const AccessControlManager & getAccessControlManager() const;
 
     void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
     QuotaForIntervals & getQuota();

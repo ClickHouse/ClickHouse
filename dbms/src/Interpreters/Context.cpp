@@ -27,6 +27,7 @@
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/IUsersManager.h>
+#include <ACL/AccessControlManager.h>
 #include <ACL/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
@@ -134,6 +135,7 @@ struct ContextShared
     String system_profile_name;                             /// Profile used by system processes
     std::unique_ptr<IUsersManager> users_manager;           /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
+    AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
@@ -678,6 +680,17 @@ void Context::setUser(const String & name, const String & password, const Poco::
     setQuota(user_props->quota, quota_key, name, address.host());
 }
 
+AccessControlManager & Context::getAccessControlManager()
+{
+    auto lock = getLock();
+    return shared->access_control_manager;
+}
+
+const AccessControlManager & Context::getAccessControlManager() const
+{
+    auto lock = getLock();
+    return shared->access_control_manager;
+}
 
 void Context::setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address)
 {

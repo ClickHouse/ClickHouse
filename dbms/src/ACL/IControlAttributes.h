@@ -7,14 +7,10 @@
 
 namespace DB
 {
-/// Access control attributes.
-/// Attributes are part of the element's data that can be stored and loaded to a file or another storage.
+/// Attributes are a set of data which have a name and a type. Attributes control something.
+/// Attributes can be stored and loaded to a file or another storage, see IControlAttributesStorage.
 struct IControlAttributes : public std::enable_shared_from_this<IControlAttributes>
 {
-    String name;
-
-    virtual ~IControlAttributes() {}
-
     struct Type
     {
         const char * name;
@@ -28,14 +24,14 @@ struct IControlAttributes : public std::enable_shared_from_this<IControlAttribut
         friend bool operator !=(const Type & lhs, const Type & rhs) { return !(lhs == rhs); }
     };
 
-    virtual const Type & getType() const = 0;
+    String name;
 
+    virtual ~IControlAttributes() {}
+
+    virtual const Type & getType() const = 0;
     virtual std::shared_ptr<IControlAttributes> clone() const = 0;
     virtual bool hasReferences(UUID) const { return false; }
     virtual void removeReferences(UUID) {}
-
-    friend bool operator ==(const IControlAttributes & lhs, const IControlAttributes & rhs) { return lhs.equal(rhs); }
-    friend bool operator !=(const IControlAttributes & lhs, const IControlAttributes & rhs) { return !(lhs == rhs); }
 
     bool isDerived(const Type & base_type) const;
     void checkIsDerived(const Type & base_type) const;
@@ -51,6 +47,9 @@ struct IControlAttributes : public std::enable_shared_from_this<IControlAttribut
 
     template <typename AttributesT>
     std::shared_ptr<const AttributesT> tryCast() const;
+
+    friend bool operator ==(const IControlAttributes & lhs, const IControlAttributes & rhs) { return lhs.equal(rhs); }
+    friend bool operator !=(const IControlAttributes & lhs, const IControlAttributes & rhs) { return !(lhs == rhs); }
 
 protected:
     template <typename AttributesT>
