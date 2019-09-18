@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
@@ -52,6 +53,9 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     if (!query.like.empty())
         rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+
+    if (query.limit_length)
+        rewritten_query << " LIMIT " << query.limit_length;
 
     return rewritten_query.str();
 }
