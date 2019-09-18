@@ -43,7 +43,7 @@ protected:
     DB::SettingUInt64 max_redirects;
 
 public:
-    void buildNewSession(const Poco::URI & uri);
+    virtual void buildNewSession(const Poco::URI & uri) = 0;
 
     explicit UpdatableSessionBase(const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
@@ -72,6 +72,10 @@ public:
 
             throw Exception(error_message.str(), ErrorCodes::TOO_MANY_REDIRECTS);
         }
+    }
+
+    virtual ~UpdatableSessionBase()
+    {
     }
 };
 
@@ -199,7 +203,7 @@ public:
         session = makeHTTPSession(initial_uri, timeouts);
     }
 
-    void buildNewSession(const Poco::URI uri)
+    void buildNewSession(const Poco::URI & uri) override
     {
         session = makeHTTPSession(uri, timeouts);
     }
@@ -240,7 +244,7 @@ public:
         session = makePooledHTTPSession(initial_uri, timeouts, per_endpoint_pool_size);
     }
 
-    void buildNewSession(const Poco::URI uri)
+    void buildNewSession(const Poco::URI & uri) override
     {
        session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size);
     }
