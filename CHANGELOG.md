@@ -21,7 +21,6 @@
 * New aggregate functions `quantilesExactInclusive` and `quantilesExactExclusive` which were proposed in [#5885](https://github.com/yandex/ClickHouse/issues/5885). [#6477](https://github.com/yandex/ClickHouse/pull/6477) ([dimarub2000](https://github.com/dimarub2000))
 * Function `bitmapRange(bitmap, range_begin, range_end)` which returns new set with specified range (not include the `range_end`). [#6314](https://github.com/yandex/ClickHouse/pull/6314) ([Zhichang Yu](https://github.com/yuzhichang))
 * Function `geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)` which creates array of precision-long strings of geohash-boxes covering provided area. [#6127](https://github.com/yandex/ClickHouse/pull/6127) ([Vasily Nemkov](https://github.com/Enmk))
-* Possibility to change the location of ClickHouse history file for client using `CLICKHOUSE_HISTORY_FILE` env. [#6840](https://github.com/yandex/ClickHouse/pull/6840) ([filimonov](https://github.com/filimonov))
 * Added support for `_partition` and `_timestamp` virtual columns to Kafka engine. [#6400](https://github.com/yandex/ClickHouse/pull/6400) ([Ivan](https://github.com/abyss7))
 * Possibility to remove sensitive data from `query_log`, server logs, process list with regexp-based rules. [#5710](https://github.com/yandex/ClickHouse/pull/5710) ([filimonov](https://github.com/filimonov))
 * Throw an exception if `config.d` file doesn't have the corresponding root element as the config file. [#6123](https://github.com/yandex/ClickHouse/pull/6123) ([dimarub2000](https://github.com/dimarub2000))
@@ -125,6 +124,7 @@
 ### Improvement
 * Correct implementation of ternary logic for `AND/OR`. [#6048](https://github.com/yandex/ClickHouse/pull/6048) ([Alexander Kazakov](https://github.com/Akazz))
 * Now values and rows with expired TTL will be removed after `OPTIMIZE ... FINAL` query from old parts without TTL infos or with outdated TTL infos, e.g. after `ALTER ... MODIFY TTL` query. Added queries `SYSTEM STOP/START TTL MERGES` to disallow/allow assign merges with TTL and filter expired values in all merges. [#6274](https://github.com/yandex/ClickHouse/pull/6274) ([Anton Popov](https://github.com/CurtizJ))
+* Possibility to change the location of ClickHouse history file for client using `CLICKHOUSE_HISTORY_FILE` env. [#6840](https://github.com/yandex/ClickHouse/pull/6840) ([filimonov](https://github.com/filimonov))
 * Remove `dry_run` flag from `InterpreterSelectQuery`. ... [#6375](https://github.com/yandex/ClickHouse/pull/6375) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Support `ASOF JOIN` with `ON` section. [#6211](https://github.com/yandex/ClickHouse/pull/6211) ([Artem Zuikov](https://github.com/4ertus2))
 * Better support of skip indexes for mutations and replication. Support for `MATERIALIZE/CLEAR INDEX ... IN PARTITION` query. `UPDATE x = x` recalculates all indices that use column `x`.  [#5053](https://github.com/yandex/ClickHouse/pull/5053) ([Nikita Vasilev](https://github.com/nikvas0))
