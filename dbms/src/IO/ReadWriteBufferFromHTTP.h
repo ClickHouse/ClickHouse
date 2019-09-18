@@ -91,8 +91,8 @@ namespace detail
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session
         std::unique_ptr<ReadBuffer> impl;
-	std::function<void(std::ostream &)> out_stream_callback;
-	const Poco::Net::HTTPBasicCredentials & credentials;
+        std::function<void(std::ostream &)> out_stream_callback;
+        const Poco::Net::HTTPBasicCredentials & credentials;
 
     protected:
         std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
@@ -112,7 +112,7 @@ namespace detail
 
             LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
-	    auto sess = session->getSession();
+            auto sess = session->getSession();
 
             auto & stream_out = sess->sendRequest(request);
 
@@ -133,7 +133,7 @@ namespace detail
                 sess->attachSessionData(e.message());
                 throw;
             }
-        }    
+        }
 
     public:
         using OutStreamCallback = std::function<void(std::ostream &)>;
@@ -148,16 +148,16 @@ namespace detail
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session {session_}
-	    , out_stream_callback {out_stream_callback_}
-	    , credentials {credentials_}
+            , out_stream_callback {out_stream_callback_}
+            , credentials {credentials_}
         {
             Poco::Net::HTTPResponse response;
- 
+
             istr = call(uri, response);
 
             while (isRedirect(response.getStatus()))
             {
-		Poco::URI uri_redirect(response.get("Location"));
+                Poco::URI uri_redirect(response.get("Location"));
 
                 session->updateSession(uri_redirect);
 
@@ -172,7 +172,7 @@ namespace detail
             {
                 /// We use session data storage as storage for exception text
                 /// Depend on it we can deduce to reconnect session or reresolve session host
-	    	auto sess = session->getSession();
+                auto sess = session->getSession();
                 sess->attachSessionData(e.message());
                 throw;
             }
@@ -198,7 +198,7 @@ public:
     explicit UpdatableSession(const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
         const SettingUInt64 max_redirects_)
-        : Parent(uri, timeouts_, max_redirects_)    
+        : Parent(uri, timeouts_, max_redirects_)
     {
         session = makeHTTPSession(initial_uri, timeouts);
     }
@@ -218,7 +218,7 @@ public:
         const std::string & method_ = {},
         OutStreamCallback out_stream_callback_ = {},
         const ConnectionTimeouts & timeouts = {},
-	const DB::SettingUInt64 max_redirects = 0,
+        const DB::SettingUInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects), uri_, method_, out_stream_callback_, credentials_, buffer_size_)
