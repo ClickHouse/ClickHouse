@@ -119,7 +119,7 @@
 * Fixed error while parsing of columns list from string if type contained a comma (this issue was relevant for `File`, `URL`, `HDFS` storages) [#6217](https://github.com/yandex/ClickHouse/issues/6217). [#6209](https://github.com/yandex/ClickHouse/pull/6209) ([dimarub2000](https://github.com/dimarub2000))
 
 ### Security Fix
-* Fix two vulnerabilities in Codecs in decompression phase. [#6670](https://github.com/yandex/ClickHouse/pull/6670) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix two vulnerabilities in codecs in decompression phase (malicious user can fabricate compressed data that will lead to buffer overflow in decompression). [#6670](https://github.com/yandex/ClickHouse/pull/6670) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Improvement
 * Correct implementation of ternary logic for `AND/OR`. [#6048](https://github.com/yandex/ClickHouse/pull/6048) ([Alexander Kazakov](https://github.com/Akazz))
@@ -195,11 +195,9 @@
 * Add Comments for set index functions. [#6319](https://github.com/yandex/ClickHouse/pull/6319) ([Nikita Vasilev](https://github.com/nikvas0))
 
 ### Performance Improvement
+* Optimize queries with `ORDER BY expressions` clause, where `expressions` have coinciding prefix with sorting key in `MergeTree` tables. This optimization is enabled with `optimize_read_in_order` setting. [#6054](https://github.com/yandex/ClickHouse/pull/6054) [#6629](https://github.com/yandex/ClickHouse/pull/6629) ([Anton Popov](https://github.com/CurtizJ))
 * Implemented batch variant of updating aggregate function states. It may lead to performance benefits. [#6435](https://github.com/yandex/ClickHouse/pull/6435) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Optimize queries with `ORDER BY expressions` clause, where `expressions` have coinciding prefix with`ORDER` key in `MergeTree` tables. [#6054](https://github.com/yandex/ClickHouse/pull/6054) ([Anton Popov](https://github.com/CurtizJ))
-* Implement 'read in order' optimization with processors. [#6629](https://github.com/yandex/ClickHouse/pull/6629) ([Anton Popov](https://github.com/CurtizJ))
-* Disable consecutive key optimization for `UInt8/16`. [#6298](https://github.com/yandex/ClickHouse/pull/6298) ([akuzm](https://github.com/akuzm))
-* Disable consecutive key optimization for `UInt8/16` LowCardinality columns. [#6701](https://github.com/yandex/ClickHouse/pull/6701) ([akuzm](https://github.com/akuzm))
+* Disable consecutive key optimization for `UInt8/16`. [#6298](https://github.com/yandex/ClickHouse/pull/6298) [#6701](https://github.com/yandex/ClickHouse/pull/6701) ([akuzm](https://github.com/akuzm))
 * Slightly improve performance of `MemoryTracker`. [#6653](https://github.com/yandex/ClickHouse/pull/6653) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Allow to use multiple threads during parts loading and removal. [#6372](https://github.com/yandex/ClickHouse/issues/6372) [#6074](https://github.com/yandex/ClickHouse/issues/6074) [#6438](https://github.com/yandex/ClickHouse/pull/6438) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Show private symbols in stack traces (this is done via parsing symbol tables of ELF files). Added information about file and line number in stack traces if debug info is present. Speedup symbol name lookup with indexing symbols present in program. Added new SQL functions for introspection: `demangle` and `addressToLine`. Renamed function `symbolizeAddress` to `addressToSymbol` for consistency. Function `addressToSymbol` will return mangled name for performance reasons and you have to apply `demangle`. Added setting `allow_introspection_functions` which is turned off by default. [#6201](https://github.com/yandex/ClickHouse/pull/6201) ([alexey-milovidov](https://github.com/alexey-milovidov))
