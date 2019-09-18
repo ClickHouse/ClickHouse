@@ -151,9 +151,9 @@ void copyRightRange(const Block & right_block, const Block & right_columns_to_ad
         auto * dst_nullable = typeid_cast<ColumnNullable *>(dst_column.get());
 
         if (dst_nullable && !isColumnNullable(*src_column))
-            dst_nullable->insertRangeFromNotNullable(*src_column, row_position, rows_to_add);
+            dst_nullable->insertManyFromNotNullable(*src_column, row_position, rows_to_add);
         else
-            dst_column->insertRangeFrom(*src_column, row_position, rows_to_add);
+            dst_column->insertManyFrom(*src_column, row_position, rows_to_add);
     }
 }
 
@@ -179,8 +179,7 @@ void joinEquals(const Block & left_block, const Block & right_block, const Block
 void appendNulls(MutableColumns & right_columns, size_t rows_to_add)
 {
     for (auto & column : right_columns)
-        for (size_t i = 0; i < rows_to_add; ++i)
-            column->insertDefault();
+        column->insertManyDefaults(rows_to_add);
 }
 
 void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, MutableColumns & right_columns,
