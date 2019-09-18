@@ -139,7 +139,7 @@ endif ()
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
 find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
-find_program (GOLD_PATH NAMES "gold")
+find_program (GOLD_PATH NAMES "ld.gold" "gold")
 
 if (COMPILER_CLANG AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
