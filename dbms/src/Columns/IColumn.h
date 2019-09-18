@@ -146,6 +146,13 @@ public:
     /// Could be used to concatenate columns.
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
+    /// Appends one element from other column with the same type multiple times.
+    virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src, position);
+    }
+
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).
     /// Parameter length could be ignored if column values have fixed size.
@@ -156,6 +163,13 @@ public:
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.
     /// For example, ColumnNullable(Nested) absolutely ignores values of nested column if it is marked as NULL.
     virtual void insertDefault() = 0;
+
+    /// Appends "default value" multiple times.
+    virtual void insertManyDefaults(size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertDefault();
+    }
 
     /** Removes last n elements.
       * Is used to support exception-safety of several operations.
