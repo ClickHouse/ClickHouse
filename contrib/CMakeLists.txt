@@ -324,6 +324,9 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
+# fleece
+add_subdirectory (fleece-cmake)
+
 #if (USE_INTERNAL_ORC_LIBRARY)
 #    add_subdirectory(orc-cmake)
 #endif ()
