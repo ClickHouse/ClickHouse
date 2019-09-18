@@ -76,8 +76,8 @@ public:
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     const SizeLimits & sizeLimits() const { return size_limits; }
 
-    bool forceNullabelRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
-    bool forceNullabelLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
+    bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
+    bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
 
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);

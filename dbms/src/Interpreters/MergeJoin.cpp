@@ -202,7 +202,7 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, M
 
 MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block)
     : table_join(table_join_)
-    , nullable_right_side(table_join->forceNullabelRight())
+    , nullable_right_side(table_join->forceNullableRight())
     , is_all(table_join->strictness() == ASTTableJoin::Strictness::All)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
