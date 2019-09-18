@@ -495,6 +495,48 @@ public:
         return count;
     }
 
+    UInt64 rb_min() const
+    {
+        UInt64 min_val = UINT32_MAX;
+        if (isSmall())
+        {
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if ((UInt64)val < min_val)
+                {
+                    min_val = (UInt64)val;
+                }
+            }
+        }
+        else
+        {
+            min_val = (UInt64)roaring_bitmap_minimum(rb);
+        }
+        return min_val;
+    }
+
+    UInt64 rb_max() const
+    {
+        UInt64 max_val = 0;
+        if (isSmall())
+        {
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if ((UInt64)val > max_val)
+                {
+                    max_val = (UInt64)val;
+                }
+            }
+        }
+        else
+        {
+            max_val = (UInt64)roaring_bitmap_maximum(rb);
+        }
+        return max_val;
+    }
+
 private:
     /// To read and write the DB Buffer directly, migrate code from CRoaring
     void db_roaring_bitmap_add_many(DB::ReadBuffer & dbBuf, roaring_bitmap_t * r, size_t n_args)
