@@ -143,6 +143,11 @@ struct ContextShared
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
+    /// Storage disk chooser
+    mutable std::unique_ptr<DiskSpace::DiskSelector> merge_tree_disk_selector;
+    /// Storage policy chooser
+    mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
+
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -702,6 +707,13 @@ bool Context::hasDatabaseAccessRights(const String & database_name) const
     auto lock = getLock();
     return client_info.current_user.empty() || (database_name == "system") ||
         shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name);
+}
+
+bool Context::hasDictionaryAccessRights(const String & dictionary_name) const
+{
+    auto lock = getLock();
+    return client_info.current_user.empty() ||
+        shared->users_manager->hasAccessToDictionary(client_info.current_user, dictionary_name);
 }
 
 void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
@@ -1756,6 +1768,56 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     }
 
     return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+}
+
+
+const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
+{
+    auto lock = getLock();
+
+    const auto & disk_selector = getDiskSelector();
+
+    return disk_selector[name];
+}
+
+
+DiskSpace::DiskSelector & Context::getDiskSelector() const
+{
+    auto lock = getLock();
+
+    if (!shared->merge_tree_disk_selector)
+    {
+        constexpr auto config_name = "storage_configuration.disks";
+        auto & config = getConfigRef();
+
+        shared->merge_tree_disk_selector = std::make_unique<DiskSpace::DiskSelector>(config, config_name, getPath());
+    }
+    return *shared->merge_tree_disk_selector;
+}
+
+
+const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+{
+    auto lock = getLock();
+
+    auto & policy_selector = getStoragePolicySelector();
+
+    return policy_selector[name];
+}
+
+
+DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
+{
+    auto lock = getLock();
+
+    if (!shared->merge_tree_storage_policy_selector)
+    {
+        constexpr auto config_name = "storage_configuration.policies";
+        auto & config = getConfigRef();
+
+        shared->merge_tree_storage_policy_selector = std::make_unique<DiskSpace::StoragePolicySelector>(config, config_name, getDiskSelector());
+    }
+    return *shared->merge_tree_storage_policy_selector;
 }
 
 
