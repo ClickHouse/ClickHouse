@@ -55,7 +55,7 @@ void ColumnJSONB::insertData(const char * pos, size_t length)
 {
     FormatSettings settings{};
     ReadBufferFromMemory buffer(pos, length);
-    JSONBSerialization::deserialize(*this, settings, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
+    JSONBSerialization::deserialize(*this, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
 }
 
 void ColumnJSONB::insertFrom(const IColumn & src, size_t row_num)

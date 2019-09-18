@@ -1207,7 +1207,8 @@ public:
             {
                 const IColumn::Offset & offset = column_offsets_data[index - 1];
                 input_stream->setOffsetAndLimit(offset, column_offsets_data[index] - offset);
-                JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED>>(*smallest_column.get(), settings, input_stream);
+                JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED>>(
+                    *smallest_column.get(), input_stream);
             }
         }
     }

@@ -192,22 +192,22 @@ void DataTypeJSONB::deserializeProtobuf(IColumn &, ProtobufReader &, bool, bool 
 
 void DataTypeJSONB::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, settings, JSONBStreamFactory::fromBuffer<FormatStyle::CSV>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::CSV>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, settings, JSONBStreamFactory::fromBuffer<FormatStyle::JSON>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::JSON>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, settings, JSONBStreamFactory::fromBuffer<FormatStyle::QUOTED>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::QUOTED>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, settings, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&istr, settings));
 }
 
 void DataTypeJSONB::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
