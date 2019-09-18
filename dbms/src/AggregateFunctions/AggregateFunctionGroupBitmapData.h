@@ -503,15 +503,15 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if ((UInt64)val < min_val)
+                if (UInt64(val) < min_val)
                 {
-                    min_val = (UInt64)val;
+                    min_val = UInt64(val);
                 }
             }
         }
         else
         {
-            min_val = (UInt64)roaring_bitmap_minimum(rb);
+            min_val = UInt64(roaring_bitmap_minimum(rb));
         }
         return min_val;
     }
@@ -524,15 +524,15 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if ((UInt64)val > max_val)
+                if (UInt64(val) > max_val)
                 {
-                    max_val = (UInt64)val;
+                    max_val = UInt64(val);
                 }
             }
         }
         else
         {
-            max_val = (UInt64)roaring_bitmap_maximum(rb);
+            max_val = UInt64(roaring_bitmap_maximum(rb));
         }
         return max_val;
     }
