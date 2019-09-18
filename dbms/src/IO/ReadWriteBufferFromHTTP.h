@@ -122,7 +122,7 @@ namespace detail
             try
             {
                 istr = receiveResponse(*sess, request, response, true);
-		response.getCookies(cookies);
+                response.getCookies(cookies);
 
                 return istr;
 
