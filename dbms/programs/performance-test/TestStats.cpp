@@ -61,11 +61,11 @@ void ConnectionTestStats::updateMinTime(UInt64 min_time_candidate)
 {
     if (min_time_candidate < min_time)
     {
-        min_time = min_time_candidate;
-
         /// We restart watch only when difference is more than a millisecond
         if ((min_time_candidate / 1000UL) < (min_time / 1000UL))
             min_time_watch.restart();
+
+        min_time = min_time_candidate;
     }
 }
 
