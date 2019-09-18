@@ -23,7 +23,7 @@ struct JSONBSerialization
     static void serialize(const IColumn & column_, size_t row_num, OutputStream & output_stream);
 
     template <typename InputStream>
-    static void deserialize(IColumn & column_, const FormatSettings & settings, InputStream & input_stream);
+    static void deserialize(IColumn & column_, InputStream & input_stream);
 
     template <typename OutputStream>
     static void serialize(const IColumn & column_, size_t row_num, const std::unique_ptr<OutputStream> & output_stream)
@@ -33,10 +33,10 @@ struct JSONBSerialization
     }
 
     template <typename InputStream>
-    static void deserialize(IColumn & column_, const FormatSettings & settings, const std::unique_ptr<InputStream> & input_stream)
+    static void deserialize(IColumn & column_, const std::unique_ptr<InputStream> & input_stream)
     {
         InputStream & input = *input_stream.get();
-        deserialize(column_, settings, input);
+        deserialize(column_, input);
     }
 };
 

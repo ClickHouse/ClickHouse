@@ -15,7 +15,6 @@ ${LIBRARY_DIR}/Fleece/Fleece.hh
 ${LIBRARY_DIR}/Fleece/Fleece.pch
 ${LIBRARY_DIR}/Fleece/Fleece_C_impl.cc
 ${LIBRARY_DIR}/Fleece/Fleece_C_impl.hh
-${LIBRARY_DIR}/Fleece/FleeceCpp.hh
 ${LIBRARY_DIR}/Fleece/FleeceException.cc
 ${LIBRARY_DIR}/Fleece/FleeceException.hh
 ${LIBRARY_DIR}/Fleece/forestdb_endian.h
@@ -46,18 +45,12 @@ ${LIBRARY_DIR}/Fleece/varint.cc
 ${LIBRARY_DIR}/Fleece/varint.hh
 ${LIBRARY_DIR}/Fleece/Writer.cc
 ${LIBRARY_DIR}/Fleece/Writer.hh
-${LIBRARY_DIR}/Fleece/Mutable/MArray.hh
-${LIBRARY_DIR}/Fleece/Mutable/MCollection.hh
-${LIBRARY_DIR}/Fleece/Mutable/MContext.cc
-${LIBRARY_DIR}/Fleece/Mutable/MContext.hh
-${LIBRARY_DIR}/Fleece/Mutable/MDict.hh
-${LIBRARY_DIR}/Fleece/Mutable/MDictIterator.hh
-${LIBRARY_DIR}/Fleece/Mutable/MRoot.hh
-${LIBRARY_DIR}/Fleece/Mutable/MValue.hh
 ${LIBRARY_DIR}/vendor/jsonsl/jsonsl.c
 ${LIBRARY_DIR}/vendor/libb64/cdecode.c
 ${LIBRARY_DIR}/vendor/libb64/cencode.c)
 
+target_compile_options(fleece PRIVATE -Wall -Werror)
+target_include_directories(fleece SYSTEM PUBLIC "${LIBRARY_DIR}/Fleece")
 target_include_directories(fleece SYSTEM PUBLIC "${LIBRARY_DIR}/vendor/libb64")
 target_include_directories(fleece SYSTEM PUBLIC "${LIBRARY_DIR}/vendor/jsonsl")
 
