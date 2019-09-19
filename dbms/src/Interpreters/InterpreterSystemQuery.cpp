@@ -342,9 +342,12 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
+        {
+            LOG_ERROR(log, "SYNC REPLICA " + database_name + "." + table_name + ": Timed out!");
             throw Exception(
                     "SYNC REPLICA " + database_name + "." + table_name + ": command timed out! "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
+        }
         LOG_TRACE(log, "SYNC REPLICA " + database_name + "." + table_name + ": OK");
     }
     else
