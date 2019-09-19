@@ -99,7 +99,7 @@ Columns:
 
 - `name` (String) — Contributor name.
 
-**Пример**
+**Example**
 
 ```sql
 SELECT * FROM system.contributors LIMIT 10
