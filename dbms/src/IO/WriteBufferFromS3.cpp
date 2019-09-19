@@ -49,9 +49,6 @@ void WriteBufferFromS3::nextImpl()
     if (!offset())
         return;
 
-
-    LOG_TRACE((&Logger::get("WriteBufferFromS3")), "nextImpl(), offset() == " << offset());
-
     temporary_buffer->write(working_buffer.begin(), offset());
 
     last_part_size += offset();
@@ -68,11 +65,9 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::finalize()
 {
-    LOG_TRACE((&Logger::get("WriteBufferFromS3")), "finalize()");
     temporary_buffer->finish();
     if (!buffer_string.empty())
     {
-        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "finalize(), writing last part");
         writePart(buffer_string);
     }
 
@@ -101,7 +96,8 @@ void WriteBufferFromS3::initiate()
     HTTPSessionPtr session;
     std::istream * istr = nullptr; /// owned by session
     Poco::URI initiate_uri = uri;
-    initiate_uri.setRawQuery("uploads"); // FIXME find how to leave user params as is
+    initiate_uri.setRawQuery("uploads");
+    initiate_uri.setQueryParameters(uri.getQueryParameters());
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
@@ -225,7 +221,7 @@ void WriteBufferFromS3::complete()
 
     String data;
     WriteBufferFromString buffer(data);
-    writeString("<CompleteMultipartUpload>", buffer); // FIXME move to Poco::XML maybe??
+    writeString("<CompleteMultipartUpload>", buffer);
     for (size_t i = 0; i < part_tags.size(); ++i)
     {
         writeString("<Part><PartNumber>", buffer);

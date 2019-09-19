@@ -32,7 +32,7 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
         if (!credentials.getUsername().empty())
             credentials.authenticate(*request);
 
-        LOG_TRACE((&Logger::get("ReadWriteBufferFromS3")), "Sending request to " << uri.toString());
+        LOG_TRACE((&Logger::get("ReadBufferFromS3")), "Sending request to " << uri.toString());
 
         session->sendRequest(*request);
 
