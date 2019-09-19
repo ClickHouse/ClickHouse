@@ -20,7 +20,7 @@ You can also use square brackets.
 
 Example of creating an array:
 
-```
+```sql
 SELECT array(1, 2) AS x, toTypeName(x)
 ```
 ```text
