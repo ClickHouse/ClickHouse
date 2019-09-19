@@ -90,14 +90,18 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
 void WriteBufferFromS3::initiate()
 {
-    // https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
+    // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
     std::istream * istr = nullptr; /// owned by session
     Poco::URI initiate_uri = uri;
     initiate_uri.setRawQuery("uploads");
-    initiate_uri.setQueryParameters(uri.getQueryParameters());
+    auto params = uri.getQueryParameters();
+    for (QueryParameters::const_iterator it = params.begin(); it != params.end(); ++it)
+    {
+        initiate_uri.addQueryParameter(it->first, it->second);
+    }
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
@@ -148,7 +152,7 @@ void WriteBufferFromS3::initiate()
 
 void WriteBufferFromS3::writePart(const String & data)
 {
-    // https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadUploadPart.html
+    // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadUploadPart.html
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
@@ -211,7 +215,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
 void WriteBufferFromS3::complete()
 {
-    // https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
+    // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
     HTTPSessionPtr session;
