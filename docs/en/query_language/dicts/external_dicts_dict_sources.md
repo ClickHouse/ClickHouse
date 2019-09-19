@@ -227,7 +227,7 @@ Installing the driver: :
 $ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
-Configuring the driver: :
+Configuring the driver:
 
 ```bash
     $ cat /etc/freetds/freetds.conf
