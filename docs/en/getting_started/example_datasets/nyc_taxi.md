@@ -271,7 +271,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 
 Among other things, you can run the OPTIMIZE query on MergeTree. But it's not required, since everything will be fine without it.
 
-## Dowload of Prepared Partitions
+## Download of Prepared Partitions
 
 ```bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
