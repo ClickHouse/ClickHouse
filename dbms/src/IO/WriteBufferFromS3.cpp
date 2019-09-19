@@ -123,7 +123,9 @@ void WriteBufferFromS3::initiate()
 
         istr = &session->receiveResponse(response);
 
-        if (response.getStatus() != 307)
+        // Handle 307 Temporary Redirect in order to allow request redirection
+        // See https://docs.aws.amazon.com/AmazonS3/latest/dev/Redirects.html
+        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             break;
 
         auto location_iterator = response.find("Location");
@@ -193,7 +195,9 @@ void WriteBufferFromS3::writePart(const String & data)
 
         istr = &session->receiveResponse(response);
 
-        if (response.getStatus() != 307)
+        // Handle 307 Temporary Redirect in order to allow request redirection
+        // See https://docs.aws.amazon.com/AmazonS3/latest/dev/Redirects.html
+        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             break;
 
         auto location_iterator = response.find("Location");
@@ -264,7 +268,9 @@ void WriteBufferFromS3::complete()
 
         istr = &session->receiveResponse(response);
 
-        if (response.getStatus() != 307)
+        // Handle 307 Temporary Redirect in order to allow request redirection
+        // See https://docs.aws.amazon.com/AmazonS3/latest/dev/Redirects.html
+        if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             break;
 
         auto location_iterator = response.find("Location");
