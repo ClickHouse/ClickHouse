@@ -490,7 +490,7 @@ toColumnTypeName(value)
 **Example of the difference between` toTypeName ' and ' toColumnTypeName`**
 
 ```sql
-select toTypeName(cast('2018-01-01 01:02:03' AS DateTime))
+SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 ```
 ```text
 ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
