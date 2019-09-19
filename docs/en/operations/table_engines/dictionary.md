@@ -39,7 +39,17 @@ As an example, consider a dictionary of `products` with the following configurat
 Query the dictionary data:
 
 ```sql
-select name, type, key, attribute.names, attribute.types, bytes_allocated, element_count,source from system.dictionaries where name = 'products';                     
+SELECT
+    name,
+    type,
+    key,
+    attribute.names,
+    attribute.types,
+    bytes_allocated,
+    element_count,
+    source
+FROM system.dictionaries
+WHERE name = 'products'
 ```
 
 ```text

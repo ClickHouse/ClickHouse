@@ -9,8 +9,6 @@ The `Nothing` type can also used to denote empty arrays:
 
 ```sql
 SELECT toTypeName(array())
-
-SELECT toTypeName([])
 ```
 ```text
 ┌─toTypeName(array())─┐

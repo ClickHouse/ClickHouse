@@ -616,7 +616,13 @@ SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k OR
 Теперь передадим выражение `k = '2017-09-15'` в функцию `indexHint`:
 
 ```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+WHERE indexHint(k = '2017-09-15')
+GROUP BY k
+ORDER BY k ASC
 ```
 
 ```text

@@ -20,14 +20,8 @@ To store `Nullable` type values in table column, ClickHouse uses a separate file
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
 ```
-```text
-Ok.
-```
 ```sql
 INSERT INTO t_null VALUES (1, NULL), (2, 3)
-```
-```text
-Ok.
 ```
 ```sql
 SELECT x + y FROM t_null

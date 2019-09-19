@@ -75,12 +75,9 @@ $ sudo apt-get install libicu-dev libreadline-dev gperf
 ```bash
 $ git clone --recursive git@github.com:yandex/ClickHouse.git
 ```
-```text
-# or: 
-```
+or 
 ```bash
 $ git clone --recursive https://github.com/yandex/ClickHouse.git
-
 $ cd ClickHouse
 ```
 

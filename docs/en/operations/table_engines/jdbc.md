@@ -52,6 +52,8 @@ Creating a table in ClickHouse server and selecting data from it:
 
 ```sql
 CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
+```
+```sql
 DESCRIBE TABLE jdbc_table
 ```
 ```text

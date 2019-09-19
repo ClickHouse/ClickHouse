@@ -35,6 +35,9 @@ $ time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
 ```text
 ## Count
  1298979494
+(1 row)
+
+real    7m9.164s
 ```
 
 (This is slightly more than 1.1 billion rows reported by Mark Litwintschik in a series of blog posts.)
@@ -179,6 +182,8 @@ It is needed for converting fields to more correct data types and, if possible, 
 
 ```bash
 time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
+
+real    75m56.214s
 ```
 
 Data is read at a speed of 112-140 Mb/second.

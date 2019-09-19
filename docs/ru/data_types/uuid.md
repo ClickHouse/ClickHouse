@@ -28,12 +28,13 @@
 
 ```sql
 CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
-
+```
+```sql
 INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
-
+```
+```sql
 SELECT * FROM t_uuid
 ```
-
 ```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
@@ -46,10 +47,10 @@ SELECT * FROM t_uuid
 
 ```sql
 INSERT INTO t_uuid (y) VALUES ('Example 2')
-
+```
+```sql
 SELECT * FROM t_uuid
 ```
-
 ```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │

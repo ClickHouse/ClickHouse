@@ -12,7 +12,7 @@ External data can be uploaded using the command-line client (in non-interactive 
 In the command-line client, you can specify a parameters section in the format
 
 ```bash
-$ --external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
 ```
 
 You may have multiple sections like this, for the number of tables being transmitted.

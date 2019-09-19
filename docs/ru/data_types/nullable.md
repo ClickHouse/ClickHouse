@@ -26,11 +26,11 @@
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
-
+```
+```sql
 INSERT INTO t_null VALUES (1, NULL), (2, 3)
-
-INSERT INTO t_null VALUES
-
+```
+```sql
 SELECT x + y from t_null
 ```
 ```text

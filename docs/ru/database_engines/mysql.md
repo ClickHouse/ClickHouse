@@ -51,27 +51,27 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 ## Примеры использования
 
 Таблица в MySQL:
-
-```sql
+```text
 mysql> USE test;
+Database changed
 
 mysql> CREATE TABLE `mysql_table` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `float` FLOAT NOT NULL,
     ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
 
 mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
 
 mysql> select * from mysql_table;
-```
-```text
 +--------+-------+
 | int_id | value |
 +--------+-------+
 |      1 |     2 |
 +--------+-------+
+1 row in set (0,00 sec)
 ```
-
 База данных в ClickHouse, позволяющая обмениваться данными с сервером MySQL:
 
 ```sql

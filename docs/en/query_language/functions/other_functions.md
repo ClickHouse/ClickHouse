@@ -632,7 +632,13 @@ The last line of output shows that by using the index, ClickHouse processed a si
 Now pass the expression `k = '2017-09-15'` to the `indexHint` function:
 
 ```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+WHERE indexHint(k = '2017-09-15')
+GROUP BY k
+ORDER BY k ASC
 ```
 ```text
 ┌──────────k─┬─count()─┐

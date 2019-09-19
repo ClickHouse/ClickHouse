@@ -172,7 +172,7 @@ hasAny(array1, array2)
 Пример:
 
 ```sql
-SELECT indexOf([1,3,NULL,NULL],NULL)
+SELECT indexOf([1, 3, NULL, NULL], NULL)
 ```
 ```text
 ┌─indexOf([1, 3, NULL, NULL], NULL)─┐

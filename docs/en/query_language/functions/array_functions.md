@@ -171,8 +171,6 @@ Returns the index of the first 'x' element (starting from 1) if it is in the arr
 Example:
 
 ```sql
-SELECT indexOf([1,3,NULL,NULL],NULL)
-
 SELECT indexOf([1, 3, NULL, NULL], NULL)
 ```
 ```text

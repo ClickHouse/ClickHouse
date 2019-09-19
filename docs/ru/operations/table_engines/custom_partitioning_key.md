@@ -98,7 +98,7 @@ OPTIMIZE TABLE visits PARTITION 201902;
 Другой способ посмотреть набор кусков и партиций – зайти в директорию с данными таблицы:  `/var/lib/clickhouse/data/<database>/<table>/`. Например:
 
 ```bash
-$ dev:/var/lib/clickhouse/data/default/visits$ ls -l
+/var/lib/clickhouse/data/default/visits$ ls -l
 total 40
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
 drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2

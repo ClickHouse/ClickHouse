@@ -39,7 +39,17 @@
 Запрос данных словаря:
 
 ```sql
-select name, type, key, attribute.names, attribute.types, bytes_allocated, element_count,source from system.dictionaries where name = 'products';                     
+SELECT
+    name,
+    type,
+    key,
+    attribute.names,
+    attribute.types,
+    bytes_allocated,
+    element_count,
+    source
+FROM system.dictionaries
+WHERE name = 'products'
 ```
 ```text
 ┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐

@@ -19,9 +19,7 @@ $ brew install cmake ninja gcc icu4c openssl libtool gettext readline gperf
 ```bash
 $ git clone --recursive git@github.com:yandex/ClickHouse.git
 ```
-```text
-# or:
-```
+or
 ```bash
 $ git clone --recursive https://github.com/yandex/ClickHouse.git
 
