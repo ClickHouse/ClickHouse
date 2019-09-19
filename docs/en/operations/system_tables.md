@@ -93,7 +93,7 @@ The `system.columns` table contains the following columns (the column type is sh
 
 ## system.contributors {#system_contributors}
 
-Contains information about contributors. Arbitrary selection.
+Contains information about contributors. All constributors in random order.
 
 Columns:
 
