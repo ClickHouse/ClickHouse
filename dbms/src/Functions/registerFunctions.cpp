@@ -34,6 +34,7 @@ void registerFunctionsStringSimilarity(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
+void registerFunctionsUDF(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
@@ -74,6 +75,7 @@ void registerFunctions()
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
+    registerFunctionsUDF(factory);
     registerFunctionsGeo(factory);
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
