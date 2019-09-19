@@ -154,7 +154,8 @@ void StorageLiveView::writeIntoLiveView(
             {
                 if (blocks_->empty())
                     continue;
-                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(blocks_);
+                auto sample_block = blocks_->front().cloneEmpty();
+                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
                 from.push_back(std::move(stream));
             }
 
@@ -189,7 +190,8 @@ void StorageLiveView::writeIntoLiveView(
             {
                 if (blocks_->empty())
                     continue;
-                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(blocks_);
+                auto sample_block = blocks_->front().cloneEmpty();
+                BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
                 from.push_back(std::move(stream));
             }
         }
@@ -248,7 +250,7 @@ StorageLiveView::StorageLiveView(
     is_temporary = query.temporary;
     temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
 
-    blocks_ptr = std::make_shared<Blocks>();
+    blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
 }
@@ -307,7 +309,7 @@ bool StorageLiveView::getNewBlocks()
 
     mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
     mergeable_blocks->push_back(new_mergeable_blocks);
-    BlockInputStreamPtr from = std::make_shared<BlocksBlockInputStream>(new_mergeable_blocks, mergeable_stream->getHeader());
+    BlockInputStreamPtr from = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(new_mergeable_blocks), mergeable_stream->getHeader());
     auto proxy_storage = ProxyStorage::createProxyStorage(global_context.getTable(select_database_name, select_table_name), {from}, QueryProcessingStage::WithMergeableState);
     InterpreterSelectQuery select(inner_query->clone(), global_context, proxy_storage, SelectQueryOptions(QueryProcessingStage::Complete));
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
@@ -345,7 +347,7 @@ bool StorageLiveView::getNewBlocks()
             }
             new_blocks_metadata->hash = key.toHexString();
             new_blocks_metadata->version = getBlocksVersion() + 1;
-            blocks_ptr = new_blocks;
+            (*blocks_ptr) = new_blocks;
             (*blocks_metadata_ptr) = new_blocks_metadata;
             updated = true;
         }
@@ -498,10 +500,10 @@ BlockInputStreams StorageLiveView::read(
     const unsigned /*num_streams*/)
 {
     /// add user to the blocks_ptr
-    auto stream_blocks_ptr = blocks_ptr;
+    std::shared_ptr<BlocksPtr> stream_blocks_ptr = blocks_ptr;
     {
         std::lock_guard lock(mutex);
-        if (!blocks_ptr)
+        if (!(*blocks_ptr))
         {
             if (getNewBlocks())
                 condition.notify_all();
@@ -546,7 +548,7 @@ BlockInputStreams StorageLiveView::watch(
 
         {
             std::lock_guard lock(mutex);
-            if (!blocks_ptr)
+            if (!(*blocks_ptr))
             {
                 if (getNewBlocks())
                     condition.notify_all();
@@ -574,7 +576,7 @@ BlockInputStreams StorageLiveView::watch(
 
         {
             std::lock_guard lock(mutex);
-            if (!blocks_ptr)
+            if (!(*blocks_ptr))
             {
                 if (getNewBlocks())
                     condition.notify_all();

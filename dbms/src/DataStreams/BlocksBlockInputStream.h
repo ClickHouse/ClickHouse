@@ -22,14 +22,9 @@ namespace DB
 class BlocksBlockInputStream : public IBlockInputStream
 {
 public:
-    explicit BlocksBlockInputStream(const BlocksPtr & blocks_ptr_)
-        : BlocksBlockInputStream(blocks_ptr_, blocks->empty() ? Block() : blocks->front().cloneEmpty())
-    {
-    }
-    BlocksBlockInputStream(const BlocksPtr & blocks_ptr_, Block header_)
-        : blocks(blocks_ptr_), it(blocks->begin()), end(blocks->end()), header(header_)
-    {
-    }
+    /// Acquires shared ownership of the blocks vector
+    BlocksBlockInputStream(const std::shared_ptr<BlocksPtr> & blocks_ptr_, Block header_)
+        : blocks(*blocks_ptr_), it((*blocks_ptr_)->begin()), end((*blocks_ptr_)->end()), header(std::move(header_)) {}
 
     String getName() const override { return "Blocks"; }
 

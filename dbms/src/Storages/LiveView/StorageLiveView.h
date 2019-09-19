@@ -97,7 +97,7 @@ public:
     /// must be called with mutex locked
     void reset()
     {
-        blocks_ptr.reset();
+        (*blocks_ptr).reset();
         if (*blocks_metadata_ptr)
             (*blocks_metadata_ptr)->hash.clear();
         mergeable_blocks.reset();
@@ -126,7 +126,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlocksPtr getBlocksPtr() { return blocks_ptr; }
+    std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
     BlocksPtrs getMergeableBlocks() { return mergeable_blocks; }
     void setMergeableBlocks(BlocksPtrs blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
@@ -160,7 +160,7 @@ private:
     /// Active users
     std::shared_ptr<bool> active_ptr;
     /// Current data blocks that store query result
-    BlocksPtr blocks_ptr;
+    std::shared_ptr<BlocksPtr> blocks_ptr;
     /// Current data blocks metadata
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
     BlocksPtrs mergeable_blocks;
