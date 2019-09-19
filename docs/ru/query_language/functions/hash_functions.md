@@ -315,11 +315,11 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
 
 ```sql
-SELECT xxHash32('srting');
+SELECT xxHash32();
 
 OR
 
-SELECT  xxHash64('srting');
+SELECT xxHash64();
 ```
 
 **Возвращаемое значение**

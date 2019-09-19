@@ -310,11 +310,11 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
 
 ```sql
-SELECT xxHash32('srting');
+SELECT xxHash32();
 
 OR
 
-SELECT  xxHash64('srting');
+SELECT xxHash64();
 ```
 
 **Returned value**
