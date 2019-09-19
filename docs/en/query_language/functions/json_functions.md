@@ -46,7 +46,7 @@ Parses the string in double quotes. The value is unescaped. If unescaping failed
 
 Examples:
 
-```json
+```sql
 visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
 visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
 visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
