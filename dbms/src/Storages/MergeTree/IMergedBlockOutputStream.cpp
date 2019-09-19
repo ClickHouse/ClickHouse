@@ -115,11 +115,8 @@ void fillIndexGranularityImpl(
     {
         size_t block_size_in_memory = block.bytes();
         if (blocks_are_granules)
-            index_granularity_for_block = rows_in_block;
-        else if (block_size_in_memory >= index_granularity_bytes)
         {
-            size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
-            index_granularity_for_block = rows_in_block / granules_in_block;
+            index_granularity_for_block = rows_in_block;
         }
         else
         {
