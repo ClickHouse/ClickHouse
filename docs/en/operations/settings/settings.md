@@ -840,19 +840,19 @@ Default value: `uniqExact`.
 
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
-Enables or disables silent skipping of:
+Enables or disables silently skipping:
 
-- Node, if its name cannot be resolved through DNS.
+- Nodes, if their name can't be resolved through DNS.
 
-    When skipping is disabled, ClickHouse requires that all the nodes in the [cluster configuration](../server_settings/settings.md#server_settings_remote_servers) can be resolvable through DNS. Otherwise, ClickHouse throws an exception when trying to perform a query on the cluster.
+    When skipping is disabled, ClickHouse requires that all the nodes in the [cluster configuration](../server_settings/settings.md#server_settings_remote_servers) are resolvable through DNS. Otherwise, ClickHouse throws an exception when trying to perform a query on the cluster.
 
-    If skipping is enabled, ClickHouse considers unresolved nodes as unavailable and tries to resolve them at every connection attempt. Such behavior creates the risk of wrong cluster configuration because a user can specify the wrong node name, and ClickHouse doesn't report about it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+    If skipping is enabled, ClickHouse considers unresolved nodes unavailable and tries to resolve them during every connection attempt. Such behavior creates the risk of an incorrect cluster configuration because the user can specify the wrong node name, and ClickHouse doesn't report it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
 
-- Shard, if there are no available replicas of the shard.
+- Shards, if there are no available replicas of the shard.
 
     When skipping is disabled, ClickHouse throws an exception.
 
-    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about issues with nodes availability.
+    When skipping is enabled, ClickHouse returns a partial answer and doesn't report node availability issues.
 
 Possible values:
 
