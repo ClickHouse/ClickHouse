@@ -241,7 +241,7 @@ format_schema_rows_between_delimiter = ','
 
 Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
 
-```sql
+```text
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
 SearchPhrase=yandex     count()=1655
