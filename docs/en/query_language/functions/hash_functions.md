@@ -177,15 +177,65 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash {#hash_functions-javahash}
 
-Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452)
- from a string.
-Accepts a String-type argument. Returns Int32.
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string.
 
-## hiveHash
+```sql
+SELECT javaHash();
+```
 
-Calculates HiveHash from a string.
-Accepts a String-type argument. Returns Int32.
+**Returned value**
+
+A `Int32` data type hash value.
+
+Type: `javaHash`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT javaHash('Hello, world!');
+```
+
+Result:
+
+```text
+┌─javaHash('Hello, world!')─┐
+│               -1880044555 │
+└───────────────────────────┘
+```
+
+## hiveHash {#hash_functions-hivehash}
+
+Calculates `HiveHash` from a string.
+
+```sql
+SELECT hiveHash();
+```
+
 This is just [JavaHash](#hash_functions-javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
+
+**Returned value**
+
+A `Int32` data type hash value.
+
+Type: `hiveHash`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT hiveHash('Hello, world!');
+```
+
+Result:
+
+```text
+┌─hiveHash('Hello, world!')─┐
+│                 267439093 │
+└───────────────────────────┘
+```
 
 ## metroHash64
 
