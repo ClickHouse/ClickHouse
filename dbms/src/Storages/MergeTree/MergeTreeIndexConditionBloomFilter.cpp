@@ -306,7 +306,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
         {
             out.function = RPNElement::FUNCTION_HAS;
 
-            if (!array_type) 
+            if (!array_type)
                 throw Exception("First argument for function has must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             Field converted_field = convertFieldToType(value_field, *array_type->getNestedType(), &*value_type);
