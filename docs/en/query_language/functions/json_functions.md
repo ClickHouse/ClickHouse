@@ -35,7 +35,7 @@ Returns the value of a field, including separators.
 
 Examples:
 
-```json
+```sql
 visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
