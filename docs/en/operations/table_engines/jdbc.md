@@ -27,7 +27,7 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 Creating a table in MySQL server by connecting directly with it's console client:
 
-```mysql
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
