@@ -42,11 +42,12 @@
 #include <Functions/DateTimeTransforms.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/JSONB/JSONBDataMark.h>
 #include <DataTypes/DataTypeJSONB.h>
+#include <DataTypes/JSONB/JSONBStreamBuffer.h>
 #include <DataTypes/JSONB/JSONBSerialization.h>
 #include <DataTypes/JSONB/JSONBStreamFactory.h>
 #include <IO/LimitReadBuffer.h>
-#include <Columns/JSONB/JSONBDataMark.h>
 
 
 namespace DB
