@@ -3,7 +3,7 @@
 namespace DB
 {
 
-enum JSONBDataMark
+enum class JSONBDataMark
 {
     Nothing = 0,
     Bool,
