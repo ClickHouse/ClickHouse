@@ -91,6 +91,46 @@ The `system.columns` table contains the following columns (the column type is sh
 - `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 - `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
+## system.contributors {#system_contributors}
+
+Contains information about contributors. All constributors in random order. The order is random at query execution time.
+
+Columns:
+
+- `name` (String) — Contributor (author) name from git log.
+
+**Example**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+To find out yourself in the table, use a query:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
+
 ## system.databases
 
 This table contains a single String column called 'name' – the name of a database.
