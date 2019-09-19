@@ -2,11 +2,13 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
+#include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Storages/IStorage.h>
 
@@ -15,6 +17,17 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+AnalyzedJoin::AnalyzedJoin(const Settings & settings)
+    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
+    , join_use_nulls(settings.join_use_nulls)
+    , partial_merge_join(settings.partial_merge_join)
+{}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 {
@@ -129,6 +142,16 @@ Names AnalyzedJoin::requiredJoinedNames() const
     return Names(required_columns_set.begin(), required_columns_set.end());
 }
 
+NameSet AnalyzedJoin::requiredRightKeys() const
+{
+    NameSet required;
+    for (const auto & name : key_names_right)
+        for (const auto & column : columns_added_by_join)
+            if (name == column.name)
+                required.insert(name);
+    return required;
+}
+
 NamesWithAliases AnalyzedJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
 {
     NameSet required_columns(action_required_columns.begin(), action_required_columns.end());
@@ -209,37 +232,7 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->table_join.strictness == y->table_join.strictness
         && x->key_names_left == y->key_names_left
         && x->key_names_right == y->key_names_right
-        && x->columns_added_by_join == y->columns_added_by_join
-        && x->hash_join == y->hash_join;
-}
-
-BlockInputStreamPtr AnalyzedJoin::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
-{
-    if (isRightOrFull(table_join.kind))
-        return hash_join->createStreamWithNonJoinedRows(source_header, *this, max_block_size);
-    return {};
-}
-
-JoinPtr AnalyzedJoin::makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const
-{
-    auto join = std::make_shared<Join>(key_names_right, join_use_nulls, size_limits_for_join, table_join.kind, table_join.strictness);
-    join->setSampleBlock(sample_block);
-    return join;
-}
-
-void AnalyzedJoin::joinBlock(Block & block) const
-{
-    hash_join->joinBlock(block, *this);
-}
-
-void AnalyzedJoin::joinTotals(Block & block) const
-{
-    hash_join->joinTotals(block);
-}
-
-bool AnalyzedJoin::hasTotals() const
-{
-    return hash_join->hasTotals();
+        && x->columns_added_by_join == y->columns_added_by_join;
 }
 
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
@@ -265,6 +258,13 @@ NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpressio
     }
 
     return names_and_type_list;
+}
+
+JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
+{
+    if (table_join->partial_merge_join)
+        return std::make_shared<MergeJoin>(table_join, right_sample_block);
+    return std::make_shared<Join>(table_join, right_sample_block);
 }
 
 }

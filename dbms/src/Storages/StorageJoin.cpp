@@ -8,6 +8,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Common/assert_cast.h>
 
 #include <Poco/String.h>    /// toLower
@@ -49,8 +50,8 @@ StorageJoin::StorageJoin(
         if (!getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness, overwrite);
-    join->setSampleBlock(getSampleBlock().sortColumns());
+    table_join = std::make_shared<AnalyzedJoin>(limits, use_nulls, kind, strictness, key_names);
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
@@ -62,8 +63,7 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness);
-    join->setSampleBlock(getSampleBlock().sortColumns());
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns());
 }
 
 
@@ -75,7 +75,7 @@ void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Stric
 }
 
 
-void StorageJoin::insertBlock(const Block & block) { join->insertFromBlock(block); }
+void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block); }
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 
@@ -209,10 +209,10 @@ public:
         for (size_t i = 0; i < sample_block.columns(); ++i)
         {
             auto & [_, type, name] = sample_block.getByPosition(i);
-            if (parent.sample_block_with_keys.has(name))
+            if (parent.right_table_keys.has(name))
             {
                 key_pos = i;
-                column_with_null[i] = parent.sample_block_with_keys.getByName(name).type->isNullable();
+                column_with_null[i] = parent.right_table_keys.getByName(name).type->isNullable();
             }
             else
             {
