@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
-#include <Columns/JSONStructAndDataColumn.h>
+#include <Columns/JSONB/JSONStructAndDataColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashMap.h>
