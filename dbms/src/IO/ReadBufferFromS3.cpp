@@ -1,5 +1,7 @@
 #include <IO/ReadBufferFromS3.h>
 
+#include <IO/ReadBufferFromIStream.h>
+
 #include <common/logger_useful.h>
 
 
