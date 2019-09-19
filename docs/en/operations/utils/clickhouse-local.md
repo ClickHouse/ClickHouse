@@ -18,7 +18,7 @@ By default `clickhouse-local` does not have access to data on the same host, but
 Basic usage:
 
 ```bash
-clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" -q "query"
+$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" -q "query"
 ```
 
 Arguments:
