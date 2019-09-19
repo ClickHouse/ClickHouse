@@ -10,7 +10,7 @@ Engine parameters:
 
 - `database` – Database name. Instead of the database name, you can use a constant expression that returns a string.
 - `table` – Table to flush data to. 
-- `num_layers` – Parallelism layer. Physically, the table will be represented as 'num_layers' of independent buffers. Recommended value: 16.
+- `num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers. Recommended value: 16.
 - `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes` – Conditions for flushing data from the buffer.
 
 Data is flushed from the buffer and written to the destination table if all the `min*` conditions or at least one `max*` condition are met.
