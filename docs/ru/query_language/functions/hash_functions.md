@@ -312,14 +312,14 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 
 ## xxHash32, xxHash64 {#hash_functions-xxhash32-xxhash64}
 
-Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
+Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита. Текущая версия ClicHouse использует `xxHash` версии 0.6.5.
 
 ```sql
-SELECT xxHash32();
+SELECT xxHash32('');
 
 OR
 
-SELECT xxHash64();
+SELECT xxHash64('');
 ```
 
 **Возвращаемое значение**
