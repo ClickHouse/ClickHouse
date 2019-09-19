@@ -182,7 +182,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки.
 
 ```sql
-SELECT javaHash();
+SELECT javaHash('');
 ```
 
 **Возвращаемое значение**
@@ -212,7 +212,7 @@ SELECT javaHash('Hello, world!');
 Вычисляет `HiveHash` от строки.
 
 ```sql
-SELECT hiveHash();
+SELECT hiveHash('');
 ```
 
 `HiveHash` — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа. Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии  3.0.

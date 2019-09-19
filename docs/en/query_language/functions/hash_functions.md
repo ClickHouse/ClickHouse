@@ -180,7 +180,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string.
 
 ```sql
-SELECT javaHash();
+SELECT javaHash('');
 ```
 
 **Returned value**
@@ -210,7 +210,7 @@ Result:
 Calculates `HiveHash` from a string.
 
 ```sql
-SELECT hiveHash();
+SELECT hiveHash('');
 ```
 
 This is just [JavaHash](#hash_functions-javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
