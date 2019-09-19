@@ -144,7 +144,7 @@ Loading data:
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Dowload of Prepared Partitions
+## Download of Prepared Partitions
 
 ```bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
