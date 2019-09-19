@@ -97,7 +97,7 @@ Contains information about contributors. All constributors in random order.
 
 Columns:
 
-- `name` (String) — Contributor name.
+- `name` (String) — Contributor (author) name from git log.
 
 **Example**
 
