@@ -22,7 +22,7 @@ public:
 
     bool addJoinedBlock(const Block & block) override;
     void joinBlock(Block &) override;
-    void joinTotals(Block &) const override {}
+    void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
 

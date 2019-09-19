@@ -231,6 +231,11 @@ void MergeJoin::setTotals(const Block & totals_block)
     mergeRightBlocks();
 }
 
+void MergeJoin::joinTotals(Block & block) const
+{
+    JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
+}
+
 void MergeJoin::mergeRightBlocks()
 {
     const size_t max_merged_block_size = 128 * 1024 * 1024;
