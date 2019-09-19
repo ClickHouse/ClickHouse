@@ -176,6 +176,7 @@ add_object_library(clickhouse_processors_formats_impl src/Processors/Formats/Imp
 add_object_library(clickhouse_processors_transforms src/Processors/Transforms)
 add_object_library(clickhouse_processors_sources src/Processors/Sources)
 
+
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
     set (all_modules dbms)
@@ -394,7 +395,7 @@ if (OPENSSL_CRYPTO_LIBRARY)
 endif ()
 
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
-dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
 if (USE_PROTOBUF)
     dbms_target_link_libraries (PRIVATE ${Protobuf_LIBRARY})
@@ -414,6 +415,16 @@ endif()
 if (USE_JEMALLOC)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # new_delete.cpp
+    # common/memory.h
+    if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+        # skip if we have bundled build, since jemalloc is static in this case
+    elseif (${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
+        # if the library is static we do not need to link with it,
+        # since in this case it will be in libs/libcommon,
+        # and we do not want to link with jemalloc multiple times.
+    else()
+        target_link_libraries(clickhouse_common_io PRIVATE ${JEMALLOC_LIBRARIES})
+    endif()
 endif ()
 
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
