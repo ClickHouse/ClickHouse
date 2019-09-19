@@ -1,6 +1,5 @@
-#include <Columns/JSONStructAndDataColumn.h>
+#include <Columns/JSONB/JSONStructAndDataColumn.h>
 #include <Columns/ColumnJSONB.h>
-#include "JSONStructAndDataColumn.h"
 
 
 namespace DB

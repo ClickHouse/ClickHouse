@@ -1,11 +1,12 @@
 #include <DataTypes/JSONB/JSONBSerialization.h>
 #include <ext/bit_cast.h>
-#include <Columns/ColumnString.h>
 #include <rapidjson/prettywriter.h>
+#include <Columns/ColumnString.h>
+#include <Columns/JSONB/JSONBDataMark.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/JSONB/JSONBStreamBuffer.h>
 #include <DataTypes/JSONB/JSONBStreamFactory.h>
-#include <DataTypes/JSONB/JSONBStreamPODArray.h>
+
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wattributes"
@@ -63,7 +64,7 @@ namespace
             data.insert(reinterpret_cast<const char *>(binary.buf), reinterpret_cast<const char *>(binary.buf) + binary.size);
             data.push_back(0);
             offsets.push_back(data.size());
-            static_cast<ColumnUInt8 *>(column_struct->getOrCreateMarkColumn())->insertValue(UInt8(TypeIndex::String));
+            static_cast<ColumnUInt8 *>(column_struct->getOrCreateMarkColumn())->insertValue(UInt8(JSONBDataMark::BinaryJSON));
         }
         catch (...)
         {
@@ -129,7 +130,7 @@ void JSONBSerialization::deserialize(IColumn & column_, InputStream & input_stre
 }
 
 
-template <TypeIndex type_index, typename ColumnType, typename RapidWrite>
+template <JSONBDataMark data_mark, typename ColumnType, typename RapidWrite>
 void formatJSONNumber(const IColumn & column, size_t row_num, RapidWrite & writer);
 
 template <typename RapidWrite>
@@ -150,21 +151,21 @@ void JSONBSerialization::serialize(const IColumn & column, size_t row_num, Outpu
 }
 
 
-template <TypeIndex type_index, typename ColumnType, typename RapidWrite>
+template <JSONBDataMark data_mark, typename ColumnType, typename RapidWrite>
 void formatJSONNumber(const IColumn & column, size_t row_num, RapidWrite & writer)
 {
     const ColumnVector<ColumnType> & data_column = static_cast<const ColumnVector<ColumnType> &>(column);
 
     const typename ColumnVector<ColumnType>::Container & data = data_column.getData();
 
-    if constexpr (type_index == TypeIndex::UInt8)
+    if constexpr (data_mark == JSONBDataMark::Bool)
         writer.Bool(bool(data[row_num]));
-    else if constexpr (type_index == TypeIndex::Float64)
-        writer.Double(ext::bit_cast<Float64>(data[row_num]));
-    else if constexpr (type_index == TypeIndex::Int32 || type_index == TypeIndex::Int64)
+    else if constexpr (data_mark == JSONBDataMark::Int64)
         writer.Int64(ext::bit_cast<Int64>(data[row_num]));
-    else if constexpr (type_index == TypeIndex::UInt32 || type_index == TypeIndex::UInt64)
+    else if constexpr (data_mark == JSONBDataMark::UInt64)
         writer.Uint64(UInt64(data[row_num]));
+    else if constexpr (data_mark == JSONBDataMark::Float64)
+        writer.Double(ext::bit_cast<Float64>(data[row_num]));
 }
 
 template <typename RapidWrite>
@@ -190,7 +191,7 @@ void formatJSON(const ColumnJSONBStructPtr & struct_info, size_t row_num, RapidW
 {
     const ColumnUInt8 * mark_column = static_cast<const ColumnUInt8 *>(struct_info->mark_column);
 
-    if (mark_column && mark_column->getData()[row_num] == UInt8(TypeIndex::Nothing))
+    if (mark_column && mark_column->getData()[row_num] == UInt8(JSONBDataMark::Nothing))
         return;
 
     if (!struct_info->name.empty())
@@ -198,38 +199,31 @@ void formatJSON(const ColumnJSONBStructPtr & struct_info, size_t row_num, RapidW
 
     if (!mark_column && !struct_info->children.empty())
         formatJSONObject(struct_info, row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::JSONB))
+    else if (mark_column->getData()[row_num] == UInt8(JSONBDataMark::Object))
         formatJSONObject(struct_info, row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::UInt8))
-        formatJSONNumber<TypeIndex::UInt8, UInt8>(*struct_info->getDataColumn(BOOLEAN_DATA_TYPE), row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::Int32))
-        formatJSONNumber<TypeIndex::Int32, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::UInt32))
-        formatJSONNumber<TypeIndex::UInt32, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::Int64))
-        formatJSONNumber<TypeIndex::Int64, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::UInt64))
-        formatJSONNumber<TypeIndex::UInt64, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::Float64))
-        formatJSONNumber<TypeIndex::Float64, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
-    else if (mark_column->getData()[row_num] == UInt8(TypeIndex::String))
+    else if (mark_column->getData()[row_num] == UInt8(JSONBDataMark::Bool))
+        formatJSONNumber<JSONBDataMark::Bool, UInt8>(*struct_info->getDataColumn(BOOLEAN_DATA_TYPE), row_num, writer);
+    else if (mark_column->getData()[row_num] == UInt8(JSONBDataMark::Int64))
+        formatJSONNumber<JSONBDataMark::Int64, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
+    else if (mark_column->getData()[row_num] == UInt8(JSONBDataMark::UInt64))
+        formatJSONNumber<JSONBDataMark::UInt64, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
+    else if (mark_column->getData()[row_num] == UInt8(JSONBDataMark::Float64))
+        formatJSONNumber<JSONBDataMark::Float64, UInt64>(*struct_info->getDataColumn(NUMBER_DATA_TYPE), row_num, writer);
+    else if (mark_column->getData()[row_num] == UInt8(JSONBDataMark::String))
+        formatJSONString(*struct_info->getDataColumn(STRING_DATA_TYPE), row_num, writer);
+    else if (mark_column->getData()[row_num] == UInt8(JSONBDataMark::BinaryJSON))
         formatJSONString(*struct_info->getDataColumn(STRING_DATA_TYPE), row_num, writer);
 }
-
-template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::CSV>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::CSV> &);
-template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::JSON>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::JSON> &);
-template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::QUOTED>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::QUOTED> &);
-template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::ESCAPED>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::ESCAPED> &);
-
-template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::CSV>>(IColumn &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::CSV> &);
-template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::JSON>>(IColumn &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::JSON> &);
-template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::QUOTED>>(IColumn &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::QUOTED> &);
-template void JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED>>(IColumn &, JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED> &);
 
 template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::CSV>>(IColumn &, JSONBStreamBuffer<ReadBuffer, FormatStyle::CSV> &);
 template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::JSON>>(IColumn &, JSONBStreamBuffer<ReadBuffer, FormatStyle::JSON> &);
 template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::QUOTED>>(IColumn &, JSONBStreamBuffer<ReadBuffer, FormatStyle::QUOTED> &);
 template void JSONBSerialization::deserialize<JSONBStreamBuffer<ReadBuffer, FormatStyle::ESCAPED>>(IColumn &, JSONBStreamBuffer<ReadBuffer, FormatStyle::ESCAPED> &);
+
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::CSV>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::CSV> &);
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::JSON>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::JSON> &);
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::QUOTED>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::QUOTED> &);
+template void JSONBSerialization::serialize<JSONBStreamBuffer<WriteBuffer, FormatStyle::ESCAPED>>(const IColumn &, size_t, JSONBStreamBuffer<WriteBuffer, FormatStyle::ESCAPED> &);
 
 
 //struct JSONStructAndColumnBinder

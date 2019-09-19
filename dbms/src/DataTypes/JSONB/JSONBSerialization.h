@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <rapidjson/reader.h>
 #include <IO/ReadBuffer.h>
-#include <Columns/JSONStructAndDataColumn.h>
+#include <Columns/JSONB/JSONStructAndDataColumn.h>
 #include <Columns/ColumnJSONB.h>
 #include <DataTypes/DataTypesNumber.h>
 

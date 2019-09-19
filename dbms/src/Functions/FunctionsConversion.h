@@ -45,7 +45,8 @@
 #include <DataTypes/DataTypeJSONB.h>
 #include <DataTypes/JSONB/JSONBSerialization.h>
 #include <DataTypes/JSONB/JSONBStreamFactory.h>
-#include <DataTypes/JSONB/JSONBStreamPODArray.h>
+#include <IO/LimitReadBuffer.h>
+#include <Columns/JSONB/JSONBDataMark.h>
 
 
 namespace DB
@@ -1201,14 +1202,20 @@ public:
             const ColumnString::Offsets & column_offsets_data = string_column->getOffsets();
 
             FormatSettings settings{};
-            auto input_stream = JSONBStreamFactory::fromPODArray<FormatStyle::ESCAPED>(column_string_data, settings);
+            ReadBufferFromMemory buffer(reinterpret_cast<const char *>(column_string_data.data()), column_string_data.size());
 
             for (size_t index = 0; index < column_offsets_data.size(); ++index)
             {
                 const IColumn::Offset & offset = column_offsets_data[index - 1];
-                input_stream->setOffsetAndLimit(offset, column_offsets_data[index] - offset);
-                JSONBSerialization::deserialize<JSONBStreamPODArray<const ColumnString::Chars, FormatStyle::ESCAPED>>(
-                    *smallest_column.get(), input_stream);
+                ReadBuffer limit_buffer = LimitReadBuffer(buffer, column_offsets_data[index] - offset, true, "Attempt to read after eof.");
+                JSONBSerialization::deserialize(*smallest_column.get(), JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&limit_buffer, settings));
+
+                if (!limit_buffer.eof())
+                {
+                    skipWhitespaceIfAny(limit_buffer);
+                    if (!limit_buffer.eof())
+                        throwAtAssertionFailed("eof", limit_buffer);
+                }
             }
         }
     }
@@ -1247,16 +1254,16 @@ public:
         ColumnJSONB::MutablePtr converted_column = ColumnJSONB::create();
 
         if (which.isStringOrFixedString()) executeForString(type_and_column.column.get(), converted_column);
-        else if (which.isInt8()) executeForNumber<Int8>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int32));
-        else if (which.isInt16()) executeForNumber<Int16>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int32));
-        else if (which.isInt32()) executeForNumber<Int32>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int32));
-        else if (which.isInt64()) executeForNumber<Int64>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Int64));
-        else if (which.isUInt8()) executeForNumber<UInt8>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt32));
-        else if (which.isUInt16()) executeForNumber<UInt16>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt32));
-        else if (which.isUInt32()) executeForNumber<UInt32>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt32));
-        else if (which.isUInt64()) executeForNumber<UInt64>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::UInt64));
-        else if (which.isFloat32()) executeForNumber<Float32>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Float64));
-        else if (which.isFloat64()) executeForNumber<Float64>(type_and_column.column.get(), converted_column, UInt8(TypeIndex::Float64));
+        else if (which.isInt8()) executeForNumber<Int8>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64));
+        else if (which.isInt16()) executeForNumber<Int16>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64));
+        else if (which.isInt32()) executeForNumber<Int32>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64));
+        else if (which.isInt64()) executeForNumber<Int64>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64));
+        else if (which.isUInt8()) executeForNumber<UInt8>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64));
+        else if (which.isUInt16()) executeForNumber<UInt16>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64));
+        else if (which.isUInt32()) executeForNumber<UInt32>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64));
+        else if (which.isUInt64()) executeForNumber<UInt64>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64));
+        else if (which.isFloat32()) executeForNumber<Float32>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Float64));
+        else if (which.isFloat64()) executeForNumber<Float64>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Float64));
         else throw Exception("It is bug", ErrorCodes::ILLEGAL_COLUMN);
 
         block.getByPosition(result).column = std::move(converted_column);

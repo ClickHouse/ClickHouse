@@ -11,6 +11,7 @@
 #include <DataTypes/JSONB/JSONBStreamBuffer.h>
 #include <DataTypes/JSONB/JSONBSerialization.h>
 #include <DataTypes/JSONB/JSONBStreamFactory.h>
+#include <Columns/JSONB/JSONBDataMark.h>
 
 
 namespace DB
@@ -96,7 +97,7 @@ void ColumnJSONB::insertNewStructFrom(
             ColumnUInt8::Container & to_marks_column_data = to_marks_column->getData();
 
             for (size_t index = 0; index < limit; ++index)
-                to_marks_column_data.push_back(UInt8(TypeIndex::JSONB));
+                to_marks_column_data.push_back(UInt8(JSONBDataMark::Object));
         }
     }
 

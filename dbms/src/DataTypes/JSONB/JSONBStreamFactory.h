@@ -15,12 +15,6 @@ enum class FormatStyle
     ESCAPED,
 };
 
-template <typename PODArrayType, FormatStyle format>
-struct JSONBStreamPODArray;
-
-template <typename PODArrayType, FormatStyle format>
-using JSONBStreamPODArrayPtr = std::unique_ptr<JSONBStreamPODArray<PODArrayType, format>>;
-
 template <typename BufferType, FormatStyle format>
 struct JSONBStreamBuffer;
 
@@ -31,9 +25,6 @@ struct JSONBStreamFactory
 {
     template<FormatStyle format, typename BufferType>
     static JSONBStreamBufferPtr<BufferType, format> fromBuffer(BufferType * buffer, const FormatSettings & settings);
-
-    template <FormatStyle format, typename PODArrayType>
-    static JSONBStreamPODArrayPtr<PODArrayType, format> fromPODArray(PODArrayType & array, const FormatSettings & settings);
 };
 
 }
