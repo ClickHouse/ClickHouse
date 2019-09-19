@@ -20,6 +20,8 @@ import socket
 import sys
 import threading
 import time
+import uuid
+import xml.etree.ElementTree
 
 
 logging.getLogger().setLevel(logging.INFO)
@@ -43,13 +45,20 @@ def GetFreeTCPPortsAndIP(n):
     [ s.close() for s in sockets ]
     return result, addr
 
-(redirecting_to_http_port, simple_server_port, preserving_data_port, redirecting_preserving_data_port), localhost = GetFreeTCPPortsAndIP(4)
+(
+    redirecting_to_http_port,
+    simple_server_port,
+    preserving_data_port,
+    multipart_preserving_data_port,
+    redirecting_preserving_data_port
+), localhost = GetFreeTCPPortsAndIP(5)
+
 data = {
     'redirecting_to_http_port': redirecting_to_http_port,
     'preserving_data_port': preserving_data_port,
+    'multipart_preserving_data_port': multipart_preserving_data_port,
     'redirecting_preserving_data_port': redirecting_preserving_data_port,
 }
-redirecting_host = localhost
 
 
 class SimpleHTTPServerHandler(BaseHTTPRequestHandler):
@@ -113,7 +122,7 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.send_response(200)
         query = urlparse.urlparse(self.path).query
-        logging.info('POST ' + query)
+        logging.info('PreservingDataHandler POST ?' + query)
         if query == 'uploads':
             post_data = r'''<?xml version="1.0" encoding="UTF-8"?>
 <hi><UploadId>TEST</UploadId></hi>'''.encode()
@@ -145,6 +154,104 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
         data.setdefault('received_data', []).append(put_data)
         logging.info('PUT to {}'.format(path))
         self.server.storage[path] = put_data
+        self.finish()
+
+    def do_GET(self):
+        path = urlparse.urlparse(self.path).path
+        if path in self.server.storage:
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-length', str(len(self.server.storage[path])))
+            self.end_headers()
+            self.wfile.write(self.server.storage[path])
+        else:
+            self.send_response(404)
+            self.end_headers()
+        self.finish()
+
+
+class MultipartPreservingDataHandler(BaseHTTPRequestHandler):
+    protocol_version = 'HTTP/1.1'
+
+    def parse_request(self):
+        result = BaseHTTPRequestHandler.parse_request(self)
+        # Adaptation to Python 3.
+        if sys.version_info.major == 2 and result == True:
+            expect = self.headers.get('Expect', "")
+            if (expect.lower() == "100-continue" and self.protocol_version >= "HTTP/1.1" and self.request_version >= "HTTP/1.1"):
+                if not self.handle_expect_100():
+                    return False
+        return result
+
+    def send_response_only(self, code, message=None):
+        if message is None:
+            if code in self.responses:
+                message = self.responses[code][0]
+            else:
+                message = ''
+        if self.request_version != 'HTTP/0.9':
+            self.wfile.write("%s %d %s\r\n" % (self.protocol_version, code, message))
+
+    def handle_expect_100(self):
+        logging.info('Received Expect-100')
+        self.send_response_only(100)
+        self.end_headers()
+        return True
+
+    def do_POST(self):
+        query = urlparse.urlparse(self.path).query
+        logging.info('MultipartPreservingDataHandler POST ?' + query)
+        if query == 'uploads':
+            self.send_response(200)
+            post_data = r'''<?xml version="1.0" encoding="UTF-8"?>
+<hi><UploadId>TEST</UploadId></hi>'''.encode()
+            self.send_header('Content-length', str(len(post_data)))
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(post_data)
+        else:
+            try:
+                assert query == 'uploadId=TEST'
+                logging.info('Content-Length = ' + self.headers.get('Content-Length'))
+                post_data = self.rfile.read(int(self.headers.get('Content-Length')))
+                root = xml.etree.ElementTree.fromstring(post_data)
+                assert root.tag == 'CompleteMultipartUpload'
+                assert len(root) > 1
+                content = ''
+                for i, part in enumerate(root):
+                    assert part.tag == 'Part'
+                    assert len(part) == 2
+                    assert part[0].tag == 'PartNumber'
+                    assert part[1].tag == 'ETag'
+                    assert int(part[0].text) == i + 1
+                    content += self.server.storage['@'+part[1].text]
+                data.setdefault('multipart_received_data', []).append(content)
+                data['multipart_parts'] = len(root)
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                logging.info('Sending 200')
+            except:
+                logging.error('Sending 500')
+                self.send_response(500)
+        self.finish()
+ 
+    def do_PUT(self):
+        uid = uuid.uuid4()
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.send_header('ETag', str(uid))
+        self.end_headers()
+        query = urlparse.urlparse(self.path).query
+        path = urlparse.urlparse(self.path).path
+        logging.info('Content-Length = ' + self.headers.get('Content-Length'))
+        logging.info('PUT ' + query)
+        assert self.headers.get('Content-Length')
+        assert self.headers['Expect'] == '100-continue'
+        put_data = self.rfile.read()
+        data.setdefault('received_data', []).append(put_data)
+        logging.info('PUT to {}'.format(path))
+        self.server.storage['@'+str(uid)] = put_data
         self.finish()
 
     def do_GET(self):
@@ -229,11 +336,19 @@ class CommunicationServerHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data))
         self.finish()
 
+    def do_PUT(self):
+        self.send_response(200)
+        self.end_headers()
+        logging.info(self.rfile.read())
+        self.finish()
+
 
 servers = []
 servers.append(HTTPServer((localhost, communication_port), CommunicationServerHandler))
 servers.append(HTTPServer((localhost, redirecting_to_http_port), RedirectingToHTTPHandler))
 servers.append(HTTPServer((localhost, preserving_data_port), PreservingDataHandler))
+servers[-1].storage = {}
+servers.append(HTTPServer((localhost, multipart_preserving_data_port), MultipartPreservingDataHandler))
 servers[-1].storage = {}
 servers.append(HTTPServer((localhost, simple_server_port), SimpleHTTPServerHandler))
 servers.append(HTTPServer((localhost, redirecting_preserving_data_port), RedirectingPreservingDataHandler))
