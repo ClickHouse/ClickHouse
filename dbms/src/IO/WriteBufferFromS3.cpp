@@ -98,7 +98,7 @@ void WriteBufferFromS3::initiate()
     Poco::URI initiate_uri = uri;
     initiate_uri.setRawQuery("uploads");
     auto params = uri.getQueryParameters();
-    for (QueryParameters::const_iterator it = params.begin(); it != params.end(); ++it)
+    for (auto it = params.begin(); it != params.end(); ++it)
     {
         initiate_uri.addQueryParameter(it->first, it->second);
     }
