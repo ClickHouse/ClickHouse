@@ -40,3 +40,5 @@ if(USE_POCO_MONGODB)
 endif()
 
 add_subdirectory(Embedded)
+
+target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
