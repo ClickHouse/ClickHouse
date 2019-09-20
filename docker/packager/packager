@@ -105,7 +105,7 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
 
 def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs, with_coverage):
     result = []
-    cmake_flags = ['$CMAKE_FLAGS']
+    cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
     cc = compiler
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')

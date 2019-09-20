@@ -178,6 +178,7 @@ protected:
     // hash tables, it makes sense to pre-fault the pages by passing
     // MAP_POPULATE to mmap(). This takes some time, but should be faster
     // overall than having a hot loop interrupted by page faults.
+    // It is only supported on Linux.
     static constexpr int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS
 #if defined(OS_LINUX)
         | (mmap_populate ? MAP_POPULATE : 0)
