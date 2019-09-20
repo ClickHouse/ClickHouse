@@ -334,7 +334,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 
 
 SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, AggregatingTransformParamsPtr params_)
-    : IProcessor(InputPorts(num_inputs_, params->getHeader()), {params_->getHeader()})
+    : IProcessor(InputPorts(num_inputs_, params_->getHeader()), {params_->getHeader()})
     , num_inputs(num_inputs_)
     , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
@@ -507,6 +507,7 @@ Processors createMergingAggregatedMemoryEfficientPipe(
     for (size_t i = 0; i < num_merging_processors; ++i, ++in, ++out)
     {
         auto transform = std::make_shared<MergingAggregatedBucketTransform>(params);
+        transform->setStream(i);
         connect(*out, transform->getInputPort());
         connect(transform->getOutputPort(), *in);
         processors.emplace_back(std::move(transform));

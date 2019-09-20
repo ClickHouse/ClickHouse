@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -47,6 +48,9 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.template_settings.format = settings.format_schema;
+    format_settings.template_settings.row_format = settings.format_schema_rows;
+    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
 
     return format_settings;
 }
@@ -63,6 +67,9 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.template_settings.format = settings.format_schema;
+    format_settings.template_settings.row_format = settings.format_schema_rows;
+    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
 
@@ -76,7 +83,6 @@ BlockInputStreamPtr FormatFactory::getInput(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    UInt64 rows_portion_size,
     ReadCallback callback) const
 {
     if (name == "Native")
@@ -91,16 +97,16 @@ BlockInputStreamPtr FormatFactory::getInput(
         const Settings & settings = context.getSettingsRef();
         FormatSettings format_settings = getInputFormatSetting(settings);
 
-        return input_getter(
-                buf, sample, context, max_block_size, rows_portion_size, callback ? callback : ReadCallback(), format_settings);
+        return input_getter(buf, sample, context, max_block_size, callback ? callback : ReadCallback(), format_settings);
     }
 
-    auto format = getInputFormat(name, buf, sample, context, max_block_size, rows_portion_size, std::move(callback));
+    auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));
     return std::make_shared<InputStreamFromInputFormat>(std::move(format));
 }
 
 
-BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+BlockOutputStreamPtr FormatFactory::getOutput(
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
     if (name == "PrettyCompactMonoBlock")
     {
@@ -124,14 +130,14 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
         const Settings & settings = context.getSettingsRef();
         FormatSettings format_settings = getOutputFormatSetting(settings);
 
-        /** Materialization is needed, because formats can use the functions `IDataType`,
+        /**  Materialization is needed, because formats can use the functions `IDataType`,
           *  which only work with full columns.
           */
         return std::make_shared<MaterializingBlockOutputStream>(
-                output_getter(buf, sample, context, format_settings), sample);
+                output_getter(buf, sample, context, callback, format_settings), sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context);
+    auto format = getOutputFormat(name, buf, sample, context, callback);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
@@ -142,7 +148,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    UInt64 rows_portion_size,
     ReadCallback callback) const
 {
     const auto & input_getter = getCreators(name).input_processor_creator;
@@ -156,7 +161,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.max_block_size = max_block_size;
     params.allow_errors_num = format_settings.input_allow_errors_num;
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-    params.rows_portion_size = rows_portion_size;
     params.callback = std::move(callback);
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
@@ -165,7 +169,8 @@ InputFormatPtr FormatFactory::getInputFormat(
 }
 
 
-OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+OutputFormatPtr FormatFactory::getOutputFormat(
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
@@ -177,7 +182,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
-    return output_getter(buf, sample, context, format_settings);
+    return output_getter(buf, sample, context, callback, format_settings);
 }
 
 
@@ -218,8 +223,6 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatTabSeparated(FormatFactory & factory);
-void registerInputFormatCSV(FormatFactory & factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -236,9 +239,12 @@ void registerOutputFormatProcessorTSKV(FormatFactory & factory);
 void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerInputFormatProcessorParquet(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorTemplate(FormatFactory & factory);
+void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 
 /// Output only (presentational) formats.
 
@@ -250,6 +256,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
 void registerOutputFormatProcessorVertical(FormatFactory & factory);
 void registerOutputFormatProcessorJSON(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatProcessorXML(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
@@ -263,8 +270,8 @@ FormatFactory::FormatFactory()
 {
     registerInputFormatNative(*this);
     registerOutputFormatNative(*this);
-    registerInputFormatTabSeparated(*this);
-    registerInputFormatCSV(*this);
+
+    registerOutputFormatProcessorJSONEachRowWithProgress(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);
@@ -283,8 +290,11 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
     registerInputFormatProcessorCapnProto(*this);
+    registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorTemplate(*this);
+    registerOutputFormatProcessorTemplate(*this);
 
 
     registerOutputFormatNull(*this);
@@ -299,7 +309,15 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
+#if USE_POCO_NETSSL
     registerOutputFormatProcessorMySQLWrite(*this);
+#endif
+}
+
+FormatFactory & FormatFactory::instance()
+{
+    static FormatFactory ret;
+    return ret;
 }
 
 }

@@ -78,12 +78,16 @@ public:
                     return;
             }
 
-            /// Generate the name for the external table.
-            String external_table_name = "_data" + toString(external_table_id);
-            while (external_tables.count(external_table_name))
+            String external_table_name = subquery_or_table_name->tryGetAlias();
+            if (external_table_name.empty())
             {
-                ++external_table_id;
+                /// Generate the name for the external table.
                 external_table_name = "_data" + toString(external_table_id);
+                while (external_tables.count(external_table_name))
+                {
+                    ++external_table_id;
+                    external_table_name = "_data" + toString(external_table_id);
+                }
             }
 
             auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
@@ -91,7 +95,7 @@ public:
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-            StoragePtr external_storage = StorageMemory::create("_external", external_table_name, ColumnsDescription{columns});
+            StoragePtr external_storage = StorageMemory::create("_external", external_table_name, ColumnsDescription{columns}, ConstraintsDescription{});
             external_storage->startup();
 
             /** We replace the subquery with the name of the temporary table.

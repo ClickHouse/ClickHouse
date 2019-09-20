@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 
 #include <Core/MySQLProtocol.h>
@@ -107,10 +109,13 @@ void MySQLOutputFormat::flush()
 void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
-        "MySQLWire", [](WriteBuffer & buf, const Block & sample, const Context & context, const FormatSettings & settings)
-        {
-            return std::make_shared<MySQLOutputFormat>(buf, sample, context, settings);
-        });
+        "MySQLWire",
+        [](WriteBuffer & buf,
+           const Block & sample,
+           const Context & context,
+           FormatFactory::WriteCallback,
+           const FormatSettings & settings) { return std::make_shared<MySQLOutputFormat>(buf, sample, context, settings); });
 }
 
 }
+#endif

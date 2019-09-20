@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Poco/Net/SSLManager.h>
@@ -122,3 +124,4 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
 }
 
 }
+#endif

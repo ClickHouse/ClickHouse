@@ -554,12 +554,40 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_log>
 ```
 
+## query_masking_rules
 
-## remote_servers
+Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
+`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to client. That allows preventing
+sensitive data leakage from SQL queries (like names / emails / personal
+identifiers / credit card numbers etc) to logs.
 
-Configuration of clusters used by the Distributed table engine.
+**Example**
 
-For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md)".
+```xml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```
+
+Config fields:
+- `name` - name for the rule (optional)
+- `regexp` - RE2 compatible regular expression (mandatory)
+- `replace` - substitution string for sensitive data (optional, by default - six asterisks)
+
+The masking rules are applied on whole query (to prevent leaks of sensitive data from malformed / non parsable queries).
+
+`system.events` table have counter `QueryMaskingRulesMatch` which have overall number of query masking rules matches.
+
+For distributed queries each server have to be configured separately, otherwise subquries passed to other
+nodes will be stored without masking.
+
+## remote_servers {#server_settings_remote_servers}
+
+Configuration of clusters used by the [Distributed](../../operations/table_engines/distributed.md) table engine and by the `cluster` table function.
 
 **Example**
 
@@ -569,6 +597,9 @@ For more information, see the section "[Table engines/Distributed](../../operati
 
 For the value of the `incl` attribute, see the section "[Configuration files](../configuration_files.md#configuration_files)".
 
+**See Also**
+
+- [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone
 
@@ -742,5 +773,19 @@ If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_e
     Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 
 **Default value:** 0.
+
+## disable_internal_dns_cache {#server-settings-disable_internal_dns_cache}
+
+Disables the internal DNS cache. Recommended for operating ClickHouse in systems
+with frequently changing infrastructure such as Kubernetes.
+
+**Default value:** 0.
+
+## dns_cache_update_period {#server-settings-dns_cache_update_period}
+
+The period of updating IP addresses stored in the ClickHouse internal DNS cache (in seconds).
+The update is performed asynchronously, in a separate system thread.
+
+**Default value**: 15.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef __ELF__
+
 /*
  * Copyright 2012-present Facebook, Inc.
  *
@@ -285,3 +287,5 @@ private:
 };
 
 }
+
+#endif

@@ -21,6 +21,7 @@ class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStor
 {
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
@@ -39,11 +40,15 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override { table_name = new_table_name; database_name = new_database_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
 private:
     String database_name;
@@ -55,7 +60,7 @@ private:
     std::mutex mutex;
 
 protected:
-    StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_);
+    StorageMemory(String database_name_, String table_name_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
 };
 
 }

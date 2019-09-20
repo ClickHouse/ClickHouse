@@ -25,24 +25,25 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     size_t aio_threshold_,
     bool blocks_are_granules_size_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const MergeTreeIndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_,
+    const MergeTreeIndexGranularityInfo * index_granularity_info_)
     : storage(storage_)
     , part_path(part_path_)
     , min_compress_block_size(min_compress_block_size_)
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
-    , marks_file_extension(storage.canUseAdaptiveGranularity() ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
+    , can_use_adaptive_granularity(index_granularity_info_ ? index_granularity_info_->is_adaptive : storage.canUseAdaptiveGranularity())
+    , marks_file_extension(can_use_adaptive_granularity ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
     , blocks_are_granules_size(blocks_are_granules_size_)
     , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
     , codec(std::move(codec_))
     , skip_indices(indices_to_recalc)
-    , with_final_mark(storage.settings.write_final_mark && storage.canUseAdaptiveGranularity())
+    , with_final_mark(storage.getSettings()->write_final_mark && can_use_adaptive_granularity)
 {
     if (blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 }
-
 
 void IMergedBlockOutputStream::addStreams(
     const String & path,
@@ -138,14 +139,15 @@ void fillIndexGranularityImpl(
 
 void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 {
+    const auto storage_settings = storage.getSettings();
     fillIndexGranularityImpl(
         block,
-        storage.settings.index_granularity_bytes,
-        storage.settings.index_granularity,
+        storage_settings->index_granularity_bytes,
+        storage_settings->index_granularity,
         blocks_are_granules_size,
         index_offset,
         index_granularity,
-        storage.canUseAdaptiveGranularity());
+        can_use_adaptive_granularity);
 }
 
 void IMergedBlockOutputStream::writeSingleMark(
@@ -176,7 +178,7 @@ void IMergedBlockOutputStream::writeSingleMark(
 
          writeIntBinary(stream.plain_hashing.count(), stream.marks);
          writeIntBinary(stream.compressed.offset(), stream.marks);
-         if (storage.canUseAdaptiveGranularity())
+         if (can_use_adaptive_granularity)
              writeIntBinary(number_of_rows, stream.marks);
      }, path);
 }
@@ -331,15 +333,15 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
 {
     /// Creating block for update
     Block indices_update_block(skip_indexes_columns);
-    size_t skip_index_current_mark = 0;
+    size_t skip_index_current_data_mark = 0;
 
     /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
-    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+    for (size_t i = 0; i < skip_indices.size(); ++i)
     {
-        const auto index = storage.skip_indices[i];
+        const auto index = skip_indices[i];
         auto & stream = *skip_indices_streams[i];
         size_t prev_pos = 0;
-        skip_index_current_mark = skip_index_mark;
+        skip_index_current_data_mark = skip_index_data_mark;
         while (prev_pos < rows)
         {
             UInt64 limit = 0;
@@ -349,7 +351,7 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
             }
             else
             {
-                limit = index_granularity.getMarkRows(skip_index_current_mark);
+                limit = index_granularity.getMarkRows(skip_index_current_data_mark);
                 if (skip_indices_aggregators[i]->empty())
                 {
                     skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -362,11 +364,11 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
                     writeIntBinary(stream.compressed.offset(), stream.marks);
                     /// Actually this numbers is redundant, but we have to store them
                     /// to be compatible with normal .mrk2 file format
-                    if (storage.canUseAdaptiveGranularity())
+                    if (can_use_adaptive_granularity)
                         writeIntBinary(1UL, stream.marks);
-
-                    ++skip_index_current_mark;
                 }
+                /// this mark is aggregated, go to the next one
+                skip_index_current_data_mark++;
             }
 
             size_t pos = prev_pos;
@@ -386,7 +388,7 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
             prev_pos = pos;
         }
     }
-    skip_index_mark = skip_index_current_mark;
+    skip_index_data_mark = skip_index_current_data_mark;
 }
 
 void IMergedBlockOutputStream::finishSkipIndicesSerialization(

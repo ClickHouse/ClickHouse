@@ -15,7 +15,6 @@ if(USE_HYPERSCAN)
     target_include_directories(clickhouse_functions_url SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
 endif()
 
-include(${ClickHouse_SOURCE_DIR}/cmake/find_gperf.cmake)
 if (USE_GPERF)
     # Only for regenerate
     add_custom_target(generate-tldlookup-gperf ./tldLookup.sh

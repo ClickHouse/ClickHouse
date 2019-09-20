@@ -26,7 +26,7 @@ SELECT [DISTINCT] expr_list
 如果查询中不包含`DISTINCT`，`GROUP BY`，`ORDER BY`子句以及`IN`和`JOIN`子查询，那么它将仅使用O(1)数量的内存来完全流式的处理查询
 否则，这个查询将消耗大量的内存，除非你指定了这些系统配置：`max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`。它们规定了可以使用外部排序（将临时表存储到磁盘中）以及外部聚合，`目前系统不存在关于Join的配置`，更多关于它们的信息，可以参见“配置”部分。
 
-### FROM 子句
+### FROM 子句 {#select-from}
 
 如果查询中不包含FROM子句，那么将读取`system.one`。
 `system.one`中仅包含一行数据（此表实现了与其他数据库管理系统中的DUAL相同的功能）。
@@ -612,7 +612,7 @@ WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚
 如果不存在聚合，则不能使用HAVING。
 
 
-### ORDER BY 子句
+### ORDER BY 子句 {#select-order-by}
 
 如果存在ORDER BY 子句，则该子句中必须存在一个表达式列表，表达式列表中每一个表达式都可以分配一个DESC或ASC（排序的方向）。如果没有指明排序的方向，将假定以ASC的方式进行排序。其中ASC表示按照升序排序，DESC按照降序排序。示例：`ORDER BY Visits DESC, SearchPhrase`
 

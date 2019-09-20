@@ -1,4 +1,5 @@
 #include <IO/HDFSCommon.h>
+#include <Poco/URI.h>
 
 #if USE_HDFS
 #include <Common/Exception.h>
@@ -11,8 +12,9 @@ extern const int BAD_ARGUMENTS;
 extern const int NETWORK_ERROR;
 }
 
-HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
+HDFSBuilderPtr createHDFSBuilder(const std::string & uri_str)
 {
+    const Poco::URI uri(uri_str);
     auto & host = uri.getHost();
     auto port = uri.getPort();
     auto & path = uri.getPath();
@@ -40,7 +42,10 @@ HDFSBuilderPtr createHDFSBuilder(const Poco::URI & uri)
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
-    hdfsBuilderSetNameNodePort(builder.get(), port);
+    if (port != 0)
+    {
+        hdfsBuilderSetNameNodePort(builder.get(), port);
+    }
     return builder;
 }
 
