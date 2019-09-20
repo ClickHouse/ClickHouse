@@ -41,9 +41,6 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(buf);
-    /// TODO remove before merge
-    const_cast<FormatSettings&>(this->format_settings).values.interpret_expressions = false;
-    const_cast<FormatSettings&>(this->format_settings).values.deduce_templates_of_expressions = true;
 }
 
 Chunk ValuesBlockInputFormat::generate()

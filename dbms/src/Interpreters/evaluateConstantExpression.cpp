@@ -45,13 +45,14 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     String name = node->getColumnName();
 
     if (!block_with_constants.has(name))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column not found): " + name, ErrorCodes::BAD_ARGUMENTS);
 
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
 
+    /// Expressions like rand() or now() is not constant
     if (!isColumnConst(result_column))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column is not const): " + name, ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_pair(result_column[0], result.type);
 }

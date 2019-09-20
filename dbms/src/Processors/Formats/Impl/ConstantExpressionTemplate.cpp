@@ -28,9 +28,9 @@ namespace ErrorCodes
 
 struct SpecialParserType
 {
-    bool is_array;
-    bool is_nullable;
-    Field::Types::Which nested_type;
+    bool is_array = false;
+    bool is_nullable = false;
+    Field::Types::Which nested_type = Field::Types::Which::String;
 
     bool useDefaultParser() const { return nested_type == Field::Types::Which::String; }
 };
@@ -82,6 +82,9 @@ private:
 
     void visit(ASTFunction & function, bool force_nullable)
     {
+        if (function.name == "lambda")
+            return;
+
         /// Do not replace literals which must be constant
         ColumnNumbers dont_visit_children;
         FunctionBuilderPtr builder = FunctionFactory::instance().get(function.name, context);
@@ -444,7 +447,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     else
     {
         Field number;
-        if (!type_info.is_nullable || istr.available() < 4 || 0 != strncasecmp(istr.position(), "NULL", 4))
+        if (type_info.is_nullable && 4 <= istr.available() && 0 == strncasecmp(istr.position(), "NULL", 4))
+            istr.position() += 4;
+        else
         {
             /// ParserNumber::parse(...) is slow because of using ASTPtr, Expected and Tokens, which is't needed here
             bool negative = *istr.position() == '-';
@@ -487,10 +492,6 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
             else
                 return false;
         }
-        else if (type_info.is_nullable)
-            istr.position() += 4;
-        else
-            return false;
 
         columns[column_idx]->insert(number);
         return true;
