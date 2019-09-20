@@ -30,6 +30,9 @@ public:
 
     /// Check if the user has access to the database.
     virtual bool hasAccessToDatabase(const String & user_name, const String & database_name) const = 0;
+
+    // Check if the user has access to the dictionary
+    virtual bool hasAccessToDictionary(const String & user_name, const String & dictionary_name) const = 0;
 };
 
 }

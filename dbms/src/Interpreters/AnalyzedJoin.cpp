@@ -2,11 +2,13 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
+#include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Storages/IStorage.h>
 
@@ -15,6 +17,17 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+AnalyzedJoin::AnalyzedJoin(const Settings & settings)
+    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
+    , join_use_nulls(settings.join_use_nulls)
+    , partial_merge_join(settings.partial_merge_join)
+{}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 {
@@ -93,14 +106,14 @@ NameSet AnalyzedJoin::getOriginalColumnsSet() const
     return out;
 }
 
-std::unordered_map<String, String> AnalyzedJoin::getOriginalColumnsMap(const NameSet & required_columns) const
+NamesWithAliases AnalyzedJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
-    std::unordered_map<String, String> out;
+    NamesWithAliases out;
     for (const auto & column : required_columns)
     {
         auto it = original_names.find(column);
         if (it != original_names.end())
-            out.insert(*it);
+            out.emplace_back(it->second, it->first); /// {original_name, name}
     }
     return out;
 }
@@ -129,15 +142,25 @@ Names AnalyzedJoin::requiredJoinedNames() const
     return Names(required_columns_set.begin(), required_columns_set.end());
 }
 
-void AnalyzedJoin::appendRequiredColumns(const Block & sample, NameSet & required_columns) const
+NameSet AnalyzedJoin::requiredRightKeys() const
 {
-    for (auto & column : key_names_right)
+    NameSet required;
+    for (const auto & name : key_names_right)
+        for (const auto & column : columns_added_by_join)
+            if (name == column.name)
+                required.insert(name);
+    return required;
+}
+
+NamesWithAliases AnalyzedJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
+{
+    NameSet required_columns(action_required_columns.begin(), action_required_columns.end());
+
+    for (auto & column : requiredJoinedNames())
         if (!sample.has(column))
             required_columns.insert(column);
 
-    for (auto & column : columns_added_by_join)
-        if (!sample.has(column.name))
-            required_columns.insert(column.name);
+    return getNamesWithAliases(required_columns);
 }
 
 void AnalyzedJoin::addJoinedColumn(const NameAndTypePair & joined_column)
@@ -212,13 +235,6 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->columns_added_by_join == y->columns_added_by_join;
 }
 
-JoinPtr AnalyzedJoin::makeHashJoin(const Block & sample_block, const SizeLimits & size_limits_for_join) const
-{
-    auto join = std::make_shared<Join>(key_names_right, join_use_nulls, size_limits_for_join, table_join.kind, table_join.strictness);
-    join->setSampleBlock(sample_block);
-    return join;
-}
-
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
 {
     NamesAndTypesList names_and_type_list;
@@ -242,6 +258,13 @@ NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpressio
     }
 
     return names_and_type_list;
+}
+
+JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
+{
+    if (table_join->partial_merge_join)
+        return std::make_shared<MergeJoin>(table_join, right_sample_block);
+    return std::make_shared<Join>(table_join, right_sample_block);
 }
 
 }

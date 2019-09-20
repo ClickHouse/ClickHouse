@@ -28,8 +28,6 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCall
             break;
 
         to.write(block);
-        if (!block.rows())
-            to.flush();
         progress(block);
     }
 

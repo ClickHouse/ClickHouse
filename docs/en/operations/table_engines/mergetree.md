@@ -313,6 +313,48 @@ INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100
 INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
 
+#### Functions Support
+
+Conditions in the `WHERE` clause contain calls of functions over the columns. If the column is a part of some index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subset of functions for using indexes.
+
+The `set` index can be used with all functions. Functions subsets for other indexes are in the table below.
+
+Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter
+----------------------------|-------------|--------|------------|------------|---------------
+[equals (=, ==)](../../query_language/functions/comparison_functions.md#function-equals) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | ✔ | ✔ | ✔
+[like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
+[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
+[startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
+[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ |
+[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
+[in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[less (<)](../../query_language/functions/comparison_functions.md#function-less) | ✔ | ✔ | ✗ | ✗ | ✗
+[greater (>)](../../query_language/functions/comparison_functions.md#function-greater) | ✔ | ✔ | ✗ | ✗ | ✗
+[lessOrEquals (<=)](../../query_language/functions/comparison_functions.md#function-lessorequals) | ✔ | ✔ | ✗ | ✗ | ✗
+[greaterOrEquals (>=)](../../query_language/functions/comparison_functions.md#function-greaterorequals) | ✔ | ✔ | ✗ | ✗ | ✗
+[empty](../../query_language/functions/array_functions.md#function-empty)  | ✔ | ✔ | ✗ | ✗ | ✗
+[notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✔ | ✗ | ✗ | ✗
+hasToken  | ✗ | ✗ | ✗ | ✔ | ✗ 
+
+Functions with a constant argument less than ngram size couldn't be used by `ngrambf_v1` for the query optimization.
+
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `bloom_filter` indexes couldn't be used for optimizing queries where the result of a function is expected to be false, for example:
+
+- Can be optimized:
+    - `s LIKE '%test%'`
+    - `NOT s NOT LIKE '%test%'`
+    - `s = 1`
+    - `NOT s != 1`
+    - `startsWith(s, 'test')`
+- Can't be optimized:
+    - `NOT s LIKE '%test%'`
+    - `s NOT LIKE '%test%'`
+    - `NOT s = 1`
+    - `s != 1`
+    - `NOT startsWith(s, 'test')`
+
 ## Concurrent Data Access
 
 For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
@@ -346,9 +388,65 @@ When the values in the column expire, ClickHouse replaces them with the default 
 
 The `TTL` clause can't be used for key columns.
 
+Examples:
+
+Creating a table with TTL
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int TTL d + INTERVAL 1 MONTH,
+    b Int TTL d + INTERVAL 1 MONTH,
+    c String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d;
+```
+
+Adding TTL to a column of an existing table
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 DAY;
+```
+
+Altering TTL of the column
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 MONTH;
+```
+
 **Table TTL**
 
 When data in a table expires, ClickHouse deletes all corresponding rows.
+
+Examples:
+
+Creating a table with TTL
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH;
+```
+
+Altering TTL of the table
+
+```sql
+ALTER TABLE example_table
+    MODIFY TTL d + INTERVAL 1 DAY;
+```
 
 **Removing Data**
 

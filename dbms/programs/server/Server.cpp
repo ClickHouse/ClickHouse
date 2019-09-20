@@ -55,6 +55,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include "MySQLHandlerFactory.h"
+#include <Common/SensitiveDataMasker.h>
 
 
 #if defined(__linux__)
@@ -87,6 +88,7 @@ namespace ErrorCodes
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -269,6 +271,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::File(path + "data/" + default_database).createDirectories();
     Poco::File(path + "metadata/" + default_database).createDirectories();
 
+    /// Check that we have read and write access to all data paths
+    auto disk_selector = global_context->getDiskSelector();
+    for (const auto & [name, disk] : disk_selector.getDisksMap())
+    {
+        Poco::File disk_path(disk->getPath());
+        if (!disk_path.canRead() || !disk_path.canWrite())
+            throw Exception("There is no RW access to disk " + name + " (" + disk->getPath() + ")", ErrorCodes::PATH_ACCESS_DENIED);
+    }
+
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -278,7 +289,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+
         global_context->shutdown();
+
         LOG_DEBUG(log, "Shutted down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -407,6 +420,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    if (config().has("query_masking_rules"))
+    {
+        SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         config().getString("path", ""),

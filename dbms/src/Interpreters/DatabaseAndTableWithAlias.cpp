@@ -1,6 +1,5 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/AnalyzedJoin.h> /// for getNamesAndTypeListFromTableExpression
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 
@@ -15,6 +14,8 @@ namespace DB
 
 NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
+struct ASTTableExpression;
+NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {

@@ -4,9 +4,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Common/SipHash.h>
 #include "config_core.h"
 #include <unordered_map>
@@ -22,10 +20,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using NameWithAlias = std::pair<std::string, std::string>;
-using NamesWithAliases = std::vector<NameWithAlias>;
-
-class Join;
+class AnalyzedJoin;
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
 
 class IPreparedFunction;
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
@@ -105,8 +102,8 @@ public:
     bool unaligned_array_join = false;
 
     /// For JOIN
-    std::shared_ptr<AnalyzedJoin> join_params = nullptr;
-    std::shared_ptr<const Join> join;
+    std::shared_ptr<const AnalyzedJoin> table_join;
+    JoinPtr join;
 
     /// For PROJECT.
     NamesWithAliases projection;
@@ -122,7 +119,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> join_params, std::shared_ptr<const Join> hash_join);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -238,7 +235,7 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
+    JoinPtr getTableJoinAlgo() const;
 
     const Settings & getSettings() const { return settings; }
 
