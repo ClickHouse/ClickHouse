@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -84,7 +85,6 @@ BlockInputStreamPtr FormatFactory::getInput(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    UInt64 rows_portion_size,
     ReadCallback callback) const
 {
     if (name == "Native")
@@ -99,11 +99,10 @@ BlockInputStreamPtr FormatFactory::getInput(
         const Settings & settings = context.getSettingsRef();
         FormatSettings format_settings = getInputFormatSetting(settings);
 
-        return input_getter(
-                buf, sample, context, max_block_size, rows_portion_size, callback ? callback : ReadCallback(), format_settings);
+        return input_getter(buf, sample, context, max_block_size, callback ? callback : ReadCallback(), format_settings);
     }
 
-    auto format = getInputFormat(name, buf, sample, context, max_block_size, rows_portion_size, std::move(callback));
+    auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));
     return std::make_shared<InputStreamFromInputFormat>(std::move(format));
 }
 
@@ -151,7 +150,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     const Block & sample,
     const Context & context,
     UInt64 max_block_size,
-    UInt64 rows_portion_size,
     ReadCallback callback) const
 {
     const auto & input_getter = getCreators(name).input_processor_creator;
@@ -165,7 +163,6 @@ InputFormatPtr FormatFactory::getInputFormat(
     params.max_block_size = max_block_size;
     params.allow_errors_num = format_settings.input_allow_errors_num;
     params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-    params.rows_portion_size = rows_portion_size;
     params.callback = std::move(callback);
     params.max_execution_time = settings.max_execution_time;
     params.timeout_overflow_mode = settings.timeout_overflow_mode;
@@ -314,7 +311,9 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
+#if USE_POCO_NETSSL
     registerOutputFormatProcessorMySQLWrite(*this);
+#endif
 }
 
 FormatFactory & FormatFactory::instance()

@@ -49,6 +49,12 @@ namespace ErrorCodes
   * Retrun bitmap cardinality:
   * bitmapCardinality:	bitmap -> integer
   *
+  * Retrun smallest value in the set:
+  * bitmapMin:	bitmap -> integer
+  *
+  * Retrun the greatest value in the set:
+  * bitmapMax:	bitmap -> integer
+  *
   * Two bitmap and calculation, return cardinality:
   * bitmapAndCardinality:	bitmap,bitmap -> integer
   *
@@ -357,13 +363,13 @@ private:
     }
 };
 
-template <typename Name>
+template <typename Impl>
 class FunctionBitmapSelfCardinalityImpl : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSelfCardinalityImpl>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
 
     String getName() const override { return name; }
 
@@ -417,10 +423,43 @@ private:
             = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[0]).column.get());
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateFunctionGroupBitmapData<T> & bd1
+            const AggregateFunctionGroupBitmapData<T> & bd
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(column->getData()[i]);
-            vec_to[i] = bd1.rbs.size();
+            vec_to[i] = Impl::apply(bd);
         }
+    }
+};
+
+struct BitmapCardinalityImpl
+{
+public:
+    static constexpr auto name = "bitmapCardinality";
+    template <typename T>
+    static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bd)
+    {
+        return bd.rbs.size();
+    }
+};
+
+struct BitmapMinImpl
+{
+public:
+    static constexpr auto name = "bitmapMin";
+    template <typename T>
+    static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bd)
+    {
+        return bd.rbs.rb_min();
+    }
+};
+
+struct BitmapMaxImpl
+{
+public:
+    static constexpr auto name = "bitmapMax";
+    template <typename T>
+    static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bd)
+    {
+        return bd.rbs.rb_max();
     }
 };
 
@@ -840,7 +879,9 @@ struct NameBitmapHasAny
     static constexpr auto name = "bitmapHasAny";
 };
 
-using FunctionBitmapSelfCardinality = FunctionBitmapSelfCardinalityImpl<NameBitmapCardinality>;
+using FunctionBitmapSelfCardinality = FunctionBitmapSelfCardinalityImpl<BitmapCardinalityImpl>;
+using FunctionBitmapMin = FunctionBitmapSelfCardinalityImpl<BitmapMinImpl>;
+using FunctionBitmapMax = FunctionBitmapSelfCardinalityImpl<BitmapMaxImpl>;
 using FunctionBitmapAndCardinality = FunctionBitmapCardinality<BitmapAndCardinalityImpl, NameBitmapAndCardinality, UInt64>;
 using FunctionBitmapOrCardinality = FunctionBitmapCardinality<BitmapOrCardinalityImpl, NameBitmapOrCardinality, UInt64>;
 using FunctionBitmapXorCardinality = FunctionBitmapCardinality<BitmapXorCardinalityImpl, NameBitmapXorCardinality, UInt64>;

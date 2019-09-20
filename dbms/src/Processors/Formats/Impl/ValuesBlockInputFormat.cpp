@@ -48,14 +48,8 @@ Chunk ValuesBlockInputFormat::generate()
     const Block & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
 
-    for (size_t rows_in_block = 0, batch = 0; rows_in_block < params.max_block_size; ++rows_in_block, ++batch)
+    for (size_t rows_in_block = 0; rows_in_block < params.max_block_size; ++rows_in_block)
     {
-        if (params.rows_portion_size && batch == params.rows_portion_size)
-        {
-            batch = 0;
-            if (!checkTimeLimit(params, total_stopwatch) || isCancelled())
-                break;
-        }
         try
         {
             skipWhitespaceIfAny(buf);
@@ -336,12 +330,8 @@ bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_size, int balance)
 
 void ValuesBlockInputFormat::assertDelimiterAfterValue(size_t column_idx)
 {
-    skipWhitespaceIfAny(buf);
-
-    if (column_idx + 1 != num_columns)
-        assertChar(',', buf);
-    else
-        assertChar(')', buf);
+    if (!checkDelimiterAfterValue(column_idx))
+        throwAtAssertionFailed((column_idx + 1 == num_columns) ? ")" : ",", buf);
 }
 
 bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)

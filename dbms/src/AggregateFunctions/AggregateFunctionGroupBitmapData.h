@@ -88,10 +88,11 @@ public:
 
         if (is_large)
         {
-            toLarge();
-            UInt32 cardinality;
-            readBinary(cardinality, in);
-            db_roaring_bitmap_add_many(in, rb, cardinality);
+            std::string s;
+            readStringBinary(s,in);
+            rb = roaring_bitmap_portable_deserialize(s.c_str());
+            for (const auto & x : small) //merge from small
+                roaring_bitmap_add(rb, x.getValue());
         }
         else
             small.read(in);
@@ -103,9 +104,10 @@ public:
 
         if (isLarge())
         {
-            UInt32 cardinality = roaring_bitmap_get_cardinality(rb);
-            writePODBinary(cardinality, out);
-            db_ra_to_uint32_array(out, &rb->high_low_container);
+            uint32_t expectedsize = roaring_bitmap_portable_size_in_bytes(rb);
+            std::string s(expectedsize,0);
+            roaring_bitmap_portable_serialize(rb, const_cast<char*>(s.data()));
+            writeStringBinary(s,out);
         }
         else
             small.write(out);
@@ -491,6 +493,48 @@ public:
             }
         }
         return count;
+    }
+
+    UInt64 rb_min() const
+    {
+        UInt64 min_val = UINT32_MAX;
+        if (isSmall())
+        {
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if (UInt64(val) < min_val)
+                {
+                    min_val = UInt64(val);
+                }
+            }
+        }
+        else
+        {
+            min_val = UInt64(roaring_bitmap_minimum(rb));
+        }
+        return min_val;
+    }
+
+    UInt64 rb_max() const
+    {
+        UInt64 max_val = 0;
+        if (isSmall())
+        {
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if (UInt64(val) > max_val)
+                {
+                    max_val = UInt64(val);
+                }
+            }
+        }
+        else
+        {
+            max_val = UInt64(roaring_bitmap_maximum(rb));
+        }
+        return max_val;
     }
 
 private:

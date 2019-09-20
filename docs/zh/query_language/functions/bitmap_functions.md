@@ -276,6 +276,54 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────┘
 ```
 
+## bitmapMin
+
+返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32_MAX。
+
+```
+bitmapMin(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – 位图对象。
+
+**示例**
+
+``` sql
+SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+## bitmapMax
+
+返回一个UInt64类型的数值，表示位图中的最大值。如果位图为空则返回0。
+
+```
+bitmapMax(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – 位图对象。
+
+**示例**
+
+``` sql
+SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   5 │
+└─────┘
+```
+
 ## bitmapAndCardinality
 
 为两个位图对象进行与操作，返回结果位图的基数。

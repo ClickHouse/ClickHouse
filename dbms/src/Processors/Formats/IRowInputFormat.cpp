@@ -34,33 +34,6 @@ bool isParseError(int code)
 }
 
 
-static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
-{
-    switch (mode)
-    {
-        case OverflowMode::THROW:
-            throw Exception(message, code);
-        case OverflowMode::BREAK:
-            return false;
-        default:
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-
-bool checkTimeLimit(const IRowInputFormat::Params & params, const Stopwatch & stopwatch)
-{
-    if (params.max_execution_time != 0
-        && stopwatch.elapsed() > static_cast<UInt64>(params.max_execution_time.totalMicroseconds()) * 1000)
-        return handleOverflowMode(params.timeout_overflow_mode,
-              "Timeout exceeded: elapsed " + toString(stopwatch.elapsedSeconds())
-              + " seconds, maximum: " + toString(params.max_execution_time.totalMicroseconds() / 1000000.0),
-              ErrorCodes::TIMEOUT_EXCEEDED);
-
-    return true;
-}
-
-
 Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
@@ -76,15 +49,8 @@ Chunk IRowInputFormat::generate()
 
     try
     {
-        for (size_t rows = 0, batch = 0; rows < params.max_block_size; ++rows, ++batch)
+        for (size_t rows = 0; rows < params.max_block_size; ++rows)
         {
-            if (params.rows_portion_size && batch == params.rows_portion_size)
-            {
-                batch = 0;
-                if (!checkTimeLimit(params, total_stopwatch) || isCancelled())
-                    break;
-            }
-
             try
             {
                 ++total_rows;

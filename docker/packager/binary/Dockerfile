@@ -55,7 +55,8 @@ RUN apt-get update -y \
             git \
             tzdata \
             gperf \
-            cmake
+            cmake \
+            gdb
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
