@@ -1,3 +1,13 @@
+## ClickHouse release 19.14.6.12, 2019-09-19
+
+### Bug Fix
+* Fix for function `АrrayEnumerateUniqRanked` with empty arrays in params. [#6928](https://github.com/yandex/ClickHouse/pull/6928) ([proller](https://github.com/proller))
+* Fixed subquery name in queries with `ARRAY JOIN` and `GLOBAL IN subquery` with alias. Use subquery alias for external table name if it is specified. [#6934](https://github.com/yandex/ClickHouse/pull/6934) ([Ivan](https://github.com/abyss7))
+
+### Build/Testing/Packaging Improvement
+* Fix [flapping](https://clickhouse-test-reports.s3.yandex.net/6944/aab95fd5175a513413c7395a73a82044bdafb906/functional_stateless_tests_(debug).html) test `00715_fetch_merged_or_mutated_part_zookeeper` by rewriting it to a shell scripts because it needs to wait for mutations to apply. [#6977](https://github.com/yandex/ClickHouse/pull/6977) ([Alexander Kazakov](https://github.com/Akazz))
+* Fixed UBSan and MemSan failure in function `groupUniqArray` with emtpy array argument. It was caused by placing of empty `PaddedPODArray` into hash table zero cell because constructor for zero cell value was not called. [#6937](https://github.com/yandex/ClickHouse/pull/6937) ([Amos Bird](https://github.com/amosbird))
+
 ## ClickHouse release 19.14.3.3, 2019-09-10
 
 ### New Feature
