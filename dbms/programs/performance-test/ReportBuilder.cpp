@@ -53,6 +53,7 @@ std::string ReportBuilder::buildFullReport(
     json_output.set("test_name", test_info.test_name);
     json_output.set("path", test_info.path);
     json_output.set("main_metric", getMainMetric(test_info));
+    json_output.set("connections", connections.size());
 
     if (!test_info.substitutions.empty())
     {
