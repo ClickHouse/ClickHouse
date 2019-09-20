@@ -45,18 +45,28 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 ## system.clusters
 
 Contains information about clusters available in the config file and the servers in them.
+
 Columns:
 
-```
-cluster String — The cluster name.
-shard_num UInt32 — The shard number in the cluster, starting from 1.
-shard_weight UInt32 — The relative weight of the shard when writing data.
-replica_num UInt32 — The replica number in the shard, starting from 1.
-host_name String — The host name, as specified in the config.
-String host_address — The host IP address obtained from DNS.
-port UInt16 — The port to use for connecting to the server.
-user String — The name of the user for connecting to the server.
-```
+- `cluster` (String) — The cluster name.
+- `shard_num` (UInt32) — The shard number in the cluster, starting from 1.
+- `shard_weight` (UInt32) — The relative weight of the shard when writing data.
+- `replica_num` (UInt32) — The replica number in the shard, starting from 1.
+- `host_name` (String) — The host name, as specified in the config.
+- `host_address` (String) — The host IP address obtained from DNS.
+- `port` (UInt16) — The port to use for connecting to the server.
+- `user` (String) — The name of the user for connecting to the server.
+- `errors_count` (UInt32) - number of times this host failed to reach replica.
+- `estimated_recovery_time` (UInt32) - seconds left until replica error count is zeroed and it is considered to be back to normal.
+
+
+Please note that `errors_count` is updated once per query to the cluster, but `estimated_recovery_time` is recalculated on-demand. So there could be a case of non-zero `errors_count` and zero `estimated_recovery_time`, that next query will zero `errors_count` and try to use replica as if it has no errors.
+
+**See also**
+
+- [Table engine Distributed](table_engines/distributed.md)
+- [distributed_replica_error_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
+- [distributed_replica_error_half_life setting](settings/settings.md#settings-distributed_replica_error_half_life)
 
 ## system.columns
 
@@ -81,16 +91,55 @@ The `system.columns` table contains the following columns (the column type is sh
 - `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 - `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
+## system.contributors {#system_contributors}
+
+Contains information about contributors. All constributors in random order. The order is random at query execution time.
+
+Columns:
+
+- `name` (String) — Contributor (author) name from git log.
+
+**Example**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+To find out yourself in the table, use a query:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
+
 ## system.databases
 
 This table contains a single String column called 'name' – the name of a database.
 Each database that the server knows about has a corresponding entry in the table.
 This system table is used for implementing the `SHOW DATABASES` query.
 
-## system.detached_parts
+## system.detached_parts {#system_tables-detached_parts}
 
-Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts).
-
+Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
 ## system.dictionaries
 
@@ -98,19 +147,19 @@ Contains information about external dictionaries.
 
 Columns:
 
-- `name String` — Dictionary name.
-- `type String` — Dictionary type: Flat, Hashed, Cache.
-- `origin String` — Path to the configuration file that describes the dictionary.
-- `attribute.names Array(String)` — Array of attribute names provided by the dictionary.
-- `attribute.types Array(String)` — Corresponding array of attribute types that are provided by the dictionary.
-- `has_hierarchy UInt8` — Whether the dictionary is hierarchical.
-- `bytes_allocated UInt64` — The amount of RAM the dictionary uses.
-- `hit_rate Float64` — For cache dictionaries, the percentage of uses for which the value was in the cache.
-- `element_count UInt64` — The number of items stored in the dictionary.
-- `load_factor Float64` — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
-- `creation_time DateTime` — The time when the dictionary was created or last successfully reloaded.
-- `last_exception String` — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
-- `source String` — Text describing the data source for the dictionary.
+- `name` (String) — Dictionary name.
+- `type` (String) — Dictionary type: Flat, Hashed, Cache.
+- `origin` (String) — Path to the configuration file that describes the dictionary.
+- `attribute.names` (Array(String)) — Array of attribute names provided by the dictionary.
+- `attribute.types` (Array(String)) — Corresponding array of attribute types that are provided by the dictionary.
+- `has_hierarchy` (UInt8) — Whether the dictionary is hierarchical.
+- `bytes_allocated` (UInt64) — The amount of RAM the dictionary uses.
+- `hit_rate` (Float64) — For cache dictionaries, the percentage of uses for which the value was in the cache.
+- `element_count` (UInt64) — The number of items stored in the dictionary.
+- `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
+- `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
+- `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
+- `source` (String) — Text describing the data source for the dictionary.
 
 Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
 
@@ -178,19 +227,19 @@ Contains information about merges and part mutations currently in process for ta
 
 Columns:
 
-- `database String`  — The name of the database the table is in.
-- `table String` — Table name.
-- `elapsed Float64` — The time elapsed (in seconds) since the merge started.
-- `progress Float64` — The percentage of completed work from 0 to 1.
-- `num_parts UInt64` — The number of pieces to be merged.
-- `result_part_name String` — The name of the part that will be formed as the result of merging.
-- `is_mutation UInt8` - 1 if this process is a part mutation.
-- `total_size_bytes_compressed UInt64` — The total size of the compressed data in the merged chunks.
-- `total_size_marks UInt64` — The total number of marks in the merged parts.
-- `bytes_read_uncompressed UInt64` — Number of bytes read, uncompressed.
-- `rows_read UInt64` — Number of rows read.
-- `bytes_written_uncompressed UInt64` — Number of bytes written, uncompressed.
-- `rows_written UInt64` — Number of rows written.
+- `database` (String)  — The name of the database the table is in.
+- `table` (String) — Table name.
+- `elapsed` (Float64) — The time elapsed (in seconds) since the merge started.
+- `progress` (Float64) — The percentage of completed work from 0 to 1.
+- `num_parts` (UInt64) — The number of pieces to be merged.
+- `result_part_name` (String) — The name of the part that will be formed as the result of merging.
+- `is_mutation` (UInt8) - 1 if this process is a part mutation.
+- `total_size_bytes_compressed` (UInt64) — The total size of the compressed data in the merged chunks.
+- `total_size_marks` (UInt64) — The total number of marks in the merged parts.
+- `bytes_read_uncompressed` (UInt64) — Number of bytes read, uncompressed.
+- `rows_read` (UInt64) — Number of rows read.
+- `bytes_written_uncompressed` (UInt64) — Number of bytes written, uncompressed.
+- `rows_written` (UInt64) — Number of rows written.
 
 ## system.metrics {#system_tables-metrics}
 
@@ -249,55 +298,50 @@ This is similar to the DUAL table found in other DBMSs.
 
 Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
 
-Each row describes one part of the data.
+Each row describes one data part.
 
 Columns:
 
-- partition (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
+- `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
 
-Formats:
-- `YYYYMM` for automatic partitioning by month.
-- `any_string` when partitioning manually.
+    Formats:
 
-- name (String) – Name of the data part.
+    - `YYYYMM` for automatic partitioning by month.
+    - `any_string` when partitioning manually.
 
-- active (UInt8) – Indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
+- `name` (String) – Name of the data part.
+- `active` (UInt8) – Flag that indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
+- `marks` (UInt64) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn't work for adaptive granularity).
+- `rows` (UInt64) – The number of rows.
+- `bytes_on_disk` (UInt64) – Total size of all the data part files in bytes.
+- `data_compressed_bytes` (UInt64) – Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
+- `data_uncompressed_bytes` (UInt64) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
+- `marks_bytes` (UInt64) – The size of the file with marks.
+- `modification_time` (DateTime) – The modification time of the directory with the data part. This usually corresponds to the time of data part creation.|
+- `remove_time` (DateTime) – The time when the data part became inactive.
+- `refcount` (UInt32) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
+- `min_date` (Date) – The minimum value of the date key in the data part.
+- `max_date` (Date) – The maximum value of the date key in the data part.
+- `min_time` (DateTime) – The minimum value of the date and time key in the data part.
+- `max_time`(`DateTime`) – The maximum value of the date and time key in the data part.
+- `partition_id` (String) – Id of the partition.
+- `min_block_number` (UInt64) – The minimum number of data parts that make up the current part after merging.
+- `max_block_number` (UInt64) – The maximum number of data parts that make up the current part after merging.
+- `level` (UInt32) – Depth of the merge tree. Zero means that current part was created by insert rather than by merging other parts.
+- `data_version` (UInt64) – Number that is used to determine which mutations should be applied to the data part (the mutations with the higher version than `data_version`).
+- `primary_key_bytes_in_memory` (UInt64) – The amount of memory (in bytes) used by primary key values.
+- `primary_key_bytes_in_memory_allocated` (UInt64) – The amount of memory (in bytes) reserved for primary key values.
+- `is_frozen` (UInt8) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+- `database` (String) – Name of the database.
+- `table` (String) – Name of the table.
+- `engine` (String) – Name of the table engine without parameters.
+- `path` (String) – Absolute path to the folder with data part files.
+- `hash_of_all_files` (String) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
+- `hash_of_uncompressed_files` (String) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed data.
+- `uncompressed_hash_of_compressed_files` (String) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of the file with marks.
+- `bytes` (UInt64) – Alias for `bytes_on_disk`.
+- `marks_size` (UInt64) – Alias for `marks_bytes`.
 
-- marks (UInt64) – The number of marks. To get the approximate number of rows in a data part, multiply ``marks`` by the index granularity (usually 8192).
-
-- marks_size (UInt64) – The size of the file with marks.
-
-- rows (UInt64) – The number of rows.
-
-- bytes (UInt64) – The number of bytes when compressed.
-
-- modification_time (DateTime) – The modification time of the directory with the data part. This usually corresponds to the time of data part creation.|
-
-- remove_time (DateTime) – The time when the data part became inactive.
-
-- refcount (UInt32) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
-
-- min_date (Date) – The minimum value of the date key in the data part.
-
-- max_date (Date) – The maximum value of the date key in the data part.
-
-- min_block_number (UInt64) – The minimum number of data parts that make up the current part after merging.
-
-- max_block_number (UInt64) – The maximum number of data parts that make up the current part after merging.
-
-- level (UInt32) – Depth of the merge tree. If a merge was not performed, ``level=0``.
-
-- primary_key_bytes_in_memory (UInt64) – The amount of memory (in bytes) used by primary key values.
-
-- primary_key_bytes_in_memory_allocated (UInt64) – The amount of memory (in bytes) reserved for primary key values.
-
-- database (String) – Name of the database.
-
-- table (String) – Name of the table.
-
-- engine (String) – Name of the table engine without parameters.
-
-- is_frozen (UInt8) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
 
 ## system.part_log {#system_tables-part-log}
 
@@ -307,7 +351,12 @@ This table contains information about the events that occurred with the [data pa
 
 The `system.part_log` table contains the following columns:
 
-- `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values: `NEW_PART` — inserting, `MERGE_PARTS` — merging, `DOWNLOAD_PART` — downloading, `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition), `MUTATE_PART` — updating.
+- `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values:
+    - `NEW_PART` — inserting
+    - `MERGE_PARTS` — merging
+    - `DOWNLOAD_PART` — downloading
+    - `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition)
+    - `MUTATE_PART` — updating.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `duration_ms` (UInt64) — Duration.
@@ -331,25 +380,15 @@ The `system.part_log` table is created after the first inserting data to the `Me
 This system table is used for implementing the `SHOW PROCESSLIST` query.
 Columns:
 
-```
-user String              – Name of the user who made the request. For distributed query processing, this is the user who helped the requestor server send the query to this server, not the user who made the distributed request on the requestor server.
-
-address String           - The IP address the request was made from. The same for distributed processing.
-
-elapsed Float64          - The time in seconds since request execution started.
-
-rows_read UInt64         - The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
-
-bytes_read UInt64        - The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
-
-total_rows_approx UInt64 - The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
-
-memory_usage UInt64      - How much memory the request uses. It might not include some types of dedicated memory.
-
-query String             - The query text. For INSERT, it doesn't include the data to insert.
-
-query_id String          - Query ID, if defined.
-```
+- `user` (String)              – Name of the user who made the request. For distributed query processing, this is the user who helped the requestor server send the query to this server, not the user who made the distributed request on the requestor server.
+- `address` (String)           - The IP address the request was made from. The same for distributed processing.
+- `elapsed` (Float64)          - The time in seconds since request execution started.
+- `rows_read` (UInt64)         - The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `bytes_read` (UInt64)        - The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `total_rows_approx` (UInt64) - The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
+- `memory_usage` (UInt64)      - How much memory the request uses. It might not include some types of dedicated memory.
+- `query` (String)             - The query text. For INSERT, it doesn't include the data to insert.
+- `query_id` (String)          - Query ID, if defined.
 
 ## system.query_log {#system_tables-query-log}
 
@@ -357,15 +396,15 @@ Contains information about execution of queries. For each query, you can see pro
 
 !!! note
     The table doesn't contain input data for `INSERT` queries.
-    
+
 ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
 To enable query logging, set the [log_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
 
 The `system.query_log` table registers two kinds of queries:
- 
+
 1. Initial queries that were run directly by the client.
-2. Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns. 
+2. Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
 
 Columns:
 
@@ -376,8 +415,8 @@ Columns:
     - 4 — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
-- `query_start_time` (DateTime) — Start time of query processing.
-- `query_duration_ms` (UInt64) — Duration of query processing. 
+- `query_start_time` (DateTime) — Start time of query execution.
+- `query_duration_ms` (UInt64) — Duration of query execution.
 - `read_rows` (UInt64) — Number of read rows.
 - `read_bytes` (UInt64) — Number of read bytes.
 - `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
@@ -388,7 +427,7 @@ Columns:
 - `query` (String) — Query string.
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Kind of query. Possible values: 
+- `is_initial_query` (UInt8) — Kind of query. Possible values:
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
@@ -410,7 +449,7 @@ Columns:
 - `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
 - `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-    - 0 — The query was launched from the TCP interface. 
+    - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
@@ -573,11 +612,10 @@ I.e. used for executing the query you are using to read from the system.settings
 
 Columns:
 
-```
-name String  — Setting name.
-value String  — Setting value.
-changed UInt8 — Whether the setting was explicitly defined in the config or explicitly changed.
-```
+- `name` (String) — Setting name.
+- `value` (String)  — Setting value.
+- `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
+
 
 Example:
 
@@ -631,20 +669,20 @@ If the path specified in 'path' doesn't exist, an exception will be thrown.
 
 Columns:
 
-- `name String` — The name of the node.
-- `path String` — The path to the node.
-- `value String` — Node value.
-- `dataLength Int32` — Size of the value.
-- `numChildren Int32` — Number of descendants.
-- `czxid Int64` — ID of the transaction that created the node.
-- `mzxid Int64` — ID of the transaction that last changed the node.
-- `pzxid Int64` — ID of the transaction that last deleted or added descendants.
-- `ctime DateTime` — Time of node creation.
-- `mtime DateTime` — Time of the last modification of the node.
-- `version Int32` — Node version: the number of times the node was changed.
-- `cversion Int32` — Number of added or removed descendants.
-- `aversion Int32` — Number of changes to the ACL.
-- `ephemeralOwner Int64` — For ephemeral nodes, the ID of the session that owns this node.
+- `name` (String) — The name of the node.
+- `path` (String) — The path to the node.
+- `value` (String) — Node value.
+- `dataLength` (Int32) — Size of the value.
+- `numChildren` (Int32) — Number of descendants.
+- `czxid` (Int64) — ID of the transaction that created the node.
+- `mzxid` (Int64) — ID of the transaction that last changed the node.
+- `pzxid` (Int64) — ID of the transaction that last deleted or added descendants.
+- `ctime` (DateTime) — Time of node creation.
+- `mtime` (DateTime) — Time of the last modification of the node.
+- `version` (Int32) — Node version: the number of times the node was changed.
+- `cversion` (Int32) — Number of added or removed descendants.
+- `aversion` (Int32) — Number of changes to the ACL.
+- `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
 
 Example:
 

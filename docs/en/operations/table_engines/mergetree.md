@@ -45,7 +45,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For descriptions of request parameters, see the [request description](../../query_language/create.md).
+For a description of parameters, see the [CREATE query description](../../query_language/create.md).
+
+!!! note "Note"
+    `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
 ### Query Clauses
 
@@ -169,6 +172,7 @@ The number of columns in the primary key is not explicitly limited. Depending on
 - Improve the performance of an index.
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
+    
     - There are queries with a condition on column `c`.
     - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
@@ -236,7 +240,7 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indices (Experimental)
+### Data Skipping Indexes (Experimental) {#table_engine-mergetree-data_skipping-indexes}
 
 You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
 
@@ -295,11 +299,61 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
+- `bloom_filter([false_positive])` — Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+
+    The `false_positive` optional parameter is the probability of false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+
+    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+
+    Supported for the following functions: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
+
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
 INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
+
+#### Functions Support
+
+Conditions in the `WHERE` clause contain calls of functions over the columns. If the column is a part of some index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subset of functions for using indexes.
+
+The `set` index can be used with all functions. Functions subsets for other indexes are in the table below.
+
+Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter
+----------------------------|-------------|--------|------------|------------|---------------
+[equals (=, ==)](../../query_language/functions/comparison_functions.md#function-equals) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | ✔ | ✔ | ✔
+[like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
+[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
+[startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
+[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ |
+[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
+[in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[less (<)](../../query_language/functions/comparison_functions.md#function-less) | ✔ | ✔ | ✗ | ✗ | ✗
+[greater (>)](../../query_language/functions/comparison_functions.md#function-greater) | ✔ | ✔ | ✗ | ✗ | ✗
+[lessOrEquals (<=)](../../query_language/functions/comparison_functions.md#function-lessorequals) | ✔ | ✔ | ✗ | ✗ | ✗
+[greaterOrEquals (>=)](../../query_language/functions/comparison_functions.md#function-greaterorequals) | ✔ | ✔ | ✗ | ✗ | ✗
+[empty](../../query_language/functions/array_functions.md#function-empty)  | ✔ | ✔ | ✗ | ✗ | ✗
+[notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✔ | ✗ | ✗ | ✗
+hasToken  | ✗ | ✗ | ✗ | ✔ | ✗ 
+
+Functions with a constant argument less than ngram size couldn't be used by `ngrambf_v1` for the query optimization.
+
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `bloom_filter` indexes couldn't be used for optimizing queries where the result of a function is expected to be false, for example:
+
+- Can be optimized:
+    - `s LIKE '%test%'`
+    - `NOT s NOT LIKE '%test%'`
+    - `s = 1`
+    - `NOT s != 1`
+    - `startsWith(s, 'test')`
+- Can't be optimized:
+    - `NOT s LIKE '%test%'`
+    - `s NOT LIKE '%test%'`
+    - `NOT s = 1`
+    - `s != 1`
+    - `NOT startsWith(s, 'test')`
 
 ## Concurrent Data Access
 
@@ -334,9 +388,65 @@ When the values in the column expire, ClickHouse replaces them with the default 
 
 The `TTL` clause can't be used for key columns.
 
+Examples:
+
+Creating a table with TTL
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int TTL d + INTERVAL 1 MONTH,
+    b Int TTL d + INTERVAL 1 MONTH,
+    c String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d;
+```
+
+Adding TTL to a column of an existing table
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 DAY;
+```
+
+Altering TTL of the column
+
+```sql
+ALTER TABLE example_table
+    MODIFY COLUMN
+    c String TTL d + INTERVAL 1 MONTH;
+```
+
 **Table TTL**
 
 When data in a table expires, ClickHouse deletes all corresponding rows.
+
+Examples:
+
+Creating a table with TTL
+
+```sql
+CREATE TABLE example_table 
+(
+    d DateTime,
+    a Int
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY d
+TTL d + INTERVAL 1 MONTH;
+```
+
+Altering TTL of the table
+
+```sql
+ALTER TABLE example_table
+    MODIFY TTL d + INTERVAL 1 DAY;
+```
 
 **Removing Data**
 

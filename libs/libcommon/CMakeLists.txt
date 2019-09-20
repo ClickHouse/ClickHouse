@@ -62,7 +62,6 @@ add_library (common
     include/ext/scope_guard.h
     include/ext/size.h
     include/ext/unlock_guard.h
-    include/ext/singleton.h
 
     ${CONFIG_COMMON})
 
@@ -119,13 +118,11 @@ target_link_libraries (common
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
         PRIVATE
-    ${Boost_FILESYSTEM_LIBRARY}
+    stdc++fs
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
-    ${CMAKE_DL_LIBS}
     ${MALLOC_LIBRARIES}
-    Threads::Threads
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)

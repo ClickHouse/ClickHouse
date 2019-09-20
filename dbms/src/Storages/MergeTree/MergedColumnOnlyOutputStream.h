@@ -17,7 +17,8 @@ public:
         CompressionCodecPtr default_codec_, bool skip_offsets_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
         WrittenOffsetColumns & already_written_offset_columns_,
-        const MergeTreeIndexGranularity & index_granularity_);
+        const MergeTreeIndexGranularity & index_granularity_,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -27,7 +28,6 @@ public:
 private:
     Block header;
 
-    bool initialized = false;
     bool sync;
     bool skip_offsets;
 

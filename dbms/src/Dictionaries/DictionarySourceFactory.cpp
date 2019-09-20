@@ -101,4 +101,10 @@ DictionarySourcePtr DictionarySourceFactory::create(
     throw Exception{name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
 
+DictionarySourceFactory & DictionarySourceFactory::instance()
+{
+    static DictionarySourceFactory instance;
+    return instance;
+}
+
 }

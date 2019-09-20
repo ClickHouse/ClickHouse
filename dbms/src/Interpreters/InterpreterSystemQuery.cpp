@@ -49,6 +49,7 @@ namespace ActionLocks
     extern StorageActionBlockType ReplicationQueue;
     extern StorageActionBlockType DistributedSend;
     extern StorageActionBlockType PartsTTLMerge;
+    extern StorageActionBlockType PartsMove;
 }
 
 
@@ -189,6 +190,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_TTL_MERGES:
             startStopAction(context, query, ActionLocks::PartsTTLMerge, true);
             break;
+        case Type::STOP_MOVES:
+            startStopAction(context, query, ActionLocks::PartsMove, false);
+            break;
+        case Type::START_MOVES:
+            startStopAction(context, query, ActionLocks::PartsMove, true);
+            break;
         case Type::STOP_FETCHES:
             startStopAction(context, query, ActionLocks::PartsFetch, false);
             break;
@@ -278,6 +285,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         std::string data_path = database->getDataPath();
         auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+        auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
@@ -286,6 +294,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
             system_context,
             system_context.getGlobalContext(),
             columns,
+            constraints,
             create.attach,
             false);
 

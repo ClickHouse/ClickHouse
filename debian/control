@@ -5,7 +5,7 @@ Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake | cmake3,
                ninja-build,
-               gcc-7 [amd64 i386] | gcc-8 [amd64 i386] | gcc-9 [amd64 i386], g++-7 [amd64 i386] | g++-8 [amd64 i386] | g++-9 [amd64 i386],
+               gcc-9 [amd64 i386] | gcc-8 [amd64 i386], g++-9 [amd64 i386] | g++-8 [amd64 i386],
                clang-8 [arm64 armhf] | clang-7 [arm64 armhf] | clang-6.0 [arm64 armhf],
                libc6-dev,
                libicu-dev,

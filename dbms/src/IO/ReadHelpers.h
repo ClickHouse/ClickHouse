@@ -39,7 +39,8 @@
 #endif
 
 
-#define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
+/// 1 GiB
+#define DEFAULT_MAX_STRING_SIZE (1ULL << 30)
 
 
 namespace DB

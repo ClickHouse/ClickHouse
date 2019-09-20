@@ -31,7 +31,7 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     /// Maybe it will make sence to add settings `max_block_size_bytes`
     if (max_block_size_rows && !storage.canUseAdaptiveGranularity())
     {
-        size_t fixed_index_granularity = storage.settings.index_granularity;
+        size_t fixed_index_granularity = storage.getSettings()->index_granularity;
         min_marks_to_read = (min_marks_to_read_ * fixed_index_granularity + max_block_size_rows - 1)
             / max_block_size_rows * max_block_size_rows / fixed_index_granularity;
     }

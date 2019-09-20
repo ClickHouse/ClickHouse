@@ -12,6 +12,8 @@ void registerFunctionsBitmap(FunctionFactory & factory)
     factory.registerFunction<FunctionBitmapSubsetInRange>();
 
     factory.registerFunction<FunctionBitmapSelfCardinality>();
+    factory.registerFunction<FunctionBitmapMin>();
+    factory.registerFunction<FunctionBitmapMax>();
     factory.registerFunction<FunctionBitmapAndCardinality>();
     factory.registerFunction<FunctionBitmapOrCardinality>();
     factory.registerFunction<FunctionBitmapXorCardinality>();

@@ -20,13 +20,13 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct ASTTableJoin;
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
 
 class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
-
-struct SyntaxAnalyzerResult;
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
+struct ASTTablesInSelectQueryElement;
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
@@ -60,17 +60,11 @@ private:
     struct ExtractedSettings
     {
         const bool use_index_for_in_with_subqueries;
-        const bool join_use_nulls;
         const SizeLimits size_limits_for_set;
-        const SizeLimits size_limits_for_join;
-        const String join_default_strictness;
 
         ExtractedSettings(const Settings & settings_)
         :   use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries),
-            join_use_nulls(settings_.join_use_nulls),
-            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode),
-            size_limits_for_join(settings_.max_rows_in_join, settings_.max_bytes_in_join, settings_.join_overflow_mode),
-            join_default_strictness(settings_.join_default_strictness.toString())
+            size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
         {}
     };
 
@@ -122,9 +116,8 @@ protected:
     SyntaxAnalyzerResultPtr syntax;
 
     const StoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
-    const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
+    const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
-    const NamesAndTypesList & columnsAddedByJoin() const { return syntax->columns_added_by_join; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
@@ -132,7 +125,7 @@ protected:
 
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
-    void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
+    void addJoinAction(ExpressionActionsPtr & actions, JoinPtr = {}) const;
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
@@ -223,6 +216,10 @@ private:
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
+
+    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
+                             SubqueryForSet & subquery_for_set) const;
 
     const ASTSelectQuery * getAggregatingQuery() const;
 };

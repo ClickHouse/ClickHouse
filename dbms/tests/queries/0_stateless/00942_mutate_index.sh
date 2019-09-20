@@ -2,6 +2,7 @@
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
+. $CURDIR/mergetree_mutations.lib
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.minmax_idx;"
 
@@ -35,8 +36,7 @@ $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 1;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 5;"
 
 $CLICKHOUSE_CLIENT --query="ALTER TABLE test.minmax_idx UPDATE i64 = 5 WHERE i64 = 1;"
-
-sleep 0.1
+wait_for_mutation "minmax_idx" "mutation_2.txt" "test"
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 1;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 5;"

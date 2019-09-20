@@ -224,14 +224,13 @@ try
                 overflow_row,
                 max_rows_to_group_by,
                 OverflowMode::THROW,
-                nullptr, /// No compiler
-                0, /// min_count_to_compile
                 group_by_two_level_threshold,
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
-                1 /// max_threads
+                1, /// max_threads
+                0
             );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);
@@ -298,14 +297,13 @@ try
                 overflow_row,
                 max_rows_to_group_by,
                 OverflowMode::THROW,
-                nullptr, /// No compiler
-                0, /// min_count_to_compile
                 group_by_two_level_threshold,
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
-                1 /// max_threads
+                1, /// max_threads
+                0
         );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);

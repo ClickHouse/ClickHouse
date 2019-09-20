@@ -56,6 +56,7 @@ struct User
     /// Required password. Could be stored in plaintext or in SHA256.
     String password;
     String password_sha256_hex;
+    String password_double_sha1_hex;
 
     String profile;
     String quota;
@@ -65,6 +66,10 @@ struct User
     /// List of allowed databases.
     using DatabaseSet = std::unordered_set<std::string>;
     DatabaseSet databases;
+
+    /// List of allowed dictionaries.
+    using DictionarySet = std::unordered_set<std::string>;
+    DictionarySet dictionaries;
 
     /// Table properties.
     using PropertyMap = std::unordered_map<std::string /* name */, std::string /* value */>;
