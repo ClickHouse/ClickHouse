@@ -948,7 +948,7 @@ public:
 
         if (!which.isStringOrFixedString()
             && !which.isDateOrDateTime()
-            && !which.isUInt())
+            && !which.isUInt() && !which.isFloat())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1005,6 +1005,53 @@ public:
                 char * begin = reinterpret_cast<char *>(&out_vec[pos]);
                 char * end = begin;
                 executeOneUInt<T>(in_vec[i], end);
+
+                pos += end - begin;
+                out_offsets[i] = pos;
+            }
+
+            out_vec.resize(pos);
+
+            col_res = std::move(col_str);
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    template <typename T>
+    bool tryExecuteFloat(const IColumn * col, ColumnPtr & col_res)
+    {
+        const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
+
+        static constexpr size_t MAX_FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
+
+        if (col_vec)
+        {
+            auto col_str = ColumnString::create();
+            ColumnString::Chars & out_vec = col_str->getChars();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+            const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
+
+            size_t size = in_vec.size();
+            out_offsets.resize(size);
+            out_vec.resize(size * 3 + MAX_FLOAT_HEX_LENGTH); /// 3 is length of one byte in hex plus zero byte.
+
+            size_t pos = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
+                if (pos + MAX_FLOAT_HEX_LENGTH > out_vec.size())
+                    out_vec.resize(out_vec.size() * 2 + MAX_FLOAT_HEX_LENGTH);
+
+                char * begin = reinterpret_cast<char *>(&out_vec[pos]);
+                char * end = begin;
+
+                const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
+                executeOneString(in_pos, in_pos + sizeof(in_vec[i]), end);
 
                 pos += end - begin;
                 out_offsets[i] = pos;
@@ -1135,7 +1182,9 @@ public:
             tryExecuteUInt<UInt32>(column, res_column) ||
             tryExecuteUInt<UInt64>(column, res_column) ||
             tryExecuteString(column, res_column) ||
-            tryExecuteFixedString(column, res_column))
+            tryExecuteFixedString(column, res_column) ||
+            tryExecuteFloat<Float32>(column, res_column) ||
+            tryExecuteFloat<Float64>(column, res_column))
             return;
 
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
