@@ -11,6 +11,7 @@
 #endif
 
 #include <gtest/gtest.h>
+#include <chrono>
 
 
 namespace DB

@@ -805,8 +805,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     SyntaxAnalyzerResult result;
     result.storage = storage;
     result.source_columns = source_columns_;
-    result.analyzed_join = std::make_shared<AnalyzedJoin>(); /// TODO: move to select_query logic
-    result.analyzed_join->join_use_nulls = settings.join_use_nulls;
+    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings); /// TODO: move to select_query logic
 
     collectSourceColumns(select_query, result.storage, result.source_columns);
     NameSet source_columns_set = removeDuplicateColumns(result.source_columns);

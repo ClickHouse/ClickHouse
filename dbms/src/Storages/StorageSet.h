@@ -26,7 +26,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    String getDataPath() const override { return path; }
+    Strings getDataPaths() const override { return {path}; }
 
 protected:
     StorageSetOrJoinBase(

@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
