@@ -114,13 +114,13 @@ namespace detail
 
             auto sess = session->getSession();
 
-            auto & stream_out = sess->sendRequest(request);
-
-            if (out_stream_callback)
-                out_stream_callback(stream_out);
-
             try
             {
+                auto & stream_out = sess->sendRequest(request);
+
+                if (out_stream_callback)
+                    out_stream_callback(stream_out);
+
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
