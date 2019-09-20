@@ -92,7 +92,7 @@ void ReportBuilder::buildRunsReport(
         JSONString & json_output,
         StudentTTest & t_test) const
 {
-    std::vector<std::vector<JSONString>> run_infos;
+    std::vector<JSONString> run_infos;
 
     for (size_t query_index = 0; query_index < test_info.queries.size(); ++query_index)
     {
@@ -101,8 +101,12 @@ void ReportBuilder::buildRunsReport(
 
         for (size_t run_index = 0; run_index < test_info.times_to_run; ++run_index)
         {
+            JSONString run_info(2);
 
-            std::vector<JSONString> run_info;
+            run_info.set("query", std::regex_replace(test_info.queries[query_index], QUOTE_REGEX, "\\\""));
+            run_info.set("query_index", query_index);
+
+            std::vector<JSONString> run_by_connection_infos;
 
             for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
             {
@@ -112,10 +116,8 @@ void ReportBuilder::buildRunsReport(
                 if (!statistics.ready)
                     continue;
 
-                JSONString connection_runJSON(2);
-                connection_runJSON.set("query", std::regex_replace(test_info.queries[query_index], QUOTE_REGEX, "\\\""));
-                connection_runJSON.set("query_index", query_index);
-                connection_runJSON.set("connection", connections[connection_index]->getDescription());
+                JSONString run_by_connection(3);
+                run_by_connection.set("connection", connections[connection_index]->getDescription());
 
                 std::string name;
                 UInt64 version_major;
@@ -129,28 +131,28 @@ void ReportBuilder::buildRunsReport(
                 ss << version_major << "." << version_minor << "." << version_patch;
                 std::string connection_server_version = ss.str();
 
-                connection_runJSON.set("server_version", connection_server_version);
+                run_by_connection.set("server_version", connection_server_version);
 
                 bool t_test_status = test_info.stop_conditions_by_run[run_index][connection_index].isInitializedTTestWithConfidenceLevel();
                 if (t_test_status)
-                    connection_runJSON.set("t_test_status", t_test.reportResults(ConnectionTestStats::t_test_confidence_level, ConnectionTestStats::t_test_comparison_precision));
+                    run_by_connection.set("t_test_status", t_test.reportResults(ConnectionTestStats::t_test_confidence_level, ConnectionTestStats::t_test_comparison_precision));
 
                 if (!statistics.exception.empty())
                 {
                     if (isASCIIString(statistics.exception))
-                        connection_runJSON.set("exception", std::regex_replace(statistics.exception, QUOTE_REGEX, "\\\""));
+                        run_by_connection.set("exception", std::regex_replace(statistics.exception, QUOTE_REGEX, "\\\""));
                     else
-                        connection_runJSON.set("exception", "Some exception occurred with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
+                        run_by_connection.set("exception", "Some exception occurred with non ASCII message. This may produce invalid JSON. Try reproduce locally.");
                 }
 
                 if (test_info.exec_type == ExecutionType::Loop)
                 {
                     /// in seconds
-                    connection_runJSON.set("min_time", statistics.min_time / 1000000.0);
+                    run_by_connection.set("min_time", statistics.min_time / 1000000.0);
 
                     if (statistics.sampler.size() != 0)
                     {
-                        JSONString quantiles(5); /// here, 5 is the size of \t padding
+                        JSONString quantiles(5); /// here, 3 is the size of \t padding
                         for (int percent = 10; percent <= 90; percent += 10)
                         {
                             std::string quantile_key = std::to_string(percent / 100.0).substr(0, 3);
@@ -161,31 +163,32 @@ void ReportBuilder::buildRunsReport(
                         quantiles.set("0.999", statistics.sampler.quantileInterpolated(99.9 / 100.0));
                         quantiles.set("0.9999", statistics.sampler.quantileInterpolated(99.99 / 100.0));
 
-                        connection_runJSON.set("quantiles", quantiles.asString());
+                        run_by_connection.set("quantiles", quantiles.asString());
                     }
 
-                    connection_runJSON.set("total_time", statistics.total_time);
+                    run_by_connection.set("total_time", statistics.total_time);
 
                     if (statistics.total_time != 0)
                     {
-                        connection_runJSON.set("queries_number", statistics.queries);
-                        connection_runJSON.set("queries_per_second", (statistics.queries) / statistics.total_time);
-                        connection_runJSON.set("rows_per_second", (statistics.total_rows_read) / statistics.total_time);
-                        connection_runJSON.set("bytes_per_second", (statistics.total_bytes_read) / statistics.total_time);
+                        run_by_connection.set("queries_number", statistics.queries);
+                        run_by_connection.set("queries_per_second", (statistics.queries) / statistics.total_time);
+                        run_by_connection.set("rows_per_second", (statistics.total_rows_read) / statistics.total_time);
+                        run_by_connection.set("bytes_per_second", (statistics.total_bytes_read) / statistics.total_time);
                     }
                 }
                 else
                 {
-                    connection_runJSON.set("max_rows_per_second", statistics.max_rows_speed);
-                    connection_runJSON.set("max_bytes_per_second", statistics.max_bytes_speed);
-                    connection_runJSON.set("avg_rows_per_second", statistics.avg_rows_speed_value);
-                    connection_runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
+                    run_by_connection.set("max_rows_per_second", statistics.max_rows_speed);
+                    run_by_connection.set("max_bytes_per_second", statistics.max_bytes_speed);
+                    run_by_connection.set("avg_rows_per_second", statistics.avg_rows_speed_value);
+                    run_by_connection.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
                 }
 
-                connection_runJSON.set("memory_usage", statistics.memory_usage);
+                run_by_connection.set("memory_usage", statistics.memory_usage);
 
-                run_info.push_back(connection_runJSON);
+                run_by_connection_infos.push_back(run_by_connection);
             }
+            run_info.set("runs_by_connections", run_by_connection_infos);
             run_infos.push_back(run_info);
         }
     }
