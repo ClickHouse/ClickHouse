@@ -87,8 +87,6 @@ For a description of parameters, see the [CREATE query description](../../query_
     - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
     - `write_final_mark` — Enables or disables writing the final index mark at the end of data part. Default value: 1. Don't turn it off.
 
-    For the list of available parameters, see [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h)
-
 **Example of Sections Setting**
 
 ```sql
@@ -166,7 +164,7 @@ The examples above show that it is always more effective to use an index than a 
 
 A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read.
 
-Sparse indexes allow you to work with a very large number of table rows, because such indexes fit the the computer's RAM in the very most cases.
+Sparse indexes allow you to work with a very large number of table rows, because such indexes fit the computer's RAM in the very most cases.
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
