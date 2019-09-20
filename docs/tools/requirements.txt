@@ -21,7 +21,7 @@ mkdocs==1.0.4
 Pygments==2.2.0
 python-slugify==1.2.6
 pytz==2017.3
-PyYAML==3.12
+PyYAML==5.1
 recommonmark==0.4.0
 requests==2.21.0
 singledispatch==3.4.0.3
