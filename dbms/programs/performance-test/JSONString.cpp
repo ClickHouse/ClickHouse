@@ -1,4 +1,6 @@
 #include "JSONString.h"
+
+#include <regex>
 #include <sstream>
 
 
@@ -15,8 +17,15 @@ std::string pad(size_t padding)
 
 }
 
-void JSONString::set(const std::string & key, const std::string & value)
+void JSONString::set(const std::string & key, std::string value, bool wrap)
 {
+    if (value.empty())
+        value = "null";
+
+    bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
+    if (!reserved && wrap)
+        value = '"' + std::regex_replace(value, std::regex{"\n"}, "\\n") + '"';
+
     content[key] = value;
 }
 
