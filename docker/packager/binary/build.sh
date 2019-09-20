@@ -12,3 +12,5 @@ ninja
 ccache --show-stats ||:
 mv ./dbms/programs/clickhouse* /output
 mv ./dbms/unit_tests_dbms /output
+find . -name '*.so' -print -exec mv '{}' /output \;
+find . -name '*.so.*' -print -exec mv '{}' /output \;
