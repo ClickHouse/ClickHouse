@@ -14,6 +14,11 @@ mv ./dbms/programs/clickhouse* /output
 mv ./dbms/unit_tests_dbms /output
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
-tar -czvf shared_build.tgz /output
-rm -r /output/*
-mv shared_build.tgz /output
+
+count=`ls -1 /output/*.so 2>/dev/null | wc -l`
+if [ $count != 0 ]
+then
+    tar -czvf shared_build.tgz /output
+    rm -r /output/*
+    mv shared_build.tgz /output
+fi
