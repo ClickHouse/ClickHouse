@@ -659,7 +659,7 @@ uniqExact(x[, ...])
 - [uniqCombined](#agg_function-uniqcombined)
 - [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max_size)(x)
+## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
 
 Составляет массив из значений аргумента.
 Значения в массив могут быть добавлены в любом (недетерминированном) порядке.
