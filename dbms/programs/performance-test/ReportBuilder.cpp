@@ -152,7 +152,7 @@ void ReportBuilder::buildRunsReport(
 
                     if (statistics.sampler.size() != 0)
                     {
-                        JSONString quantiles(5); /// here, 3 is the size of \t padding
+                        JSONString quantiles(4); /// here, 4 is the size of \t padding
                         for (int percent = 10; percent <= 90; percent += 10)
                         {
                             std::string quantile_key = std::to_string(percent / 100.0).substr(0, 3);

@@ -27,7 +27,7 @@ void JSONString::set(const std::string & key, const std::vector<JSONString> & ru
 
     for (size_t i = 0; i < run_infos.size(); ++i)
     {
-        value << pad(padding + 1) + run_infos[i].asString(padding + 2);
+        value << pad(padding) + run_infos[i].asString(padding + 1);
         if (i != run_infos.size() - 1)
             value << ',';
 
