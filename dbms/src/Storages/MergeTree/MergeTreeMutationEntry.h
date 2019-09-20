@@ -9,6 +9,7 @@ namespace DB
 {
 
 /// A mutation entry for non-replicated MergeTree storage engines.
+/// Stores information about mutation in file mutation_*.txt.
 struct MergeTreeMutationEntry
 {
     time_t create_time = 0;

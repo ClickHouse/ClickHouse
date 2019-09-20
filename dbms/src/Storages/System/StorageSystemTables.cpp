@@ -34,7 +34,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
-        {"data_path", std::make_shared<DataTypeString>()},
+        {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -45,6 +45,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"sorting_key", std::make_shared<DataTypeString>()},
         {"primary_key", std::make_shared<DataTypeString>()},
         {"sampling_key", std::make_shared<DataTypeString>()},
+        {"storage_policy", std::make_shared<DataTypeString>()},
     }));
 }
 
@@ -161,6 +162,9 @@ protected:
 
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
+
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
 
@@ -208,7 +212,14 @@ protected:
                     res_columns[res_index++]->insert(0u);  // is_temporary
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(table->getDataPath());
+                {
+                    Array table_paths_array;
+                    auto paths = table->getDataPaths();
+                    table_paths_array.reserve(paths.size());
+                    for (const String & path : paths)
+                        table_paths_array.push_back(path);
+                    res_columns[res_index++]->insert(table_paths_array);
+                }
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(database->getTableMetadataPath(table_name));
@@ -298,6 +309,15 @@ protected:
                 {
                     if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    auto policy = table->getStoragePolicy();
+                    if (policy)
+                        res_columns[res_index++]->insert(policy->getName());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

@@ -23,6 +23,7 @@ public:
     UserPtr getUser(const String & user_name) const override;
 
     bool hasAccessToDatabase(const String & user_name, const String & database_name) const override;
+    bool hasAccessToDictionary(const String & user_name, const String & dictionary_name) const override;
 
 private:
     using Container = std::map<String, UserPtr>;

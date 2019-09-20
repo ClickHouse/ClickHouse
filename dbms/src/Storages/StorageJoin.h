@@ -9,8 +9,9 @@
 namespace DB
 {
 
+class AnalyzedJoin;
 class Join;
-using JoinPtr = std::shared_ptr<Join>;
+using HashJoinPtr = std::shared_ptr<Join>;
 
 
 /** Allows you save the state for later use on the right side of the JOIN.
@@ -29,7 +30,7 @@ public:
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     /// Access the innards.
-    JoinPtr & getJoin() { return join; }
+    HashJoinPtr & getJoin() { return join; }
 
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
@@ -50,7 +51,8 @@ private:
     ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
     ASTTableJoin::Strictness strictness;        /// ANY | ALL
 
-    JoinPtr join;
+    std::shared_ptr<AnalyzedJoin> table_join;
+    HashJoinPtr join;
 
     void insertBlock(const Block & block) override;
     size_t getSize() const override;

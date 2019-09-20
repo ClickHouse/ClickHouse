@@ -186,7 +186,7 @@ Block TinyLogBlockInputStream::readImpl()
 
     {
         /// if there are no files in the folder, it means that the table is empty
-        if (Poco::DirectoryIterator(storage.full_path()) == Poco::DirectoryIterator())
+        if (Poco::DirectoryIterator(storage.fullPath()) == Poco::DirectoryIterator())
             return res;
     }
 
@@ -200,7 +200,7 @@ Block TinyLogBlockInputStream::readImpl()
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type.name + " at " + storage.full_path());
+            e.addMessage("while reading column " + name_type.name + " at " + storage.fullPath());
             throw;
         }
 
