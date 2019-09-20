@@ -16,7 +16,7 @@ SquashingTransform::Result SquashingTransform::add(MutableColumns && columns)
     if (columns.empty())
         return Result(std::move(accumulated_columns));
 
-    /// Just read block is alredy enough.
+    /// Just read block is already enough.
     if (isEnoughSize(columns))
     {
         /// If no accumulated data, return just read block.
