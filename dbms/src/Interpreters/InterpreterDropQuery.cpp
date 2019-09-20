@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <ACL/AccessControlManager.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
@@ -38,10 +39,15 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
 
-    if (!drop.table.empty())
+    else if (!drop.table.empty())
         return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     else if (!drop.database.empty())
         return executeToDatabase(drop.database, drop.kind, drop.if_exists);
+    else if (!drop.role_name.empty())
+    {
+        context.getAccessControlManager().dropRole(drop.role_name, drop.if_exists);
+        return {};
+    }
     else
         throw Exception("Database and table names is empty.", ErrorCodes::LOGICAL_ERROR);
 }

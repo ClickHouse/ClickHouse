@@ -45,8 +45,8 @@ void EncodedPassword::setPassword(const String & password, Encoding encoding_)
 {
     switch (encoding_)
     {
-        case Encoding::PLAIN_TEXT: setEncodedPassword(password, encoding_); break;
-        case Encoding::SHA256: setEncodedPassword(encodeSHA256(password), encoding_); break;
+        case Encoding::PLAIN_TEXT: setEncodedPassword(password, encoding_); return;
+        case Encoding::SHA256: setEncodedPassword(encodeSHA256(password), encoding_); return;
     }
     __builtin_unreachable();
 }

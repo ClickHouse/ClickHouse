@@ -12,8 +12,8 @@ namespace ErrorCodes
 }
 
 
-Privileges::Node::Node(Node && src) { *this = src; }
-Privileges::Node & Privileges::Node::operator =(Node && src)
+AllowedDatabases::Node::Node(Node && src) { *this = src; }
+AllowedDatabases::Node & AllowedDatabases::Node::operator =(Node && src)
 {
     access = src.access;
     grants = src.grants;
@@ -27,8 +27,8 @@ Privileges::Node & Privileges::Node::operator =(Node && src)
 }
 
 
-Privileges::Node::Node(const Node & src) { *this = src; }
-Privileges::Node & Privileges::Node::operator =(const Node & src)
+AllowedDatabases::Node::Node(const Node & src) { *this = src; }
+AllowedDatabases::Node & AllowedDatabases::Node::operator =(const Node & src)
 {
     access = src.access;
     grants = src.grants;
@@ -46,7 +46,7 @@ Privileges::Node & Privileges::Node::operator =(const Node & src)
 }
 
 
-Privileges::Node * Privileges::Node::find(const String & child_name)
+AllowedDatabases::Node * AllowedDatabases::Node::find(const String & child_name)
 {
     if (!children)
         return nullptr;
@@ -57,7 +57,7 @@ Privileges::Node * Privileges::Node::find(const String & child_name)
 }
 
 
-const Privileges::Node * Privileges::Node::find(const String & child_name) const
+const AllowedDatabases::Node * AllowedDatabases::Node::find(const String & child_name) const
 {
     if (!children)
         return nullptr;
@@ -69,7 +69,7 @@ const Privileges::Node * Privileges::Node::find(const String & child_name) const
 
 
 template <typename ChildrenMapT>
-typename ChildrenMapT::iterator Privileges::Node::getIterator(const String & child_name)
+typename ChildrenMapT::iterator AllowedDatabases::Node::getIterator(const String & child_name)
 {
     if (children)
     {
@@ -90,57 +90,57 @@ typename ChildrenMapT::iterator Privileges::Node::getIterator(const String & chi
 }
 
 
-Privileges::Node & Privileges::Node::get(const String & child_name)
+AllowedDatabases::Node & AllowedDatabases::Node::get(const String & child_name)
 {
     return getIterator(child_name)->second;
 }
 
 
-Privileges::Types Privileges::Node::getAccess(const String & name) const
+AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name) const
 {
     const Node * child = find(name);
     return child ? child->access : access;
 }
 
 
-Privileges::Types Privileges::Node::getAccess(const Strings & names) const
+AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const Strings & names) const
 {
-    Types result = ALL_PRIVILEGES;
+    AccessTypes result = ALL_PRIVILEGES;
     for (const auto & name : names)
         result &= getAccess(name);
     return result;
 }
 
 
-Privileges::Types Privileges::Node::getAccess(const String & name1, const String & name2) const
+AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const String & name2) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(name2) : access;
 }
 
 
-Privileges::Types Privileges::Node::getAccess(const String & name1, const Strings & names2) const
+AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const Strings & names2) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(names2) : access;
 }
 
 
-Privileges::Types Privileges::Node::getAccess(const String & name1, const String & name2, const String & name3) const
+AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const String & name2, const String & name3) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(name2, name3) : access;
 }
 
 
-Privileges::Types Privileges::Node::getAccess(const String & name1, const String & name2, const Strings & names3) const
+AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const String & name2, const Strings & names3) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(name2, names3) : access;
 }
 
 
-bool Privileges::Node::grant(Types add_access)
+bool AllowedDatabases::Node::grant(AccessTypes add_access)
 {
     add_access &= ~grants; /// Exclude access types which are already granted.
     if (!add_access)
@@ -155,7 +155,7 @@ bool Privileges::Node::grant(Types add_access)
 }
 
 
-void Privileges::Node::addAccess(Types add_access)
+void AllowedDatabases::Node::addAccess(AccessTypes add_access)
 {
     access |= add_access;
     if (children)
@@ -172,7 +172,7 @@ void Privileges::Node::addAccess(Types add_access)
 }
 
 
-bool Privileges::Node::grant(Types add_access, const String & name)
+bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name)
 {
     auto it = getIterator(name);
     if (!it->second.grant(add_access))
@@ -182,7 +182,7 @@ bool Privileges::Node::grant(Types add_access, const String & name)
 }
 
 
-bool Privileges::Node::grant(Types add_access, const Strings & names)
+bool AllowedDatabases::Node::grant(AccessTypes add_access, const Strings & names)
 {
     bool changed = false;
     for (const String & name : names)
@@ -191,7 +191,7 @@ bool Privileges::Node::grant(Types add_access, const Strings & names)
 }
 
 
-bool Privileges::Node::grant(Types add_access, const String & name1, const String & name2)
+bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const String & name2)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, name2))
@@ -201,7 +201,7 @@ bool Privileges::Node::grant(Types add_access, const String & name1, const Strin
 }
 
 
-bool Privileges::Node::grant(Types add_access, const String & name1, const Strings & names2)
+bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const Strings & names2)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, names2))
@@ -211,7 +211,7 @@ bool Privileges::Node::grant(Types add_access, const String & name1, const Strin
 }
 
 
-bool Privileges::Node::grant(Types add_access, const String & name1, const String & name2, const String & name3)
+bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const String & name2, const String & name3)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, name2, name3))
@@ -221,7 +221,7 @@ bool Privileges::Node::grant(Types add_access, const String & name1, const Strin
 }
 
 
-bool Privileges::Node::grant(Types add_access, const String & name1, const String & name2, const Strings & names3)
+bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const String & name2, const Strings & names3)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, name2, names3))
@@ -231,7 +231,7 @@ bool Privileges::Node::grant(Types add_access, const String & name1, const Strin
 }
 
 
-bool Privileges::Node::revoke(Types remove_access, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessTypes remove_access, bool partial_revokes)
 {
     if (partial_revokes)
         remove_access &= access; /// Skip access types we don't have.
@@ -243,7 +243,7 @@ bool Privileges::Node::revoke(Types remove_access, bool partial_revokes)
 
     /// If (remove_access & ~grants) != 0 then it's a partial revoke.
     /// Partial revokes are implemented like https://dev.mysql.com/doc/refman/8.0/en/partial-revokes.html
-    Types new_partial_revokes = remove_access & ~grants;
+    AccessTypes new_partial_revokes = remove_access & ~grants;
 
     grants &= ~remove_access;
 
@@ -254,7 +254,7 @@ bool Privileges::Node::revoke(Types remove_access, bool partial_revokes)
 }
 
 
-void Privileges::Node::removeAccess(Types remove_access)
+void AllowedDatabases::Node::removeAccess(AccessTypes remove_access)
 {
     remove_access &= ~grants;
     if (!remove_access)
@@ -274,7 +274,7 @@ void Privileges::Node::removeAccess(Types remove_access)
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name, bool partial_revokes)
 {
     auto it = getIterator(name);
     if (!it->second.revoke(add_access, partial_revokes))
@@ -284,7 +284,7 @@ bool Privileges::Node::revoke(Types add_access, const String & name, bool partia
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const Strings & names, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessTypes add_access, const Strings & names, bool partial_revokes)
 {
     bool changed = false;
     for (const String & name : names)
@@ -293,7 +293,7 @@ bool Privileges::Node::revoke(Types add_access, const Strings & names, bool part
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const String & name2, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, name2, partial_revokes))
@@ -303,7 +303,7 @@ bool Privileges::Node::revoke(Types add_access, const String & name1, const Stri
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const Strings & names2, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const Strings & names2, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, names2, partial_revokes))
@@ -313,7 +313,7 @@ bool Privileges::Node::revoke(Types add_access, const String & name1, const Stri
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, const String & name3, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const String & name2, const String & name3, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, name2, name3, partial_revokes))
@@ -323,7 +323,7 @@ bool Privileges::Node::revoke(Types add_access, const String & name1, const Stri
 }
 
 
-bool Privileges::Node::revoke(Types add_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, name2, names3, partial_revokes))
@@ -334,7 +334,7 @@ bool Privileges::Node::revoke(Types add_access, const String & name1, const Stri
 
 
 template <typename ChildrenMapT>
-void Privileges::Node::eraseOrIncrement(typename ChildrenMapT::iterator & it)
+void AllowedDatabases::Node::eraseOrIncrement(typename ChildrenMapT::iterator & it)
 {
     auto & child = it->second;
     if (!child.children && !child.grants && (access == child.access))
@@ -344,7 +344,7 @@ void Privileges::Node::eraseOrIncrement(typename ChildrenMapT::iterator & it)
 }
 
 
-void Privileges::Node::merge(const Node & other)
+void AllowedDatabases::Node::merge(const Node & other)
 {
     if (other.children)
     {
@@ -371,7 +371,7 @@ void Privileges::Node::merge(const Node & other)
 }
 
 
-void Privileges::Node::addAccessRecalcGrants(Types add_access)
+void AllowedDatabases::Node::addAccessRecalcGrants(AccessTypes add_access)
 {
     access |= add_access;
     grants = access & ~getParentAccess();
@@ -389,7 +389,7 @@ void Privileges::Node::addAccessRecalcGrants(Types add_access)
 }
 
 
-bool Privileges::Node::operator ==(const Privileges::Node & other) const
+bool AllowedDatabases::Node::operator ==(const AllowedDatabases::Node & other) const
 {
     if ((access != other.access) || (grants != other.grants))
         return false;
@@ -401,9 +401,9 @@ bool Privileges::Node::operator ==(const Privileges::Node & other) const
 }
 
 
-String Privileges::accessToString(Types access)
+String AllowedDatabases::accessToString(AccessTypes access)
 {
-    struct AccessDesc { Types access; const char * text; };
+    struct AccessDesc { AccessTypes access; const char * text; };
     static constexpr AccessDesc descs[] =
     {
         { ALL_PRIVILEGES, "ALL PRIVILEGES" },
@@ -413,7 +413,6 @@ String Privileges::accessToString(Types access)
         { ALTER, "ALTER" },
         { CREATE, "CREATE" },
         { DROP, "DROP" },
-        { CREATE_USER, "CREATE USER" },
     };
 
     String str;
@@ -434,23 +433,23 @@ String Privileges::accessToString(Types access)
 }
 
 
-String Privileges::accessToString(Types access, const String & database)
+String AllowedDatabases::accessToString(AccessTypes access, const String & database)
 {
     return accessToString(access) + " ON " + backQuoteIfNeed(database) + ".*";
 }
 
 
-String Privileges::accessToString(Types access, const String & database, const String & table)
+String AllowedDatabases::accessToString(AccessTypes access, const String & database, const String & table)
 {
     return accessToString(access) + " ON " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
 }
 
 
-String Privileges::accessToString(Types access, const String & database, const String & table, const String & column)
+String AllowedDatabases::accessToString(AccessTypes access, const String & database, const String & table, const String & column)
 {
     String str;
     access &= ALL_PRIVILEGES;
-    for (Types flag = 0x01; access; flag <<= 1)
+    for (AccessTypes flag = 0x01; access; flag <<= 1)
     {
         if (access & flag)
         {
@@ -464,11 +463,11 @@ String Privileges::accessToString(Types access, const String & database, const S
 }
 
 
-String Privileges::accessToString(Types access, const String & database, const String & table, const Strings & columns)
+String AllowedDatabases::accessToString(AccessTypes access, const String & database, const String & table, const Strings & columns)
 {
     String str;
     access &= ALL_PRIVILEGES;
-    for (Types flag = 0x01; access; flag <<= 1)
+    for (AccessTypes flag = 0x01; access; flag <<= 1)
     {
         if (access & flag)
         {
@@ -489,42 +488,41 @@ String Privileges::accessToString(Types access, const String & database, const S
 }
 
 
-Privileges::Privileges()
+AllowedDatabases::AllowedDatabases()
 {
     static_assert(!(COLUMN_LEVEL & ~TABLE_LEVEL));
     static_assert(!(TABLE_LEVEL & ~DATABASE_LEVEL));
-    static_assert(!(DATABASE_LEVEL & ~GLOBAL_LEVEL));
-    static_assert(GLOBAL_LEVEL == ALL_PRIVILEGES);
+    static_assert(DATABASE_LEVEL == ALL_PRIVILEGES);
 }
 
 
-Privileges::~Privileges() = default;
-Privileges::Privileges(const Privileges & src) = default;
-Privileges & Privileges::operator =(const Privileges & src) = default;
-Privileges::Privileges(Privileges && src) = default;
-Privileges & Privileges::operator =(Privileges && src) = default;
+AllowedDatabases::~AllowedDatabases() = default;
+AllowedDatabases::AllowedDatabases(const AllowedDatabases & src) = default;
+AllowedDatabases & AllowedDatabases::operator =(const AllowedDatabases & src) = default;
+AllowedDatabases::AllowedDatabases(AllowedDatabases && src) = default;
+AllowedDatabases & AllowedDatabases::operator =(AllowedDatabases && src) = default;
 
 
-bool Privileges::isEmpty() const
+bool AllowedDatabases::isEmpty() const
 {
     return root.isEmpty();
 }
 
 
-void Privileges::clear()
+void AllowedDatabases::clear()
 {
     root = Node{};
 }
 
 
-bool Privileges::grant(Types access)
+bool AllowedDatabases::grant(AccessTypes access)
 {
     access &= ALL_PRIVILEGES;
     return root.grant(access);
 }
 
 
-bool Privileges::grant(Types access, const String & database)
+bool AllowedDatabases::grant(AccessTypes access, const String & database)
 {
     access &= ALL_PRIVILEGES;
     if (access & ~DATABASE_LEVEL)
@@ -533,7 +531,7 @@ bool Privileges::grant(Types access, const String & database)
 }
 
 
-bool Privileges::grant(Types access, const String & database, const String & table)
+bool AllowedDatabases::grant(AccessTypes access, const String & database, const String & table)
 {
     access &= ALL_PRIVILEGES;
     if (access & ~TABLE_LEVEL)
@@ -542,7 +540,7 @@ bool Privileges::grant(Types access, const String & database, const String & tab
 }
 
 
-bool Privileges::grant(Types access, const String & database, const String & table, const String & column)
+bool AllowedDatabases::grant(AccessTypes access, const String & database, const String & table, const String & column)
 {
     access &= ALL_PRIVILEGES;
     if (access & ~COLUMN_LEVEL)
@@ -551,7 +549,7 @@ bool Privileges::grant(Types access, const String & database, const String & tab
 }
 
 
-bool Privileges::grant(Types access, const String & database, const String & table, const Strings & columns)
+bool AllowedDatabases::grant(AccessTypes access, const String & database, const String & table, const Strings & columns)
 {
     access &= ALL_PRIVILEGES;
     if (access & ~COLUMN_LEVEL)
@@ -560,129 +558,129 @@ bool Privileges::grant(Types access, const String & database, const String & tab
 }
 
 
-bool Privileges::revoke(Types access)
+bool AllowedDatabases::revoke(AccessTypes access)
 {
     return root.revoke(access);
 }
 
 
-bool Privileges::revoke(Types access, const String & database, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessTypes access, const String & database, bool partial_revokes)
 {
     return root.revoke(access, database, partial_revokes);
 }
 
 
-bool Privileges::revoke(Types access, const String & database, const String & table, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessTypes access, const String & database, const String & table, bool partial_revokes)
 {
     return root.revoke(access, database, table, partial_revokes);
 }
 
 
-bool Privileges::revoke(Types access, const String & database, const String & table, const String & column, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessTypes access, const String & database, const String & table, const String & column, bool partial_revokes)
 {
     return root.revoke(access, database, table, column, partial_revokes);
 }
 
 
-bool Privileges::revoke(Types access, const String & database, const String & table, const Strings & columns, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessTypes access, const String & database, const String & table, const Strings & columns, bool partial_revokes)
 {
     return root.revoke(access, database, table, columns, partial_revokes);
 }
 
 
-void Privileges::checkAccess(Types access) const
+void AllowedDatabases::checkAccess(AccessTypes access) const
 {
     checkAccess(String(), access);
 }
 
 
-void Privileges::checkAccess(Types access, const String & database) const
+void AllowedDatabases::checkAccess(AccessTypes access, const String & database) const
 {
     checkAccess(String(), access, database);
 }
 
 
-void Privileges::checkAccess(Types access, const String & database, const String & table) const
+void AllowedDatabases::checkAccess(AccessTypes access, const String & database, const String & table) const
 {
     checkAccess(String(), access, database, table);
 }
 
 
-void Privileges::checkAccess(Types access, const String & database, const String & table, const String & column) const
+void AllowedDatabases::checkAccess(AccessTypes access, const String & database, const String & table, const String & column) const
 {
     checkAccess(String(), access, database, table, column);
 }
 
 
-void Privileges::checkAccess(Types access, const String & database, const String & table, const Strings & columns) const
+void AllowedDatabases::checkAccess(AccessTypes access, const String & database, const String & table, const Strings & columns) const
 {
     checkAccess(String(), access, database, table, columns);
 }
 
 
-void Privileges::checkAccess(const String & user_name, Types access) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access) const
 {
-    Types access_denied = (access & ~getAccess());
+    AccessTypes access_denied = (access & ~getAccess());
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
                 + accessToString(access_denied),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void Privileges::checkAccess(const String & user_name, Types access, const String & database) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database) const
 {
-    Types access_denied = (access & ~getAccess(database));
+    AccessTypes access_denied = (access & ~getAccess(database));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
                 + accessToString(access_denied, database),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void Privileges::checkAccess(const String & user_name, Types access, const String & database, const String & table) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table) const
 {
-    Types access_denied = (access & ~getAccess(database, table));
+    AccessTypes access_denied = (access & ~getAccess(database, table));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
                 + accessToString(access_denied, database, table),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void Privileges::checkAccess(const String & user_name, Types access, const String & database, const String & table, const String & column) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table, const String & column) const
 {
-    Types access_denied = (access & ~getAccess(database, table, column));
+    AccessTypes access_denied = (access & ~getAccess(database, table, column));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
                 + accessToString(access_denied, database, table, column),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void Privileges::checkAccess(const String & user_name, Types access, const String & database, const String & table, const Strings & columns) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table, const Strings & columns) const
 {
-    Types access_denied = (access & ~getAccess(database, table, columns));
+    AccessTypes access_denied = (access & ~getAccess(database, table, columns));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
                 + accessToString(access_denied, database, table, columns),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-Privileges & Privileges::merge(const Privileges & other)
+AllowedDatabases & AllowedDatabases::merge(const AllowedDatabases & other)
 {
     root.merge(other.root);
     return *this;
 }
 
 
-std::vector<Privileges::Info> Privileges::getInfo() const
+std::vector<AllowedDatabases::Info> AllowedDatabases::getInfo() const
 {
     std::vector<Info> result;
     if (root.getGrants())
@@ -715,9 +713,8 @@ std::vector<Privileges::Info> Privileges::getInfo() const
 }
 
 
-bool operator ==(const Privileges & left, const Privileges & right)
+bool operator ==(const AllowedDatabases & left, const AllowedDatabases & right)
 {
     return left.root == right.root;
 }
-
 }

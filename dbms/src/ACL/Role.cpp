@@ -28,7 +28,10 @@ const ConstRole::Type & ConstRole::TYPE = Role::Attributes::TYPE;
 
 bool ConstRole::Attributes::equal(const IControlAttributes & other) const
 {
-    return IControlAttributes::equal(other);
+    if (!IControlAttributes::equal(other))
+        return false;
+    const auto & o = *other.cast<Attributes>();
+    return (allowed_databases == o.allowed_databases);
 }
 
 

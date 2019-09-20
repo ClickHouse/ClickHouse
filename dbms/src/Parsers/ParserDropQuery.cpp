@@ -54,6 +54,9 @@ bool ParserDropQuery::parseTruncateQuery(Pos & pos, ASTPtr & node, Expected & ex
 
 bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    if (parseDropRoleQuery(pos, node, expected))
+        return true;
+
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_database("DATABASE");
@@ -124,4 +127,30 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
+
+bool ParserDropQuery::parseDropRoleQuery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword role_p("ROLE");
+    if (!role_p.ignore(pos, expected))
+        return false;
+
+    ParserKeyword if_exists_p("IF EXISTS");
+    bool if_exists = false;
+    if (if_exists_p.ignore(pos, expected))
+        if_exists = true;
+
+    ParserIdentifier name_p;
+    ASTPtr name;
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    auto query = std::make_shared<ASTDropQuery>();
+    node = query;
+
+    query->kind = ASTDropQuery::Kind::Drop;
+    query->if_exists = if_exists;
+    query->role_name = getIdentifierName(name);
+
+    return true;
+}
 }

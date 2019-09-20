@@ -16,6 +16,7 @@ public:
     ~AccessControlManager();
 
     Role createRole(const Role::Attributes & attrs, bool if_not_exists = false);
+    void dropRole(const String & name, bool if_not_exists = false);
     Role getRole(const String & name);
     std::optional<Role> findRole(const String & name);
     ConstRole getRole(const String & name) const;

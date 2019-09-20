@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ACL/IControlAttributes.h>
+#include <ACL/AllowedDatabases.h>
 #include <functional>
 
 
@@ -19,6 +20,7 @@ class ConstRole
 public:
     struct Attributes : public IControlAttributes
     {
+        AllowedDatabases allowed_databases;
         static const Type TYPE;
         const Type & getType() const override { return TYPE; }
         std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }

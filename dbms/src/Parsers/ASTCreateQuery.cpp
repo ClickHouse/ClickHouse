@@ -162,6 +162,14 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
 }
 
 
+String ASTCreateQuery::getID(char delim) const
+{
+    if (role_attributes)
+        return "CreateQuery" + delim + role_attributes->name;
+    return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table;
+}
+
+
 ASTPtr ASTCreateQuery::clone() const
 {
     auto res = std::make_shared<ASTCreateQuery>(*this);
@@ -182,6 +190,9 @@ ASTPtr ASTCreateQuery::clone() const
 void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
+
+    if (formatCreateRoleQuery(settings))
+        return;
 
     if (!database.empty() && table.empty())
     {
@@ -259,5 +270,17 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
 }
 
+
+bool ASTCreateQuery::formatCreateRoleQuery(const FormatSettings & settings) const
+{
+    if (!role_attributes)
+        return false;
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << "CREATE ROLE "
+                  << (if_not_exists ? "IF NOT EXISTS " : "")
+                  << (settings.hilite ? hilite_none : "")
+                  << backQuoteIfNeed(role_attributes->name);
+    return true;
+}
 }
 

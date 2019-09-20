@@ -30,6 +30,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <ACL/AccessControlManager.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -658,13 +659,24 @@ BlockIO InterpreterCreateQuery::execute()
     checkAccess(create);
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
-    /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
     {
+        /// CREATE|ATTACH DATABASE
         return createDatabase(create);
     }
-    else
+    else if (!create.table.empty())
+    {
+        /// CREATE|ATTACH TABLE
         return createTable(create);
+    }
+    else if (create.role_attributes)
+    {
+        /// CREATE ROLE
+        context.getAccessControlManager().createRole(*create.role_attributes, create.if_not_exists);
+        return {};
+    }
+
+    return {};
 }
 
 

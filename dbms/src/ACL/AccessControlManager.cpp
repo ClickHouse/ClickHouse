@@ -33,6 +33,20 @@ Role AccessControlManager::getRole(const String & name)
     return Role(storage->getID(name, Role::TYPE), *storage);
 }
 
+
+void AccessControlManager::dropRole(const String & name, bool if_not_exists)
+{
+    if (if_not_exists)
+    {
+        auto role = findRole(name);
+        if (role)
+            role->drop(true);
+    }
+    else
+        getRole(name).drop(false);
+}
+
+
 std::optional<Role> AccessControlManager::findRole(const String & name)
 {
     auto id = storage->find(name, Role::TYPE);
@@ -41,10 +55,12 @@ std::optional<Role> AccessControlManager::findRole(const String & name)
     return {};
 }
 
+
 ConstRole AccessControlManager::getRole(const String & name) const
 {
     return ConstRole(storage->getID(name, Role::TYPE), *storage);
 }
+
 
 std::optional<ConstRole> AccessControlManager::findRole(const String & name) const
 {

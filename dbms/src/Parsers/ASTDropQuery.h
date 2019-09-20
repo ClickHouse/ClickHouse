@@ -19,6 +19,9 @@ public:
         Truncate,
     };
 
+    /// Name of the role to be dropped.
+    String role_name;
+
     Kind kind;
     bool if_exists{false};
 
@@ -36,6 +39,7 @@ public:
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    bool formatDropRoleQuery(const FormatSettings & settings) const;
 };
 
 }

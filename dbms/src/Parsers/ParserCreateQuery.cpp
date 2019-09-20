@@ -348,6 +348,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    if (parseCreateRoleQuery(pos, node, expected))
+        return true;
+
     if (s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
@@ -559,5 +562,31 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+
+bool ParserCreateQuery::parseCreateRoleQuery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword role_p("ROLE");
+    if (!role_p.ignore(pos, expected))
+        return false;
+
+    ParserKeyword if_not_exists_p("IF NOT EXISTS");
+    bool if_not_exists = false;
+    if (if_not_exists_p.ignore(pos, expected))
+        if_not_exists = true;
+
+    ParserIdentifier name_p;
+    ASTPtr name;
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    auto query = std::make_shared<ASTCreateQuery>();
+    node = query;
+
+    auto role_attributes = std::make_shared<Role::Attributes>();
+    role_attributes->name = getIdentifierName(name);
+    query->role_attributes = role_attributes;
+    query->if_not_exists = if_not_exists;
+    return true;
+}
 
 }

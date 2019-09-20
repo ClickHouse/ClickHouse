@@ -307,6 +307,9 @@ class ParserCreateQuery : public IParserBase
 protected:
     const char * getName() const { return "CREATE TABLE or ATTACH TABLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+private:
+    bool parseCreateRoleQuery(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }
