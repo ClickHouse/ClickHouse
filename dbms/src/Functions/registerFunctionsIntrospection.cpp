@@ -1,3 +1,5 @@
+#include <Core/Defines.h>
+
 namespace DB
 {
 
@@ -10,10 +12,14 @@ void registerFunctionTrap(FunctionFactory & factory);
 
 void registerFunctionsIntrospection(FunctionFactory & factory)
 {
+#if defined (OS_LINUX)
     registerFunctionAddressToSymbol(factory);
     registerFunctionDemangle(factory);
     registerFunctionAddressToLine(factory);
     registerFunctionTrap(factory);
+#else
+    UNUSED(factory);
+#endif
 }
 
 }
