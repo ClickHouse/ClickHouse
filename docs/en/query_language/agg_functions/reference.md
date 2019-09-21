@@ -848,7 +848,7 @@ Don't use this function for calculating timings. There is a more suitable functi
 
 ## quantileTiming {#agg_function-quantiletiming}
 
-Computes the quantile of the specified level with defined precision. The function is intended for calculating page loading time quantiles in milliseconds. 
+Computes the quantile of the specified level with determined precision. The function is intended for calculating page loading time quantiles in milliseconds. 
 
 ```
 quantileTiming(level)(expr)
