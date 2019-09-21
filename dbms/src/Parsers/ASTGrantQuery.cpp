@@ -1,4 +1,6 @@
 #include <Parsers/ASTGrantQuery.h>
+#include <common/StringRef.h>
+#include <map>
 
 
 namespace DB
@@ -12,6 +14,26 @@ String ASTGrantQuery::getID(char) const
 ASTPtr ASTGrantQuery::clone() const
 {
     return std::make_shared<ASTGrantQuery>(*this);
+}
+
+
+const std::vector<std::pair<ASTGrantQuery::AccessType, String>> & ASTGrantQuery::getAccessTypeNames()
+{
+    static const std::vector<std::pair<ASTGrantQuery::AccessType, String>> result = []
+    {
+        return std::vector<std::pair<ASTGrantQuery::AccessType, String>>
+        {
+            {USAGE, "USAGE"},
+            {SELECT, "SELECT"},
+            {INSERT, "INSERT"},
+            {DELETE, "DELETE"},
+            {ALTER, "ALTER"},
+            {CREATE, "CREATE"},
+            {DROP, "DROP"},
+            {ALL, "ALL"},
+        };
+    }();
+    return result;
 }
 
 
@@ -33,7 +55,7 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
 
     if (!roles.empty())
     {
-        /// Grant roles to roles
+        /// Grant roles to roles.
         for (size_t i = 0; i != roles.size(); ++i)
             settings.ostr << (i != 0 ? ", " : " ") << backQuoteIfNeed(roles[i]);
 
@@ -44,51 +66,61 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
         return;
     }
 
-    /// Grant access to roles
+    /// Grant access to roles.
     size_t count = 0;
-    auto outputAccess = [&](bool has_access, const char * access_name)
+    if (access)
     {
-        if (has_access)
+        for (const auto & [access_type, access_name] : getAccessTypeNames())
+        {
+            if ((access & access_type) && (access_type != ALL))
+                settings.ostr << (count++ ? ", " : " ")
+                              << (settings.hilite ? hilite_keyword : "")
+                              << access_name
+                              << (settings.hilite ? hilite_none : "");
+        }
+    }
+
+    if (!columns_access.empty())
+    {
+        std::map<StringRef, std::vector<String>> access_to_columns;
+        for (const auto & [column_name, column_access] : columns_access)
+        {
+            auto x = column_access & ~access;
+            if (x)
+            {
+                for (const auto & [access_type, access_name] : getAccessTypeNames())
+                {
+                    if ((x & access_type) && (access_type != ALL))
+                        access_to_columns[access_name].emplace_back(column_name);
+                    x &= ~access_type;
+                    if (!x)
+                        break;
+                }
+            }
+        }
+
+        for (auto & [column_access, column_names] : access_to_columns)
         {
             settings.ostr << (count++ ? ", " : " ")
                           << (settings.hilite ? hilite_keyword : "")
-                          << access_name
-                          << (settings.hilite ? hilite_none : "");
-        }
-    };
-    if (access)
-    {
-        outputAccess(access & AccessType::SELECT, "SELECT");
-        outputAccess(access & AccessType::INSERT, "INSERT");
-        outputAccess(access & AccessType::DELETE, "DELETE");
-        outputAccess(access & AccessType::ALTER, "ALTER");
-        outputAccess(access & AccessType::CREATE, "CREATE");
-        outputAccess(access & AccessType::DROP, "DROP");
-    }
-
-    if (!columns.empty())
-    {
-        auto outputAccessWithColumns = [&](bool has_access, const char * access_name)
-        {
-            outputAccess(has_access, access_name);
-            settings.ostr << "(";
-            for (size_t i = 0; i != columns.size(); ++i)
-                settings.ostr << (i != 0 ? ", " : " ") << backQuoteIfNeed(columns[i]);
+                          << column_access
+                          << (settings.hilite ? hilite_none : "")
+                          << "(";
+            std::sort(column_names.begin(), column_names.end());
+            for (size_t i = 0; i != column_names.size(); ++i)
+                settings.ostr << (i != 0 ? ", " : "") << backQuoteIfNeed(column_names[i]);
             settings.ostr << ")";
-        };
-        outputAccessWithColumns(columns_access & AccessType::SELECT, "SELECT");
+        }
     }
 
     if (!count)
-        outputAccess(true, "USAGE");
+        settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "USAGE" << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON" << (settings.hilite ? hilite_none : "");
-
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON" << (settings.hilite ? hilite_none : "") << " ";
     if (!database.empty())
-        settings.ostr << " " << backQuoteIfNeed(database) + ".";
+        settings.ostr << backQuoteIfNeed(database) + ".";
     else if (!use_current_database)
-        settings.ostr << " *.";
-
+        settings.ostr << "*.";
     if (!table.empty())
         settings.ostr << backQuoteIfNeed(table);
     else

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <unordered_map>
 
 
 namespace DB
@@ -35,17 +36,20 @@ public:
 
     enum AccessType
     {
+        USAGE = 0x00,
         SELECT = 0x01,
         INSERT = 0x02,
         DELETE = 0x04,
         ALTER = 0x08,
         CREATE = 0x10,
         DROP = 0x20,
+        ALL = -1,
     };
-    int access = 0;
 
-    std::vector<String> columns;
-    int columns_access = 0;
+    static const std::vector<std::pair<AccessType, String>> & getAccessTypeNames();
+
+    int access = 0;
+    std::unordered_map<String, int> columns_access;
 
     std::vector<String> to_roles;
     bool with_grant_option = false;

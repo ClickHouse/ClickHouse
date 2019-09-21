@@ -2,6 +2,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
@@ -22,6 +23,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
+#include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
@@ -142,6 +144,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTShowCreateDatabaseQuery>())
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTGrantQuery>())
+    {
+        return std::make_unique<InterpreterGrantQuery>(query, context);
     }
     else if (query->as<ASTDescribeQuery>())
     {

@@ -32,7 +32,7 @@ private:
 public:
     ParserToken(TokenType token_type_) : token_type(token_type_) {}
 protected:
-    const char * getName() const override { return "token"; }
+    const char * getName() const override { return getTokenName(token_type); }
 
     bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
