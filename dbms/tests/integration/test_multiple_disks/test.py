@@ -146,7 +146,7 @@ def test_query_parser(start_cluster):
                     d UInt64
                 ) ENGINE = MergeTree()
                 ORDER BY d
-                SETTINGS storage_policy_name='very_exciting_policy'
+                SETTINGS storage_policy='very_exciting_policy'
             """)
 
         with pytest.raises(QueryRuntimeException):
@@ -155,7 +155,7 @@ def test_query_parser(start_cluster):
                     d UInt64
                 ) ENGINE = MergeTree()
                 ORDER BY d
-                SETTINGS storage_policy_name='jbod1'
+                SETTINGS storage_policy='jbod1'
             """)
 
 
@@ -164,7 +164,7 @@ def test_query_parser(start_cluster):
                     d UInt64
                 ) ENGINE = MergeTree()
                 ORDER BY d
-                SETTINGS storage_policy_name='default'
+                SETTINGS storage_policy='default'
         """)
 
         node1.query("INSERT INTO table_with_normal_policy VALUES (5)")
@@ -182,7 +182,7 @@ def test_query_parser(start_cluster):
             node1.query("ALTER TABLE table_with_normal_policy MOVE PARTITION 'yyyy' TO DISK 'jbod1'")
 
         with pytest.raises(QueryRuntimeException):
-            node1.query("ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy_name='moving_jbod_with_external'")
+            node1.query("ALTER TABLE table_with_normal_policy MODIFY SETTING storage_policy='moving_jbod_with_external'")
     finally:
         node1.query("DROP TABLE IF EXISTS table_with_normal_policy")
 
@@ -204,7 +204,7 @@ def test_round_robin(start_cluster, name, engine):
                 d UInt64
             ) ENGINE = {engine}
             ORDER BY d
-            SETTINGS storage_policy_name='jbods_with_external'
+            SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
         # first should go to the jbod1
@@ -239,7 +239,7 @@ def test_max_data_part_size(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy_name='jbods_with_external'
+            SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
         data = [] # 10MB in total
         for i in range(10):
@@ -263,7 +263,7 @@ def test_jbod_overflow(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy_name='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external'
         """.format(name=name, engine=engine))
 
         node1.query("SYSTEM STOP MERGES")
@@ -313,7 +313,7 @@ def test_background_move(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy_name='moving_jbod_with_external'
+            SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
         for i in range(5):
@@ -357,7 +357,7 @@ def test_start_stop_moves(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy_name='moving_jbod_with_external'
+            SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
         node1.query("INSERT INTO {} VALUES ('HELLO')".format(name))
@@ -452,7 +452,7 @@ def test_alter_move(start_cluster, name, engine):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy_name='jbods_with_external'
+            SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
         node1.query("SYSTEM STOP MERGES {}".format(name)) # to avoid conflicts
@@ -540,7 +540,7 @@ def test_concurrent_alter_move(start_cluster, name, engine):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy_name='jbods_with_external'
+            SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
         def insert(num):
@@ -591,7 +591,7 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy_name='jbods_with_external'
+            SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
         def insert(num):
@@ -640,7 +640,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
                 s1 String
             ) ENGINE = {engine}
             ORDER BY tuple()
-            SETTINGS storage_policy_name='moving_jbod_with_external'
+            SETTINGS storage_policy='moving_jbod_with_external'
         """.format(name=name, engine=engine))
 
         for i in range(5):
@@ -687,7 +687,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy_name='jbods_with_external'
+            SETTINGS storage_policy='jbods_with_external'
         """.format(name=name, engine=engine))
 
         def insert(num):
@@ -733,7 +733,7 @@ def test_simple_replication_and_moves(start_cluster):
                     s1 String
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_moves', '{}')
                 ORDER BY tuple()
-                SETTINGS storage_policy_name='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
+                SETTINGS storage_policy='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
             """.format(i + 1))
 
         def insert(num):
@@ -796,7 +796,7 @@ def test_download_appropriate_disk(start_cluster):
                     s1 String
                 ) ENGINE = ReplicatedMergeTree('/clickhouse/replicated_table_for_download', '{}')
                 ORDER BY tuple()
-                SETTINGS storage_policy_name='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
+                SETTINGS storage_policy='moving_jbod_with_external', old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=2
             """.format(i + 1))
 
         data = []
@@ -827,7 +827,7 @@ def test_rename(start_cluster):
                 s String
             ) ENGINE = MergeTree
             ORDER BY tuple()
-            SETTINGS storage_policy_name='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external'
         """)
 
         for _ in range(5):
@@ -867,7 +867,7 @@ def test_freeze(start_cluster):
             ) ENGINE = MergeTree
             ORDER BY tuple()
             PARTITION BY toYYYYMM(d)
-            SETTINGS storage_policy_name='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external'
         """)
 
         for _ in range(5):
