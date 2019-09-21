@@ -10,7 +10,7 @@ Calculates an adaptive histogram. It doesn't guarantee precise results.
 histogram(number_of_bins)(values)
 ```
  
-The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function and in general when the widths of bins are not equal.
+The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
 
 **Parameters**
 
