@@ -15,7 +15,7 @@
 
 /** This dictionary stores all content in a hash table in memory
   * (a separate Key -> Value map for each attribute)
-  * Two variants of hash table is supported: a fast HashMap and memory efficient sparse_hash_map.
+  * Two variants of hash table are supported: a fast HashMap and memory efficient sparse_hash_map.
   */
 
 namespace DB
