@@ -9,12 +9,12 @@ namespace
 /// NOTE: Trailing return type is explicitly specified for SFINAE.
 
 /// google::sparse_hash_map
-template <typename T> auto first(const T & value) -> decltype(value.first) { return lhs.first; }
-template <typename T> auto second(const T & value) -> decltype(value.second) { return lhs.second; }
+template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; }
+template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
 
 /// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getFirst()) { return lhs.getFirst(); }
-template <typename T> auto second(const T & value) -> decltype(value.getSecond()) { return lhs.getSecond(); }
+template <typename T> auto first(const T & value) -> decltype(value.getFirst()) { return value.getFirst(); }
+template <typename T> auto second(const T & value) -> decltype(value.getSecond()) { return value.getSecond(); }
 
 }
 
