@@ -7,16 +7,27 @@
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 struct RepeatImpl
 {
+    /// Safety threshold against DoS.
+    static inline void checkRepeatTime(UInt64 repeat_time)
+    {
+        static constexpr UInt64 max_repeat_times = 1000000;
+        if (repeat_time > max_repeat_times)
+            throw Exception("Too many times to repeat (" + std::to_string(repeat_time) + "), maximum is: " + std::to_string(max_repeat_times),
+                ErrorCodes::TOO_LARGE_STRING_SIZE);
+    }
+
     static void vectorStrConstRepeat(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -24,6 +35,8 @@ struct RepeatImpl
         ColumnString::Offsets & res_offsets,
         UInt64 repeat_time)
     {
+        checkRepeatTime(repeat_time);
+
         UInt64 data_size = 0;
         res_offsets.assign(offsets);
         for (UInt64 i = 0; i < offsets.size(); ++i)
@@ -54,9 +67,12 @@ struct RepeatImpl
             res_offsets[i] = data_size;
         }
         res_data.resize(data_size);
+
         for (UInt64 i = 0; i < col_num.size(); ++i)
         {
-            process(data.data() + offsets[i - 1], res_data.data() + res_offsets[i - 1], offsets[i] - offsets[i - 1], col_num[i]);
+            T repeat_time = col_num[i];
+            checkRepeatTime(repeat_time);
+            process(data.data() + offsets[i - 1], res_data.data() + res_offsets[i - 1], offsets[i] - offsets[i - 1], repeat_time);
         }
     }
 
@@ -79,11 +95,13 @@ struct RepeatImpl
         res_data.resize(data_size);
         for (UInt64 i = 0; i < col_size; ++i)
         {
+            T repeat_time = col_num[i];
+            checkRepeatTime(repeat_time);
             process(
                 reinterpret_cast<UInt8 *>(const_cast<char *>(copy_str.data)),
                 res_data.data() + res_offsets[i - 1],
                 str_size + 1,
-                col_num[i]);
+                repeat_time);
         }
     }
 
