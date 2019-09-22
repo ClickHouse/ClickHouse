@@ -84,7 +84,7 @@ namespace
             const ConnectionTimeouts & timeouts)
             : sample_block(sample_block_)
         {
-            auto minimum_upload_part_size = context.getConfigRef().getUInt64("s3_minimum_upload_part_size", 512'000'000);
+            auto minimum_upload_part_size = context.getConfigRef().getUInt64("s3_minimum_upload_part_size", 512 * 1024 * 1024);
             write_buf = std::make_unique<WriteBufferFromS3>(uri, minimum_upload_part_size, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
@@ -119,14 +119,36 @@ namespace
 }
 
 
-BlockInputStreams StorageS3::read(const Names & column_names,
+StorageS3::StorageS3(
+    const Poco::URI & uri_,
+    const std::string & database_name_,
+    const std::string & table_name_,
+    const String & format_name_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    Context & context_)
+    : IStorage(columns_)
+    , uri(uri_)
+    , context_global(context_)
+    , format_name(format_name_)
+    , database_name(database_name_)
+    , table_name(table_name_)
+{
+    setColumns(columns_);
+    setConstraints(constraints_);
+}
+
+
+BlockInputStreams StorageS3::read(
+    const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(uri,
+    BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(
+        uri,
         format_name,
         getName(),
         getHeaderBlock(column_names),
@@ -171,7 +193,7 @@ void registerStorageS3(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageS3::create(uri, args.database_name, args.table_name, format_name, args.columns, args.context);
+        return StorageS3::create(uri, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
     });
 }
 }
