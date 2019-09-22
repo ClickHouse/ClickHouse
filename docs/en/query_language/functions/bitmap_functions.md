@@ -82,6 +82,32 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,
 └───────────────────┘
 ```
 
+## bitmapSubsetLimit {#bitmap_functions-bitmapsubsetlimit}
+
+Return subset of the smallest `limit` values in set which is no less than `range_start`.
+
+```
+bitmapSubsetLimit(bitmap, range_start, limit)
+```
+
+**Parameters**
+
+- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
+- `limit` – subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
+
+**Example**
+
+``` sql
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+```
+
+```
+┌─res───────────────────────┐
+│ [30,31,32,33,100,200,500] │
+└───────────────────────────┘
+```
+
 ## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Checks whether the bitmap contains an element.
