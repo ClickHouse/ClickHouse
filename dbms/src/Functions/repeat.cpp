@@ -178,16 +178,18 @@ public:
                 Impl::vectorConst(copy_str, repeat_time, col_res->getChars(), col_res->getOffsets());
                 block.getByPosition(result).column = std::move(col_res);
             }
-            else if (!castType(block.getByPosition(arguments[1]).type.get(), [&](const auto & type) 
+            else if (!castType(block.getByPosition(arguments[1]).type.get(), [&](const auto & type)
+                {
+                    using DataType = std::decay_t<decltype(type)>;
+                    using T0 = typename DataType::FieldType;
+                    const ColumnVector<T0> * colnum = checkAndGetColumn<ColumnVector<T0>>(numcolumn.get());
+                    auto col_res = ColumnString::create();
+                    Impl::vectorNonConstInteger(copy_str, col_res->getChars(), col_res->getOffsets(), colnum->getData());
+                    block.getByPosition(result).column = std::move(col_res);
+                    return 0;
+                }))
             {
-                using DataType = std::decay_t<decltype(type)>;
-                using T0 = typename DataType::FieldType;
-                const ColumnVector<T0> * colnum = checkAndGetColumn<ColumnVector<T0>>(numcolumn.get());
-                auto col_res = ColumnString::create();
-                Impl::vectorNonConstInteger(copy_str, col_res->getChars(), col_res->getOffsets(), colnum->getData());
-                block.getByPosition(result).column = std::move(col_res);
-                return 0;
-            }));
+            }
             else
                 throw Exception(
                     "Illegal column " + block.getByPosition(arguments[1]).column->getName() + " of argument of function " + getName(),
