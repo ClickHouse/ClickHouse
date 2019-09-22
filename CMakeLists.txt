@@ -91,6 +91,14 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
+option (ENABLE_FUZZING "Enables fuzzing instrumentation" OFF)
+
+if (ENABLE_FUZZING)
+    message (STATUS "Fuzzing instrumentation enabled")
+    set (WITH_COVERAGE ON)
+    set (SANITIZE "libfuzzer")
+endif()
+
 include (cmake/sanitize.cmake)
 
 
