@@ -5,10 +5,10 @@
 #include <common/logger_useful.h>
 
 
-#define DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT 2
-
 namespace DB
 {
+
+const int DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT = 2;
 
 ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
     const ConnectionTimeouts & timeouts,
