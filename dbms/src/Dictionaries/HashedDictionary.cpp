@@ -6,17 +6,15 @@
 namespace
 {
 
+/// NOTE: Trailing return type is explicitly specified for SFINAE.
+
 /// google::sparse_hash_map
-template <class T> auto first(const T &lhs) -> decltype(lhs.first)
-{ return lhs.first; }
-template <class T> auto second(const T &lhs) -> decltype(lhs.second)
-{ return lhs.second; }
+template <typename T> auto first(const T & value) -> decltype(value.first) { return lhs.first; }
+template <typename T> auto second(const T & value) -> decltype(value.second) { return lhs.second; }
 
 /// HashMap
-template <class T> auto first(const T &lhs) -> decltype(lhs.getFirst())
-{ return lhs.getFirst(); }
-template <class T> auto second(const T &lhs) -> decltype(lhs.getSecond())
-{ return lhs.getSecond(); }
+template <typename T> auto first(const T & value) -> decltype(value.getFirst()) { return lhs.getFirst(); }
+template <typename T> auto second(const T & value) -> decltype(value.getSecond()) { return lhs.getSecond(); }
 
 }
 
