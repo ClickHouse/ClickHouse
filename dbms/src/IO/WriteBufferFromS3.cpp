@@ -11,11 +11,12 @@
 #include <common/logger_useful.h>
 
 
-#define DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT 2
-#define S3_SOFT_MAX_PARTS 10000
-
 namespace DB
 {
+
+const int DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT = 2;
+const int S3_WARN_MAX_PARTS = 10000;
+
 
 namespace ErrorCodes
 {
@@ -92,34 +93,33 @@ void WriteBufferFromS3::initiate()
 {
     // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadInitiate.html
     Poco::Net::HTTPResponse response;
-    std::unique_ptr<Poco::Net::HTTPRequest> request;
+    std::unique_ptr<Poco::Net::HTTPRequest> request_ptr;
     HTTPSessionPtr session;
     std::istream * istr = nullptr; /// owned by session
     Poco::URI initiate_uri = uri;
     initiate_uri.setRawQuery("uploads");
-    auto params = uri.getQueryParameters();
-    for (auto it = params.begin(); it != params.end(); ++it)
+    for (auto & param: uri.getQueryParameters())
     {
-        initiate_uri.addQueryParameter(it->first, it->second);
+        initiate_uri.addQueryParameter(param.first, param.second);
     }
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
         session = makeHTTPSession(initiate_uri, timeouts);
-        request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, initiate_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-        request->setHost(initiate_uri.getHost()); // use original, not resolved host name in header
+        request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, initiate_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+        request_ptr->setHost(initiate_uri.getHost()); // use original, not resolved host name in header
 
         if (auth_request.hasCredentials())
         {
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
-            credentials.authenticate(*request);
+            credentials.authenticate(*request_ptr);
         }
 
-        request->setContentLength(0);
+        request_ptr->setContentLength(0);
 
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << initiate_uri.toString());
 
-        session->sendRequest(*request);
+        session->sendRequest(*request_ptr);
 
         istr = &session->receiveResponse(response);
 
@@ -134,7 +134,7 @@ void WriteBufferFromS3::initiate()
 
         initiate_uri = location_iterator->second;
     }
-    assertResponseIsOk(*request, response, *istr);
+    assertResponseIsOk(*request_ptr, response, *istr);
 
     Poco::XML::InputSource src(*istr);
     Poco::XML::DOMParser parser;
@@ -156,37 +156,38 @@ void WriteBufferFromS3::writePart(const String & data)
 {
     // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadUploadPart.html
     Poco::Net::HTTPResponse response;
-    std::unique_ptr<Poco::Net::HTTPRequest> request;
+    std::unique_ptr<Poco::Net::HTTPRequest> request_ptr;
     HTTPSessionPtr session;
     std::istream * istr = nullptr; /// owned by session
     Poco::URI part_uri = uri;
     part_uri.addQueryParameter("partNumber", std::to_string(part_tags.size() + 1));
     part_uri.addQueryParameter("uploadId", upload_id);
 
-    if (part_tags.size() == S3_SOFT_MAX_PARTS)
+    if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
+        // Don't throw exception here by ourselves but leave the decision to take by S3 server.
         LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached (too much parts). Server may not accept this whole upload.");
     }
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
         session = makeHTTPSession(part_uri, timeouts);
-        request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, part_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-        request->setHost(part_uri.getHost()); // use original, not resolved host name in header
+        request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, part_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+        request_ptr->setHost(part_uri.getHost()); // use original, not resolved host name in header
 
         if (auth_request.hasCredentials())
         {
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
-            credentials.authenticate(*request);
+            credentials.authenticate(*request_ptr);
         }
 
-        request->setExpectContinue(true);
+        request_ptr->setExpectContinue(true);
 
-        request->setContentLength(data.size());
+        request_ptr->setContentLength(data.size());
 
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << part_uri.toString());
 
-        std::ostream & ostr = session->sendRequest(*request);
+        std::ostream & ostr = session->sendRequest(*request_ptr);
         if (session->peekResponse(response))
         {
             // Received 100-continue.
@@ -206,7 +207,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
         part_uri = location_iterator->second;
     }
-    assertResponseIsOk(*request, response, *istr);
+    assertResponseIsOk(*request_ptr, response, *istr);
 
     auto etag_iterator = response.find("ETag");
     if (etag_iterator == response.end())
@@ -221,7 +222,7 @@ void WriteBufferFromS3::complete()
 {
     // See https://docs.aws.amazon.com/AmazonS3/latest/API/mpUploadComplete.html
     Poco::Net::HTTPResponse response;
-    std::unique_ptr<Poco::Net::HTTPRequest> request;
+    std::unique_ptr<Poco::Net::HTTPRequest> request_ptr;
     HTTPSessionPtr session;
     std::istream * istr = nullptr; /// owned by session
     Poco::URI complete_uri = uri;
@@ -244,22 +245,22 @@ void WriteBufferFromS3::complete()
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
         session = makeHTTPSession(complete_uri, timeouts);
-        request = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, complete_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-        request->setHost(complete_uri.getHost()); // use original, not resolved host name in header
+        request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, complete_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+        request_ptr->setHost(complete_uri.getHost()); // use original, not resolved host name in header
 
         if (auth_request.hasCredentials())
         {
             Poco::Net::HTTPBasicCredentials credentials(auth_request);
-            credentials.authenticate(*request);
+            credentials.authenticate(*request_ptr);
         }
 
-        request->setExpectContinue(true);
+        request_ptr->setExpectContinue(true);
 
-        request->setContentLength(data.size());
+        request_ptr->setContentLength(data.size());
 
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << complete_uri.toString());
 
-        std::ostream & ostr = session->sendRequest(*request);
+        std::ostream & ostr = session->sendRequest(*request_ptr);
         if (session->peekResponse(response))
         {
             // Received 100-continue.
@@ -279,7 +280,7 @@ void WriteBufferFromS3::complete()
 
         complete_uri = location_iterator->second;
     }
-    assertResponseIsOk(*request, response, *istr);
+    assertResponseIsOk(*request_ptr, response, *istr);
 }
 
 }

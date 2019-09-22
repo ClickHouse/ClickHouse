@@ -25,8 +25,8 @@ import xml.etree.ElementTree
 
 
 logging.getLogger().setLevel(logging.INFO)
-file_handler = logging.FileHandler('/var/log/clickhouse-server/test-server.log', 'a', encoding='utf-8')
-file_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+file_handler = logging.FileHandler("/var/log/clickhouse-server/test-server.log", "a", encoding="utf-8")
+file_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 logging.getLogger().addHandler(file_handler)
 logging.getLogger().addHandler(logging.StreamHandler())
 
@@ -54,21 +54,21 @@ def GetFreeTCPPortsAndIP(n):
 ), localhost = GetFreeTCPPortsAndIP(5)
 
 data = {
-    'redirecting_to_http_port': redirecting_to_http_port,
-    'preserving_data_port': preserving_data_port,
-    'multipart_preserving_data_port': multipart_preserving_data_port,
-    'redirecting_preserving_data_port': redirecting_preserving_data_port,
+    "redirecting_to_http_port": redirecting_to_http_port,
+    "preserving_data_port": preserving_data_port,
+    "multipart_preserving_data_port": multipart_preserving_data_port,
+    "redirecting_preserving_data_port": redirecting_preserving_data_port,
 }
 
 
 class SimpleHTTPServerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        logging.info('GET {}'.format(self.path))
-        if self.path == '/milovidov/test.csv':
+        logging.info("GET {}".format(self.path))
+        if self.path == "/milovidov/test.csv":
              self.send_response(200)
-             self.send_header('Content-type', 'text/plain')
+             self.send_header("Content-type", "text/plain")
              self.end_headers()
-             self.wfile.write('42,87,44\n55,33,81\n1,0,9\n')
+             self.wfile.write("42,87,44\n55,33,81\n1,0,9\n")
         else:
              self.send_response(404)
              self.end_headers()
@@ -78,27 +78,27 @@ class SimpleHTTPServerHandler(BaseHTTPRequestHandler):
 class RedirectingToHTTPHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(307)
-        self.send_header('Content-type', 'text/xml')
-        self.send_header('Location', 'http://{}:{}/milovidov/test.csv'.format(localhost, simple_server_port))
+        self.send_header("Content-type", "text/xml")
+        self.send_header("Location", "http://{}:{}/milovidov/test.csv".format(localhost, simple_server_port))
         self.end_headers()
-        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
+        self.wfile.write(r"""<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>TemporaryRedirect</Code>
   <Message>Please re-send this request to the specified temporary endpoint.
   Continue to use the original request endpoint for future requests.</Message>
   <Endpoint>storage.yandexcloud.net</Endpoint>
-</Error>'''.encode())
+</Error>""".encode())
         self.finish()
 
 
 class PreservingDataHandler(BaseHTTPRequestHandler):
-    protocol_version = 'HTTP/1.1'
+    protocol_version = "HTTP/1.1"
 
     def parse_request(self):
         result = BaseHTTPRequestHandler.parse_request(self)
         # Adaptation to Python 3.
         if sys.version_info.major == 2 and result == True:
-            expect = self.headers.get('Expect', "")
+            expect = self.headers.get("Expect", "")
             if (expect.lower() == "100-continue" and self.protocol_version >= "HTTP/1.1" and self.request_version >= "HTTP/1.1"):
                 if not self.handle_expect_100():
                     return False
@@ -109,12 +109,12 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
             if code in self.responses:
                 message = self.responses[code][0]
             else:
-                message = ''
-        if self.request_version != 'HTTP/0.9':
+                message = ""
+        if self.request_version != "HTTP/0.9":
             self.wfile.write("%s %d %s\r\n" % (self.protocol_version, code, message))
 
     def handle_expect_100(self):
-        logging.info('Received Expect-100')
+        logging.info("Received Expect-100")
         self.send_response_only(100)
         self.end_headers()
         return True
@@ -122,37 +122,37 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.send_response(200)
         query = urlparse.urlparse(self.path).query
-        logging.info('PreservingDataHandler POST ?' + query)
-        if query == 'uploads':
-            post_data = r'''<?xml version="1.0" encoding="UTF-8"?>
-<hi><UploadId>TEST</UploadId></hi>'''.encode()
-            self.send_header('Content-length', str(len(post_data)))
-            self.send_header('Content-type', 'text/plain')
+        logging.info("PreservingDataHandler POST ?" + query)
+        if query == "uploads":
+            post_data = r"""<?xml version="1.0" encoding="UTF-8"?>
+<hi><UploadId>TEST</UploadId></hi>""".encode()
+            self.send_header("Content-length", str(len(post_data)))
+            self.send_header("Content-type", "text/plain")
             self.end_headers()
             self.wfile.write(post_data)
         else:
-            post_data = self.rfile.read(int(self.headers.get('Content-Length')))
-            self.send_header('Content-type', 'text/plain')
+            post_data = self.rfile.read(int(self.headers.get("Content-Length")))
+            self.send_header("Content-type", "text/plain")
             self.end_headers()
-            data['received_data_completed'] = True
-            data['finalize_data'] = post_data
-            data['finalize_data_query'] = query
+            data["received_data_completed"] = True
+            data["finalize_data"] = post_data
+            data["finalize_data_query"] = query
         self.finish()
  
     def do_PUT(self):
         self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.send_header('ETag', 'hello-etag')
+        self.send_header("Content-type", "text/plain")
+        self.send_header("ETag", "hello-etag")
         self.end_headers()
         query = urlparse.urlparse(self.path).query
         path = urlparse.urlparse(self.path).path
-        logging.info('Content-Length = ' + self.headers.get('Content-Length'))
-        logging.info('PUT ' + query)
-        assert self.headers.get('Content-Length')
-        assert self.headers['Expect'] == '100-continue'
+        logging.info("Content-Length = " + self.headers.get("Content-Length"))
+        logging.info("PUT " + query)
+        assert self.headers.get("Content-Length")
+        assert self.headers["Expect"] == "100-continue"
         put_data = self.rfile.read()
-        data.setdefault('received_data', []).append(put_data)
-        logging.info('PUT to {}'.format(path))
+        data.setdefault("received_data", []).append(put_data)
+        logging.info("PUT to {}".format(path))
         self.server.storage[path] = put_data
         self.finish()
 
@@ -160,8 +160,8 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
         path = urlparse.urlparse(self.path).path
         if path in self.server.storage:
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.send_header('Content-length', str(len(self.server.storage[path])))
+            self.send_header("Content-type", "text/plain")
+            self.send_header("Content-length", str(len(self.server.storage[path])))
             self.end_headers()
             self.wfile.write(self.server.storage[path])
         else:
@@ -171,13 +171,13 @@ class PreservingDataHandler(BaseHTTPRequestHandler):
 
 
 class MultipartPreservingDataHandler(BaseHTTPRequestHandler):
-    protocol_version = 'HTTP/1.1'
+    protocol_version = "HTTP/1.1"
 
     def parse_request(self):
         result = BaseHTTPRequestHandler.parse_request(self)
         # Adaptation to Python 3.
         if sys.version_info.major == 2 and result == True:
-            expect = self.headers.get('Expect', "")
+            expect = self.headers.get("Expect", "")
             if (expect.lower() == "100-continue" and self.protocol_version >= "HTTP/1.1" and self.request_version >= "HTTP/1.1"):
                 if not self.handle_expect_100():
                     return False
@@ -188,78 +188,78 @@ class MultipartPreservingDataHandler(BaseHTTPRequestHandler):
             if code in self.responses:
                 message = self.responses[code][0]
             else:
-                message = ''
-        if self.request_version != 'HTTP/0.9':
+                message = ""
+        if self.request_version != "HTTP/0.9":
             self.wfile.write("%s %d %s\r\n" % (self.protocol_version, code, message))
 
     def handle_expect_100(self):
-        logging.info('Received Expect-100')
+        logging.info("Received Expect-100")
         self.send_response_only(100)
         self.end_headers()
         return True
 
     def do_POST(self):
         query = urlparse.urlparse(self.path).query
-        logging.info('MultipartPreservingDataHandler POST ?' + query)
-        if query == 'uploads':
+        logging.info("MultipartPreservingDataHandler POST ?" + query)
+        if query == "uploads":
             self.send_response(200)
-            post_data = r'''<?xml version="1.0" encoding="UTF-8"?>
-<hi><UploadId>TEST</UploadId></hi>'''.encode()
-            self.send_header('Content-length', str(len(post_data)))
-            self.send_header('Content-type', 'text/plain')
+            post_data = r"""<?xml version="1.0" encoding="UTF-8"?>
+<hi><UploadId>TEST</UploadId></hi>""".encode()
+            self.send_header("Content-length", str(len(post_data)))
+            self.send_header("Content-type", "text/plain")
             self.end_headers()
             self.wfile.write(post_data)
         else:
             try:
-                assert query == 'uploadId=TEST'
-                logging.info('Content-Length = ' + self.headers.get('Content-Length'))
-                post_data = self.rfile.read(int(self.headers.get('Content-Length')))
+                assert query == "uploadId=TEST"
+                logging.info("Content-Length = " + self.headers.get("Content-Length"))
+                post_data = self.rfile.read(int(self.headers.get("Content-Length")))
                 root = xml.etree.ElementTree.fromstring(post_data)
-                assert root.tag == 'CompleteMultipartUpload'
+                assert root.tag == "CompleteMultipartUpload"
                 assert len(root) > 1
-                content = ''
+                content = ""
                 for i, part in enumerate(root):
-                    assert part.tag == 'Part'
+                    assert part.tag == "Part"
                     assert len(part) == 2
-                    assert part[0].tag == 'PartNumber'
-                    assert part[1].tag == 'ETag'
+                    assert part[0].tag == "PartNumber"
+                    assert part[1].tag == "ETag"
                     assert int(part[0].text) == i + 1
-                    content += self.server.storage['@'+part[1].text]
-                data.setdefault('multipart_received_data', []).append(content)
-                data['multipart_parts'] = len(root)
+                    content += self.server.storage["@"+part[1].text]
+                data.setdefault("multipart_received_data", []).append(content)
+                data["multipart_parts"] = len(root)
                 self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
+                self.send_header("Content-type", "text/plain")
                 self.end_headers()
-                logging.info('Sending 200')
+                logging.info("Sending 200")
             except:
-                logging.error('Sending 500')
+                logging.error("Sending 500")
                 self.send_response(500)
         self.finish()
  
     def do_PUT(self):
         uid = uuid.uuid4()
         self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.send_header('ETag', str(uid))
+        self.send_header("Content-type", "text/plain")
+        self.send_header("ETag", str(uid))
         self.end_headers()
         query = urlparse.urlparse(self.path).query
         path = urlparse.urlparse(self.path).path
-        logging.info('Content-Length = ' + self.headers.get('Content-Length'))
-        logging.info('PUT ' + query)
-        assert self.headers.get('Content-Length')
-        assert self.headers['Expect'] == '100-continue'
+        logging.info("Content-Length = " + self.headers.get("Content-Length"))
+        logging.info("PUT " + query)
+        assert self.headers.get("Content-Length")
+        assert self.headers["Expect"] == "100-continue"
         put_data = self.rfile.read()
-        data.setdefault('received_data', []).append(put_data)
-        logging.info('PUT to {}'.format(path))
-        self.server.storage['@'+str(uid)] = put_data
+        data.setdefault("received_data", []).append(put_data)
+        logging.info("PUT to {}".format(path))
+        self.server.storage["@"+str(uid)] = put_data
         self.finish()
 
     def do_GET(self):
         path = urlparse.urlparse(self.path).path
         if path in self.server.storage:
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.send_header('Content-length', str(len(self.server.storage[path])))
+            self.send_header("Content-type", "text/plain")
+            self.send_header("Content-length", str(len(self.server.storage[path])))
             self.end_headers()
             self.wfile.write(self.server.storage[path])
         else:
@@ -269,13 +269,13 @@ class MultipartPreservingDataHandler(BaseHTTPRequestHandler):
 
 
 class RedirectingPreservingDataHandler(BaseHTTPRequestHandler):
-    protocol_version = 'HTTP/1.1'
+    protocol_version = "HTTP/1.1"
 
     def parse_request(self):
         result = BaseHTTPRequestHandler.parse_request(self)
         # Adaptation to Python 3.
         if sys.version_info.major == 2 and result == True:
-            expect = self.headers.get('Expect', "")
+            expect = self.headers.get("Expect", "")
             if (expect.lower() == "100-continue" and self.protocol_version >= "HTTP/1.1" and self.request_version >= "HTTP/1.1"):
                 if not self.handle_expect_100():
                     return False
@@ -286,46 +286,46 @@ class RedirectingPreservingDataHandler(BaseHTTPRequestHandler):
             if code in self.responses:
                 message = self.responses[code][0]
             else:
-                message = ''
-        if self.request_version != 'HTTP/0.9':
+                message = ""
+        if self.request_version != "HTTP/0.9":
             self.wfile.write("%s %d %s\r\n" % (self.protocol_version, code, message))
 
     def handle_expect_100(self):
-        logging.info('Received Expect-100')
+        logging.info("Received Expect-100")
         return True
 
     def do_POST(self):
         query = urlparse.urlparse(self.path).query
         if query:
-            query = '?{}'.format(query)
+            query = "?{}".format(query)
         self.send_response(307)
-        self.send_header('Content-type', 'text/xml')
-        self.send_header('Location', 'http://{host}:{port}/{bucket}/test.csv{query}'.format(host=localhost, port=preserving_data_port, bucket=bucket, query=query))
+        self.send_header("Content-type", "text/xml")
+        self.send_header("Location", "http://{host}:{port}/{bucket}/test.csv{query}".format(host=localhost, port=preserving_data_port, bucket=bucket, query=query))
         self.end_headers()
-        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
+        self.wfile.write(r"""<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>TemporaryRedirect</Code>
   <Message>Please re-send this request to the specified temporary endpoint.
   Continue to use the original request endpoint for future requests.</Message>
   <Endpoint>{host}:{port}</Endpoint>
-</Error>'''.format(host=localhost, port=preserving_data_port).encode())
+</Error>""".format(host=localhost, port=preserving_data_port).encode())
         self.finish()
 
     def do_PUT(self):
         query = urlparse.urlparse(self.path).query
         if query:
-            query = '?{}'.format(query)
+            query = "?{}".format(query)
         self.send_response(307)
-        self.send_header('Content-type', 'text/xml')
-        self.send_header('Location', 'http://{host}:{port}/{bucket}/test.csv{query}'.format(host=localhost, port=preserving_data_port, bucket=bucket, query=query))
+        self.send_header("Content-type", "text/xml")
+        self.send_header("Location", "http://{host}:{port}/{bucket}/test.csv{query}".format(host=localhost, port=preserving_data_port, bucket=bucket, query=query))
         self.end_headers()
-        self.wfile.write(r'''<?xml version="1.0" encoding="UTF-8"?>
+        self.wfile.write(r"""<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>TemporaryRedirect</Code>
   <Message>Please re-send this request to the specified temporary endpoint.
   Continue to use the original request endpoint for future requests.</Message>
   <Endpoint>{host}:{port}</Endpoint>
-</Error>'''.format(host=localhost, port=preserving_data_port).encode())
+</Error>""".format(host=localhost, port=preserving_data_port).encode())
         self.finish()
 
 
@@ -357,8 +357,8 @@ jobs = [ threading.Thread(target=server.serve_forever) for server in servers ]
 
 time.sleep(60) # Timeout
 
-logging.info('Shutting down')
+logging.info("Shutting down")
 [ server.shutdown() for server in servers ]
-logging.info('Joining threads')
+logging.info("Joining threads")
 [ job.join() for job in jobs ]
-logging.info('Done')
+logging.info("Done")
