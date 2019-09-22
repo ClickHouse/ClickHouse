@@ -1,9 +1,11 @@
 #include <Common/DiskSpaceMonitor.h>
+#include <Common/escapeForFileName.h>
+#include <Parsers/IAST.h>
 
 #include <set>
 
-#include <Common/escapeForFileName.h>
 #include <Poco/File.h>
+
 
 namespace DB
 {
@@ -82,7 +84,7 @@ bool Disk::tryReserve(UInt64 bytes) const
     std::lock_guard lock(mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving 0 bytes on disk " << name);
+        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving 0 bytes on disk " << backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -93,7 +95,7 @@ bool Disk::tryReserve(UInt64 bytes) const
     {
         LOG_DEBUG(
             &Logger::get("DiskSpaceMonitor"),
-            "Reserving " << bytes << " bytes on disk " << name << " having unreserved " << unreserved_space << " bytes.");
+            "Reserving " << bytes << " bytes on disk " << backQuote(name) << " having unreserved " << unreserved_space << " bytes.");
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
