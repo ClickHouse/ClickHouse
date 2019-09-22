@@ -6,7 +6,7 @@
 #include <memory>
 #include <unordered_map>
 #include <Core/Types.h>
-#include <ext/singleton.h>
+#include <boost/noncopyable.hpp>
 
 
 namespace google
@@ -24,9 +24,11 @@ class FormatSchemaInfo;
 /** Keeps parsed google protobuf schemas parsed from files.
   * This class is used to handle the "Protobuf" input/output formats.
   */
-class ProtobufSchemas : public ext::singleton<ProtobufSchemas>
+class ProtobufSchemas : private boost::noncopyable
 {
 public:
+    static ProtobufSchemas & instance();
+
     ProtobufSchemas();
     ~ProtobufSchemas();
 

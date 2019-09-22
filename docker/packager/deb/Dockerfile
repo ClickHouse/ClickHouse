@@ -6,14 +6,19 @@ RUN apt-get --allow-unauthenticated update -y \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
             bash \
             fakeroot \
-            cmake \
             ccache \
             curl \
-            software-properties-common
+            software-properties-common \
+            gnupg \
+            apt-transport-https \
+            ca-certificates
+
 
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test
+RUN curl https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add -
+RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -57,11 +62,9 @@ RUN apt-get --allow-unauthenticated update -y \
             zlib1g-dev \
             liblz4-dev \
             libdouble-conversion-dev \
-            libsparsehash-dev \
             librdkafka-dev \
             libpoconetssl50 \
             libpoco-dev \
-            libsparsehash-dev \
             libgoogle-perftools-dev \
             libzstd-dev \
             libltdl-dev \
@@ -72,8 +75,21 @@ RUN apt-get --allow-unauthenticated update -y \
             tzdata \
             gperf \
             alien \
-            libcapnp-dev
+            libcapnp-dev \
+            cmake \
+            gdb  \
+            pigz \
+            moreutils
 
+
+
+# Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
+# to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
+# Significantly increase deb packaging speed and compatible with old systems
+RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/dpkg-deb
+RUN chmod +x dpkg-deb
+RUN cp dpkg-deb /usr/bin
 
 COPY build.sh /
+
 CMD ["/bin/bash", "/build.sh"]

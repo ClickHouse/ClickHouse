@@ -131,8 +131,6 @@ Block MySQLBlockInputStream::readImpl()
 
         row = result.fetch();
     }
-    if (auto_close)
-        entry.disconnect();
     return description.sample_block.cloneWithColumns(std::move(columns));
 }
 

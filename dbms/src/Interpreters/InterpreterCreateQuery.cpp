@@ -2,6 +2,7 @@
 
 #include <Poco/File.h>
 
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
@@ -416,7 +417,12 @@ ColumnsDescription InterpreterCreateQuery::setProperties(
     else if (!create.as_table.empty())
     {
         columns = as_storage->getColumns();
-        indices = as_storage->getIndices();
+
+        /// Secondary indices make sense only for MergeTree family of storage engines.
+        /// We should not copy them for other storages.
+        if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
+            indices = as_storage->getIndices();
+
         constraints = as_storage->getConstraints();
     }
     else if (create.select)
