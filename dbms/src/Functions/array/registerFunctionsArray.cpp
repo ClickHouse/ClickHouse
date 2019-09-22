@@ -32,6 +32,7 @@ void registerFunctionArrayUniq(FunctionFactory &);
 void registerFunctionArrayDistinct(FunctionFactory &);
 void registerFunctionArrayFlatten(FunctionFactory &);
 void registerFunctionArrayRoundCarry(FunctionFactory &);
+void registerFunctionArrayTranspose(FunctionFactory &);
 void registerFunctionArrayWithConstant(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
@@ -65,6 +66,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayDistinct(factory);
     registerFunctionArrayFlatten(factory);
     registerFunctionArrayRoundCarry(factory);
+    registerFunctionArrayTranspose(factory);
     registerFunctionArrayWithConstant(factory);
 }
 
