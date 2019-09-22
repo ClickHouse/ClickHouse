@@ -387,7 +387,8 @@ struct StorageDistributedDirectoryMonitor::Batch
                 remote->writePrepared(in);
             }
 
-            remote->writeSuffix();
+            if (remote)
+                remote->writeSuffix();
         }
         catch (const Exception & e)
         {
