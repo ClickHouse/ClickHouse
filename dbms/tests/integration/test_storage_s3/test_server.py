@@ -68,7 +68,8 @@ class SimpleHTTPServerHandler(BaseHTTPRequestHandler):
              self.send_response(200)
              self.send_header("Content-type", "text/plain")
              self.end_headers()
-             self.wfile.write("42,87,44\n55,33,81\n1,0,9\n")
+             data["redirect_csv_data"] = [[42, 87, 44], [55, 33, 81], [1, 0, 9]]
+             self.wfile.write("".join([ "{},{},{}\n".format(*row) for row in data["redirect_csv_data"]]))
         else:
              self.send_response(404)
              self.end_headers()
