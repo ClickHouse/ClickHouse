@@ -63,7 +63,12 @@ public:
             roaring_bitmap_add(rb, value);
     }
 
-    UInt64 size() const { return isSmall() ? small.size() : roaring_bitmap_get_cardinality(rb); }
+    UInt64 size() const
+    {
+        return isSmall()
+            ? small.size()
+            : roaring_bitmap_get_cardinality(rb);
+    }
 
     void merge(const RoaringBitmapWithSmallSet & r1)
     {
@@ -91,7 +96,7 @@ public:
             std::string s;
             readStringBinary(s,in);
             rb = roaring_bitmap_portable_deserialize(s.c_str());
-            for (const auto & x : small) //merge from small
+            for (const auto & x : small) // merge from small
                 roaring_bitmap_add(rb, x.getValue());
         }
         else
@@ -245,13 +250,13 @@ public:
         {
             for (const auto & x : small)
                 if (r1.small.find(x.getValue()) != r1.small.end())
-                    retSize++;
+                    ++retSize;
         }
         else if (isSmall() && r1.isLarge())
         {
             for (const auto & x : small)
                 if (roaring_bitmap_contains(r1.rb, x.getValue()))
-                    retSize++;
+                    ++retSize;
         }
         else
         {
@@ -391,8 +396,7 @@ public:
      */
     UInt8 rb_contains(const UInt32 x) const
     {
-        return isSmall() ? small.find(x) != small.end() :
-            roaring_bitmap_contains(rb, x);
+        return isSmall() ? small.find(x) != small.end() : roaring_bitmap_contains(rb, x);
     }
 
     /**
@@ -460,7 +464,7 @@ public:
     /**
      * Return new set with specified range (not include the range_end)
      */
-    UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet& r1) const
+    UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet & r1) const
     {
         UInt64 count = 0;
         if (range_start >= range_end)
@@ -473,7 +477,7 @@ public:
                 if (UInt32(val) >= range_start && UInt32(val) < range_end)
                 {
                     r1.add(val);
-                    count++;
+                    ++count;
                 }
             }
         }
@@ -486,7 +490,7 @@ public:
             {
                 r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
-                count++;
+                ++count;
             }
         }
         return count;
@@ -495,7 +499,7 @@ public:
     /**
      * Return new set of the smallest `limit` values in set which is no less than `range_start`.
      */
-    UInt64 rb_limit(UInt32 range_start, UInt32 limit, RoaringBitmapWithSmallSet& r1) const
+    UInt64 rb_limit(UInt32 range_start, UInt32 limit, RoaringBitmapWithSmallSet & r1) const
     {
         UInt64 count = 0;
         if (isSmall())
@@ -512,7 +516,7 @@ public:
             sort(ans.begin(), ans.end());
             if (limit > ans.size())
                 limit = ans.size();
-            for (size_t i=0; i<limit; i++)
+            for (size_t i = 0; i < limit; ++i)
                 r1.add(ans[i]);
             count = UInt64(limit);
         }
@@ -525,7 +529,7 @@ public:
             {
                 r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
-                count++;
+                ++count;
             }
         }
         return count;
@@ -588,8 +592,8 @@ private:
         readBinary(val, dbBuf);
         container = containerptr_roaring_bitmap_add(r, val, &typecode, &containerindex);
         prev = val;
-        i++;
-        for (; i < n_args; i++)
+        ++i;
+        for (; i < n_args; ++i)
         {
             readBinary(val, dbBuf);
             if (((prev ^ val) >> 16) == 0)
