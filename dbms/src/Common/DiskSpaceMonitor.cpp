@@ -95,7 +95,8 @@ bool Disk::tryReserve(UInt64 bytes) const
     {
         LOG_DEBUG(
             &Logger::get("DiskSpaceMonitor"),
-            "Reserving " << bytes << " bytes on disk " << backQuote(name) << " having unreserved " << unreserved_space << " bytes.");
+            "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name)
+                << ", having unreserved " << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
@@ -285,14 +286,14 @@ Volume::Volume(
         max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
         for (size_t i = 0; i < disks.size(); ++i)
             if (sizes[i] < max_data_part_size)
-                LOG_WARNING(logger, "Disk " << disks[i]->getName() << " on volume " << config_prefix <<
-                                    " have not enough space (" << sizes[i] <<
+                LOG_WARNING(logger, "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) <<
+                                    " have not enough space (" << formatReadableSizeWithBinarySuffix(sizes[i]) <<
                                     ") for containing part the size of max_data_part_size (" <<
-                                    max_data_part_size << ")");
+                                    formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
     }
     constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(logger, "Volume '" << name << "' max_data_part_size is too low ("
+        LOG_WARNING(logger, "Volume " << backQuote(name) << " max_data_part_size is too low ("
             << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < "
             << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
@@ -507,7 +508,7 @@ StoragePolicySelector::StoragePolicySelector(
                 ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy " << name << " loaded");
+        LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy " << backQuote(name) << " loaded");
     }
 
     constexpr auto default_storage_policy_name = "default";
