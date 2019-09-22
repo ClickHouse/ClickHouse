@@ -44,8 +44,10 @@ if (SANITIZE)
         endif ()
 
     elseif (SANITIZE STREQUAL "libfuzzer")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link,address,signed-integer-overflow -fsanitize-address-use-after-scope")
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link,address,signed-integer-overflow -fsanitize-address-use-after-scope")
+        # NOTE: Eldar Zaitov decided to name it "libfuzzer" instead of "fuzzer" to keep in mind another possible fuzzer backends.
+        # NOTE: no-link means that all the targets are built with instrumentation for fuzzer, but only some of them (tests) have entry point for fuzzer and it's not checked.
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link,address,undefined -fsanitize-address-use-after-scope")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} -fsanitize=fuzzer-no-link,address,undefined -fsanitize-address-use-after-scope")
         if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
             set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=fuzzer-no-link,address,signed-integer-overflow -fsanitize-address-use-after-scope")
         endif()
