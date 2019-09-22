@@ -52,7 +52,7 @@ namespace ErrorCodes
   * Retrun bitmap cardinality:
   * bitmapCardinality:	bitmap -> integer
   *
-  * Retrun smallest value in the set:
+  * Retrun the smallest value in the set:
   * bitmapMin:	bitmap -> integer
   *
   * Retrun the greatest value in the set:
