@@ -47,7 +47,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     return absolute_path;
 }
 
-    /// Returns name of filesystem mounted to mount_point
+/// Returns name of filesystem mounted to mount_point
 #if !defined(__linux__)
 [[noreturn]]
 #endif
@@ -67,7 +67,7 @@ std::string getFilesystemName([[maybe_unused]] const std::string & mount_point)
         throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
     return fs_info.mnt_fsname;
 #else
-    throw DB::Exception("Supported on linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception("The function getFilesystemName is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
 
