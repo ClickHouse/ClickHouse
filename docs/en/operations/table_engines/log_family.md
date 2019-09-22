@@ -30,7 +30,7 @@ Engines:
 
 ## Differences
 
-The `TinyLog` engine is the simplest in the family and provides the poorest functionality and lowest efficiency. The `TinyLog` engine doesn't support parallel data reading. It reads data slower than other engines in the family that support parallel reading and it uses almost as many descriptors as the `Log` engine because it stores each column in a separate file. Use it in simple low-load scenarios.
+The `TinyLog` engine is the simplest in the family and provides the poorest functionality and lowest efficiency. The `TinyLog` engine doesn't support parallel data reading by several threads. It reads data slower than other engines in the family that support parallel reading and it uses almost as many descriptors as the `Log` engine because it stores each column in a separate file. Use it in simple low-load scenarios.
 
 The `Log` and `StripeLog` engines support parallel data reading. When reading data, ClickHouse uses multiple threads. Each thread processes a separate data block. The `Log` engine uses a separate file for each column of the table. `StripeLog` stores all the data in one file. As a result, the `StripeLog` engine uses fewer descriptors in the operating system, but the `Log` engine provides higher efficiency when reading data.
 
