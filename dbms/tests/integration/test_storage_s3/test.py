@@ -78,11 +78,9 @@ def test_get_with_redirect(started_cluster):
     put_communication_data(started_cluster, "=== Get with redirect test ===")
     query = "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format(started_cluster.mock_host, started_cluster.redirecting_to_http_port, format)
     stdout = run_query(instance, query)
-    assert list(map(str.split, stdout.splitlines())) == [
-        ["42", "87", "44", "160776"],
-        ["55", "33", "81", "147015"],
-        ["1", "0", "9", "0"],
-    ]
+    data = get_communication_data(started_cluster)
+    expected = [ [str(row[0]), str(row[1]), str(row[2]), str(row[0]*row[1]*row[2])] for row in data["redirect_csv_data"] ]
+    assert list(map(str.split, stdout.splitlines())) == expected
     
 
 def test_put(started_cluster):
