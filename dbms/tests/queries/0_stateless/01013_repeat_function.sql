@@ -21,4 +21,6 @@ SELECT repeat('abc', u16) FROM defaults;
 SELECT repeat('abc', u32) FROM defaults;
 SELECT repeat('abc', u64) FROM defaults;
 
+SELECT repeat('Hello, world! ', 3);
+
 DROP TABLE defaults;
