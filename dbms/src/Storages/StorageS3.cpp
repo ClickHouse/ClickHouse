@@ -84,7 +84,7 @@ namespace
             const ConnectionTimeouts & timeouts)
             : sample_block(sample_block_)
         {
-            auto minimum_upload_part_size = context.getConfigRef().getUInt64("s3_minimum_upload_part_size", 512 * 1024 * 1024);
+            auto minimum_upload_part_size = context.getConfigRef().getUInt64("s3.minimum_upload_part_size", 512 * 1024 * 1024);
             write_buf = std::make_unique<WriteBufferFromS3>(uri, minimum_upload_part_size, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
