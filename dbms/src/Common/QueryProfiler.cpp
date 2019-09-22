@@ -54,7 +54,7 @@ namespace
             }
         }
 #else
-	UNUSED(info);
+        UNUSED(info);
 #endif
 
         constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
