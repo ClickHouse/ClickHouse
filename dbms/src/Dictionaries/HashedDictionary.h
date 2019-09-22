@@ -13,6 +13,10 @@
 #include "IDictionary.h"
 #include "IDictionarySource.h"
 
+/** This dictionary stores all content in a hash table in memory
+  * (a separate Key -> Value map for each attribute)
+  * Two variants of hash table is supported: a fast HashMap and memory efficient sparse_hash_map.
+  */
 
 namespace DB
 {
