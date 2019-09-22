@@ -3,24 +3,24 @@
 
 ## toInt(8|16|32|64)
 
-Converts an input value to the [Int](../../data_types/int_uint.md) data type. This functions family includes:
+Converts an input value to the [Int](../../data_types/int_uint.md) data type. This function family includes:
 
-* `toInt8(expr)` — Results in `Int8` data type.
-* `toInt16(expr)` — Results in `Int16` data type.
-* `toInt32(expr)` — Results in `Int32` data type.
-* `toInt64(expr)` — Results in `Int64` data type.
+* `toInt8(expr)` — Results in the `Int8` data type.
+* `toInt16(expr)` — Results in the `Int16` data type.
+* `toInt32(expr)` — Results in the `Int32` data type.
+* `toInt64(expr)` — Results in the `Int64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
-Integer value in `Int8`, `Int16`, `Int32` or `Int64` data type.
+Integer value in the `Int8`, `Int16`, `Int32`, or `Int64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behaviour of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
+The behavior of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
 
 **Example**
 
@@ -39,24 +39,24 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toUInt(8|16|32|64)
 
-Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This functions family includes:
+Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This function family includes:
 
-* `toUInt8(expr)` — Results in `UInt8` data type.
-* `toUInt16(expr)` — Results in `UInt16` data type.
-* `toUInt32(expr)` — Results in `UInt32` data type.
-* `toUInt64(expr)` — Results in `UInt64` data type.
+* `toUInt8(expr)` — Results in the `UInt8` data type.
+* `toUInt16(expr)` — Results in the `UInt16` data type.
+* `toUInt32(expr)` — Results in the `UInt32` data type.
+* `toUInt64(expr)` — Results in the `UInt64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
-Integer value in `UInt8`, `UInt16`, `UInt32` or `UInt64` data type.
+Integer value in the `UInt8`, `UInt16`, `UInt32`, or `UInt64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behaviour of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass the string with negative number, for example `'-32'`, ClickHouse rises an exception.
+The behavior of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception.
 
 **Example**
 
