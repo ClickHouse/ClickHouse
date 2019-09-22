@@ -9,10 +9,10 @@ try
 {
     DB::ReadBufferFromMemory from(data, size);
     DB::CompressedReadBuffer in{from};
-    
+
     while (!in.eof())
         in.next();
-        
+
     return 0;
 }
 catch (...)
