@@ -1,4 +1,3 @@
-
 # Type Conversion Functions
 
 ## toInt(8|16|32|64)
