@@ -140,7 +140,8 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - timeout - Таймаут отправки данных в секундах.
 - root_path - Префикс для ключей.
 - metrics - Отправка данных из таблицы :ref:`system_tables-system.metrics`.
-- events - Отправка данных из таблицы :ref:`system_tables-system.events`.
+- events - Отправка дельты данных из таблицы :ref:`system_tables-system.events`
+- events_absolute - Отправка абсолютных данных из таблицы :ref:`system_tables-system.events`
 - asynchronous_metrics - Отправка данных из таблицы :ref:`system_tables-system.asynchronous_metrics`.
 
 Можно определить несколько секций `<graphite>`, например, для передачи различных данных с различной частотой.
@@ -156,6 +157,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
     <root_path>one_min</root_path>
     <metrics>true</metrics>
     <events>true</events>
+    <events_absolute>false</events_absolute>
     <asynchronous_metrics>true</asynchronous_metrics>
 </graphite>
 ```
