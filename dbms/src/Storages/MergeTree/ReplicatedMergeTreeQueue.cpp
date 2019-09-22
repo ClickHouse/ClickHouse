@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 
@@ -30,13 +31,19 @@ void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & 
 {
     std::lock_guard lock(state_mutex);
 
-    for (const auto & part : parts)
+    for (auto part : parts)
     {
         current_parts.add(part->name);
         virtual_parts.add(part->name);
     }
 }
 
+
+bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
+{
+    std::lock_guard lock(state_mutex);
+    return virtual_parts.getContainingPart(data_part->info) != data_part->name;
+}
 
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
@@ -379,10 +386,9 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 
 bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & part_info)
 {
-    std::unique_lock lock(state_mutex);
+    std::lock_guard lock(state_mutex);
     return virtual_parts.remove(part_info);
 }
-
 
 void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
@@ -763,7 +769,10 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
     return true;
 }
 
-void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current)
+void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
+    zkutil::ZooKeeperPtr zookeeper,
+    const MergeTreePartInfo & part_info,
+    const ReplicatedMergeTreeLogEntryData & current)
 {
     Queue to_wait;
     size_t removed_entries = 0;
@@ -956,15 +965,20 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             return false;
         }
 
-        /** Execute merge only if there are enough free threads in background pool to do merges of that size.
-          * But if all threads are free (maximal size of merge is allowed) then execute any merge,
-          *  (because it may be ordered by OPTIMIZE or early with differrent settings).
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? merger_mutator.getMaxSourcePartsSizeForMerge()
+                                                                           : merger_mutator.getMaxSourcePartSizeForMutation();
+        /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
+          * then ignore value returned by getMaxSourcePartsSizeForMerge() and execute merge of any size,
+          * because it may be ordered by OPTIMIZE or early with different settings.
+          * Setting max_bytes_to_merge_at_max_space_in_pool still working for regular merges,
+          * because the leader replica does not assign merges of greater size (except OPTIMIZE PARTITION and OPTIMIZE FINAL).
           */
-        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
-        if (max_source_parts_size != data.settings.max_bytes_to_merge_at_max_space_in_pool
-            && sum_parts_size_in_bytes > max_source_parts_size)
+        const auto data_settings = data.getSettings();
+        bool ignore_max_size = (entry.type == LogEntry::MERGE_PARTS) && (max_source_parts_size == data_settings->max_bytes_to_merge_at_max_space_in_pool);
+
+        if (!ignore_max_size && sum_parts_size_in_bytes > max_source_parts_size)
         {
-            String reason = "Not executing log entry for part " + entry.new_part_name
+            String reason = "Not executing log entry " + entry.typeToString() + " for part " + entry.new_part_name
                 + " because source parts size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
                 + ") is greater than the current maximum (" + formatReadableSizeWithBinarySuffix(max_source_parts_size) + ").";
             LOG_DEBUG(log, reason);
@@ -1154,17 +1168,21 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
-size_t ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
+std::pair<size_t, size_t> ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
 {
     std::lock_guard lock(state_mutex);
 
-    size_t count = 0;
+    size_t count_merges = 0;
+    size_t count_mutations = 0;
     for (const auto & entry : queue)
-        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
-            || entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
-            ++count;
+    {
+        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS)
+            ++count_merges;
+        else if (entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
+            ++count_mutations;
+    }
 
-    return count;
+    return std::make_pair(count_merges, count_mutations);
 }
 
 
@@ -1303,7 +1321,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 }
 
 
-void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
+void ReplicatedMergeTreeQueue::disableMergesInBlockRange(const String & part_name)
 {
     std::lock_guard lock(state_mutex);
     virtual_parts.add(part_name);
@@ -1621,25 +1639,30 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 
     if (left_max_block + 1 < right_min_block)
     {
+        /// Fake part which will appear as merge result
         MergeTreePartInfo gap_part_info(
             left->info.partition_id, left_max_block + 1, right_min_block - 1,
             MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
+        /// We don't select parts if any smaller part covered by our merge must exist after
+        /// processing replication log up to log_pointer.
         Strings covered = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
         if (!covered.empty())
         {
             if (out_reason)
                 *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
-                    + " to " + covered.back() + ") that are still not present on this replica between "
-                    + left->name + " and " + right->name;
+                    + " to " + covered.back() + ") that are still not present or beeing processed by "
+                    + " other background process on this replica between " + left->name + " and " + right->name;
             return false;
         }
     }
 
     Int64 left_mutation_ver = queue.getCurrentMutationVersionImpl(
         left->info.partition_id, left->info.getDataVersion(), lock);
+
     Int64 right_mutation_ver = queue.getCurrentMutationVersionImpl(
         left->info.partition_id, right->info.getDataVersion(), lock);
+
     if (left_mutation_ver != right_mutation_ver)
     {
         if (out_reason)

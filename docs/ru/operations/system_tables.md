@@ -81,11 +81,56 @@ user String — имя пользователя, которого использ
 - `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
 - `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
 
+## system.contributors {#system_contributors}
+
+Содержит информацию о контрибьютерах. Контрибьютеры расположены в таблице в случайном порядке. Порядок определяется заново при каждом запросе.
+
+Столбцы:
+
+- `name` (String) — Имя контрибьютера (автора коммита) из git log.
+
+**Пример**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+Чтобы найти себя в таблице, выполните запрос:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
+
 ## system.databases
 
 Таблица содержит один столбец name типа String - имя базы данных.
 Для каждой базы данных, о которой знает сервер, будет присутствовать соответствующая запись в таблице.
 Эта системная таблица используется для реализации запроса `SHOW DATABASES`.
+
+## system.detached_parts {#system_tables-detached_parts}
+
+Содержит информацию об отсоединённых кусках таблиц семейства [MergeTree](table_engines/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
+Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION|PART](../query_language/query_language/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
+Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
 ## system.dictionaries
 
@@ -298,7 +343,7 @@ SELECT * FROM system.metrics LIMIT 10
 
 Столбцы:
 
-- `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений: `NEW_PART` — вставка нового куска; `MERGE_PARTS` — слияние кусков; `DOWNLOAD_PART` — загрузка с реплики; `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition); `MUTATE_PART` — изменение куска.
+- `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений: `NEW_PART` — вставка нового куска; `MERGE_PARTS` — слияние кусков; `DOWNLOAD_PART` — загрузка с реплики; `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition); `MUTATE_PART` — изменение куска; `MOVE_PART` — перемещение куска между дисками.
 - `event_date` (Date) — дата события;
 - `event_time` (DateTime) — время события;
 - `duration_ms` (UInt64) — длительность;
@@ -710,3 +755,25 @@ path:           /clickhouse/tables/01-08/visits/replicas
 **latest_fail_reason** — причина последней ошибки мутации.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->
+
+## system.disks {#system_tables-disks}
+
+Таблица содержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Имеет следующие столбцы:
+
+- `name String` — имя диска в конфигурации сервера.
+- `path String` — путь к точке монтирования на файловой системе.
+- `free_space UInt64` — свободное место на диске в данный момент времени в байтах.
+- `total_space UInt64` — общее количество места на диске в данный момент времени в байтах.
+- `keep_free_space UInt64` — количество байт, которое должно оставаться свободным (задается в конфигурации).
+
+
+## system.storage_policies {#system_tables-storage_policies}
+
+Таблица содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Данные в таблице денормализованны, имя одной политики хранения может содержаться несколько раз, по количеству томов в ней. Имеет следующие столбцы:
+
+- `policy_name String` — имя политики хранения в конфигурации сервера.
+- `volume_name String` — имя тома, который содержится в данной политике хранения.
+- `volume_priority UInt64` — порядковый номер тома, согласно конфигурации.
+- `disks Array(String)` — имена дисков, содержащихся в данной политике хранения.
+- `max_data_part_size UInt64` — максимальный размер куска, который может храниться на дисках этого тома (0 — без ограничений).
+- `move_factor Float64` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.

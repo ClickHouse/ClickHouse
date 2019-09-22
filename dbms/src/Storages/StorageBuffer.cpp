@@ -55,11 +55,12 @@ namespace ErrorCodes
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & database_name_, const std::string & table_name_, const ColumnsDescription & columns_,
+StorageBuffer::StorageBuffer(const std::string & database_name_, const std::string & table_name_,
+    const ColumnsDescription & columns_, const ConstraintsDescription & constraints_,
     Context & context_,
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
-    : IStorage{columns_},
+    :
     table_name(table_name_), database_name(database_name_), global_context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
@@ -67,6 +68,8 @@ StorageBuffer::StorageBuffer(const std::string & database_name_, const std::stri
     no_destination(destination_database.empty() && destination_table.empty()),
     allow_materialized(allow_materialized_), log(&Logger::get("StorageBuffer (" + table_name + ")"))
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 StorageBuffer::~StorageBuffer()
@@ -692,17 +695,21 @@ void StorageBuffer::flushThread()
 }
 
 
-void StorageBuffer::alter(const AlterCommands & params, const String & database_name_, const String & table_name_, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+
+    const String database_name_ = getDatabaseName();
+    const String table_name_ = getTableName();
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
-    params.apply(new_columns);
-    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, {});
+    auto new_constraints = getConstraints();
+    params.applyForColumnsOnly(new_columns);
+    context.getDatabase(database_name_)->alterTable(context, table_name_, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }
 
@@ -742,7 +749,7 @@ void registerStorageBuffer(StorageFactory & factory)
 
         return StorageBuffer::create(
             args.database_name,
-            args.table_name, args.columns,
+            args.table_name, args.columns, args.constraints,
             args.context,
             num_buckets,
             StorageBuffer::Thresholds{min_time, min_rows, min_bytes},

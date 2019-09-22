@@ -61,7 +61,7 @@ add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
-target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms)
 
 add_executable (allocator allocator.cpp)
@@ -75,9 +75,6 @@ target_link_libraries (cow_compositions PRIVATE clickhouse_common_io)
 
 add_executable (stopwatch stopwatch.cpp)
 target_link_libraries (stopwatch PRIVATE clickhouse_common_io)
-
-add_executable (mi_malloc_test mi_malloc_test.cpp)
-target_link_libraries (mi_malloc_test PRIVATE clickhouse_common_io)
 
 add_executable (symbol_index symbol_index.cpp)
 target_link_libraries (symbol_index PRIVATE clickhouse_common_io)

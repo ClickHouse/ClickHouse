@@ -13,6 +13,7 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -100,6 +101,11 @@ using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(Context &)>;
 
+/// Callback for initialize input()
+using InputInitializer = std::function<void(Context &, const StoragePtr &)>;
+/// Callback for reading blocks of data from client for function input()
+using InputBlocksReader = std::function<Block(Context &)>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -123,6 +129,9 @@ private:
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
+
+    InputInitializer input_initializer_callback;
+    InputBlocksReader input_blocks_reader;
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
@@ -213,6 +222,17 @@ public:
     /// This method is called in executeQuery() and will call the external tables initializer.
     void initializeExternalTablesIfSet();
 
+    /// When input() is present we have to send columns structure to client
+    void setInputInitializer(InputInitializer && initializer);
+    /// This method is called in StorageInput::read while executing query
+    void initializeInput(const StoragePtr & input_storage);
+
+    /// Callback for read data blocks from client one by one for function input()
+    void setInputBlocksReaderCallback(InputBlocksReader && reader);
+    /// Get callback for reading data for input()
+    InputBlocksReader getInputBlocksReaderCallback() const;
+    void resetInputCallbacks();
+
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
@@ -233,6 +253,8 @@ public:
     bool isExternalTableExist(const String & table_name) const;
     bool hasDatabaseAccessRights(const String & database_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
+
+    bool hasDictionaryAccessRights(const String & dictionary_name) const;
 
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
       * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
@@ -264,6 +286,10 @@ public:
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
+
+    /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
+    String getInitialQueryId() const;
+
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
@@ -286,6 +312,9 @@ public:
     void setSetting(const String & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
+
+    /// Update checking that each setting is updatable
+    void updateSettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change);
@@ -458,6 +487,16 @@ public:
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
+
+    DiskSpace::DiskSelector & getDiskSelector() const;
+
+    /// Provides storage disks
+    const DiskSpace::DiskPtr & getDisk(const String & name) const;
+
+    DiskSpace::StoragePolicySelector & getStoragePolicySelector() const;
+
+    /// Provides storage politics schemes
+    const DiskSpace::StoragePolicyPtr & getStoragePolicy(const String &name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

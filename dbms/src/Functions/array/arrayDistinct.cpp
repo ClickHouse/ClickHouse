@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -92,7 +93,7 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
     const auto & return_type = block.getByPosition(result).type;
 
     auto res_ptr = return_type->createColumn();
-    ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+    ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & offsets = array->getOffsets();

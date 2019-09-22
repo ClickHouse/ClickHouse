@@ -21,7 +21,7 @@ Restricts permissions for read data, write data and change settings queries.
 
 See how the queries are divided into types [above](#permissions_for_queries).
 
-**Possible values**
+Possible values:
 
 - 0 — All queries are allowed.
 - 1 — Only read data queries are allowed.
@@ -34,25 +34,21 @@ When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `
 Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user
 from changing only specific settings, for details see [constraints on settings](constraints_on_settings.md).
 
-**Default value**
-
-0
+Default value: 0
 
 ## allow_ddl {#settings_allow_ddl}
 
-Allows/denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
+Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 
 See how the queries are divided into types [above](#permissions_for_queries).
 
-**Possible values**
+Possible values:
 
 - 0 — DDL queries are not allowed.
 - 1 — DDL queries are allowed.
 
-You cannot execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
+You can't execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 
-**Default value**
-
-1
+Default value: 1
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/permissions_for_queries/) <!--hide-->

@@ -29,7 +29,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
 ```
 
-Добавляет в таблицу новый столбец с именем `name`, типом `type` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](create.md#create-default-values)). 
+Добавляет в таблицу новый столбец с именем `name`, типом `type` и выражением для умолчания `default_expr` (смотрите раздел [Значения по умолчанию](create.md#create-default-values)).
 
 Если указано `IF NOT EXISTS`, запрос не будет возвращать ошибку, если столбец уже существует. Если указано `AFTER name_after` (имя другого столбца), то столбец добавляется (в список столбцов таблицы) после указанного. Иначе, столбец добавляется в конец таблицы. Обратите внимание, ClickHouse не позволяет добавлять столбцы в начало таблицы. Для цепочки действий, `name_after` может быть именем столбца, который добавляется в одном из предыдущих действий.
 
@@ -84,7 +84,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 
 Каждый столбец может содержать только один комментарий. При выполнении запроса существующий комментарий заменяется на новый.
 
-Посмотреть комментарии можно в столбце `comment_expression` из запроса [DESCRIBE TABLE](misc.md#misc-describe-table). 
+Посмотреть комментарии можно в столбце `comment_expression` из запроса [DESCRIBE TABLE](misc.md#misc-describe-table).
 
 Пример:
 
@@ -165,6 +165,22 @@ ALTER TABLE [db].name DROP INDEX name
 
 Запрос на изменение индексов реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
 
+### Манипуляции с ограничениями (constraints)
+
+Про ограничения подробнее написано [тут](create.md#constraints).
+
+Добавить или удалить ограничение можно с помощью запросов
+```
+ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
+ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
+```
+
+Запросы выполняют добавление или удаление метаданных об ограничениях таблицы `[db].name`, поэтому выполняются мнгновенно.
+
+Если ограничение появилось для непустой таблицы, то *проверка ограничения для имеющихся данных не производится*.
+
+Запрос на изменение ограничений для Replicated таблиц реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
+
 ### Манипуляции с партициями и кусками {#alter_manipulations-with-partitions}
 
 Для работы с [партициями](../operations/table_engines/custom_partitioning_key.md) доступны следующие операции:
@@ -176,7 +192,8 @@ ALTER TABLE [db].name DROP INDEX name
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
-- [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера.
+- [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
+- [MOVE PARTITION|PART](#alter_move-partition) -- переместить партицию/кускок на другой диск или том.
 
 #### DETACH PARTITION {#alter_detach-partition}
 
@@ -210,6 +227,15 @@ ALTER TABLE table_name DROP PARTITION partition_expr
 
 Запрос реплицируется — данные будут удалены на всех репликах.
 
+#### DROP DETACHED PARTITION|PART {#alter_drop-detached}
+
+```sql
+ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
+```
+
+Удаляет из `detached` кусок или все куски, принадлежащие партиции.
+Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+
 #### ATTACH PARTITION|PART {#alter_attach-partition}
 
 ```sql
@@ -235,7 +261,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-Копирует партицию из таблицы `table1` в таблицу `table2`. Данные из `table1` не удаляются. 
+Копирует партицию из таблицы `table1` в таблицу `table2`. Данные из `table1` не удаляются.
 
 Следует иметь в виду:
 
@@ -272,19 +298,22 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-Создаёт резервную копию для заданной партиции. Если выражение `PARTITION` опущено, резервные копии будут созданы для всех партиций.   
+Создаёт резервную копию для заданной партиции. Если выражение `PARTITION` опущено, резервные копии будут созданы для всех партиций.
 
 !!! note
-    Создание резервной копии не требует остановки сервера. 
- 
+    Создание резервной копии не требует остановки сервера.
+
 Для таблиц старого стиля имя партиций можно задавать в виде префикса (например, '2019'). В этом случае резервные копии будут созданы для всех соответствующих партиций. Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
-   
+
 Запрос делает следующее — для текущего состояния таблицы он формирует жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
 
 - `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
 - `N` — инкрементальный номер резервной копии.
 
-Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит 'chmod' для всех файлов, запрещая запись в них. 
+!!! note "Примечание"
+    При использовании [нескольких дисков для хранения данных таблицы](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
+
+Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит 'chmod' для всех файлов, запрещая запись в них.
 
 Обратите внимание, запрос `ALTER TABLE t FREEZE PARTITION` не реплицируется. Он создает резервную копию только на локальном сервере. После создания резервной копии данные из `/var/lib/clickhouse/shadow/` можно скопировать на удалённый сервер, а локальную копию удалить.
 
@@ -330,14 +359,35 @@ ALTER TABLE users ATTACH PARTITION 201902;
 
 Несмотря на то что запрос называется `ALTER TABLE`, он не изменяет структуру таблицы и не изменяет сразу доступные данные в таблице.
 
+#### MOVE PARTITION|PART {#alter_move-partition}
+
+```sql
+ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+```
+
+Перемещает партицию или кусок на другой том или диск. Запрос работает только для движков семейства MergeTree. Подробнее о хранении данных на разных дисках читайте в разделе [Хранение данных таблицы на нескольких блочных устройствах](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+Следует иметь ввиду:
+
+- Запрос `ALTER TABLE t MOVE` не реплицируется, т.к. на разных репликах могут быть различные конфигурации политик хранения.
+- Запрос `ALTER TABLE t MOVE` будет возвращать ошибку, если указан несуществующий том или диск, а также в случае невыполнения условий перемещения данных, которые указаны в конфигурации политики хранения.
+- Запрос `ALTER TABLE t MOVE` может возвращать ошибку в случае, когда перемещаемые данные уже оказались перемещены в результате фонового процесса, конкурентного запроса `ALTER TABLE t MOVE` или как часть результата фоновой операции слияния. В данном случае никаких дополнительных действий от пользователя не требуется.
+
+Примеры:
+
+```sql
+ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
+ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
+```
+
 #### Как задавать имя партиции в запросах ALTER {#alter-how-to-specify-part-expr}
 
-Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать: 
+Чтобы задать нужную партицию в запросах `ALTER ... PARTITION`, можно использовать:
 
 - Имя партиции. Посмотреть имя партиции можно в столбце `partition` системной таблицы [system.parts](../operations/system_tables.md#system_tables-parts). Например, `ALTER TABLE visits DETACH PARTITION 201901`.
 - Произвольное выражение из столбцов исходной таблицы. Также поддерживаются константы и константные выражения. Например, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 - Строковый идентификатор партиции. Идентификатор партиции используется для именования кусков партиции на файловой системе и в ZooKeeper. В запросах `ALTER` идентификатор партиции нужно указывать в секции `PARTITION ID`, в одинарных кавычках. Например, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- Для запросов [ATTACH PART](#alter_attach-partition): чтобы задать имя куска партиции, используйте значение из столбца `name` системной таблицы `system.parts`. Например, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
+- Для запросов [ATTACH PART](#alter_attach-partition) и [DROP DETACHED PART](#alter_drop-detached): чтобы задать имя куска партиции, используйте строковой литерал со значением из столбца `name` системной таблицы [system.detached_parts](../operations/system_tables.md#system_tables-detached_parts). Например, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Использование кавычек в имени партиций зависит от типа данных столбца, по которому задано партиционирование. Например, для столбца с типом `String` имя партиции необходимо указывать в кавычках (одинарных). Для типов `Date` и `Int*` кавычки указывать не нужно.
 

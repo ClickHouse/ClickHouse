@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
@@ -74,6 +75,7 @@ namespace DB
 
 class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
 {
+    friend struct ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -98,9 +100,7 @@ public:
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(
-        const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
@@ -110,11 +110,11 @@ public:
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
-    void drop() override;
+    void drop(TableStructureWriteLockHolder &) override;
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -167,8 +167,6 @@ public:
     {
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
-
-    String getDataPath() const override { return full_path; }
 
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
@@ -265,6 +263,10 @@ private:
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
+    /// A task which move parts to another disks/volumes
+    /// Transparent for replication.
+    BackgroundProcessingPool::TaskHandle move_parts_task_handle;
+
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
@@ -335,10 +337,9 @@ private:
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction,
                                                                const DataPartPtr & part);
 
-    void getCommitPartOps(
-        Coordination::Requests & ops,
-        MutableDataPartPtr & part,
-        const String & block_id_path = "") const;
+    bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
+
+    void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
 
     /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
     void updatePartHeaderInZooKeeperAndCommit(
@@ -366,12 +367,6 @@ private:
       */
     bool executeLogEntry(LogEntry & entry);
 
-    void writePartLog(
-        PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
-        const String & new_part_name,
-        const DataPartPtr & result_part,
-        const DataPartsVector & source_parts,
-        const MergeListEntry * merge_entry);
 
     void executeDropRange(const LogEntry & entry);
 
@@ -379,6 +374,7 @@ private:
     bool tryExecuteMerge(const LogEntry & entry);
 
     bool tryExecutePartMutation(const LogEntry & entry);
+
 
     bool executeFetch(LogEntry & entry);
 
@@ -403,6 +399,11 @@ private:
     /** Performs actions from the queue.
       */
     BackgroundProcessingPoolTaskResult queueTask();
+
+    /// Perform moves of parts to another disks.
+    /// Local operation, doesn't interact with replicationg queue.
+    BackgroundProcessingPoolTaskResult movePartsTask();
+
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
@@ -459,6 +460,7 @@ private:
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
+
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
@@ -528,9 +530,10 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & path_, const String & database_name_, const String & name_,
+        const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
+        const ConstraintsDescription & constraints_,
         Context & context_,
         const String & date_column_name,
         const ASTPtr & partition_by_ast_,
@@ -539,7 +542,7 @@ protected:
         const ASTPtr & sample_by_ast_,
         const ASTPtr & table_ttl_ast_,
         const MergingParams & merging_params_,
-        const MergeTreeSettings & settings_,
+        std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
 };
 
