@@ -225,12 +225,12 @@ class ClickHouseCluster:
     def restart_instance_with_ip_change(self, node, new_ip):
         if '::' in new_ip:
             if node.ipv6_address is None:
-                raise Exception("You shoud specity ipv6_address in add_node method")
+                raise Exception("You should specity ipv6_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
             node.ipv6_address = new_ip
         else:
             if node.ipv4_address is None:
-                raise Exception("You shoud specity ipv4_address in add_node method")
+                raise Exception("You should specity ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
         subprocess.check_call(self.base_cmd + ["stop", node.name])
