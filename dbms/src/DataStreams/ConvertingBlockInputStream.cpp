@@ -1,6 +1,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Common/assert_cast.h>
 #include <Parsers/IAST.h>
 
 
@@ -75,7 +76,7 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is non constant in source stream but must be constant in result",
                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-            else if (static_cast<const ColumnConst &>(*src_elem.column).getField() != static_cast<const ColumnConst &>(*res_elem.column).getField())
+            else if (assert_cast<const ColumnConst &>(*src_elem.column).getField() != assert_cast<const ColumnConst &>(*res_elem.column).getField())
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is constant but values of constants are different in source and result",
                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);

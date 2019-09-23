@@ -49,6 +49,7 @@
     M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
     M(LocalThread, "Number of threads in local thread pools. Should be similar to GlobalThreadActive.") \
     M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
+    M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
 
 
 namespace CurrentMetrics

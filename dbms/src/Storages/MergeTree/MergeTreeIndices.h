@@ -5,7 +5,6 @@
 #include <vector>
 #include <memory>
 #include <Core/Block.h>
-#include <ext/singleton.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -104,22 +103,36 @@ public:
     virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
+    Names getColumnsRequiredForIndexCalc() const { return expr->getRequiredColumns(); }
+
+    /// Index name
     String name;
+
+    /// Index expression (x * y)
+    /// with columns arguments
     ExpressionActionsPtr expr;
+
+    /// Names of columns for index
     Names columns;
+
+    /// Data types of columns
     DataTypes data_types;
+
+    /// Block with columns and data_types
     Block header;
+
+    /// Skip index granularity
     size_t granularity;
 };
 
 using MergeTreeIndices = std::vector<MutableMergeTreeIndexPtr>;
 
 
-class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
+class MergeTreeIndexFactory : private boost::noncopyable
 {
-    friend class ext::singleton<MergeTreeIndexFactory>;
-
 public:
+    static MergeTreeIndexFactory & instance();
+
     using Creator = std::function<
             std::unique_ptr<IMergeTreeIndex>(
                     const NamesAndTypesList & columns,

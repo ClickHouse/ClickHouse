@@ -77,6 +77,32 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,
 └───────────────────┘
 ```
 
+## bitmapSubsetLimit
+
+将位图指定范围（起始点和数目上限）转换为另一个位图。
+
+```
+bitmapSubsetLimit(bitmap, range_start, limit)
+```
+
+**参数**
+
+- `bitmap` – 位图对象.
+- `range_start` – 范围起始点（含）.
+- `limit` – 子位图基数上限.
+
+**示例**
+
+``` sql
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+```
+
+```
+┌─res───────────────────────┐
+│ [30,31,32,33,100,200,500] │
+└───────────────────────────┘
+```
+
 ## bitmapContains
 
 检查位图是否包含指定元素。
@@ -268,6 +294,54 @@ bitmapCardinality(bitmap)
 
 ``` sql
 SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   5 │
+└─────┘
+```
+
+## bitmapMin
+
+返回一个UInt64类型的数值，表示位图中的最小值。如果位图为空则返回UINT32_MAX。
+
+```
+bitmapMin(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – 位图对象。
+
+**示例**
+
+``` sql
+SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+## bitmapMax
+
+返回一个UInt64类型的数值，表示位图中的最大值。如果位图为空则返回0。
+
+```
+bitmapMax(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – 位图对象。
+
+**示例**
+
+``` sql
+SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
 ```

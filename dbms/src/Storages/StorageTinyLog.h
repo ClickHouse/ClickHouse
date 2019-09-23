@@ -22,6 +22,7 @@ class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public ISt
 {
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageTinyLog>;
 
 public:
     std::string getName() const override { return "TinyLog"; }
@@ -38,7 +39,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 
@@ -49,11 +50,11 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    std::string full_path() const { return path + escapeForFileName(table_name) + '/';}
+    std::string fullPath() const { return path + escapeForFileName(table_name) + '/';}
 
-    String getDataPath() const override { return full_path(); }
+    Strings getDataPaths() const override { return {fullPath()}; }
 
-    void truncate(const ASTPtr &, const Context &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
 private:
     String path;
@@ -78,6 +79,7 @@ protected:
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         bool attach,
         size_t max_compress_block_size_);
 };

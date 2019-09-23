@@ -62,7 +62,6 @@ add_library (common
     include/ext/scope_guard.h
     include/ext/size.h
     include/ext/unlock_guard.h
-    include/ext/singleton.h
 
     ${CONFIG_COMMON})
 
@@ -85,7 +84,7 @@ elseif (USE_TCMALLOC)
     endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
-else ()
+elseif (OS_LINUX)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
@@ -118,14 +117,10 @@ target_link_libraries (common
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
-        PRIVATE
-    stdc++fs
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
-    ${CMAKE_DL_LIBS}
     ${MALLOC_LIBRARIES}
-    Threads::Threads
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)

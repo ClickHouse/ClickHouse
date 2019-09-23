@@ -47,4 +47,10 @@ DictionaryPtr DictionaryFactory::create(
     throw Exception{name + ": unknown dictionary layout type: " + layout_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
 
+DictionaryFactory & DictionaryFactory::instance()
+{
+    static DictionaryFactory ret;
+    return ret;
+}
+
 }

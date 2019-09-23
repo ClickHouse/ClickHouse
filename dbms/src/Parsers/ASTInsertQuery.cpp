@@ -1,9 +1,16 @@
 #include <iomanip>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INVALID_USAGE_OF_INPUT;
+}
+
 
 void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
@@ -48,6 +55,31 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SETTINGS " << (settings.hilite ? hilite_none : "");
         settings_ast->formatImpl(settings, state, frame);
     }
+}
+
+
+void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
+{
+    if (!ast)
+        return;
+    for (const auto & child : ast->children)
+        tryFindInputFunctionImpl(child, input_function);
+
+    if (const auto * table_function_ast = ast->as<ASTFunction>())
+    {
+        if (table_function_ast->name == "input")
+        {
+            if (input_function)
+                throw Exception("You can use 'input()' function only once per request.", ErrorCodes::INVALID_USAGE_OF_INPUT);
+            input_function = ast;
+        }
+    }
+}
+
+
+void ASTInsertQuery::tryFindInputFunction(ASTPtr & input_function) const
+{
+    tryFindInputFunctionImpl(select, input_function);
 }
 
 }

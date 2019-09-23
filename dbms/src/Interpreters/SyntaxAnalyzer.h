@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -11,17 +11,18 @@ namespace DB
 NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
 class ASTFunction;
+class AnalyzedJoin;
+class Context;
+struct SelectQueryOptions;
 
 struct SyntaxAnalyzerResult
 {
     StoragePtr storage;
-    AnalyzedJoin analyzed_join;
+    std::shared_ptr<AnalyzedJoin> analyzed_join;
 
     NamesAndTypesList source_columns;
     /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
     NamesAndTypesList required_source_columns;
-    /// Columns will be added to block by JOIN. It's a subset of analyzed_join.available_joined_columns
-    NamesAndTypesList columns_added_by_join;
 
     Aliases aliases;
     std::vector<const ASTFunction *> aggregates;

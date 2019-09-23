@@ -3,7 +3,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/IFactoryWithAliases.h>
 
-#include <ext/singleton.h>
 
 #include <functional>
 #include <memory>
@@ -30,9 +29,12 @@ using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String
 
 /** Creates an aggregate function by name.
   */
-class AggregateFunctionFactory final : public ext::singleton<AggregateFunctionFactory>, public IFactoryWithAliases<AggregateFunctionCreator>
+class AggregateFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<AggregateFunctionCreator>
 {
 public:
+
+    static AggregateFunctionFactory & instance();
+
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
     void registerFunction(

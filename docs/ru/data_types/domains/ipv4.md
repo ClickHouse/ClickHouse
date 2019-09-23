@@ -10,7 +10,7 @@ CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY url;
 DESCRIBE TABLE hits;
 ```
 
-```
+```text
 ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
 │ url  │ String │              │                    │         │                  │
 │ from │ IPv4   │              │                    │         │                  │
@@ -31,7 +31,7 @@ INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')(
 SELECT * FROM hits;
 ```
 
-```
+```text
 ┌─url────────────────────────────────┬───────────from─┐
 │ https://clickhouse.yandex/docs/en/ │ 116.106.34.242 │
 │ https://wikipedia.org              │ 116.253.40.133 │
@@ -45,7 +45,7 @@ SELECT * FROM hits;
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 ```
 
-```
+```text
 ┌─toTypeName(from)─┬─hex(from)─┐
 │ IPv4             │ B7F7E83A  │
 └──────────────────┴───────────┘
@@ -58,7 +58,7 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 SELECT toTypeName(s), IPv4NumToString(from) AS s FROM hits LIMIT 1;
 ```
 
-```
+```text
 ┌─toTypeName(IPv4NumToString(from))─┬─s──────────────┐
 │ String                            │ 183.247.232.58 │
 └───────────────────────────────────┴────────────────┘
@@ -70,7 +70,7 @@ SELECT toTypeName(s), IPv4NumToString(from) AS s FROM hits LIMIT 1;
 SELECT toTypeName(i), CAST(from AS UInt32) AS i FROM hits LIMIT 1;
 ```
 
-```
+```text
 ┌─toTypeName(CAST(from, 'UInt32'))─┬──────────i─┐
 │ UInt32                           │ 3086477370 │
 └──────────────────────────────────┴────────────┘

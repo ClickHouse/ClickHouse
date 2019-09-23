@@ -11,8 +11,10 @@ void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
+void registerTableFunctionS3(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
+void registerTableFunctionInput(TableFunctionFactory & factory);
 
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory);
@@ -37,8 +39,10 @@ void registerTableFunctions()
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
     registerTableFunctionFile(factory);
+    registerTableFunctionS3(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionValues(factory);
+    registerTableFunctionInput(factory);
 
 #if USE_HDFS
     registerTableFunctionHDFS(factory);
