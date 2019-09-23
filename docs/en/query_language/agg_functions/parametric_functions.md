@@ -10,11 +10,11 @@ Calculates an adaptive histogram. It doesn't guarantee precise results.
 histogram(number_of_bins)(values)
 ```
  
-The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as a new data enters a function, and in common case the widths of bins are not equal.
+The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
 
 **Parameters**
 
-`number_of_bins` — Upper limit for a number of bins for the histogram. Function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses less number of bins.
+`number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
 `values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
 
 **Returned values**
@@ -69,7 +69,7 @@ FROM
 └────────┴───────┘
 ```
 
-In this case you should remember, that you don't know the borders of histogram bins.
+In this case, you should remember that you don't know the histogram bin borders.
 
 ## sequenceMatch(pattern)(time, cond1, cond2, ...)
 
