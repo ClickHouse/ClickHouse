@@ -262,7 +262,10 @@ NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpressio
 
 JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
 {
-    if (table_join->partial_merge_join)
+    bool is_left_or_inner = isLeft(table_join->kind()) || isInner(table_join->kind());
+    bool is_asof = (table_join->strictness() == ASTTableJoin::Strictness::Asof);
+
+    if (table_join->partial_merge_join && !is_asof && is_left_or_inner)
         return std::make_shared<MergeJoin>(table_join, right_sample_block);
     return std::make_shared<Join>(table_join, right_sample_block);
 }

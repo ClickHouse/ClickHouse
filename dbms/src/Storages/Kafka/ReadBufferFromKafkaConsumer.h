@@ -25,10 +25,10 @@ public:
         size_t max_batch_size,
         size_t poll_timeout_,
         bool intermediate_commit_,
-        char delimiter_,
         const std::atomic<bool> & stopped_);
     ~ReadBufferFromKafkaConsumer() override;
 
+    void allowNext() { allowed = true; } // Allow to read next message.
     void commit(); // Commit all processed messages.
     void subscribe(const Names & topics); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
@@ -51,9 +51,7 @@ private:
     const size_t poll_timeout = 0;
     bool stalled = false;
     bool intermediate_commit = true;
-
-    char delimiter;
-    bool put_delimiter = false;
+    bool allowed = true;
 
     const std::atomic<bool> & stopped;
 

@@ -91,6 +91,14 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
+option (ENABLE_FUZZING "Enables fuzzing instrumentation" OFF)
+
+if (ENABLE_FUZZING)
+    message (STATUS "Fuzzing instrumentation enabled")
+    set (WITH_COVERAGE ON)
+    set (SANITIZE "libfuzzer")
+endif()
+
 include (cmake/sanitize.cmake)
 
 
@@ -139,7 +147,7 @@ endif ()
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
 find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
-find_program (GOLD_PATH NAMES "gold")
+find_program (GOLD_PATH NAMES "ld.gold" "gold")
 
 if (COMPILER_CLANG AND LLD_PATH AND NOT LINKER_NAME)
     set (LINKER_NAME "lld")
