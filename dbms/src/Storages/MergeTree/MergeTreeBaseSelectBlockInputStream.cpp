@@ -158,10 +158,10 @@ Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
 
     /// All rows were filtered. Repeat.
-    if (read_result.block.rows() == 0)
-        read_result.block.clear();
+    if (read_result.num_rows == 0)
+        read_result.columns.clear();
 
-    UInt64 num_filtered_rows = read_result.numReadRows() - read_result.block.rows();
+    UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
 
     /// TODO
     /// progressImpl({ read_result.numReadRows(), read_result.numBytesRead() });
@@ -170,21 +170,11 @@ Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
     {
         task->size_predictor->updateFilteredRowsRation(read_result.numReadRows(), num_filtered_rows);
 
-        if (read_result.block)
-            task->size_predictor->update(read_result.block);
+        if (!read_result.columns.empty())
+            task->size_predictor->update(read_result.columns);
     }
 
-    if (read_result.block && prewhere_info && !task->remove_prewhere_column)
-    {
-        /// Convert const column to full here because it's cheaper to filter const column than full.
-        auto & column = read_result.block.getByName(prewhere_info->prewhere_column_name);
-        column.column = column.column->convertToFullColumnIfConst();
-    }
-
-    UInt64 num_rows = read_result.columns.empty() ? 0
-                                                  : read_result.columns[0]->size();
-
-    return Chunk(std::move(read_result.columns), num_rows);
+    return Chunk(std::move(read_result.columns), read_result.num_rows);
 }
 
 
@@ -208,9 +198,9 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
             throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
                             ErrorCodes::LOGICAL_ERROR);
 
-        for (const auto & virt_column_name : virtual_columns)
+        for (const auto & virtual_column_name : virtual_columns)
         {
-            if (virt_column_name == "_part")
+            if (virtual_column_name == "_part")
             {
                 ColumnPtr column;
                 if (rows)
@@ -218,9 +208,9 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeString().createColumn();
 
-                callback.template insert<DataTypeString>(column, virt_column_name);
+                callback.template insert<DataTypeString>(column, virtual_column_name);
             }
-            else if (virt_column_name == "_part_index")
+            else if (virtual_column_name == "_part_index")
             {
                 ColumnPtr column;
                 if (rows)
@@ -228,9 +218,9 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeUInt64().createColumn();
 
-                callback.template insert<DataTypeUInt64>(column, virt_column_name);
+                callback.template insert<DataTypeUInt64>(column, virtual_column_name);
             }
-            else if (virt_column_name == "_partition_id")
+            else if (virtual_column_name == "_partition_id")
             {
                 ColumnPtr column;
                 if (rows)
@@ -238,7 +228,7 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeString().createColumn();
 
-                callback.template insert<DataTypeString>(column, virt_column_name);
+                callback.template insert<DataTypeString>(column, virtual_column_name);
             }
         }
     }
