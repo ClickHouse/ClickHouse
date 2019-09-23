@@ -18,7 +18,7 @@ n:	9876543210, s1:		, s2:	'zx\\ncv\\tbn m', s3:	\"qwe,rty\", s4:	\"as\"\"df'gh\"
 n:	789, s1:	zx\\ncv\\tbn m	, s2:	'qwe,rty', s3:	\"as\\\"df'gh\", s4:	\"\", d:	2016-01-04	
  $ suffix $" | $CLICKHOUSE_CLIENT --query="INSERT INTO template1 FORMAT Template SETTINGS \
 format_schema = '{prefix} \n\${data}\n \$\$ suffix \$\$\n', \
-format_schema_rows = 'n:\t\${n:Escaped}, s1:\t\${s1:Escaped}\t, s2:\t\${s2:Quoted}, s3:\t\${s3:JSON}, s4:\t\${s4:CSV}, d:\t\${d:Escaped}\t', \
+format_schema_rows = 'n:\t\${n:Escaped}, s1:\t\${0:Escaped}\t, s2:\t\${1:Quoted}, s3:\t\${s3:JSON}, s4:\t\${3:CSV}, d:\t\${d:Escaped}\t', \
 format_schema_rows_between_delimiter = ';\n'";
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM template1 ORDER BY n FORMAT CSV";

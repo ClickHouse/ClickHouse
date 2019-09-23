@@ -41,6 +41,8 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
     const char * token_begin = pos;
     ParserState state = Delimiter;
     delimiters.emplace_back();
+    char * col_idx_end;
+    std::optional<size_t> column_idx;
     for (; *pos; ++pos)
     {
         switch (state)
@@ -60,8 +62,9 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                         token_begin = pos;
                     }
                     else
-                        throwInvalidFormat("at pos " + std::to_string(pos - format_string.c_str()) +
-                                           ": expected '{' or '$' after '$'", columnsCount());
+                        throwInvalidFormat("At pos " + std::to_string(pos - format_string.c_str()) +
+                                           ": Expected '{' or '$' after '$'" +
+                                           ", got \"" + std::string(pos, std::min(end - pos, 16l)) + "\"", columnsCount());
                 }
                 break;
 
@@ -78,10 +81,21 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     state = Delimiter;
                 }
                 else
-                    throwInvalidFormat("Expected ':' or '}' after column name: \"" + column_names.back() + "\"", columnsCount());
+                    throwInvalidFormat("At pos " + std::to_string(pos - format_string.c_str()) +
+                                       ": Expected ':' or '}' after column name \"" + column_names.back() + "\"" +
+                                       ", got \"" + std::string(pos, std::min(end - pos, 16l)) + "\"", columnsCount());
 
                 token_begin = pos + 1;
-                format_idx_to_column_idx.emplace_back(idx_by_name(column_names.back()));
+                column_idx.reset();
+                if (!column_names.back().empty())
+                {
+                    col_idx_end = nullptr;
+                    errno = 0;
+                    column_idx = strtoull(column_names.back().c_str(), &col_idx_end, 10);
+                    if (col_idx_end != column_names.back().c_str() + column_names.back().size() || errno)
+                        column_idx = idx_by_name(column_names.back());
+                }
+                format_idx_to_column_idx.emplace_back(column_idx);
                 break;
 
             case Format:
