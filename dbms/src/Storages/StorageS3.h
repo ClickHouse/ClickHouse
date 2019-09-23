@@ -1,0 +1,71 @@
+#pragma once
+
+#include <Storages/IStorage.h>
+#include <Poco/URI.h>
+#include <common/logger_useful.h>
+#include <ext/shared_ptr_helper.h>
+
+namespace DB
+{
+/**
+ * This class represents table engine for external S3 urls.
+ * It sends HTTP GET to server when select is called and
+ * HTTP PUT when insert is called.
+ */
+class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
+{
+public:
+    StorageS3(const Poco::URI & uri_,
+        const std::string & database_name_,
+        const std::string & table_name_,
+        const String & format_name_,
+        const ColumnsDescription & columns_,
+        Context & context_
+    )
+        : IStorage(columns_)
+        , uri(uri_)
+        , context_global(context_)
+        , format_name(format_name_)
+        , database_name(database_name_)
+        , table_name(table_name_)
+    {
+        setColumns(columns_);
+    }
+
+    String getName() const override
+    {
+        return "S3";
+    }
+
+    Block getHeaderBlock(const Names & /*column_names*/) const
+    {
+        return getSampleBlock();
+    }
+
+    String getTableName() const override
+    {
+        return table_name;
+    }
+
+    BlockInputStreams read(const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+
+protected:
+    Poco::URI uri;
+    const Context & context_global;
+
+private:
+    String format_name;
+    String database_name;
+    String table_name;
+};
+
+}

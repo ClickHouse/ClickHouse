@@ -122,5 +122,30 @@ void createMissedColumns(Block & block)
     }
 }
 
+void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block)
+{
+    if (Block totals_without_keys = totals)
+    {
+        for (const auto & name : key_names_right)
+            totals_without_keys.erase(totals_without_keys.getPositionByName(name));
+
+        for (size_t i = 0; i < totals_without_keys.columns(); ++i)
+            block.insert(totals_without_keys.safeGetByPosition(i));
+    }
+    else
+    {
+        /// We will join empty `totals` - from one row with the default values.
+
+        for (size_t i = 0; i < columns_to_add.columns(); ++i)
+        {
+            const auto & col = columns_to_add.getByPosition(i);
+            block.insert({
+                col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
+                col.type,
+                col.name});
+        }
+    }
+}
+
 }
 }

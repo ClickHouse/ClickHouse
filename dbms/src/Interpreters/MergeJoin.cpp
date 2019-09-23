@@ -17,6 +17,51 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+
+template <bool has_nulls>
+int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
+{
+    static constexpr int null_direction_hint = 1;
+
+    if constexpr (has_nulls)
+    {
+        auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
+        auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
+
+        if (left_nullable && right_nullable)
+        {
+            int res = left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+            if (res)
+                return res;
+
+            /// NULL != NULL case
+            if (left_column.isNullAt(lhs_pos))
+                return null_direction_hint;
+        }
+
+        if (left_nullable && !right_nullable)
+        {
+            if (left_column.isNullAt(lhs_pos))
+                return null_direction_hint;
+            return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+        }
+
+        if (!left_nullable && right_nullable)
+        {
+            if (right_column.isNullAt(rhs_pos))
+                return -null_direction_hint;
+            return left_column.compareAt(lhs_pos, rhs_pos, right_nullable->getNestedColumn(), null_direction_hint);
+        }
+    }
+
+    /// !left_nullable && !right_nullable
+    return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+}
+
+}
+
 struct MergeJoinEqualRange
 {
     size_t left_start = 0;
@@ -42,45 +87,40 @@ public:
     bool atEnd() const { return impl.pos >= impl.rows; }
     void nextN(size_t num) { impl.pos += num; }
 
-    int compareAt(const MergeJoinCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    void setCompareNullability(const MergeJoinCursor & rhs)
     {
-        int res = 0;
+        has_nullable_columns = false;
+
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
-            res = impl.sort_columns[i]->compareAt(lhs_pos, rhs_pos, *(rhs.impl.sort_columns[i]), 1);
-            if (res)
+            bool is_left_nullable = isColumnNullable(*impl.sort_columns[i]);
+            bool is_right_nullable = isColumnNullable(*rhs.impl.sort_columns[i]);
+
+            if (is_left_nullable || is_right_nullable)
+            {
+                has_nullable_columns = true;
                 break;
+            }
         }
-        return res;
-    }
-
-    bool sameNext(size_t lhs_pos) const
-    {
-        if (lhs_pos + 1 >= impl.rows)
-            return false;
-
-        for (size_t i = 0; i < impl.sort_columns_size; ++i)
-            if (impl.sort_columns[i]->compareAt(lhs_pos, lhs_pos + 1, *(impl.sort_columns[i]), 1) != 0)
-                return false;
-        return true;
-    }
-
-    size_t getEqualLength()
-    {
-        if (atEnd())
-            return 0;
-
-        size_t pos = impl.pos;
-        while (sameNext(pos))
-            ++pos;
-        return pos - impl.pos + 1;
     }
 
     Range getNextEqualRange(MergeJoinCursor & rhs)
     {
+        if (has_nullable_columns)
+            return getNextEqualRangeImpl<true>(rhs);
+        return getNextEqualRangeImpl<false>(rhs);
+    }
+
+private:
+    SortCursorImpl impl;
+    bool has_nullable_columns = false;
+
+    template <bool has_nulls>
+    Range getNextEqualRangeImpl(MergeJoinCursor & rhs)
+    {
         while (!atEnd() && !rhs.atEnd())
         {
-            int cmp = compareAt(rhs, impl.pos, rhs.impl.pos);
+            int cmp = compareAt<has_nulls>(rhs, impl.pos, rhs.impl.pos);
             if (cmp < 0)
                 impl.next();
             if (cmp > 0)
@@ -97,8 +137,43 @@ public:
         return Range{impl.pos, rhs.impl.pos, 0, 0};
     }
 
-private:
-    SortCursorImpl impl;
+    template <bool has_nulls>
+    int compareAt(const MergeJoinCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    {
+        int res = 0;
+        for (size_t i = 0; i < impl.sort_columns_size; ++i)
+        {
+            auto * left_column = impl.sort_columns[i];
+            auto * right_column = rhs.impl.sort_columns[i];
+
+            res = nullableCompareAt<has_nulls>(*left_column, *right_column, lhs_pos, rhs_pos);
+            if (res)
+                break;
+        }
+        return res;
+    }
+
+    size_t getEqualLength()
+    {
+        if (atEnd())
+            return 0;
+
+        size_t pos = impl.pos;
+        while (sameNext(pos))
+            ++pos;
+        return pos - impl.pos + 1;
+    }
+
+    bool sameNext(size_t lhs_pos) const
+    {
+        if (lhs_pos + 1 >= impl.rows)
+            return false;
+
+        for (size_t i = 0; i < impl.sort_columns_size; ++i)
+            if (impl.sort_columns[i]->compareAt(lhs_pos, lhs_pos + 1, *(impl.sort_columns[i]), 1) != 0)
+                return false;
+        return true;
+    }
 };
 
 namespace
@@ -151,9 +226,9 @@ void copyRightRange(const Block & right_block, const Block & right_columns_to_ad
         auto * dst_nullable = typeid_cast<ColumnNullable *>(dst_column.get());
 
         if (dst_nullable && !isColumnNullable(*src_column))
-            dst_nullable->insertRangeFromNotNullable(*src_column, row_position, rows_to_add);
+            dst_nullable->insertManyFromNotNullable(*src_column, row_position, rows_to_add);
         else
-            dst_column->insertRangeFrom(*src_column, row_position, rows_to_add);
+            dst_column->insertManyFrom(*src_column, row_position, rows_to_add);
     }
 }
 
@@ -179,8 +254,7 @@ void joinEquals(const Block & left_block, const Block & right_block, const Block
 void appendNulls(MutableColumns & right_columns, size_t rows_to_add)
 {
     for (auto & column : right_columns)
-        for (size_t i = 0; i < rows_to_add; ++i)
-            column->insertDefault();
+        column->insertManyDefaults(rows_to_add);
 }
 
 void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, MutableColumns & right_columns,
@@ -230,6 +304,11 @@ void MergeJoin::setTotals(const Block & totals_block)
 {
     totals = totals_block;
     mergeRightBlocks();
+}
+
+void MergeJoin::joinTotals(Block & block) const
+{
+    JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -319,6 +398,7 @@ void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
                          MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
+    left_cursor.setCompareNullability(right_cursor);
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
@@ -351,6 +431,7 @@ void MergeJoin::innerJoin(MergeJoinCursor & left_cursor, const Block & left_bloc
                           MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
 {
     MergeJoinCursor right_cursor(right_block, right_merge_description);
+    left_cursor.setCompareNullability(right_cursor);
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {

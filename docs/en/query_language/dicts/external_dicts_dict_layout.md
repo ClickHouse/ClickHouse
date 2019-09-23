@@ -39,6 +39,7 @@ The configuration looks like this:
 
 - [flat](#flat)
 - [hashed](#dicts-external_dicts_dict_layout-hashed)
+- [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 - [cache](#cache)
 - [range_hashed](#range-hashed)
 - [complex_key_hashed](#complex-key-hashed)
@@ -74,6 +75,18 @@ Configuration example:
 ```xml
 <layout>
   <hashed />
+</layout>
+```
+
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+
+Similar to `hashed`, but uses less memory in favor more CPU usage.
+
+Configuration example:
+
+```xml
+<layout>
+  <sparse_hashed />
 </layout>
 ```
 
