@@ -126,7 +126,7 @@ FROM test.Orders;
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
-Больше примеров приведено в [тестах](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+Больше примеров приведено в [тестах](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
 
 ## Оператор логического отрицания
 
