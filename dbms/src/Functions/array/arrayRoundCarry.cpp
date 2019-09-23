@@ -66,7 +66,7 @@ public:
     {
         const Float64 * column;
 
-        Greater(const Float64 * column_) : column(column_) {}
+        Greater(const Float64 * column_) : column(column_) { }
 
         bool operator()(size_t lhs, size_t rhs) const { return column[lhs] > column[rhs]; }
     };
@@ -105,25 +105,27 @@ public:
             auto & sub_result = sub_result_data.getData();
 
             size_t pos = 0, sub_pos = 0;
-            IColumn::Permutation permutation(sub_offsets[0]);
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                PaddedPODArray<Float64> delta(sub_offsets[0], 0.0l);
+                size_t col_size = sub_offsets[pos] - sub_offsets[pos - 1];
+                IColumn::Permutation permutation(col_size);
+                PaddedPODArray<Float64> delta(col_size, 0.0l);
                 auto greater = Greater(delta.data());
                 for (; pos < offsets[i]; ++pos)
                 {
                     Float64 fsum = 0.0l;
-                    size_t last_pos = sub_pos;
                     for (size_t j = 0; sub_pos < sub_offsets[pos]; ++sub_pos, ++j)
                     {
                         permutation[j] = j;
-                        fsum += sub_result[sub_pos] = floor((sub_src[sub_pos] * 100 + delta[j]) / 100) * 100;
-                        delta[j] = sub_src[sub_pos] * 100 + delta[j] - sub_result[sub_pos];
+                        auto prev_val = sub_src[sub_pos] * 100 + delta[j];
+                        fsum += sub_result[sub_pos] = prev_val > 0 ? (floor(prev_val / 100) * 100) : 0;
+                        delta[j] = prev_val - sub_result[sub_pos];
                     }
                     std::sort(permutation.begin(), permutation.end(), greater);
-                    for (auto j = 0ul; j < std::min(sub_offsets[0], static_cast<UInt64>(target[pos] - fsum / 100)); ++j)
+                    for (auto j = 0ul; j < std::min(sub_offsets[pos] - sub_offsets[pos - 1], static_cast<UInt64>(target[pos] - fsum / 100));
+                         ++j)
                     {
-                        sub_result[permutation[j] + last_pos] += 100;
+                        sub_result[permutation[j] + sub_offsets[pos - 1]] += 100;
                         delta[permutation[j]] -= 100;
                     }
                 }
