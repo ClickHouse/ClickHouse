@@ -11,6 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 cur_name=$(basename "${BASH_SOURCE[0]}")
 tmp_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
+tmp_file2=${CLICKHOUSE_TMP}/$cur_name"_server.2.logs"
 
 rm -f $tmp_file >/dev/null 2>&1
 echo 1
@@ -55,9 +56,10 @@ grep 'TOPSECRET' $tmp_file && echo 'fail 4b'
 
 echo 5
 # run in background
+rm -f $tmp_file2 >/dev/null 2>&1
 bash -c "$CLICKHOUSE_CLIENT \
   --query=\"select sleepEachRow(0.5) from numbers(4) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
-  --log_queries=1 --ignore-error --multiquery 2>&1 | grep TOPSECRET" &
+  --log_queries=1 --ignore-error --multiquery >$tmp_file2 2>&1" &
 
 sleep 0.1
 
@@ -67,12 +69,14 @@ rm -f $tmp_file >/dev/null 2>&1
 echo '5.1'
 # check that executing query doesn't expose secrets in processlist
 $CLICKHOUSE_CLIENT --query="SHOW PROCESSLIST" --log_queries=0 >$tmp_file 2>&1
-
-grep 'fwerkh_that_magic_string_make_me_unique' $tmp_file >/dev/null || echo 'fail 5a'
-( grep 'fwerkh_that_magic_string_make_me_unique' $tmp_file | grep 'find_me_\[hidden\]' $tmp_file >/dev/null ) || echo 'fail 5b'
-grep 'TOPSECRET' $tmp_file && echo 'fail 5c'
-
 wait
+grep 'TOPSECRET' $tmp_file2 && echo 'fail 5d'
+
+rm -f $tmp_file2 >/dev/null 2>&1
+
+grep 'fwerkh_that_magic_string_make_me_unique' $tmp_file >$tmp_file2 || echo 'fail 5a'
+grep 'find_me_\[hidden\]' $tmp_file2 >/dev/null  || echo 'fail 5b'
+grep 'TOPSECRET' $tmp_file && echo 'fail 5c'
 
 
 # instead of disabling send_logs_level=trace (enabled globally for that test) - redir it's output to /dev/null
@@ -107,4 +111,15 @@ drop table sensitive;" --log_queries=1 --ignore-error --multiquery >$tmp_file 2>
 grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 8a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 8b'
 
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS" --server_logs_file=/dev/null
+sleep 0.1;
+
+echo 9
+$CLICKHOUSE_CLIENT \
+   --server_logs_file=/dev/null \
+   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_time>now() - 60 and message like '%find_me%';
+   select * from system.text_log where event_time>now() - 60 and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
+
 echo 'finish'
+rm -f $tmp_file >/dev/null 2>&1
+rm -f $tmp_file2 >/dev/null 2>&1

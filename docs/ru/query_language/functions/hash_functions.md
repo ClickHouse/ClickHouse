@@ -6,7 +6,7 @@
 
 [Интерпретирует](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш [MD5](https://ru.wikipedia.org/wiki/MD5) для каждой из них. Затем объединяет хэши, берет первые 8 байт хэша результирующей строки и интерпретирует их как значение типа `UInt64` с big-endian порядком байтов.
 
-```
+```sql
 halfMD5(par1, ...)
 ```
 
@@ -43,7 +43,7 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 
 Генерирует 64-х битное значение [SipHash](https://131002.net/siphash/).
 
-```
+```sql
 sipHash64(par1,...)
 ```
 
@@ -70,7 +70,7 @@ sipHash64(par1,...)
 SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type
 ```
 
-```
+```text
 ┌──────────────SipHash─┬─type───┐
 │ 13726873534472839665 │ UInt64 │
 └──────────────────────┴────────┘
@@ -86,7 +86,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 Генерирует 64-х битное значение [CityHash](https://github.com/google/cityhash).
 
-```
+```sql
 cityHash64(par1,...)
 ```
 
@@ -151,7 +151,7 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 
 Генерирует 64-х битное значение [FarmHash](https://github.com/google/farmhash).
 
-```
+```sql
 farmHash64(par1, ...)
 ```
 
@@ -192,7 +192,7 @@ HiveHash — это результат [JavaHash](#hash_functions-javahash) с �
 
 Генерирует 64-х битное  значение [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/).
 
-```
+```sql
 metroHash64(par1, ...)
 ```
 
@@ -226,7 +226,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 
 Генерирует значение [MurmurHash2](https://github.com/aappleby/smhasher).
 
-```
+```sql
 murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
@@ -256,7 +256,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
 
-```
+```sql
 murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
@@ -286,7 +286,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
 
-```
+```sql
 murmurHash3_128( expr )
 ```
 

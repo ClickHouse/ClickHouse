@@ -51,7 +51,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы `db2.name2`.
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
 ```
 
@@ -144,7 +144,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Высокие уровни сжатия полезны для асимметричных сценариев, например, для таких, в которых требуется однократное сжатие и многократная распаковка. Более высокие уровни обеспечивают лучшее сжатие, но более высокое потребление вычислительных ресурсов.
 
 !!! warning "Предупреждение"
-    Базу данных ClickHouse не получится распаковать с помощью внешних утилит типа `lz4`. Используйте специальную программу [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
+    Базу данных ClickHouse не получится распаковать с помощью внешних утилит типа `lz4`. Используйте специальную программу [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/programs/compressor).
 
 Пример использования:
 

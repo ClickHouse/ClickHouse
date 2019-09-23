@@ -48,10 +48,11 @@ namespace ErrorCodes
 
 namespace
 {
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -86,29 +87,27 @@ std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, c
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
+                /// TODO: No recursion depth check. No protection for cyclic symlinks. It is a bug.
+                Strings result_part = listFilesWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
     }
     return result;
 }
-}
 
-static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
+std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
 {
     return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-static void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path, int table_fd)
+void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
 
-    if (table_fd >= 0)
-        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
-    else if (!startsWith(table_path, db_dir_path))
+    if (!startsWith(table_path, db_dir_path))
         throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::File table_path_poco_file = Poco::File(table_path);
@@ -117,7 +116,7 @@ static void checkCreationIsAllowed(Context & context_global, const std::string &
     else if (table_path_poco_file.isDirectory())
         throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
-
+}
 
 StorageFile::StorageFile(
         const std::string & table_path_,
@@ -146,9 +145,9 @@ StorageFile::StorageFile(
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
             const std::string path = poco_path.absolute().toString();
-            paths = LSWithRegexpMatching("/", path);
+            paths = listFilesWithRegexpMatching("/", path);
             for (const auto & cur_path : paths)
-                checkCreationIsAllowed(context_global, db_dir_path, cur_path, table_fd);
+                checkCreationIsAllowed(context_global, db_dir_path, cur_path);
             is_db_table = false;
         }
         else /// Is DB's file
@@ -163,11 +162,8 @@ StorageFile::StorageFile(
     }
     else /// Will use FD
     {
-
-        if (paths.size() != 1)
-            throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
-
-        checkCreationIsAllowed(context_global, db_dir_path, paths[0], table_fd);
+        if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
+            throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
         is_db_table = false;
         use_table_fd = true;
@@ -258,6 +254,8 @@ BlockInputStreams StorageFile::read(
     const ColumnsDescription & columns_ = getColumns();
     auto column_defaults = columns_.getDefaults();
     BlockInputStreams blocks_input;
+    if (use_table_fd)   /// need to call ctr BlockInputStream
+        paths = {""};   /// when use fd, paths are empty
     blocks_input.reserve(paths.size());
     for (const auto & file_path : paths)
     {
@@ -274,8 +272,6 @@ public:
     explicit StorageFileBlockOutputStream(StorageFile & storage_)
         : storage(storage_), lock(storage.rwlock)
     {
-        if (storage.paths.size() != 1)
-            throw Exception("Table '" + storage.table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
         if (storage.use_table_fd)
         {
             /** NOTE: Using real file binded to FD may be misleading:
@@ -287,6 +283,8 @@ public:
         }
         else
         {
+            if (storage.paths.size() != 1)
+                throw Exception("Table '" + storage.table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
             write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
@@ -329,11 +327,11 @@ BlockOutputStreamPtr StorageFile::write(
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
 
-String StorageFile::getDataPath() const
+Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())
         throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
-    return paths[0];
+    return paths;
 }
 
 void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)

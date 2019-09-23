@@ -9,5 +9,6 @@ namespace DB
 /** Converts columns-constants to full columns ("materializes" them).
   */
 Block materializeBlock(const Block & block);
+void materializeBlockInplace(Block & block);
 
 }

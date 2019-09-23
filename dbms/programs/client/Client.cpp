@@ -106,6 +106,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READLINE;
     extern const int SYSTEM_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -562,9 +563,17 @@ private:
         if (is_interactive)
         {
             std::cout << "Connected to " << server_name
-                      << " server version " << server_version
-                      << " revision " << server_revision
-                      << "." << std::endl << std::endl;
+                << " server version " << server_version
+                << " revision " << server_revision
+                << "." << std::endl << std::endl;
+
+            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
+                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
+            {
+                std::cout << "ClickHouse client version is older than ClickHouse server. "
+                    << "It may lack support for new features."
+                    << std::endl << std::endl;
+            }
         }
     }
 
@@ -843,9 +852,17 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
-            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-            if (insert && !insert->select)
+            ASTPtr input_function;
+            if (insert && insert->select)
+                insert->tryFindInputFunction(input_function);
+
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+            if (insert && (!insert->select || input_function))
+            {
+                if (input_function && insert->format.empty())
+                    throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
                 processInsertQuery();
+            }
             else
                 processOrdinaryQuery();
         }

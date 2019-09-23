@@ -47,7 +47,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 Содержит информацию о доступных в конфигурационном файле кластерах и серверах, которые в них входят.
 Столбцы:
 
-```
+```text
 cluster String — имя кластера.
 shard_num UInt32 — номер шарда в кластере, начиная с 1.
 shard_weight UInt32 — относительный вес шарда при записи данных
@@ -80,6 +80,45 @@ user String — имя пользователя, которого использ
 - `is_in_sorting_key` (UInt8) — флаг, показываюший включение столбца в ключ сортировки.
 - `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
 - `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
+
+## system.contributors {#system_contributors}
+
+Содержит информацию о контрибьютерах. Контрибьютеры расположены в таблице в случайном порядке. Порядок определяется заново при каждом запросе.
+
+Столбцы:
+
+- `name` (String) — Имя контрибьютера (автора коммита) из git log.
+
+**Пример**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+Чтобы найти себя в таблице, выполните запрос:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
 
 ## system.databases
 
@@ -280,7 +319,9 @@ SELECT * FROM system.metrics LIMIT 10
 - `primary_key_bytes_in_memory_allocated` (UInt64) - выделенный с резервом объем памяти (в байтах) для размещения первичных ключей;
 - `database (String)` - имя базы данных;
 - `table (String)` - имя таблицы;
-- `engine (String)` - имя движка таблицы, без параметров.
+- `engine (String)` - имя движка таблицы, без параметров;
+- `path (String)` - путь к куску на диске;
+- `disk (String)` - имя диска, на котором находится кусок;
 - `is_frozen (UInt8)` – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
 
 ## system.part_log {#system_tables-part-log}
@@ -291,7 +332,7 @@ SELECT * FROM system.metrics LIMIT 10
 
 Столбцы:
 
-- `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений: `NEW_PART` — вставка нового куска; `MERGE_PARTS` — слияние кусков; `DOWNLOAD_PART` — загрузка с реплики; `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition); `MUTATE_PART` — изменение куска.
+- `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений: `NEW_PART` — вставка нового куска; `MERGE_PARTS` — слияние кусков; `DOWNLOAD_PART` — загрузка с реплики; `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition); `MUTATE_PART` — изменение куска; `MOVE_PART` — перемещение куска между дисками.
 - `event_date` (Date) — дата события;
 - `event_time` (DateTime) — время события;
 - `duration_ms` (UInt64) — длительность;
@@ -315,7 +356,7 @@ SELECT * FROM system.metrics LIMIT 10
 Эта системная таблица используется для реализации запроса `SHOW PROCESSLIST`.
 Столбцы:
 
-```
+```text
 user String              - имя пользователя, который задал запрос. При распределённой обработке запроса, относится к пользователю, с помощью которого сервер-инициатор запроса отправил запрос на данный сервер, а не к имени пользователя, который задал распределённый запрос на сервер-инициатор запроса.
 
 address String           - IP-адрес, с которого задан запрос. При распределённой обработке запроса, аналогично.
@@ -439,7 +480,7 @@ WHERE table = 'visits'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 database:           merge
@@ -465,7 +506,7 @@ active_replicas:    2
 
 Столбцы:
 
-```
+```text
 database:           имя БД
 table:              имя таблицы
 engine:             имя движка таблицы
@@ -557,7 +598,7 @@ WHERE
 
 Столбцы:
 
-```
+```text
 name String   - имя настройки
 value String  - значение настройки
 changed UInt8 - была ли настройка явно задана в конфиге или изменена явным образом
@@ -571,7 +612,7 @@ FROM system.settings
 WHERE changed
 ```
 
-```
+```text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
 │ use_uncompressed_cache │ 0           │       1 │
@@ -640,7 +681,7 @@ WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 name:           example01-08-1.yandex.ru
@@ -703,3 +744,25 @@ path:           /clickhouse/tables/01-08/visits/replicas
 **latest_fail_reason** — причина последней ошибки мутации.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->
+
+## system.disks {#system_tables-disks}
+
+Таблица содержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Имеет следующие столбцы:
+
+- `name String` — имя диска в конфигурации сервера.
+- `path String` — путь к точке монтирования на файловой системе.
+- `free_space UInt64` — свободное место на диске в данный момент времени в байтах.
+- `total_space UInt64` — общее количество места на диске в данный момент времени в байтах.
+- `keep_free_space UInt64` — количество байт, которое должно оставаться свободным (задается в конфигурации).
+
+
+## system.storage_policies {#system_tables-storage_policies}
+
+Таблица содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Данные в таблице денормализованны, имя одной политики хранения может содержаться несколько раз, по количеству томов в ней. Имеет следующие столбцы:
+
+- `policy_name String` — имя политики хранения в конфигурации сервера.
+- `volume_name String` — имя тома, который содержится в данной политике хранения.
+- `volume_priority UInt64` — порядковый номер тома, согласно конфигурации.
+- `disks Array(String)` — имена дисков, содержащихся в данной политике хранения.
+- `max_data_part_size UInt64` — максимальный размер куска, который может храниться на дисках этого тома (0 — без ограничений).
+- `move_factor Float64` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.

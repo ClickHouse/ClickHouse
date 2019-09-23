@@ -21,6 +21,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
+#include <Storages/StorageInput.h>
+
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -31,10 +33,12 @@
 #include <Common/ProfileEvents.h>
 
 #include <Interpreters/DNSCacheUpdater.h>
+#include <Common/SensitiveDataMasker.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Parsers/ASTWatchQuery.h>
 
 namespace ProfileEvents
 {
@@ -76,7 +80,7 @@ static String prepareQueryForLogging(const String & query, Context & context)
 
     // wiping sensitive data before cropping query by log_queries_cut_to_length,
     // otherwise something like credit card without last digit can go to log
-    if (auto masker = context.getSensitiveDataMasker())
+    if (auto masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
         if (matches > 0)
@@ -177,7 +181,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool has_query_tail)
+    bool has_query_tail,
+    ReadBuffer * istr,
+    bool allow_processors)
 {
     time_t current_time = time(nullptr);
 
@@ -272,8 +278,30 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Load external tables if they were provided
         context.initializeExternalTablesIfSet();
 
+        auto * insert_query = ast->as<ASTInsertQuery>();
+        if (insert_query && insert_query->select)
+        {
+            /// Prepare Input storage before executing interpreter if we already got a buffer with data.
+            if (istr)
+            {
+                ASTPtr input_function;
+                insert_query->tryFindInputFunction(input_function);
+                if (input_function)
+                {
+                    StoragePtr storage = context.executeTableFunction(input_function);
+                    auto & input_storage = dynamic_cast<StorageInput &>(*storage);
+                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(ast, istr,
+                        input_storage.getSampleBlock(), context, input_function);
+                    input_storage.setInputStream(input_stream);
+                }
+            }
+        }
+        else
+            /// reset Input callbacks if query is not INSERT SELECT
+            context.resetInputCallbacks();
+
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = settings.experimental_use_processors && interpreter->canExecuteWithProcessors();
+        bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
 
         if (use_processors)
             pipeline = interpreter->executeWithProcessors();
@@ -522,10 +550,12 @@ BlockIO executeQuery(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data)
+    bool may_have_embedded_data,
+    bool allow_processors)
 {
     BlockIO streams;
-    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, !may_have_embedded_data);
+    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
+        internal, stage, !may_have_embedded_data, nullptr, allow_processors);
     return streams;
 }
 
@@ -576,7 +606,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr, true);
 
     auto & pipeline = streams.pipeline;
 
@@ -584,7 +614,7 @@ void executeQuery(
     {
         if (streams.out)
         {
-            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context);
+            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
             copyData(in, *streams.out);
         }
 
@@ -631,7 +661,19 @@ void executeQuery(
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
 
-            copyData(*streams.in, *out);
+            if (ast->as<ASTWatchQuery>())
+            {
+                /// For Watch query, flush data if block is empty (to send data to client).
+                auto flush_callback = [&out](const Block & block)
+                {
+                    if (block.rows() == 0)
+                        out->flush();
+                };
+
+                copyData(*streams.in, *out, [](){ return false; }, std::move(flush_callback));
+            }
+            else
+                copyData(*streams.in, *out);
         }
 
         if (pipeline.initialized())
