@@ -44,6 +44,7 @@ private:
     const bool is_all;
     const bool is_inner;
     const bool is_left;
+    const bool skip_not_intersected;
 
     void changeLeftColumns(Block & block, MutableColumns && columns);
     void addRightColumns(Block & block, MutableColumns && columns);
