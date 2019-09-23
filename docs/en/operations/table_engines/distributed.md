@@ -6,7 +6,7 @@ Reading is automatically parallelized. During a read, the table indexes on remot
 The Distributed engine accepts parameters: the cluster name in the server's config file, the name of a remote database, the name of a remote table, and (optionally) a sharding key.
 Example:
 
-```
+```sql
 Distributed(logs, default, hits[, sharding_key])
 ```
 

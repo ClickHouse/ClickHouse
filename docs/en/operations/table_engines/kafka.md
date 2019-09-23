@@ -11,7 +11,7 @@ Kafka lets you:
 
 ## Creating a Table {#table_engine-kafka-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -44,7 +44,7 @@ Optional parameters:
 
 Examples:
 
-``` sql
+```sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -79,7 +79,7 @@ Examples:
     Do not use this method in new projects. If possible, switch old projects to the method described above.
 
 
-```
+```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
 ```
@@ -104,7 +104,7 @@ One kafka table can have as many materialized views as you like, they do not rea
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -128,7 +128,7 @@ To improve performance, received messages are grouped into blocks the size of [m
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
-```
+```sql
   DETACH TABLE consumer;
   ATTACH MATERIALIZED VIEW consumer;
 ```
