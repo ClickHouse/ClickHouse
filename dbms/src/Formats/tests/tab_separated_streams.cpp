@@ -39,7 +39,7 @@ try
 
     FormatSettings format_settings;
 
-    RowInputFormatParams params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0, 0, []{}};
+    RowInputFormatParams params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0, []{}};
 
     InputFormatPtr input_format = std::make_shared<TabSeparatedRowInputFormat>(sample, in_buf, params, false, false, format_settings);
     BlockInputStreamPtr block_input = std::make_shared<InputStreamFromInputFormat>(std::move(input_format));
