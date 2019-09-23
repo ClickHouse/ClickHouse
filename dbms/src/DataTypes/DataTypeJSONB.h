@@ -12,7 +12,7 @@ namespace DB
 class DataTypeJSONB final : public IDataType
 {
 public:
-    DataTypeJSONB(const DataTypes & nested_types);
+    DataTypeJSONB(bool is_nullable, bool is_low_cardinality);
 
     Field getDefault() const override { return Null(); }
 
@@ -84,7 +84,8 @@ protected:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
-    const DataTypes & support_types;
+    const bool is_nullable{false};
+    const bool is_low_cardinality{false};
 };
 
 }

@@ -5,15 +5,17 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteHelpers.h>
+#include "JSONBDataMark.h"
 
 namespace DB
 {
 
+class JSONStructAndDataColumn;
+using JSONStructAndDataColumnPtr = typename std::shared_ptr<JSONStructAndDataColumn>;
+
 class JSONStructAndDataColumn : public std::enable_shared_from_this<JSONStructAndDataColumn>
 {
 public:
-    using JSONStructAndDataColumnPtr = typename std::shared_ptr<JSONStructAndDataColumn>;
-
     JSONStructAndDataColumn(IColumn * column_, const String & name_ = {}, const std::vector<StringRef> & access_path_ = {}, JSONStructAndDataColumn * parent_ = nullptr);
 
     JSONStructAndDataColumnPtr getParent();
@@ -23,6 +25,8 @@ public:
     IColumn * getDataColumn(const DataTypePtr & type);
 
     IColumn * getOrCreateDataColumn(const DataTypePtr & type);
+
+    IColumn * getOrCreateDataColumn(const JSONBDataMark & mark);
 
     JSONStructAndDataColumnPtr getChildren(const StringRef & name);
 

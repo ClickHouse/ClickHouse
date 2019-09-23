@@ -1,5 +1,6 @@
 #include <Columns/JSONB/JSONStructAndDataColumn.h>
 #include <Columns/ColumnJSONB.h>
+#include "JSONStructAndDataColumn.h"
 
 
 namespace DB
@@ -40,12 +41,33 @@ IColumn * JSONStructAndDataColumn::getOrCreateDataColumn(const DataTypePtr & typ
     return data_columns.back().second;
 }
 
-JSONStructAndDataColumn::JSONStructAndDataColumnPtr JSONStructAndDataColumn::getParent()
+//IColumn * JSONStructAndDataColumn::getOrCreateDataColumn(const JSONBD & type)
+//{
+//    for (size_t index = 0; index < data_columns.size(); ++index)
+//        if (type->getTypeId() == data_columns[index].first->getTypeId())
+//            return data_columns[index].second;
+//
+//    data_columns.push_back(std::make_pair(type, static_cast<ColumnJSONB *>(column)->createDataColumn(type)));
+//    return data_columns.back().second;
+//}
+
+
+IColumn * JSONStructAndDataColumn::getOrCreateDataColumn(const JSONBDataMark & mark)
+{
+//    for (size_t index = 0; index < data_columns.size(); ++index)
+//        if (data_columns[index].first->getTypeId() == mark)
+//            return data_columns[index].second;
+//
+//    data_columns.push_back(std::make_pair(type, static_cast<ColumnJSONB *>(column)->createDataColumn(type)));
+//    return data_columns.back().second;
+}
+
+JSONStructAndDataColumnPtr JSONStructAndDataColumn::getParent()
 {
     return !parent ? this->shared_from_this() : parent->shared_from_this();
 }
 
-JSONStructAndDataColumn::JSONStructAndDataColumnPtr JSONStructAndDataColumn::getChildren(const StringRef & name)
+JSONStructAndDataColumnPtr JSONStructAndDataColumn::getChildren(const StringRef & name)
 {
     for (size_t index = 0; index < children.size(); ++index)
         if (children[index]->name == name)
@@ -54,7 +76,7 @@ JSONStructAndDataColumn::JSONStructAndDataColumnPtr JSONStructAndDataColumn::get
     return JSONStructAndDataColumnPtr{};
 }
 
-JSONStructAndDataColumn::JSONStructAndDataColumnPtr JSONStructAndDataColumn::getOrCreateChildren(const StringRef & name)
+JSONStructAndDataColumnPtr JSONStructAndDataColumn::getOrCreateChildren(const StringRef & name)
 {
     if (JSONStructAndDataColumnPtr res = getChildren(name))
         return res;
@@ -63,14 +85,14 @@ JSONStructAndDataColumn::JSONStructAndDataColumnPtr JSONStructAndDataColumn::get
     return children.back();
 }
 
-JSONStructAndDataColumn::JSONStructAndDataColumnPtr JSONStructAndDataColumn::clone(IColumn * column, const DataCloneFunc & data_clone_function)
+JSONStructAndDataColumnPtr JSONStructAndDataColumn::clone(IColumn * column, const DataCloneFunc & data_clone_function)
 {
     JSONStructAndDataColumnPtr res = std::make_shared<JSONStructAndDataColumn>(column);
     return cloneChildren(res, data_clone_function);
 }
 
-JSONStructAndDataColumn::JSONStructAndDataColumnPtr JSONStructAndDataColumn::cloneChildren(
-    JSONStructAndDataColumn::JSONStructAndDataColumnPtr & cloning_to, const JSONStructAndDataColumn::DataCloneFunc & data_clone_function)
+JSONStructAndDataColumnPtr JSONStructAndDataColumn::cloneChildren(
+    JSONStructAndDataColumnPtr & cloning_to, const JSONStructAndDataColumn::DataCloneFunc & data_clone_function)
 {
     if (!data_columns.empty())
     {

@@ -19,6 +19,7 @@
 #include <DataTypes/JSONB/JSONBStreamBuffer.h>
 #include <DataTypes/JSONB/JSONBStreamFactory.h>
 #include <DataTypes/JSONB/JSONBSerialization.h>
+#include "DataTypeJSONB.h"
 
 
 namespace DB
@@ -153,11 +154,6 @@ inline static String sub_type_name(const String & prefix, const DataTypePtr & ty
 {
     String type_index = toString(size_t(type->getTypeId()));
     return prefix.empty() ? type_index : prefix + "." + type_index;
-}
-
-DataTypeJSONB::DataTypeJSONB(const DataTypes & nested_types)
-    : support_types(nested_types)
-{
 }
 
 MutableColumnPtr DataTypeJSONB::createColumn() const
@@ -354,6 +350,11 @@ void DataTypeJSONB::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+DataTypeJSONB::DataTypeJSONB(bool is_nullable, bool is_low_cardinality)
+    : is_nullable(is_nullable), is_low_cardinality(is_low_cardinality)
+{
+}
+
 void DataTypeJSONB::enumerateStreams(const IDataType::StreamCallback & callback, IDataType::SubstreamPath & path) const
 {
     path.push_back(Substream::JSONInfo);
@@ -365,11 +366,7 @@ void DataTypeJSONB::enumerateStreams(const IDataType::StreamCallback & callback,
 
 void registerDataTypeJSONB(DataTypeFactory &factory)
 {
-    /// bool, number, string
-    static const DataTypes sub_types = {
-        std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeString>()};
-
-    factory.registerSimpleDataType("JSONB", [&]() { return std::make_shared<DataTypeJSONB>(sub_types); });
+    factory.registerSimpleDataType("JSONB", [&]() { return std::make_shared<DataTypeJSONB>(false, false); });
 }
 
 }

@@ -15,16 +15,19 @@ enum class FormatStyle
     ESCAPED,
 };
 
-template <typename BufferType, FormatStyle format>
+template <FormatStyle format>
 struct JSONBStreamBuffer;
 
-template <typename BufferType, FormatStyle format>
-using JSONBStreamBufferPtr = std::unique_ptr<JSONBStreamBuffer<BufferType, format>>;
+template <FormatStyle format>
+using JSONBStreamBufferPtr = std::unique_ptr<JSONBStreamBuffer<format>>;
 
 struct JSONBStreamFactory
 {
     template<FormatStyle format, typename BufferType>
-    static JSONBStreamBufferPtr<BufferType, format> fromBuffer(BufferType * buffer, const FormatSettings & settings);
+    static JSONBStreamBufferPtr<format> fromBuffer(BufferType * buffer, const FormatSettings & settings);
+
+    template<FormatStyle format>
+    static JSONBStreamBufferPtr<format> from(BufferBase * buffer, const FormatSettings & settings);
 };
 
 }

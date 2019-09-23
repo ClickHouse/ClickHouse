@@ -12,7 +12,6 @@
 namespace DB
 {
 
-class ColumnJSONB;
 using ColumnJSONBStruct = JSONStructAndDataColumn;
 using ColumnJSONBStructPtr = std::shared_ptr<ColumnJSONBStruct>;
 
@@ -97,7 +96,7 @@ public:
 
     const std::vector<WrappedPtr> & getMarks() const { return mark_columns; }
 
-    void insertFrom(const IColumn &src, size_t row_num) override;
+    void insertFrom(const IColumn & src, size_t row_num) override;
 };
 
 }

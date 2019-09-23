@@ -7,7 +7,7 @@ namespace DB
 template<FormatStyle format, typename BufferType>
 JSONBStreamBufferPtr<BufferType, format> JSONBStreamFactory::fromBuffer(BufferType * buffer, const DB::FormatSettings & settings)
 {
-    return std::make_unique<JSONBStreamBuffer<BufferType, format>>(buffer, settings);
+    return std::make_unique<JSONBStreamBuffer<format>>(buffer, settings);
 }
 
 template <FormatStyle format>

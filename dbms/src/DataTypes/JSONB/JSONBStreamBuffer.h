@@ -29,20 +29,25 @@ struct BufferStreamHelper
     static char SkipQuoted(WriteBuffer & /*buffer*/, const FormatSettings & /*setting*/, char /*maybe_opening_quoted*/);
 };
 
-template <typename BufferType, FormatStyle format>
+template <FormatStyle format>
 struct JSONBStreamBuffer
 {
 public:
     typedef char Ch;
 
-    JSONBStreamBuffer(BufferType * buffer_, const FormatSettings & settings_)
-        : buffer(buffer_), settings(settings_)
-    {
-    }
+    JSONBStreamBuffer(BufferBase * buffer_, const FormatSettings & settings_) : buffer(buffer_), settings(settings_) {}
 
     void Flush() {  /* do nothing */ }
 
-    char Take() { return BufferStreamHelper::Take<BufferType>(*buffer); }
+    char Take()
+    {
+        if (ReadBuffer * read_buffer = typeid_cast<ReadBuffer *>(buffer))
+            {}
+        if (buffer.eof())
+            return char(0);
+
+        return *buffer.position()++;
+    }
 
     char Peek() const { return BufferStreamHelper::Peek<BufferType>(*buffer); }
 
@@ -58,7 +63,7 @@ public:
 
 private:
     char quote_char{0};
-    BufferType * buffer;
+    BufferBase * buffer;
     const FormatSettings & settings;
 };
 
