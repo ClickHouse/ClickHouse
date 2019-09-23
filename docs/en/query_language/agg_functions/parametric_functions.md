@@ -6,7 +6,7 @@ Some aggregate functions can accept not only argument columns (used for compress
 
 Calculates an adaptive histogram. It doesn't guarantee precise results.
 
-```
+```sql
 histogram(number_of_bins)(values)
 ```
  
@@ -90,7 +90,7 @@ Example: `sequenceMatch ('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE
 
 This is a singular example. You could write it using other aggregate functions:
 
-```
+```sql
 minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 ```
 
@@ -153,7 +153,7 @@ Set the following chain of events:
 
 To find out how far the user `user_id` could get through the chain in an hour in January of 2017, make the query:
 
-```
+```sql
 SELECT
     level,
     count() AS c
@@ -184,7 +184,7 @@ Consider you are doing a website analytics, intend to calculate the retention of
 
 This could be easily calculate by `retention`
 
-```
+```sql
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -218,7 +218,7 @@ It works as fast as possible, except for cases when a large N value is used and 
 
 Usage example:
 
-```
+```text
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```

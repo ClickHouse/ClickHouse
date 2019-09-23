@@ -12,7 +12,9 @@ insert into y values (1,1);
 
 select t.a, s.b, s.a, s.b, y.a, y.b from t
 left join s on (t.a = s.a and t.b = s.b)
-left join y on (y.a = s.a and y.b = s.b) format Vertical;
+left join y on (y.a = s.a and y.b = s.b)
+order by t.a
+format Vertical;
 
 select t.a, s.b, s.a, s.b, y.a, y.b from t
 left join s on (t.a = s.a and s.b = t.b)
