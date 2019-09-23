@@ -62,7 +62,6 @@ private:
     PeekableReadBuffer buf;
 
     RowInputFormatParams params;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
