@@ -21,6 +21,7 @@ public:
         const std::string & database_name_,
         const std::string & table_name_,
         const String & format_name_,
+        UInt64 min_upload_part_size_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         Context & context_);
@@ -59,6 +60,7 @@ private:
     String format_name;
     String database_name;
     String table_name;
+    UInt64 min_upload_part_size;
 };
 
 }
