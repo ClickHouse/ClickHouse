@@ -35,15 +35,15 @@ string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
 if (OS_LINUX)
     find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
-    find_program (GOLD_PATH NAMES "gold")
+    find_program (GOLD_PATH NAMES "ld.gold" "gold")
 endif()
 
 option (LINKER_NAME "Linker name or full path")
 if (NOT LINKER_NAME)
     if (COMPILER_CLANG AND LLD_PATH)
-        set (LINKER_NAME NAMES "lld")
+        set (LINKER_NAME "lld")
     elseif (GOLD_PATH)
-        set (LINKER_NAME NAMES "ld.gold" "gold")
+        set (LINKER_NAME "gold")
     endif ()
 endif ()
 
@@ -62,8 +62,8 @@ if (CMAKE_CROSSCOMPILING)
         set (HAS_PRE_1970_EXITCODE "0" CACHE STRING "Result from TRY_RUN" FORCE)
         set (HAS_PRE_1970_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
 
-        set( HAS_POST_2038_EXITCODE "0" CACHE STRING "Result from TRY_RUN" FORCE)
-        set( HAS_POST_2038_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
+        set (HAS_POST_2038_EXITCODE "0" CACHE STRING "Result from TRY_RUN" FORCE)
+        set (HAS_POST_2038_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation

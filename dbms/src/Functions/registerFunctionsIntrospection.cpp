@@ -5,7 +5,7 @@ namespace DB
 
 class FunctionFactory;
 
-#ifdef defined(OS_LINUX)
+#if defined(OS_LINUX)
 void registerFunctionAddressToSymbol(FunctionFactory & factory);
 void registerFunctionAddressToLine(FunctionFactory & factory);
 #endif
@@ -23,4 +23,3 @@ void registerFunctionsIntrospection(FunctionFactory & factory)
 }
 
 }
-
