@@ -52,6 +52,8 @@ struct MergeTreeReadTask
     /// Used to save current range processing status
     MergeTreeRangeReader range_reader;
     MergeTreeRangeReader pre_range_reader;
+    /// skip indices
+    bool is_applied_indices{false};
 
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 

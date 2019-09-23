@@ -29,10 +29,13 @@ public:
         bool check_columns,
         size_t min_bytes_to_use_direct_io,
         size_t max_read_buffer_size,
+        size_t min_rows_for_skip_,
+        size_t min_bytes_for_skip_,
         bool save_marks_in_cache,
         const Names & virt_column_names = {},
         size_t part_index_in_query = 0,
-        bool quiet = false);
+        bool quiet = false,
+        const IndicesAndConditions & indices_and_conditions_ = {});
 
     ~MergeTreeReverseSelectProcessor() override;
 

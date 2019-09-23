@@ -156,4 +156,7 @@ private:
     Indexes indexes;
 };
 
+using IndexAndCondition = std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>;
+using IndicesAndConditions = std::vector<IndexAndCondition>;
+
 }

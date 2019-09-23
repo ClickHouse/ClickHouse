@@ -54,7 +54,8 @@ private:
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
-        const Settings & settings) const;
+        const Settings & settings,
+        const IndicesAndConditions & indices_and_conditions) const;
 
     Pipes spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
@@ -65,7 +66,8 @@ private:
         const SelectQueryInfo & query_info,
         const ExpressionActionsPtr & sorting_key_prefix_expr,
         const Names & virt_columns,
-        const Settings & settings) const;
+        const Settings & settings,
+        const IndicesAndConditions & indices_and_conditions) const;
 
     Pipes spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
@@ -74,7 +76,8 @@ private:
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
-        const Settings & settings) const;
+        const Settings & settings,
+        const IndicesAndConditions & indices_and_conditions) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
@@ -93,12 +96,6 @@ private:
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
-    MarkRanges filterMarksUsingIndex(
-        MergeTreeIndexPtr index,
-        MergeTreeIndexConditionPtr condition,
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const Settings & settings) const;
 };
 
 }

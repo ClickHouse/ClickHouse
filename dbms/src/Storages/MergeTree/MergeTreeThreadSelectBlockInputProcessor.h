@@ -25,7 +25,8 @@ public:
         const bool use_uncompressed_cache_,
         const PrewhereInfoPtr & prewhere_info_,
         const Settings & settings_,
-        const Names & virt_column_names_);
+        const Names & virt_column_names_,
+        const IndicesAndConditions & indices_and_conditions_);
 
     String getName() const override { return "MergeTreeThread"; }
 

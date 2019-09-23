@@ -14,7 +14,6 @@ class MergeTreeReader;
 class UncompressedCache;
 class MarkCache;
 
-
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
 class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
@@ -28,9 +27,12 @@ public:
         UInt64 preferred_max_column_in_block_size_bytes_,
         UInt64 min_bytes_to_use_direct_io_,
         UInt64 max_read_buffer_size_,
+        UInt64 merge_tree_min_rows_for_seek_,
+        UInt64 merge_tree_min_bytes_for_seek_,
         bool use_uncompressed_cache_,
         bool save_marks_in_cache_ = true,
-        const Names & virt_column_names_ = {});
+        const Names & virt_column_names_ = {},
+        const IndicesAndConditions & indices_and_conditions_ = {});
 
     ~MergeTreeBaseSelectProcessor() override;
 
@@ -54,8 +56,12 @@ protected:
 
     void initializeRangeReaders(MergeTreeReadTask & task);
 
+    MarkRanges filterMarksUsingIndex(MergeTreeIndexPtr useful_index, MergeTreeIndexConditionPtr condition, MergeTreeData::DataPartPtr part, const MarkRanges & ranges);
+
 protected:
     const MergeTreeData & storage;
+
+    Logger * log;
 
     PrewhereInfoPtr prewhere_info;
 
@@ -65,6 +71,8 @@ protected:
 
     UInt64 min_bytes_to_use_direct_io;
     UInt64 max_read_buffer_size;
+    UInt64 merge_tree_min_rows_for_seek;
+    UInt64 merge_tree_min_bytes_for_seek;
 
     bool use_uncompressed_cache;
     bool save_marks_in_cache;
@@ -72,6 +80,8 @@ protected:
     Names virt_column_names;
     /// This header is used for chunks from readFromPart().
     Block header_without_virtual_columns;
+
+    IndicesAndConditions indices_and_conditions;
 
     std::unique_ptr<MergeTreeReadTask> task;
 

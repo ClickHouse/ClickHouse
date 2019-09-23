@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>

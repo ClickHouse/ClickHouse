@@ -4,7 +4,10 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
+#include <ext/range.h>
+#include <Poco/File.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 
 
 namespace DB
@@ -26,21 +29,28 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     UInt64 preferred_max_column_in_block_size_bytes_,
     UInt64 min_bytes_to_use_direct_io_,
     UInt64 max_read_buffer_size_,
+    UInt64 merge_tree_min_rows_for_seek_,
+    UInt64 merge_tree_min_bytes_for_seek_,
     bool use_uncompressed_cache_,
     bool save_marks_in_cache_,
-    const Names & virt_column_names_)
+    const Names & virt_column_names_,
+    const IndicesAndConditions & indices_and_conditions_)
 :
     SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_)),
     storage(storage_),
+    log(&Logger::get(storage.getLogName() + " (MergeTreeBaseSelectBlockInputStream)")),
     prewhere_info(prewhere_info_),
     max_block_size_rows(max_block_size_rows_),
     preferred_block_size_bytes(preferred_block_size_bytes_),
     preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_),
     min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_),
     max_read_buffer_size(max_read_buffer_size_),
+    merge_tree_min_rows_for_seek(merge_tree_min_rows_for_seek_),
+    merge_tree_min_bytes_for_seek(merge_tree_min_bytes_for_seek_),
     use_uncompressed_cache(use_uncompressed_cache_),
     save_marks_in_cache(save_marks_in_cache_),
-    virt_column_names(virt_column_names_)
+    virt_column_names(virt_column_names_),
+    indices_and_conditions(indices_and_conditions_)
 {
     header_without_virtual_columns = getPort().getHeader();
 
@@ -157,6 +167,15 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 
     UInt64 recommended_rows = estimateNumRows(*task, task->range_reader);
     UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
+
+    if (!task->is_applied_indices)
+    {
+        for (size_t index = 0; index < indices_and_conditions.size(); ++index)
+            task->mark_ranges = filterMarksUsingIndex(
+                indices_and_conditions[index].first, indices_and_conditions[index].second, task->data_part, task->mark_ranges);
+
+        task->is_applied_indices = true;
+    }
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
 
@@ -345,6 +364,79 @@ Block MergeTreeBaseSelectProcessor::getHeader(
     executePrewhereActions(block, prewhere_info);
     injectVirtualColumns(block, nullptr, virtual_columns);
     return block;
+}
+
+static inline size_t roundRowsOrBytesToMarks(size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity)
+{
+    if (bytes_granularity == 0)
+        return (rows_setting + rows_granularity - 1) / rows_granularity;
+    else
+        return (bytes_setting + bytes_granularity - 1) / bytes_granularity;
+}
+
+MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
+    MergeTreeIndexPtr useful_index, MergeTreeIndexConditionPtr condition, MergeTreeData::DataPartPtr part, const MarkRanges & ranges)
+{
+    if (!Poco::File(part->getFullPath() + useful_index->getFileName() + ".idx").exists())
+    {
+        LOG_DEBUG(log, "File for useful_index " << backQuote(useful_index->name) << " does not exist. Skipping it.");
+        return ranges;
+    }
+
+    const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
+        merge_tree_min_rows_for_seek, merge_tree_min_bytes_for_seek,
+        part->index_granularity_info.index_granularity_bytes, part->index_granularity_info.fixed_index_granularity);
+
+    size_t granules_dropped = 0;
+
+    size_t marks_count = part->getMarksCount();
+    size_t final_mark = part->index_granularity.hasFinalMark();
+    size_t index_marks_count = (marks_count - final_mark + useful_index->granularity - 1) / useful_index->granularity;
+
+    MarkRanges res;
+    MergeTreeIndexReader index_reader(useful_index, part, index_marks_count, ranges);
+
+    /// Some granules can cover two or more ranges,
+    /// this variable is stored to avoid reading the same granule twice.
+    MergeTreeIndexGranulePtr granule = nullptr;
+    size_t last_index_mark = 0;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(range.begin / useful_index->granularity, (range.end + useful_index->granularity - 1) / useful_index->granularity);
+
+        if (last_index_mark != index_range.begin || !granule)
+            index_reader.seek(index_range.begin);
+
+        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+        {
+            if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
+                granule = index_reader.read();
+
+            MarkRange data_range(
+                std::max(range.begin, index_mark * useful_index->granularity),
+                std::min(range.end, (index_mark + 1) * useful_index->granularity));
+
+            if (!condition->mayBeTrueOnGranule(granule))
+            {
+                ++granules_dropped;
+                for (size_t index = range.begin; index < range.end; ++index)
+                    progressImpl({ part->index_granularity.getMarkRows(range.begin), 0 });
+
+                continue;
+            }
+
+            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
+                res.push_back(data_range);
+            else
+                res.back().end = data_range.end;
+        }
+
+        last_index_mark = index_range.end - 1;
+    }
+
+    LOG_DEBUG(log, "Index " << backQuote(useful_index->name) << " has dropped " << granules_dropped << " granules.");
+
+    return res;
 }
 
 
