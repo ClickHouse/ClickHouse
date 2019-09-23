@@ -55,7 +55,7 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern (not only suffix or prefix).
 
-- `*` — Substitutes any number of any characters including none.
+- `*` — Substitutes any number of any characters except `/` including none.
 - `?` — Substitutes any single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
