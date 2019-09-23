@@ -175,7 +175,8 @@ ClickHouse применяет настройку в тех случаях, ко�
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Exception on client:
 Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
 ```
@@ -183,7 +184,8 @@ Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 
 ```sql
 SET input_format_values_interpret_expressions = 1;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Ok.
 ```
 
@@ -192,7 +194,8 @@ Ok.
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t SELECT now()
-
+```
+```text
 Ok.
 ```
 
@@ -604,7 +607,7 @@ ClickHouse поддерживает следующие алгоритмы выб
 
 ### Random (by default) {#load_balancing-random}
 
-```
+```sql
 load_balancing = random
 ```
 
@@ -613,7 +616,7 @@ load_balancing = random
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-```
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -627,7 +630,7 @@ load_balancing = nearest_hostname
 
 ### In Order {#load_balancing-in_order}
 
-```
+```sql
 load_balancing = in_order
 ```
 
@@ -636,7 +639,7 @@ load_balancing = in_order
 
 ### First or Random {#load_balancing-first_or_random}
 
-```
+```sql
 load_balancing = first_or_random
 ```
 

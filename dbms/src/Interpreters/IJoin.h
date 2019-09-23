@@ -25,7 +25,7 @@ public:
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block) = 0;
 
-    virtual bool hasTotals() const { return false; }
+    virtual bool hasTotals() const = 0;
     virtual void setTotals(const Block & block) = 0;
     virtual void joinTotals(Block & block) const = 0;
 

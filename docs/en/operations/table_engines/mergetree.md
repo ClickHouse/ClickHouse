@@ -78,7 +78,7 @@ For a description of parameters, see the [CREATE query description](../../query_
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
-    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. For the list of available parameters, see [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
+    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. For the list of available parameters, see [MergeTreeSettings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in "Server configuration parameters".
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
@@ -101,7 +101,7 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 !!! attention
     Do not use this method in new projects. If possible, switch old projects to the method described above.
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -119,7 +119,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Example**
 
-```
+```sql
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
@@ -370,14 +370,14 @@ The `TTL` clause can be set for the whole table and for each individual column. 
 
 The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define the lifetime of data, use operations on this time column, for example:
 
-```
+```sql
 TTL time_column
 TTL time_column + interval
 ```
 
 To define `interval`, use [time interval](../../query_language/operators.md#operators-datetime) operators.
 
-```
+```sql
 TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```

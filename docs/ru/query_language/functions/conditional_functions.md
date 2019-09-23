@@ -31,7 +31,7 @@ multiIf(cond_1, then_1, cond_2, then_2...else)
 
 Рассмотрим таблицу
 
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -40,7 +40,7 @@ multiIf(cond_1, then_1, cond_2, then_2...else)
 
 Выполним запрос `SELECT multiIf(isNull(y), x, y < 3, y, NULL) FROM t_null`. Результат:
 
-```
+```text
 ┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
 │                                          1 │
 │                                       ᴺᵁᴸᴸ │
