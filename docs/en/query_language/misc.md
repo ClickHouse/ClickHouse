@@ -185,7 +185,7 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engin
 - If you specify a `PARTITION`, only the specified partition is optimized.
 - If you specify `FINAL`, optimization is performed even when all the data is already in one part.
 
-!!! warning
+!!! warning "Warning"
     OPTIMIZE can't fix the "Too many parts" error.
 
 ## RENAME {#misc_operations-rename}

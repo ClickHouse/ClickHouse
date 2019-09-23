@@ -869,6 +869,8 @@ Possible values:
 - 0 — Throwing an exception is disabled.
 
 Default value: 0.
+
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 - Type: seconds

@@ -841,4 +841,18 @@ load_balancing = first_or_random
 
 - [Множественный JOIN](../../query_language/select.md#select-join)
 
+
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
+
+Включает или отключает генерирование исключения в в случаях, когда запрос [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) не выполняет мёрж.
+
+По умолчанию, `OPTIMIZE` завершается успешно и в тех случаях, когда он ничего не сделал. Настройка позволяет отделить подобные случаи и включает генерирование исключения с поясняющим сообщением.
+
+Возможные значения:
+
+- 1 — генерирование исключения включено.
+- 0 — генерирование исключения выключено.
+
+Значение по умолчанию — 0.
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->
