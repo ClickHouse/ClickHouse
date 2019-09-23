@@ -14,7 +14,7 @@ INSERT INTO test2_00550 VALUES ('a');
 CREATE TABLE test3_00550 ( id String, name String ) ENGINE = StripeLog;
 INSERT INTO test3_00550 VALUES ('a', 'aaa');
 
-INSERT INTO test1_00550 SELECT id, name FROM test2_00550 ANY INNER JOIN test3_00550 USING (id);
+INSERT INTO test1_00550 SELECT id, name FROM test2_00550 ANY INNER JOIN test3_00550 USING (id) SETTINGS any_join_distinct_right_table_keys=1;
 INSERT INTO test1_00550 SELECT id, name FROM test2_00550 ANY LEFT OUTER JOIN test3_00550 USING (id);
 
 DROP TABLE test1_00550;

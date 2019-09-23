@@ -10,7 +10,7 @@ After executing an ATTACH query, the server will know about the existence of the
 
 If the table was previously detached (``DETACH``), meaning that its structure is known, you can use shorthand without defining the structure.
 
-``` sql
+```sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -20,7 +20,7 @@ This query is used when starting the server. The server stores table metadata as
 
 Checks if the data in the table is corrupted.
 
-``` sql
+```sql
 CHECK TABLE [db.]name
 ```
 
@@ -39,9 +39,11 @@ The `CHECK TABLE` query supports the following table engines:
 - [StripeLog](../operations/table_engines/stripelog.md)
 - [MergeTree family](../operations/table_engines/mergetree.md)
 
-The `*Log` engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+Performed over the tables with another table engines causes an exception.
 
-For the `MergeTree` family engines the `CHECK TABLE` query shows a check status for every individual table data part at the local server.
+Engines from the `*Log` family don't provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+
+For `MergeTree` family engines, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
 
 **If the data is corrupted**
 
@@ -54,7 +56,7 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 
 ## DESCRIBE TABLE {#misc-describe-table}
 
-``` sql
+```sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -72,7 +74,7 @@ Nested data structures are output in "expanded" format. Each column is shown sep
 
 Deletes information about the 'name' table from the server. The server stops knowing about the table's existence.
 
-``` sql
+```sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -85,14 +87,14 @@ There is no `DETACH DATABASE` query.
 
 This query has two types: `DROP DATABASE` and `DROP TABLE`.
 
-``` sql
+```sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
 If `IF EXISTS` is specified, it doesn't return an error if the database doesn't exist.
 
-``` sql
+```sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -101,7 +103,7 @@ If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exi
 
 ## EXISTS
 
-``` sql
+```sql
 EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -109,7 +111,7 @@ Returns a single `UInt8`-type column, which contains the single value `0` if the
 
 ## KILL QUERY
 
-``` sql
+```sql
 KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
@@ -121,7 +123,7 @@ The queries to terminate are selected from the system.processes table using the 
 
 Examples:
 
-``` sql
+```sql
 -- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
@@ -171,14 +173,17 @@ Changes already made by the mutation are not rolled back.
 
 ## OPTIMIZE {#misc_operations-optimize}
 
-``` sql
+```sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
-Asks the table engine to do something for optimization.
-Supported only by `*MergeTree` engines, in which this query initializes a non-scheduled merge of data parts.
-If you specify a `PARTITION`, only the specified partition will be optimized.
-If you specify `FINAL`, optimization will be performed even when all the data is already in one part.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine of [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines are not supported.
+
+When `OPTIMIZE` is used with [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
+
+- If `OPTIMIZE` doesn't perform merging for any reason, it doesn't notify the client about it. To enable notification use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
+- If you specify a `PARTITION`, only the specified partition is optimized.
+- If you specify `FINAL`, optimization is performed even when all the data is already in one part.
 
 !!! warning
     OPTIMIZE can't fix the "Too many parts" error.
@@ -187,28 +192,31 @@ If you specify `FINAL`, optimization will be performed even when all the data is
 
 Renames one or more tables.
 
-``` sql
+```sql
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
 All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
 
-## SET
+## SET {#query-set}
 
-``` sql
+```sql
 SET param = value
 ```
 
-Allows you to set `param` to `value`. You can also make all the settings from the specified settings profile in a single query. To do this, specify 'profile' as the setting name. For more information, see the section "Settings".
-The setting is made for the session, or for the server (globally) if `GLOBAL` is specified.
-When making a global setting, the setting is not applied to sessions already running, including the current session. It will only be used for new sessions.
+Assigns `value` to the `param` [setting](../operations/settings/index.md) for the current session. You cannot change [server settings](../operations/server_settings/index.md) this way.
 
-When the server is restarted, global settings made using `SET` are lost.
-To make settings that persist after a server restart, you can only use the server's config file.
+You can also set all the values from the specified settings profile in a single query.
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+For more information, see [Settings](../operations/settings/settings.md).
 
 ## SHOW CREATE TABLE
 
-``` sql
+```sql
 SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -216,7 +224,7 @@ Returns a single `String`-type 'statement' column, which contains a single value
 
 ## SHOW DATABASES {#show-databases}
 
-``` sql
+```sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -227,7 +235,7 @@ See also the section "Formats".
 
 ## SHOW PROCESSLIST
 
-``` sql
+```sql
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -254,12 +262,12 @@ This query is nearly identical to: `SELECT * FROM system.processes`. The differe
 Tip (execute in the console):
 
 ```bash
-watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
 ## SHOW TABLES
 
-``` sql
+```sql
 SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -274,7 +282,7 @@ See also the section "LIKE operator".
 
 ## TRUNCATE
 
-``` sql
+```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -284,7 +292,7 @@ The `TRUNCATE` query is not supported for [View](../operations/table_engines/vie
 
 ## USE
 
-``` sql
+```sql
 USE db
 ```
 

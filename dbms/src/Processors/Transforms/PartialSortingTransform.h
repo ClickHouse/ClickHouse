@@ -14,10 +14,10 @@ public:
     /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.
     /// When count_rows is false, getNumReadRows() will always return 0.
     PartialSortingTransform(
-        const Block & header,
-        SortDescription & description,
-        UInt64 limit = 0,
-        bool do_count_rows = true);
+        const Block & header_,
+        SortDescription & description_,
+        UInt64 limit_ = 0,
+        bool do_count_rows_ = true);
 
     String getName() const override { return "PartialSortingTransform"; }
 

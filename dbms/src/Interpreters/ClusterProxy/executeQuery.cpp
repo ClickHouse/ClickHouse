@@ -37,8 +37,8 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 }
 
 BlockInputStreams executeQuery(
-        IStreamFactory & stream_factory, const ClusterPtr & cluster,
-        const ASTPtr & query_ast, const Context & context, const Settings & settings)
+    IStreamFactory & stream_factory, const ClusterPtr & cluster,
+    const ASTPtr & query_ast, const Context & context, const Settings & settings)
 {
     BlockInputStreams res;
 

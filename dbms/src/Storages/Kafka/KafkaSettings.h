@@ -14,7 +14,8 @@ class ASTStorage;
 struct KafkaSettings : public SettingsCollection<KafkaSettings>
 {
 
-#define LIST_OF_KAFKA_SETTINGS(M) \
+
+#define LIST_OF_KAFKA_SETTINGS(M)                                      \
     M(SettingString, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.") \
     M(SettingString, kafka_topic_list, "", "A list of Kafka topics.") \
     M(SettingString, kafka_group_name, "", "A group of Kafka consumers.") \

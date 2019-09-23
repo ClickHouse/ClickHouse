@@ -8,7 +8,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -111,8 +110,7 @@ String transformQueryForExternalDatabase(
 {
     auto clone_query = query.clone();
     auto syntax_result = SyntaxAnalyzer(context).analyze(clone_query, available_columns);
-    ExpressionAnalyzer analyzer(clone_query, syntax_result, context);
-    const Names & used_columns = analyzer.getRequiredSourceColumns();
+    const Names used_columns = syntax_result->requiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -143,19 +141,17 @@ String transformQueryForExternalDatabase(
             if (function->name == "and")
             {
                 bool compatible_found = false;
-                auto new_function_and = std::make_shared<ASTFunction>();
-                auto new_function_and_arguments = std::make_shared<ASTExpressionList>();
-                new_function_and->arguments = new_function_and_arguments;
-                new_function_and->children.push_back(new_function_and_arguments);
-
+                auto new_function_and = makeASTFunction("and");
                 for (const auto & elem : function->arguments->children)
                 {
                     if (isCompatible(*elem))
                     {
-                        new_function_and_arguments->children.push_back(elem);
+                        new_function_and->arguments->children.push_back(elem);
                         compatible_found = true;
                     }
                 }
+                if (new_function_and->arguments->children.size() == 1)
+                    new_function_and->name = "";
 
                 if (compatible_found)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));

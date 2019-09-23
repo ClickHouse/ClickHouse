@@ -3,15 +3,18 @@
 #include <Core/Types.h>
 #include <Common/CpuId.h>
 #include <common/getMemoryAmount.h>
+#include <DataStreams/copyData.h>
+#include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include "executeQuery.h"
+
 
 namespace DB
 {
@@ -48,7 +51,7 @@ void waitQuery(Connection & connection)
 }
 }
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
@@ -248,6 +251,54 @@ std::vector<TestStats> PerformanceTest::execute()
 
         runQueries(queries_with_indexes, statistics_by_run);
     }
+
+    if (got_SIGINT)
+    {
+        return statistics_by_run;
+    }
+
+    // Pull memory usage data from query log. The log is normally filled in
+    // background, so we have to flush it synchronously here to see all the
+    // previous queries.
+    {
+        NullBlockOutputStream null_output(Block{});
+        RemoteBlockInputStream flush_log(connection, "system flush logs",
+            {} /* header */, context);
+        copyData(flush_log, null_output);
+    }
+
+    for (auto & statistics : statistics_by_run)
+    {
+        if (statistics.query_id.empty())
+        {
+            // We have statistics structs for skipped queries as well, so we
+            // have to filter them out.
+            continue;
+        }
+
+        // We run some test queries several times, specifying the same query id,
+        // so this query to the log may return several records. Choose the
+        // last one, because this is when the query performance has stabilized.
+        RemoteBlockInputStream log_reader(connection,
+            "select memory_usage, query_start_time from system.query_log "
+            "where type = 2 and query_id = '" + statistics.query_id + "' "
+            "order by query_start_time desc",
+            {} /* header */, context);
+
+        log_reader.readPrefix();
+        Block block = log_reader.read();
+        if (block.columns() == 0)
+        {
+            LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
+            continue;
+        }
+
+        auto column = block.getByName("memory_usage").column;
+        statistics.memory_usage = column->get64(0);
+
+        log_reader.readSuffix();
+    }
+
     return statistics_by_run;
 }
 
@@ -296,47 +347,6 @@ void PerformanceTest::runQueries(
             LOG_INFO(log, "Got SIGINT, will terminate as soon as possible");
             break;
         }
-    }
-
-    if (got_SIGINT)
-    {
-        return;
-    }
-
-    // Pull memory usage data from query log. The log is normally filled in
-    // background, so we have to flush it synchronously here to see all the
-    // previous queries.
-    {
-        RemoteBlockInputStream flush_log(connection, "system flush logs",
-            {} /* header */, context);
-        flush_log.readPrefix();
-        while (flush_log.read());
-        flush_log.readSuffix();
-    }
-
-    for (auto & statistics : statistics_by_run)
-    {
-        RemoteBlockInputStream log_reader(connection,
-            "select memory_usage from system.query_log where type = 2 and query_id = '"
-                                   + statistics.query_id + "'",
-            {} /* header */, context);
-
-        log_reader.readPrefix();
-        Block block = log_reader.read();
-        if (block.columns() == 0)
-        {
-            LOG_WARNING(log, "Query '" << statistics.query_id << "' is not found in query log.");
-            continue;
-        }
-
-        assert(block.columns() == 1);
-        assert(block.getDataTypes()[0]->getName() == "UInt64");
-        ColumnPtr column = block.getByPosition(0).column;
-        assert(column->size() == 1);
-        StringRef ref = column->getDataAt(0);
-        assert(ref.size == sizeof(UInt64));
-        statistics.memory_usage = *reinterpret_cast<const UInt64*>(ref.data);
-        log_reader.readSuffix();
     }
 }
 

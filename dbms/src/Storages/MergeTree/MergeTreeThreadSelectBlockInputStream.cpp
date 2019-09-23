@@ -8,8 +8,8 @@ namespace DB
 
 
 MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
-    const size_t thread,
-    const MergeTreeReadPoolPtr & pool,
+    const size_t thread_,
+    const MergeTreeReadPoolPtr & pool_,
     const size_t min_marks_to_read_,
     const UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
@@ -23,15 +23,15 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, settings.min_bytes_to_use_direct_io,
         settings.max_read_buffer_size, use_uncompressed_cache_, true, virt_column_names_},
-    thread{thread},
-    pool{pool}
+    thread{thread_},
+    pool{pool_}
 {
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
     /// Maybe it will make sence to add settings `max_block_size_bytes`
     if (max_block_size_rows && !storage.canUseAdaptiveGranularity())
     {
-        size_t fixed_index_granularity = storage.settings.index_granularity;
+        size_t fixed_index_granularity = storage.getSettings()->index_granularity;
         min_marks_to_read = (min_marks_to_read_ * fixed_index_granularity + max_block_size_rows - 1)
             / max_block_size_rows * max_block_size_rows / fixed_index_granularity;
     }
@@ -70,7 +70,7 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
     const std::string path = task->data_part->getFullPath();
 
     /// Allows pool to reduce number of threads in case of too slow reads.
-    auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info) { pool->profileFeedback(info); };
+    auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
 
     if (!reader)
     {

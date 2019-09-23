@@ -1,34 +1,21 @@
 #include <Interpreters/SubqueryForSet.h>
-#include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 #include <DataStreams/LazyBlockInputStream.h>
 
 namespace DB
 {
 
 void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
-                                const std::list<JoinedColumn> & columns_from_joined_table,
-                                const NameSet & required_columns_from_joined_table)
+                                NamesWithAliases && joined_block_aliases_)
 {
+    joined_block_aliases = std::move(joined_block_aliases_);
     source = std::make_shared<LazyBlockInputStream>(interpreter->getSampleBlock(),
                                                     [interpreter]() mutable { return interpreter->execute().in; });
 
-    for (const auto & column : columns_from_joined_table)
-        if (required_columns_from_joined_table.count(column.name_and_type.name))
-            joined_block_aliases.emplace_back(column.original_name, column.name_and_type.name);
-
     sample_block = source->getHeader();
-    for (const auto & name_with_alias : joined_block_aliases)
-    {
-        if (sample_block.has(name_with_alias.first))
-        {
-            auto pos = sample_block.getPositionByName(name_with_alias.first);
-            auto column = sample_block.getByPosition(pos);
-            sample_block.erase(pos);
-            column.name = name_with_alias.second;
-            sample_block.insert(std::move(column));
-        }
-    }
+    renameColumns(sample_block);
 }
 
 void SubqueryForSet::renameColumns(Block & block)
@@ -44,6 +31,28 @@ void SubqueryForSet::renameColumns(Block & block)
             block.insert(std::move(column));
         }
     }
+}
+
+void SubqueryForSet::setJoinActions(ExpressionActionsPtr actions)
+{
+    actions->execute(sample_block);
+    joined_block_actions = actions;
+}
+
+bool SubqueryForSet::insertJoinedBlock(Block & block)
+{
+    renameColumns(block);
+
+    if (joined_block_actions)
+        joined_block_actions->execute(block);
+
+    return join->addJoinedBlock(block);
+}
+
+void SubqueryForSet::setTotals()
+{
+    if (join && source)
+        join->setTotals(source->getTotals());
 }
 
 }

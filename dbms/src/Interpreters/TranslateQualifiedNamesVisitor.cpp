@@ -253,7 +253,7 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
-            if (auto opt_column = getIdentifierName(key))
+            if (auto opt_column = tryGetIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
             else if (key->as<ASTLiteral>())
                 data.join_using_columns.insert(key->getColumnName());
@@ -264,6 +264,16 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
                     throw Exception("Logical error: expected identifier or alias, got: " + key->getID(), ErrorCodes::LOGICAL_ERROR);
                 data.join_using_columns.insert(alias);
             }
+    }
+}
+
+void RestoreQualifiedNamesData::visit(ASTIdentifier & identifier, ASTPtr & ast)
+{
+    if (IdentifierSemantic::getColumnName(identifier) &&
+        IdentifierSemantic::getMembership(identifier))
+    {
+        ast = identifier.clone();
+        ast->as<ASTIdentifier>()->restoreCompoundName();
     }
 }
 

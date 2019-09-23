@@ -68,6 +68,10 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 寻呼机支持数据输出。
  - 自定义PostgreSQL类命令。
 
+### clickhouse-flamegraph
+
+  [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
 ## 商业
 
 ### DataGrip

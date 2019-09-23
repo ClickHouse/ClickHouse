@@ -69,6 +69,10 @@ Features:
 - Pager support for the data output.
 - Custom PostgreSQL-like commands.
 
+### clickhouse-flamegraph
+
+[clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) is a specialized tool to visualize the `system.trace_log` as [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
 ## Commercial
 
 ### DataGrip

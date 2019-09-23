@@ -67,7 +67,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
-        if (!getIdentifierName(args[arg_num], cluster_name))
+        if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
             cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
@@ -180,8 +180,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 }
 
 
-TableFunctionRemote::TableFunctionRemote(const std::string & name, bool secure)
-    : name{name}, secure{secure}
+TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
+    : name{name_}, secure{secure_}
 {
     is_cluster_function = name == "cluster";
 

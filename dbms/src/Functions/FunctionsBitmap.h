@@ -13,6 +13,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -30,6 +31,12 @@ namespace ErrorCodes
   * Convert bitmap to integer array:
   * bitmapToArray:	bitmap -> integer[]
   *
+  * Return subset in specified range (not include the range_end):
+  * bitmapSubsetInRange:    bitmap,integer,integer -> bitmap
+  *
+  * Return subset of the smallest `limit` values in set which is no smaller than `range_start`.
+  * bitmapSubsetInRange:    bitmap,integer,integer -> bitmap
+  *
   * Two bitmap and calculation:
   * bitmapAnd:	bitmap,bitmap -> bitmap
   *
@@ -44,6 +51,12 @@ namespace ErrorCodes
   *
   * Retrun bitmap cardinality:
   * bitmapCardinality:	bitmap -> integer
+  *
+  * Retrun the smallest value in the set:
+  * bitmapMin:	bitmap -> integer
+  *
+  * Retrun the greatest value in the set:
+  * bitmapMax:	bitmap -> integer
   *
   * Two bitmap and calculation, return cardinality:
   * bitmapAndCardinality:	bitmap,bitmap -> integer
@@ -192,7 +205,7 @@ public:
         // input data
         const auto & return_type = block.getByPosition(result).type;
         auto res_ptr = return_type->createColumn();
-        ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+        ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
 
         IColumn & res_data = res.getData();
         ColumnArray::Offsets & res_offsets = res.getOffsets();
@@ -240,13 +253,152 @@ private:
     }
 };
 
-template <typename Name>
+template <typename Impl>
+class FunctionBitmapSubset : public IFunction
+{
+public:
+    static constexpr auto name = Impl::name;
+
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSubset<Impl>>(); }
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 3; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
+        if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
+            throw Exception(
+                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        auto arg_type1 = typeid_cast<const DataTypeNumber<UInt32> *>(arguments[1].get());
+        if (!(arg_type1))
+            throw Exception(
+                "Second argument for function " + getName() + " must be UInt32 but it has type " + arguments[1]->getName() + ".",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        auto arg_type2 = typeid_cast<const DataTypeNumber<UInt32> *>(arguments[1].get());
+        if (!(arg_type2))
+            throw Exception(
+                "Third argument for function " + getName() + " must be UInt32 but it has type " + arguments[2]->getName() + ".",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return arguments[0];
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
+        WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
+        if (which.isUInt8())
+            executeIntType<UInt8>(block, arguments, result, input_rows_count);
+        else if (which.isUInt16())
+            executeIntType<UInt16>(block, arguments, result, input_rows_count);
+        else if (which.isUInt32())
+            executeIntType<UInt32>(block, arguments, result, input_rows_count);
+        else if (which.isUInt64())
+            executeIntType<UInt64>(block, arguments, result, input_rows_count);
+        else
+            throw Exception(
+                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+private:
+    using ToType = UInt64;
+
+    template <typename T>
+    void executeIntType(
+        Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+        const
+    {
+        const IColumn * columns[3];
+        bool is_column_const[3];
+        const ColumnAggregateFunction * colAggFunc;
+        const PaddedPODArray<AggregateDataPtr> * container0;
+        const PaddedPODArray<UInt32> * container1, * container2;
+
+        for (size_t i = 0; i < 3; ++i)
+        {
+            columns[i] = block.getByPosition(arguments[i]).column.get();
+            is_column_const[i] = isColumnConst(*columns[i]);
+        }
+        if (is_column_const[0])
+        {
+            colAggFunc = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(columns[0])->getDataColumnPtr().get());
+        }
+        else
+        {
+            colAggFunc = typeid_cast<const ColumnAggregateFunction*>(columns[0]);
+        }
+        container0 = &colAggFunc->getData();
+        if (is_column_const[1])
+            container1 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[1])->getDataColumnPtr().get())->getData();
+        else
+            container1 = &typeid_cast<const ColumnUInt32*>(columns[1])->getData();
+        if (is_column_const[2])
+            container2 = &typeid_cast<const ColumnUInt32*>(typeid_cast<const ColumnConst*>(columns[2])->getDataColumnPtr().get())->getData();
+        else
+            container2 = &typeid_cast<const ColumnUInt32*>(columns[2])->getData();
+
+        auto col_to = ColumnAggregateFunction::create(colAggFunc->getAggregateFunction());
+        col_to->reserve(input_rows_count);
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const AggregateDataPtr dataPtr0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            const AggregateFunctionGroupBitmapData<T>& bd0
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr0);
+            const UInt32 range_start = is_column_const[1] ? (*container1)[0] : (*container1)[i];
+            const UInt32 range_end = is_column_const[2] ? (*container2)[0] : (*container2)[i];
+
+            col_to->insertDefault();
+            AggregateFunctionGroupBitmapData<T> & bd2
+                = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
+            Impl::apply(bd0, range_start, range_end, bd2);
+        }
+        block.getByPosition(result).column = std::move(col_to);
+    }
+};
+
+struct BitmapSubsetInRangeImpl
+{
+public:
+    static constexpr auto name = "bitmapSubsetInRange";
+    template <typename T>
+    static void apply(const AggregateFunctionGroupBitmapData<T> & bd0, UInt32 range_start, UInt32 range_end, AggregateFunctionGroupBitmapData<T> & bd2)
+    {
+        bd0.rbs.rb_range(range_start, range_end, bd2.rbs);
+    }
+};
+
+struct BitmapSubsetLimitImpl
+{
+public:
+    static constexpr auto name = "bitmapSubsetLimit";
+    template <typename T>
+    static void apply(const AggregateFunctionGroupBitmapData<T> & bd0, UInt32 range_start, UInt32 range_end, AggregateFunctionGroupBitmapData<T> & bd2)
+    {
+        bd0.rbs.rb_limit(range_start, range_end, bd2.rbs);
+    }
+};
+
+using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl>;
+using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
+
+template <typename Impl>
 class FunctionBitmapSelfCardinalityImpl : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSelfCardinalityImpl>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmapSelfCardinalityImpl<Impl>>(); }
 
     String getName() const override { return name; }
 
@@ -300,10 +452,43 @@ private:
             = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[0]).column.get());
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateFunctionGroupBitmapData<T> & bd1
+            const AggregateFunctionGroupBitmapData<T> & bd
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(column->getData()[i]);
-            vec_to[i] = bd1.rbs.size();
+            vec_to[i] = Impl::apply(bd);
         }
+    }
+};
+
+struct BitmapCardinalityImpl
+{
+public:
+    static constexpr auto name = "bitmapCardinality";
+    template <typename T>
+    static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bd)
+    {
+        return bd.rbs.size();
+    }
+};
+
+struct BitmapMinImpl
+{
+public:
+    static constexpr auto name = "bitmapMin";
+    template <typename T>
+    static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bd)
+    {
+        return bd.rbs.rb_min();
+    }
+};
+
+struct BitmapMaxImpl
+{
+public:
+    static constexpr auto name = "bitmapMax";
+    template <typename T>
+    static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bd)
+    {
+        return bd.rbs.rb_max();
     }
 };
 
@@ -723,7 +908,9 @@ struct NameBitmapHasAny
     static constexpr auto name = "bitmapHasAny";
 };
 
-using FunctionBitmapSelfCardinality = FunctionBitmapSelfCardinalityImpl<NameBitmapCardinality>;
+using FunctionBitmapSelfCardinality = FunctionBitmapSelfCardinalityImpl<BitmapCardinalityImpl>;
+using FunctionBitmapMin = FunctionBitmapSelfCardinalityImpl<BitmapMinImpl>;
+using FunctionBitmapMax = FunctionBitmapSelfCardinalityImpl<BitmapMaxImpl>;
 using FunctionBitmapAndCardinality = FunctionBitmapCardinality<BitmapAndCardinalityImpl, NameBitmapAndCardinality, UInt64>;
 using FunctionBitmapOrCardinality = FunctionBitmapCardinality<BitmapOrCardinalityImpl, NameBitmapOrCardinality, UInt64>;
 using FunctionBitmapXorCardinality = FunctionBitmapCardinality<BitmapXorCardinalityImpl, NameBitmapXorCardinality, UInt64>;

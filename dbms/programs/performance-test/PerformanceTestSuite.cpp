@@ -4,11 +4,11 @@
 #include <regex>
 #include <thread>
 #include <memory>
+#include <filesystem>
 
 #include <port/unistd.h>
 #include <sys/stat.h>
 
-#include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
 #include <Poco/AutoPtr.h>
@@ -28,6 +28,7 @@
 #include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
+#include <Common/TerminalSize.h>
 
 #include "TestStopConditions.h"
 #include "TestStats.h"
@@ -36,7 +37,7 @@
 #include "ReportBuilder.h"
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 namespace po = boost::program_options;
 
 namespace DB
@@ -324,8 +325,7 @@ try
     using po::value;
     using Strings = DB::Strings;
 
-
-    po::options_description desc("Allowed options");
+    po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help", "produce help message")
         ("lite", "use lite version of output")

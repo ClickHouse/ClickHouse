@@ -118,7 +118,7 @@ public:
     static constexpr auto name = "reverse";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderReverse>(context); }
 
-    FunctionBuilderReverse(const Context & context) : context(context) {}
+    FunctionBuilderReverse(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }

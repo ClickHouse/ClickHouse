@@ -19,6 +19,7 @@ public:
     String from;
     String like;
     bool not_like{false};
+    ASTPtr limit_length;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "ShowTables"; }

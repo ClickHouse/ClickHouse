@@ -25,12 +25,13 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
     const MergeTreeData & storage)
 {
-    fixed_index_granularity = storage.settings.index_granularity;
+    const auto storage_settings = storage.getSettings();
+    fixed_index_granularity = storage_settings->index_granularity;
     /// Granularity is fixed
     if (!storage.canUseAdaptiveGranularity())
         setNonAdaptive();
     else
-        setAdaptive(storage.settings.index_granularity_bytes);
+        setAdaptive(storage_settings->index_granularity_bytes);
 }
 
 

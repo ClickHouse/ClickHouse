@@ -15,6 +15,8 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/TextLog.h>
+#include <Interpreters/MetricLog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -36,6 +38,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -46,6 +49,8 @@ namespace ActionLocks
     extern StorageActionBlockType PartsSend;
     extern StorageActionBlockType ReplicationQueue;
     extern StorageActionBlockType DistributedSend;
+    extern StorageActionBlockType PartsTTLMerge;
+    extern StorageActionBlockType PartsMove;
 }
 
 
@@ -180,6 +185,18 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_MERGES:
             startStopAction(context, query, ActionLocks::PartsMerge, true);
             break;
+        case Type::STOP_TTL_MERGES:
+            startStopAction(context, query, ActionLocks::PartsTTLMerge, false);
+            break;
+        case Type::START_TTL_MERGES:
+            startStopAction(context, query, ActionLocks::PartsTTLMerge, true);
+            break;
+        case Type::STOP_MOVES:
+            startStopAction(context, query, ActionLocks::PartsMove, false);
+            break;
+        case Type::START_MOVES:
+            startStopAction(context, query, ActionLocks::PartsMove, true);
+            break;
         case Type::STOP_FETCHES:
             startStopAction(context, query, ActionLocks::PartsFetch, false);
             break;
@@ -223,7 +240,9 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
                     [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); },
-                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); }
+                    [&] () { if (auto trace_log = context.getTraceLog()) trace_log->flush(); },
+                    [&] () { if (auto text_log = context.getTextLog()) text_log->flush(); },
+                    [&] () { if (auto metric_log = context.getMetricLog()) metric_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -267,6 +286,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         std::string data_path = database->getDataPath();
         auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+        auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
@@ -275,6 +295,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
             system_context,
             system_context.getGlobalContext(),
             columns,
+            constraints,
             create.attach,
             false);
 
@@ -318,7 +339,17 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     StoragePtr table = context.getTable(database_name, table_name);
 
     if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-        storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+    {
+        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
+        if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
+        {
+            LOG_ERROR(log, "SYNC REPLICA " + database_name + "." + table_name + ": Timed out!");
+            throw Exception(
+                    "SYNC REPLICA " + database_name + "." + table_name + ": command timed out! "
+                    "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
+        }
+        LOG_TRACE(log, "SYNC REPLICA " + database_name + "." + table_name + ": OK");
+    }
     else
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
 }

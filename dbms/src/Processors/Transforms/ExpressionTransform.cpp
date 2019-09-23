@@ -11,11 +11,11 @@ static Block transformHeader(Block header, const ExpressionActionsPtr & expressi
 }
 
 
-ExpressionTransform::ExpressionTransform(const Block & header, ExpressionActionsPtr expression, bool on_totals, bool default_totals)
-    : ISimpleTransform(header, transformHeader(header, expression), on_totals)
-    , expression(std::move(expression))
-    , on_totals(on_totals)
-    , default_totals(default_totals)
+ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_, bool on_totals_, bool default_totals_)
+    : ISimpleTransform(header_, transformHeader(header_, expression_), on_totals_)
+    , expression(std::move(expression_))
+    , on_totals(on_totals_)
+    , default_totals(default_totals_)
 {
 }
 
