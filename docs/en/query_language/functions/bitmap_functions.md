@@ -292,6 +292,56 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────┘
 ```
 
+## bitmapMin
+
+Retrun smallest value of type UInt64 in the set, UINT32_MAX if the set is empty.
+
+
+```
+bitmapMin(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+``` sql
+SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+## bitmapMax
+
+Retrun smallest value of type UInt64 in the set, 0 if the set is empty.
+
+
+```
+bitmapMax(bitmap)
+```
+
+**Parameters**
+
+- `bitmap` – bitmap object.
+
+**Example**
+
+``` sql
+SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
+```
+
+```
+┌─res─┐
+│   5 │
+└─────┘
+```
+
 ## bitmapAndCardinality
 
 Two bitmap and calculation, return cardinality of type UInt64.

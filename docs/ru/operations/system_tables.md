@@ -81,6 +81,45 @@ user String — имя пользователя, которого использ
 - `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
 - `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
 
+## system.contributors {#system_contributors}
+
+Содержит информацию о контрибьютерах. Контрибьютеры расположены в таблице в случайном порядке. Порядок определяется заново при каждом запросе.
+
+Столбцы:
+
+- `name` (String) — Имя контрибьютера (автора коммита) из git log.
+
+**Пример**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+Чтобы найти себя в таблице, выполните запрос:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
+
 ## system.databases
 
 Таблица содержит один столбец name типа String - имя базы данных.
