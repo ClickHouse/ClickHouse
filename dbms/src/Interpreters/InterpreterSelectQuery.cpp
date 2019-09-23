@@ -790,7 +790,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
     if (query.limitLength())
     {
         length = getLimitUIntValue(query.limitLength(), context);
-        if (query.limitOffset())
+        if (query.limitOffset() && length)
             offset = getLimitUIntValue(query.limitOffset(), context);
     }
 
@@ -1118,9 +1118,9 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
                 }
 
-                if (auto join = expressions.before_join->getTableJoin())
+                if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
                 {
-                    if (auto stream = join->createStreamWithNonJoinedDataIfFullOrRightJoin(header_before_join, settings.max_block_size))
+                    if (auto stream = join->createStreamWithNonJoinedRows(header_before_join, settings.max_block_size))
                     {
                         if constexpr (pipeline_with_processors)
                         {
@@ -1209,33 +1209,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
-                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
             }
-            else
-            {
-                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
+            else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
+                throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::LOGICAL_ERROR);
 
-                if (query.group_by_with_totals && !aggregate_final)
-                {
-                    bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
-                    executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
-                }
-
-                if ((query.group_by_with_rollup || query.group_by_with_cube) && !aggregate_final)
-                {
-                    if (query.group_by_with_rollup)
-                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                    else if (query.group_by_with_cube)
-                        executeRollupOrCube(pipeline, Modificator::CUBE);
-
-                    if (expressions.has_having)
-                    {
-                        if (query.group_by_with_totals)
-                            throw Exception("WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING", ErrorCodes::NOT_IMPLEMENTED);
-                        executeHaving(pipeline, expressions.before_having);
-                    }
-                }
-            }
+            need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
 
             if (expressions.has_order_by)
             {
