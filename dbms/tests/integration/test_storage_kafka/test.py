@@ -249,6 +249,21 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
 
 
 @pytest.mark.timeout(180)
+def test_kafka_select_empty(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'empty',
+                     kafka_group_name = 'empty',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+        ''')
+
+    assert int(instance.query('SELECT count() FROM test.kafka')) == 0
+
+
+@pytest.mark.timeout(180)
 def test_kafka_json_without_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)

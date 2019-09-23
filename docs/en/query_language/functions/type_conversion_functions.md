@@ -194,7 +194,7 @@ When converting dates with times to numbers or vice versa, the date with time co
 
 The date and date-with-time formats for the toDate/toDateTime functions are defined as follows:
 
-```
+```text
 YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
@@ -207,13 +207,13 @@ Conversion between numeric types uses the same rules as assignments between diff
 
 Additionally, the toString function of the DateTime argument can take a second String argument containing the name of the time zone. Example: `Asia/Yekaterinburg` In this case, the time is formatted according to the specified time zone.
 
-``` sql
+```sql
 SELECT
     now() AS now_local,
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
 ```
 
-```
+```text
 ┌───────────now_local─┬─now_yekat───────────┐
 │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
 └─────────────────────┴─────────────────────┘
@@ -232,21 +232,21 @@ Accepts a String or FixedString argument. Returns the String with the content tr
 
 Example:
 
-``` sql
+```sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```
+```text
 ┌─s─────────────┬─s_cut─┐
 │ foo\0\0\0\0\0 │ foo   │
 └───────────────┴───────┘
 ```
 
-``` sql
+```sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```
+```text
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
@@ -278,7 +278,7 @@ Converts 'x' to the 't' data type. The syntax CAST(x AS t) is also supported.
 
 Example:
 
-``` sql
+```sql
 SELECT
     '2016-06-15 23:00:00' AS timestamp,
     CAST(timestamp AS DateTime) AS datetime,
@@ -287,7 +287,7 @@ SELECT
     CAST(timestamp, 'FixedString(22)') AS fixed_string
 ```
 
-```
+```text
 ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
@@ -297,16 +297,19 @@ Conversion to FixedString(N) only works for arguments of type String or FixedStr
 
 Type conversion to [Nullable](../../data_types/nullable.md) and back is supported. Example:
 
-```
+```sql
 SELECT toTypeName(x) FROM t_null
-
+```
+```text
 ┌─toTypeName(x)─┐
 │ Int8          │
 │ Int8          │
 └───────────────┘
-
+```
+```sql
 SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
-
+```
+```text
 ┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
 │ Nullable(UInt16)                        │
 │ Nullable(UInt16)                        │
@@ -328,7 +331,7 @@ SELECT
     date + interval_to_week
 ```
 
-```
+```text
 ┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
 │                2019-01-08 │                   2019-01-08 │
 └───────────────────────────┴──────────────────────────────┘

@@ -8,7 +8,6 @@
 #include <queue>
 #include <list>
 #include <optional>
-#include <ext/singleton.h>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
@@ -121,10 +120,11 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
   * - address sanitizer and thread sanitizer will not fail due to global limit on number of created threads.
   * - program will work faster in gdb;
   */
-class GlobalThreadPool : public FreeThreadPool, public ext::singleton<GlobalThreadPool>
+class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
 public:
     GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000) {}
+    static GlobalThreadPool & instance();
 };
 
 

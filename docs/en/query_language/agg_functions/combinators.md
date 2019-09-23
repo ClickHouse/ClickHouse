@@ -48,7 +48,7 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 
 Allows to divide data by groups, and then separately aggregates the data in those groups. Groups are created by splitting the values of one of the columns into intervals.
 
-```
+```sql
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 

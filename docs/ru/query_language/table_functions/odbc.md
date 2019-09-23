@@ -2,7 +2,7 @@
 
 Возвращает таблицу, подключенную через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-```
+```sql
 odbc(connection_settings, external_database, external_table)
 ```
 
@@ -26,15 +26,17 @@ odbc(connection_settings, external_database, external_table)
 
 По умолчанию (если установлен из пакетов) ClickHouse запускается от имени пользователя `clickhouse`. Таким образом, вам нужно создать и настроить этого пользователя на сервере MySQL.
 
+```bash
+$ sudo mysql
 ```
-sudo mysql
+```sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
 Теперь настроим соединение в `/etc/odbc.ini`.
 
-```
+```bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -47,8 +49,8 @@ PASSWORD = clickhouse
 
 Вы можете проверить соединение с помощью утилиты `isql` из установки unixODBC.
 
-```
-isql -v mysqlconn
+```bash
+$ isql -v mysqlconn
 +---------------------------------------+
 | Connected!                            |
 |                                       |
@@ -57,7 +59,7 @@ isql -v mysqlconn
 
 Таблица в MySQL:
 
-```
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,

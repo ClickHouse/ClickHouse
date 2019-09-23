@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 #include "MySQLHandler.h"
 
 #include <limits>
@@ -301,3 +303,4 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 }
 
 }
+#endif

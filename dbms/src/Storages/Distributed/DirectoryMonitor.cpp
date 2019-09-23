@@ -41,7 +41,6 @@ namespace ErrorCodes
 
 namespace
 {
-    static constexpr const std::chrono::seconds max_sleep_time{30};
     static constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
@@ -66,6 +65,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
+    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
 {
@@ -138,7 +138,7 @@ void StorageDistributedDirectoryMonitor::run()
                 ++error_count;
                 sleep_time = std::min(
                     std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
-                    std::chrono::milliseconds{max_sleep_time});
+                    max_sleep_time);
                 tryLogCurrentException(getLoggerName().data());
             }
         }
@@ -392,7 +392,8 @@ struct StorageDistributedDirectoryMonitor::Batch
                 remote->writePrepared(in);
             }
 
-            remote->writeSuffix();
+            if (remote)
+                remote->writeSuffix();
         }
         catch (const Exception & e)
         {

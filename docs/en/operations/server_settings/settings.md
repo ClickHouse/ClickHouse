@@ -141,7 +141,8 @@ Settings:
 - timeout – The timeout for sending data, in seconds.
 - root_path – Prefix for keys.
 - metrics – Sending data from a :ref:`system_tables-system.metrics` table.
-- events – Sending data from a :ref:`system_tables-system.events` table.
+- events – Sending deltas data accumulated for the time period from a :ref:`system_tables-system.events` table
+- events_cumulative – Sending cumulative data from a :ref:`system_tables-system.events` table
 - asynchronous_metrics – Sending data from a :ref:`system_tables-system.asynchronous_metrics` table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
@@ -157,6 +158,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
     <root_path>one_min</root_path>
     <metrics>true</metrics>
     <events>true</events>
+    <events_cumulative>false</events_cumulative>
     <asynchronous_metrics>true</asynchronous_metrics>
 </graphite>
 ```
@@ -773,5 +775,19 @@ If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_e
     Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 
 **Default value:** 0.
+
+## disable_internal_dns_cache {#server-settings-disable_internal_dns_cache}
+
+Disables the internal DNS cache. Recommended for operating ClickHouse in systems
+with frequently changing infrastructure such as Kubernetes.
+
+**Default value:** 0.
+
+## dns_cache_update_period {#server-settings-dns_cache_update_period}
+
+The period of updating IP addresses stored in the ClickHouse internal DNS cache (in seconds).
+The update is performed asynchronously, in a separate system thread.
+
+**Default value**: 15.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

@@ -1,5 +1,7 @@
 #include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/Join.h>
+#include <Interpreters/MergeJoin.h>
 #include <DataStreams/LazyBlockInputStream.h>
 
 namespace DB
@@ -29,6 +31,28 @@ void SubqueryForSet::renameColumns(Block & block)
             block.insert(std::move(column));
         }
     }
+}
+
+void SubqueryForSet::setJoinActions(ExpressionActionsPtr actions)
+{
+    actions->execute(sample_block);
+    joined_block_actions = actions;
+}
+
+bool SubqueryForSet::insertJoinedBlock(Block & block)
+{
+    renameColumns(block);
+
+    if (joined_block_actions)
+        joined_block_actions->execute(block);
+
+    return join->addJoinedBlock(block);
+}
+
+void SubqueryForSet::setTotals()
+{
+    if (join && source)
+        join->setTotals(source->getTotals());
 }
 
 }

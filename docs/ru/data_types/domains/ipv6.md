@@ -10,7 +10,7 @@ CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
 DESCRIBE TABLE hits;
 ```
 
-```
+```text
 ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
 │ url  │ String │              │                    │         │                  │
 │ from │ IPv6   │              │                    │         │                  │
@@ -31,7 +31,7 @@ INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:31
 SELECT * FROM hits;
 ```
 
-```
+```text
 ┌─url────────────────────────────────┬─from──────────────────────────┐
 │ https://clickhouse.yandex          │ 2001:44c8:129:2632:33:0:252:2 │
 │ https://clickhouse.yandex/docs/en/ │ 2a02:e980:1e::1               │
@@ -45,7 +45,7 @@ SELECT * FROM hits;
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 ```
 
-```
+```text
 ┌─toTypeName(from)─┬─hex(from)────────────────────────┐
 │ IPv6             │ 200144C8012926320033000002520002 │
 └──────────────────┴──────────────────────────────────┘
@@ -58,7 +58,7 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 SELECT toTypeName(s), IPv6NumToString(from) AS s FROM hits LIMIT 1;
 ```
 
-```
+```text
 ┌─toTypeName(IPv6NumToString(from))─┬─s─────────────────────────────┐
 │ String                            │ 2001:44c8:129:2632:33:0:252:2 │
 └───────────────────────────────────┴───────────────────────────────┘
@@ -70,7 +70,7 @@ SELECT toTypeName(s), IPv6NumToString(from) AS s FROM hits LIMIT 1;
 SELECT toTypeName(i), CAST(from AS FixedString(16)) AS i FROM hits LIMIT 1;
 ```
 
-```
+```text
 ┌─toTypeName(CAST(from, 'FixedString(16)'))─┬─i───────┐
 │ FixedString(16)                           │  ��� │
 └───────────────────────────────────────────┴─────────┘

@@ -7,16 +7,13 @@ For example, literal [NULL](../../query_language/syntax.md#null-literal) has typ
 
 The `Nothing` type can also used to denote empty arrays:
 
-```bash
-:) SELECT toTypeName(array())
-
-SELECT toTypeName([])
-
+```sql
+SELECT toTypeName(array())
+```
+```text
 ┌─toTypeName(array())─┐
 │ Array(Nothing)      │
 └─────────────────────┘
-
-1 rows in set. Elapsed: 0.062 sec.
 ```
 
 

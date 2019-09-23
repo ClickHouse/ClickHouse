@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -49,6 +50,7 @@ namespace ActionLocks
     extern StorageActionBlockType ReplicationQueue;
     extern StorageActionBlockType DistributedSend;
     extern StorageActionBlockType PartsTTLMerge;
+    extern StorageActionBlockType PartsMove;
 }
 
 
@@ -188,6 +190,12 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_TTL_MERGES:
             startStopAction(context, query, ActionLocks::PartsTTLMerge, true);
+            break;
+        case Type::STOP_MOVES:
+            startStopAction(context, query, ActionLocks::PartsMove, false);
+            break;
+        case Type::START_MOVES:
+            startStopAction(context, query, ActionLocks::PartsMove, true);
             break;
         case Type::STOP_FETCHES:
             startStopAction(context, query, ActionLocks::PartsFetch, false);
@@ -331,7 +339,17 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     StoragePtr table = context.getTable(database_name, table_name);
 
     if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-        storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+    {
+        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
+        if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
+        {
+            LOG_ERROR(log, "SYNC REPLICA " + database_name + "." + table_name + ": Timed out!");
+            throw Exception(
+                    "SYNC REPLICA " + database_name + "." + table_name + ": command timed out! "
+                    "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
+        }
+        LOG_TRACE(log, "SYNC REPLICA " + database_name + "." + table_name + ": OK");
+    }
     else
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
 }
