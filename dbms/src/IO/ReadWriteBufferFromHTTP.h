@@ -61,7 +61,8 @@ public:
 
     void updateSession(const Poco::URI & uri)
     {
-        if (redirects++<max_redirects)
+        ++redirects;
+        if (redirects <= max_redirects)
         {
             buildNewSession(uri);
         }
@@ -78,6 +79,7 @@ public:
     {
     }
 };
+
 
 namespace detail
 {
