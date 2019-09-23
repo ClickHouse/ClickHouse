@@ -315,9 +315,9 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 #### Functions Support
 
-Conditions in the `WHERE` clause contain calls of functions over the columns. If the column is a part of some index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subset of functions for using indexes.
+Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
 
-The `set` index can be used with all functions. Functions subsets for other indexes are in the table below.
+The `set` index can be used with all functions. Function subsets for other indexes are shown in the table below.
 
 Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter
 ----------------------------|-------------|--------|------------|------------|---------------
@@ -326,7 +326,7 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
 [notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
 [startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
-[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ |
+[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ | ✗
 [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
 [in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
@@ -338,9 +338,9 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✔ | ✗ | ✗ | ✗
 hasToken  | ✗ | ✗ | ✗ | ✔ | ✗ 
 
-Functions with a constant argument less than ngram size couldn't be used by `ngrambf_v1` for the query optimization.
+Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `bloom_filter` indexes couldn't be used for optimizing queries where the result of a function is expected to be false, for example:
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can't be used for optimizing queries where the result of a function is expected to be false, for example:
 
 - Can be optimized:
     - `s LIKE '%test%'`
