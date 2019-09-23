@@ -385,7 +385,7 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     }
 
 #ifndef NDEBUG
-    block.checkNumberOfRows();
+    block.checkNumberOfRows(true);
 #endif
 
     return indexes;
