@@ -368,7 +368,7 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
                 indexes = dict_encoded.indexes;
             }
 
-            num_rows = low_cardinality_column->getDictionary().size();
+            num_rows = column.column->size();
             column.type = low_cardinality_type->getDictionaryType();
         }
     }
