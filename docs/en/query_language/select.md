@@ -112,7 +112,8 @@ In contrast to standard SQL, a synonym does not need to be specified after a sub
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 
-The `FINAL` modifier can be used in the `SELECT` select query for aggregating engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to a selection that includes columns related to the primary key, in addition to the columns specified in the `SELECT`. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
+The `FINAL` modifier can be used in the `SELECT` select query for engines from the [MergeTree](../operations/table_engines/mergetree.md) family. When you specify `FINAL`, data is selected fully "merged". Keep in mind that using `FINAL` leads to reading columns related to the primary key, in addition to the columns specified in the query. Additionally, the query will be executed in a single thread, and data will be merged during query execution. This means that when using `FINAL`, the query is processed slowly. In the most cases, avoid using `FINAL`.
+The `FINAL` modifier can be applied for all engines of MergeTree family that do data transformations in background merges (except GraphiteMergeTree).
 
 ### SAMPLE Clause {#select-sample-clause}
 
