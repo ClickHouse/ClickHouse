@@ -5,22 +5,25 @@ Build should work on Mac OS X 10.12.
 ## Install Homebrew
 
 ```bash
-/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+$ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
 ## Install Required Compilers, Tools, and Libraries
 
 ```bash
-brew install cmake ninja gcc icu4c openssl libtool gettext readline gperf
+$ brew install cmake ninja gcc icu4c openssl libtool gettext readline gperf
 ```
 
 ## Checkout ClickHouse Sources
 
 ```bash
-git clone --recursive git@github.com:yandex/ClickHouse.git
-# or: git clone --recursive https://github.com/yandex/ClickHouse.git
+$ git clone --recursive git@github.com:yandex/ClickHouse.git
+```
+or
+```bash
+$ git clone --recursive https://github.com/yandex/ClickHouse.git
 
-cd ClickHouse
+$ cd ClickHouse
 ```
 
 For the latest stable version, switch to the `stable` branch.
@@ -28,11 +31,11 @@ For the latest stable version, switch to the `stable` branch.
 ## Build ClickHouse
 
 ```bash
-mkdir build
-cd build
-cmake .. -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8`
-ninja
-cd ..
+$ mkdir build
+$ cd build
+$ cmake .. -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8`
+$ ninja
+$ cd ..
 ```
 
 ## Caveats
@@ -45,7 +48,7 @@ If you intend to run clickhouse-server, make sure to increase the system's maxfi
 To do so, create the following file:
 
 /Library/LaunchDaemons/limit.maxfiles.plist:
-``` xml
+```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
         "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -70,7 +73,7 @@ To do so, create the following file:
 ```
 
 Execute the following command:
-``` bash
+```bash
 $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
