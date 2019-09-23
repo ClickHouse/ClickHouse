@@ -295,6 +295,48 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 
+#### Поддержка для функций
+
+Условия в секции `WHERE` содержат вызовы функций, оперирующих со столбцами. Если столбец - часть индекса, ClickHouse пытается использовать индекс при выполнении функции. Для разных видов индексов, ClickHouse поддерживает различные наборы функций, которые могут использоваться индексами.
+
+Индекс `set` используется со всеми функциями. Наборы функций для остальных индексов представлены в таблице ниже.
+
+Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter
+----------------------------|-------------|--------|------------|------------|---------------
+[equals (=, ==)](../../query_language/functions/comparison_functions.md#function-equals) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[notEquals(!=, <>)](../../query_language/functions/comparison_functions.md#function-notequals) | ✔ | ✔ | ✔ | ✔ | ✔
+[like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
+[notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
+[startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
+[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ | ✗
+[multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
+[in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
+[less (<)](../../query_language/functions/comparison_functions.md#function-less) | ✔ | ✔ | ✗ | ✗ | ✗
+[greater (>)](../../query_language/functions/comparison_functions.md#function-greater) | ✔ | ✔ | ✗ | ✗ | ✗
+[lessOrEquals (<=)](../../query_language/functions/comparison_functions.md#function-lessorequals) | ✔ | ✔ | ✗ | ✗ | ✗
+[greaterOrEquals (>=)](../../query_language/functions/comparison_functions.md#function-greaterorequals) | ✔ | ✔ | ✗ | ✗ | ✗
+[empty](../../query_language/functions/array_functions.md#function-empty)  | ✔ | ✔ | ✗ | ✗ | ✗
+[notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✔ | ✗ | ✗ | ✗
+hasToken  | ✗ | ✗ | ✗ | ✔ | ✗ 
+
+Функции с постоянным агрументом, который меньше, чем размер ngram не могут использовать индекс `ngrambf_v1` для оптимизации запроса.
+
+Фильтры Блума могут иметь ложнопозитивные срабатывания, следовательно индексы `ngrambf_v1`, `tokenbf_v1` и `bloom_filter` невозможно использовать для оптимизации запросов, в которых результат функции предполается false, например:
+
+- Можно оптимизировать:
+    - `s LIKE '%test%'`
+    - `NOT s NOT LIKE '%test%'`
+    - `s = 1`
+    - `NOT s != 1`
+    - `startsWith(s, 'test')`
+- Нельзя оптимизировать:
+    - `NOT s LIKE '%test%'`
+    - `s NOT LIKE '%test%'`
+    - `NOT s = 1`
+    - `s != 1`
+    - `NOT startsWith(s, 'test')`
+
 ## Конкурентный доступ к данным
 
 Для конкурентного доступа к таблице используется мультиверсионность. То есть, при одновременном чтении и обновлении таблицы, данные будут читаться из набора кусочков, актуального на момент запроса. Длинных блокировок нет. Вставки никак не мешают чтениям.
