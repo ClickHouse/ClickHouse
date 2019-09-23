@@ -57,7 +57,23 @@ RUN apt-get update -y \
             gperf \
             cmake \
             gdb \
-            rename
+            rename \
+            wget
+
+# Build and install tools for cross-linking to Darwin
+
+ENV CC=clang-8
+ENV CXX=clang++-8
+
+# libtapi is required to support .tbh format from recent MacOS SDKs
+RUN git clone https://github.com/tpoechtrager/apple-libtapi.git
+RUN cd apple-libtapi && INSTALLPREFIX=/cctools ./build.sh && ./install.sh
+
+RUN git clone https://github.com/tpoechtrager/cctools-port.git
+RUN cd cctools-port/cctools && ./configure --prefix=/cctools --with-libtapi=/cctools --target=x86_64-apple-darwin && make install
+
+RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
+RUN tar xJf MacOSX10.14.sdk.tar.xz -C /cctools
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
