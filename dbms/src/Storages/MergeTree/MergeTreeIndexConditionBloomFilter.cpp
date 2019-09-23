@@ -310,7 +310,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 throw Exception("First argument for function has must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             Field converted_field = convertFieldToType(value_field, *array_type->getNestedType(), &*value_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*index_type, converted_field)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*array_type->getNestedType(), converted_field)));
         }
         else
         {

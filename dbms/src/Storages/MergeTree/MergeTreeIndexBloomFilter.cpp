@@ -83,7 +83,7 @@ static void assertIndexColumnsType(const Block & header)
         }
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
-            !which.isDateOrDateTime() && !which.isEnum() && !which.isArray())
+            !which.isDateOrDateTime() && !which.isEnum())
             throw Exception("Unexpected type " + columns_data_types[index]->getName() + " of bloom filter index.",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
