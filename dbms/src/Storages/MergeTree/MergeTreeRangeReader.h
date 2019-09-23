@@ -47,10 +47,10 @@ public:
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(Block & block, size_t from_mark, size_t offset, size_t num_rows);
+        size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
         /// Skip extra rows to current_offset and perform actual reading
-        size_t finalize(Block & block);
+        size_t finalize(Columns & columns);
 
         bool isFinished() const { return is_finished; }
 
@@ -69,7 +69,7 @@ public:
 
         /// Current position from the begging of file in rows
         size_t position() const;
-        size_t readRows(Block & block, size_t num_rows);
+        size_t readRows(Columns & columns, size_t num_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -81,8 +81,8 @@ public:
         Stream(size_t from_mark, size_t to_mark, MergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(Block & block, size_t num_rows, bool skip_remaining_rows_in_current_granule);
-        size_t finalize(Block & block);
+        size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t finalize(Columns & columns);
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
@@ -112,7 +112,7 @@ public:
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
-        size_t readRows(Block & block, size_t num_rows);
+        size_t readRows(Columns & columns, size_t num_rows);
         void toNextMark();
     };
 
@@ -143,7 +143,7 @@ public:
         /// Filter you need to apply to newly-read columns in order to add them to block.
         const ColumnUInt8 * getFilter() const { return filter; }
 
-        void addGranule(size_t num_rows);
+        void addGranule(size_t num_rows_);
         void adjustLastGranule();
         void addRows(size_t rows) { num_read_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
@@ -158,6 +158,7 @@ public:
         void addNumBytesRead(size_t count) { num_bytes_read += count; }
 
         Columns columns;
+        size_t num_rows = 0;
 
     private:
         RangesInfo started_ranges;
@@ -187,9 +188,9 @@ public:
 private:
 
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
-    Block continueReadingChain(ReadResult & result);
+    Columns continueReadingChain(ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
-    void filterBlock(Block & block, const IColumn::Filter & filter) const;
+    void filterColumns(Columns & columns, const IColumn::Filter & filter) const;
 
     MergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
