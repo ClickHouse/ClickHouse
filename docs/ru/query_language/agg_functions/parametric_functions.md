@@ -21,7 +21,7 @@
 
 Это вырожденный пример. Его можно записать с помощью других агрегатных функций:
 
-```
+```sql
 minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 ```
 
@@ -53,7 +53,7 @@ minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 Отыскивает цепочки событий в скользящем окне по времени и вычисляет максимальное количество произошедших событий из цепочки.
 
 
-```
+```sql
 windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 ```
 
@@ -85,7 +85,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 
 Чтобы узнать, как далеко пользователь `user_id` смог пройти по цепочке за час в январе 2017-го года, составим запрос:
 
-```
+```sql
 SELECT
     level,
     count() AS c
@@ -121,7 +121,7 @@ ORDER BY level
 
 Пример применения:
 
-```
+```text
 Задача: показывать в отчёте только поисковые фразы, по которым было хотя бы 5 уникальных посетителей.
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```

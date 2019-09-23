@@ -10,7 +10,7 @@ After executing an ATTACH query, the server will know about the existence of the
 
 If the table was previously detached (``DETACH``), meaning that its structure is known, you can use shorthand without defining the structure.
 
-``` sql
+```sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -20,7 +20,7 @@ This query is used when starting the server. The server stores table metadata as
 
 Checks if the data in the table is corrupted.
 
-``` sql
+```sql
 CHECK TABLE [db.]name
 ```
 
@@ -56,7 +56,7 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 
 ## DESCRIBE TABLE {#misc-describe-table}
 
-``` sql
+```sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -74,7 +74,7 @@ Nested data structures are output in "expanded" format. Each column is shown sep
 
 Deletes information about the 'name' table from the server. The server stops knowing about the table's existence.
 
-``` sql
+```sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -87,14 +87,14 @@ There is no `DETACH DATABASE` query.
 
 This query has two types: `DROP DATABASE` and `DROP TABLE`.
 
-``` sql
+```sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
 If `IF EXISTS` is specified, it doesn't return an error if the database doesn't exist.
 
-``` sql
+```sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -103,7 +103,7 @@ If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exi
 
 ## EXISTS
 
-``` sql
+```sql
 EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -111,7 +111,7 @@ Returns a single `UInt8`-type column, which contains the single value `0` if the
 
 ## KILL QUERY
 
-``` sql
+```sql
 KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
@@ -123,7 +123,7 @@ The queries to terminate are selected from the system.processes table using the 
 
 Examples:
 
-``` sql
+```sql
 -- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
@@ -173,7 +173,7 @@ Changes already made by the mutation are not rolled back.
 
 ## OPTIMIZE {#misc_operations-optimize}
 
-``` sql
+```sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
@@ -192,7 +192,7 @@ When `OPTIMIZE` is used with [ReplicatedMergeTree](../operations/table_engines/r
 
 Renames one or more tables.
 
-``` sql
+```sql
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
@@ -216,7 +216,7 @@ For more information, see [Settings](../operations/settings/settings.md).
 
 ## SHOW CREATE TABLE
 
-``` sql
+```sql
 SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -224,7 +224,7 @@ Returns a single `String`-type 'statement' column, which contains a single value
 
 ## SHOW DATABASES {#show-databases}
 
-``` sql
+```sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -235,7 +235,7 @@ See also the section "Formats".
 
 ## SHOW PROCESSLIST
 
-``` sql
+```sql
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -262,12 +262,12 @@ This query is nearly identical to: `SELECT * FROM system.processes`. The differe
 Tip (execute in the console):
 
 ```bash
-watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
 ## SHOW TABLES
 
-``` sql
+```sql
 SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -282,7 +282,7 @@ See also the section "LIKE operator".
 
 ## TRUNCATE
 
-``` sql
+```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -292,7 +292,7 @@ The `TRUNCATE` query is not supported for [View](../operations/table_engines/vie
 
 ## USE
 
-``` sql
+```sql
 USE db
 ```
 

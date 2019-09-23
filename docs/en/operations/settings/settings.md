@@ -179,7 +179,8 @@ Insert the [DateTime](../../data_types/datetime.md) type value with the differen
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Exception on client:
 Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
 ```
@@ -187,7 +188,8 @@ Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 
 ```sql
 SET input_format_values_interpret_expressions = 1;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Ok.
 ```
 
@@ -196,7 +198,8 @@ The last query is equivalent to the following:
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t SELECT now()
-
+```
+```text
 Ok.
 ```
 
@@ -599,7 +602,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 
 ### Random (by default) {#load_balancing-random}
 
-```
+```sql
 load_balancing = random
 ```
 
@@ -608,7 +611,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-```
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -622,7 +625,7 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### In Order {#load_balancing-in_order}
 
-```
+```sql
 load_balancing = in_order
 ```
 
@@ -632,7 +635,7 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-```
+```sql
 load_balancing = first_or_random
 ```
 

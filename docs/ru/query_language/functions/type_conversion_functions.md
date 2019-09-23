@@ -116,7 +116,7 @@ SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val)
 
 Форматы даты и даты-с-временем для функций toDate/toDateTime определены следующим образом:
 
-```
+```text
 YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
@@ -135,7 +135,7 @@ SELECT
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
 ```
 
-```
+```text
 ┌───────────now_local─┬─now_yekat───────────┐
 │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
 └─────────────────────┴─────────────────────┘
@@ -158,7 +158,7 @@ SELECT
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```
+```text
 ┌─s─────────────┬─s_cut─┐
 │ foo\0\0\0\0\0 │ foo   │
 └───────────────┴───────┘
@@ -168,7 +168,7 @@ SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```
+```text
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
@@ -202,7 +202,7 @@ SELECT
     CAST(timestamp, 'FixedString(22)') AS fixed_string
 ```
 
-```
+```text
 ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
@@ -212,16 +212,19 @@ SELECT
 
 Поддержано преобразование к типу [Nullable](../../data_types/nullable.md) и обратно. Пример:
 
-```
+```sql
 SELECT toTypeName(x) FROM t_null
-
+```
+```text
 ┌─toTypeName(x)─┐
 │ Int8          │
 │ Int8          │
 └───────────────┘
-
+```
+```sql
 SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
-
+```
+```text
 ┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
 │ Nullable(UInt16)                        │
 │ Nullable(UInt16)                        │

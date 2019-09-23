@@ -45,7 +45,7 @@
 
 Заменяет некорректные символы UTF-8 на символ `�` (U+FFFD). Все идущие подряд некорректные символы схлопываются в один заменяющий символ.
 
-```
+```sql
 toValidUTF8( input_string )
 ```
 
@@ -80,13 +80,16 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 
 ```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
-
+```
+```text
 ┌─format('{1} {0} {1}', 'World', 'Hello')─┐
 │ Hello World Hello                       │
 └─────────────────────────────────────────┘
-
+```
+```sql
 SELECT format('{} {}', 'Hello', 'World')
-
+```
+```text
 ┌─format('{} {}', 'Hello', 'World')─┐
 │ Hello World                       │
 └───────────────────────────────────┘

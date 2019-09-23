@@ -115,7 +115,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Пример**
 
-```
+```sql
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
@@ -139,7 +139,7 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 
 Рассмотрим первичный ключ — `(CounterID, Date)`. В этом случае сортировку и индекс можно проиллюстрировать следующим образом:
 
-```
+```text
 Whole data:     [-------------------------------------------------------------------------]
 CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
 Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
@@ -210,7 +210,7 @@ ClickHouse не требует уникального первичного кл�
 
 Рассмотрим движок сконфигурированный следующим образом:
 
-```
+```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity=8192
 ```
 
@@ -309,14 +309,14 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 
 Таблица должна иметь столбец типа [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md). Для установки времени жизни данных, следует использовать операцию со столбцом с временем, например:
 
-```
+```sql
 TTL time_column
 TTL time_column + interval
 ```
 
 Чтобы задать `interval`, используйте операторы [интервала времени](../../query_language/operators.md#operators-datetime).
 
-```
+```sql
 TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
