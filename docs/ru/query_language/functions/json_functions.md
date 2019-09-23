@@ -35,7 +35,7 @@
 
 Примеры:
 
-```json
+```sql
 visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
@@ -46,7 +46,7 @@ visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 
 Примеры:
 
-```json
+```sql
 visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
 visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
 visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
@@ -66,8 +66,8 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 Примеры:
 
 ```sql
-select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
-select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 ```
 
 `indices_or_keys` — это список из нуля или более аргументов каждый из них может быть либо строкой либо целым числом.
@@ -83,11 +83,11 @@ select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 Примеры:
 
 ```sql
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
-select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
+SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
 ## JSONLength(json[, indices_or_keys]...)
@@ -99,8 +99,8 @@ select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 Примеры:
 
 ```sql
-select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
-select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
 ## JSONType(json[, indices_or_keys]...)
@@ -112,9 +112,9 @@ select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 Примеры:
 
 ```sql
-select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
-select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
-select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
 ## JSONExtractUInt(json[, indices_or_keys]...)
@@ -132,9 +132,9 @@ select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 Примеры:
 
 ```sql
-select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
-select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
-select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
+SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
+SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
 ## JSONExtractString(json[, indices_or_keys]...)
@@ -148,11 +148,11 @@ select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 Примеры:
 
 ```sql
-select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
-select JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
-select JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
-select JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
-select JSONExtractString('{"abc":"hello}', 'abc') = ''
+SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
+SELECT JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
+SELECT JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
+SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
+SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
 ## JSONExtract(json[, indices_or_keys...], return_type)
@@ -195,7 +195,7 @@ SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8')
 Пример:
 
 ```sql
-select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/json_functions/) <!--hide-->

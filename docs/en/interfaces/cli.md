@@ -7,6 +7,8 @@ $ clickhouse-client
 ClickHouse client version 0.0.26176.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.26176.
+
+:)
 ```
 
 The client supports command-line options and configuration files. For more information, see "[Configuring](#interfaces_cli_configuration)".

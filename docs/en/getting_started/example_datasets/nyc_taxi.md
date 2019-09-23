@@ -15,10 +15,10 @@ Some of the files might not download fully. Check the file sizes and re-download
 Some of the files might contain invalid rows. You can fix them as follows:
 
 ```bash
-$ sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
-$ sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
-$ mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
-$ mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
+mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
+mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 ```
 
 Then the data must be pre-processed in PostgreSQL. This will create selections of points in the polygons (to match points on the map with the boroughs of New York City) and combine all the data into a single denormalized flat table by using a JOIN. To do this, you will need to install PostgreSQL with PostGIS support.
@@ -31,8 +31,6 @@ You can check the number of downloaded rows as follows:
 
 ```bash
 $ time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
-```
-```text
 ## Count
  1298979494
 (1 row)
@@ -181,7 +179,7 @@ dropoff_puma            Nullable(String)
 It is needed for converting fields to more correct data types and, if possible, to eliminate NULLs.
 
 ```bash
-time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
+$ time clickhouse-client --query="INSERT INTO trips FORMAT TabSeparated" < trips.tsv
 
 real    75m56.214s
 ```

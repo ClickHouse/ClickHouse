@@ -15,10 +15,10 @@
 Некоторые файлы могут содержать некорректные строки. Их можно скорректировать следующим образом:
 
 ```bash
-$ sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
-$ sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
-$ mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
-$ mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-02.csv > data/yellow_tripdata_2010-02.csv_
+sed -E '/(.*,){18,}/d' data/yellow_tripdata_2010-03.csv > data/yellow_tripdata_2010-03.csv_
+mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
+mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 ```
 
 Далее данные должны быть предобработаны в PostgreSQL. Будут сделаны выборки точек в полигонах (для установки соответствия точек на карте с районами Нью-Йорка) и объединение всех данных в одну денормализованную плоскую таблицу с помощью JOIN. Для этого потребуется установить PostgreSQL с поддержкой PostGIS.
@@ -31,7 +31,7 @@ $ mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 
 ```bash
 $ time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
-##    count
+## Count
  1298979494
 (1 row)
 
