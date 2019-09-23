@@ -4,4 +4,7 @@ SELECT hex(1e+18);
 SELECT hex(1e-20);
 SELECT hex(1e+100);
 SELECT hex(0.000578);
-SELECt hex(-123.987);
+SELECT hex(-123.978);
+SELECT hex(toFloat32(99.67));
+SELECT hex(toFloat32(number)) FROM numbers(200, 2);
+SELECT hex(toFloat64(number)) FROM numbers(202, 2);                                                                                                                            

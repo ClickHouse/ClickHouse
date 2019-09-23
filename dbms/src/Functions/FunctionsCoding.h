@@ -946,9 +946,10 @@ public:
     {
         WhichDataType which(arguments[0]);
 
-        if (!which.isStringOrFixedString()
-            && !which.isDateOrDateTime()
-            && !which.isUInt() && !which.isFloat())
+        if (!which.isStringOrFixedString() &&
+            !which.isDateOrDateTime() &&
+            !which.isUInt() &&
+            !which.isFloat())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1026,7 +1027,7 @@ public:
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
 
-        static constexpr size_t MAX_FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
+        static constexpr size_t FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
 
         if (col_vec)
         {
@@ -1038,26 +1039,18 @@ public:
 
             size_t size = in_vec.size();
             out_offsets.resize(size);
-            out_vec.resize(size * 3 + MAX_FLOAT_HEX_LENGTH); /// 3 is length of one byte in hex plus zero byte.
+            out_vec.resize(size * FLOAT_HEX_LENGTH);
 
             size_t pos = 0;
+            char * out = reinterpret_cast<char *>(&out_vec[0]);
             for (size_t i = 0; i < size; ++i)
             {
-                /// Manual exponential growth, so as not to rely on the linear amortized work time of `resize` (no one guarantees it).
-                if (pos + MAX_FLOAT_HEX_LENGTH > out_vec.size())
-                    out_vec.resize(out_vec.size() * 2 + MAX_FLOAT_HEX_LENGTH);
-
-                char * begin = reinterpret_cast<char *>(&out_vec[pos]);
-                char * end = begin;
-
                 const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-                executeOneString(in_pos, in_pos + sizeof(in_vec[i]), end);
+                executeOneString(in_pos, in_pos + sizeof(T), out);
 
-                pos += end - begin;
+                pos += FLOAT_HEX_LENGTH;
                 out_offsets[i] = pos;
             }
-
-            out_vec.resize(pos);
 
             col_res = std::move(col_str);
             return true;
