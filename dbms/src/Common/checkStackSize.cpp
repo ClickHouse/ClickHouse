@@ -17,7 +17,6 @@ namespace DB
     }
 }
 
-
 static thread_local void * stack_address = nullptr;
 static thread_local size_t max_stack_size = 0;
 
@@ -27,7 +26,7 @@ void checkStackSize()
 
     if (!stack_address)
     {
-#if defined(__APPLE__)
+#if defined(OS_DARWIN)
         // pthread_get_stacksize_np() returns a value too low for the main thread on
         // OSX 10.9, http://mail.openjdk.java.net/pipermail/hotspot-dev/2013-October/011369.html
         //
@@ -41,20 +40,20 @@ void checkStackSize()
         stack_address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - max_stack_size);
 #else
         pthread_attr_t attr;
-#if defined(__FreeBSD__)
+#   if defined(__FreeBSD__)
         pthread_attr_init(&attr);
         if (0 != pthread_attr_get_np(pthread_self(), &attr))
             throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
-#else
+#   else
         if (0 != pthread_getattr_np(pthread_self(), &attr))
             throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
-#endif
+#   endif
 
         SCOPE_EXIT({ pthread_attr_destroy(&attr); });
 
         if (0 != pthread_attr_getstack(&attr, &stack_address, &max_stack_size))
             throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
-#endif
+#endif // OS_DARWIN
     }
 
     const void * frame_address = __builtin_frame_address(0);

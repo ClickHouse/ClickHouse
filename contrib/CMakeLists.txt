@@ -197,13 +197,15 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     endif()
 
 else()
-
     if(USE_INTERNAL_SNAPPY_LIBRARY)
         set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
         if (NOT MAKE_STATIC_LIBRARIES)
             set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
         endif()
+
         add_subdirectory(snappy)
+
+        set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
         if(SANITIZE STREQUAL "undefined")
             target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
         endif()
