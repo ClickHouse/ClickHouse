@@ -1,18 +1,22 @@
 #pragma once
 
-#include <Columns/ColumnJSONB.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/JSONB/JSONBSerialization.h>
-#include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <Core/Types.h>
+#include <Core/Field.h>
+#include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class DataTypeJSONB final : public IDataType
 {
 public:
-    DataTypeJSONB(const DataTypes & nested_types);
+    DataTypeJSONB(bool is_nullable_, bool is_low_cardinality_);
 
     Field getDefault() const override { return Null(); }
 
@@ -42,11 +46,11 @@ public:
 
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
 
-    void serializeBinaryBulkStatePrefix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const override;
+    void serializeBinaryBulkStatePrefix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & serialize_state) const override;
 
     void serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const override;
 
-    void deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings &settings, DeserializeBinaryBulkStatePtr &ptr) const override;
+    void deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings &settings, DeserializeBinaryBulkStatePtr &deserialize_state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column, size_t offset, size_t limit,
@@ -84,7 +88,8 @@ protected:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
-    const DataTypes & support_types;
+    const bool is_nullable{false};
+    const bool is_low_cardinality{false};
 };
 
 }

@@ -94,6 +94,10 @@ if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
 
+# fleece
+target_link_libraries(clickhouse_functions PRIVATE ${FLEECE_LIBRARY})
+target_include_directories(clickhouse_functions SYSTEM PRIVATE ${FLEECE_INCLUDE_DIR})
+
 add_subdirectory(GatherUtils)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_gatherutils)
 

@@ -155,6 +155,7 @@ void ThreadStatus::finalizePerformanceCounters()
 
 void ThreadStatus::initQueryProfiler()
 {
+#if 0
     /// query profilers are useless without trace collector
     if (!global_context || !global_context->hasTraceCollector())
         return;
@@ -170,12 +171,15 @@ void ThreadStatus::initQueryProfiler()
         query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
             /* thread_id */ os_thread_id,
             /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+#endif
 }
 
 void ThreadStatus::finalizeQueryProfiler()
 {
+#if 0
     query_profiler_real.reset();
     query_profiler_cpu.reset();
+#endif
 }
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)

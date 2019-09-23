@@ -94,6 +94,10 @@ public:
             DictionaryKeys,
             DictionaryIndexes,
 
+            JSONBinaryMultipleData,
+            JSONBinaryRelations,
+            JSONDictionaryKeys,
+            JSONDictionaryRelations,
             JSONInfo,
             JSONMask,
             JSONElements,

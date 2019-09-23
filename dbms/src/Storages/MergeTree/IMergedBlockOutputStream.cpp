@@ -49,9 +49,9 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 
 IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
     const String & name, WrittenOffsetColumns & offset_columns, IDataType::SerializeBinaryBulkSettings & settings,
-    const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets, bool filling_mark)
+    const CompressionCodecPtr & stream_codec, size_t estimated_size, bool skip_offsets, bool filling_mark)
 {
-    return [&, skip_offsets] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
+    return [&, skip_offsets, filling_mark] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
         if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
             return nullptr;
@@ -62,7 +62,7 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
         if (Nested::offsetSubstream(name, stream_name) && offset_columns.count(stream_name))
             return nullptr;
 
-        return &getOrCreateColumnStream(name, stream_name, settings, codec, estimated_size, filling_mark)->compressed;
+        return &getOrCreateColumnStream(name, stream_name, settings, stream_codec, estimated_size, filling_mark)->compressed;
     };
 }
 
@@ -180,11 +180,11 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
     bool skip_offsets,
     IDataType::SerializeBinaryBulkStatePtr & serialization_state,
     size_t from_mark,
-    const CompressionCodecPtr & codec, size_t estimated_size)
+    const CompressionCodecPtr & column_codec, size_t estimated_size)
 {
     auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.getter = createStreamGetter(name, offset_columns, serialize_settings, codec, estimated_size, skip_offsets);
+    serialize_settings.getter = createStreamGetter(name, offset_columns, serialize_settings, column_codec, estimated_size, skip_offsets);
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
 
@@ -251,7 +251,7 @@ void IMergedBlockOutputStream::writeFinalMark(const std::string & column_name, W
 
 IMergedBlockOutputStream::ColumnStream * IMergedBlockOutputStream::getOrCreateColumnStream(
     const String & column_name, const String & stream_name, IDataType::SerializeBinaryBulkSettings & settings,
-    const CompressionCodecPtr & codec, size_t estimated_size, bool filling_mark)
+    const CompressionCodecPtr & stream_codec, size_t estimated_size, bool filling_mark)
 {
     if (!columns_streams.count(column_name))
         columns_streams[column_name] = ColumnStreams();
@@ -265,7 +265,7 @@ IMergedBlockOutputStream::ColumnStream * IMergedBlockOutputStream::getOrCreateCo
     column_streams[stream_name] = std::make_unique<ColumnStream>(
         stream_name, part_path + stream_name, DATA_FILE_EXTENSION,
         part_path + stream_name, marks_file_extension,
-        codec, max_compress_block_size, estimated_size, aio_threshold);
+        stream_codec, max_compress_block_size, estimated_size, aio_threshold);
 
     return filling_mark ? fillMissingColumnStream(settings, &*column_streams[stream_name]) : &*column_streams[stream_name];
 }
@@ -277,7 +277,7 @@ IMergedBlockOutputStream::ColumnStream * IMergedBlockOutputStream::fillMissingCo
     {
         writeIntBinary(column_stream->plain_hashing.count(), column_stream->marks);
         writeIntBinary(column_stream->compressed.offset(), column_stream->marks);
-        if (storage.canUseAdaptiveGranularity())
+        if (can_use_adaptive_granularity)
             writeIntBinary(index_granularity.getMarkRows(index), column_stream->marks);
     }
 

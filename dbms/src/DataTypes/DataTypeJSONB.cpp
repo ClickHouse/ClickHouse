@@ -6,19 +6,19 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatSettings.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeCustomSimpleTextSerialization.h>
-#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnJSONB.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/RapidJSONParser.h>
-#include <Functions/SimdJSONParser.h>
+#include <Columns/ColumnString.h>
 #include <Common/escapeForFileName.h>
-#include <rapidjson/writer.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/JSONB/JSONBStreamBuffer.h>
 #include <DataTypes/JSONB/JSONBStreamFactory.h>
 #include <DataTypes/JSONB/JSONBSerialization.h>
+#include <DataTypes/SerializeBinaryBulkStateJSONB.h>
+#include <DataTypes/DeserializeBinaryBulkStateJSONB.h>
 
 
 namespace DB
@@ -30,58 +30,9 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_JSON;
 }
 
+
 namespace
 {
-struct SerializeBinaryBulkStateJSONB : public IDataType::SerializeBinaryBulkState
-{
-    std::map<String, IDataType::SerializeBinaryBulkStatePtr> states;
-
-    IDataType::SerializeBinaryBulkStatePtr getOrCreateDataState(WriteBuffer * ostr, const String & state_name, const DataTypePtr & type)
-    {
-        auto state_iterator = states.find(state_name);
-
-        if (state_iterator != states.end())
-            return state_iterator->second;
-
-        IDataType::SerializeBinaryBulkSettings settings;
-        settings.getter = [&](const IDataType::SubstreamPath &) {return ostr; };
-
-        IDataType::SerializeBinaryBulkStatePtr state = states[state_name];
-        type->serializeBinaryBulkStatePrefix(settings, state);
-        return state;
-
-    }
-
-    IDataType::SerializeBinaryBulkStatePtr getOrCreateDataState(WriteBuffer * ostr, const StringRefs & /*data_column_name*/, const DataTypePtr & data_column_type)
-    {
-        const String & type_name = data_column_type->getName();
-
-        writeBinary(type_name, *ostr);
-        if (!data_column_type->haveSubtypes())
-            return IDataType::SerializeBinaryBulkStatePtr{};
-
-        return getOrCreateDataState(ostr, type_name, data_column_type);
-    }
-};
-
-struct DeserializeBinaryBulkStateJSONB : public IDataType::DeserializeBinaryBulkState
-{
-    IDataType::DeserializeBinaryBulkStatePtr null;
-    std::vector<IDataType::DeserializeBinaryBulkStatePtr> states;
-
-    std::tuple<DataTypePtr, IDataType::DeserializeBinaryBulkStatePtr *> getOrCreateDataState(ReadBuffer * istr, const StringRefs & /*data_column_name*/)
-    {
-        String type_name;
-        readBinary(type_name, *istr);
-
-        const DataTypePtr data_column_type = DataTypeFactory::instance().get(type_name);
-
-        if (!data_column_type->haveSubtypes())
-            return std::make_pair(data_column_type, &null);
-
-        throw Exception("Exception", ErrorCodes::LOGICAL_ERROR);
-    }
-};
 
 struct CachedDeserializeBinaryBulkSettings : public IDataType::DeserializeBinaryBulkSettings
 {
@@ -113,56 +64,23 @@ struct CachedDeserializeBinaryBulkSettings : public IDataType::DeserializeBinary
     }
 };
 
-static SerializeBinaryBulkStateJSONB * checkAndGetJSONBSerializeState(IDataType::SerializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeJSONB.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * jsonb_state = typeid_cast<SerializeBinaryBulkStateJSONB *>(state.get());
-    if (!jsonb_state)
+    size_t fixAndGetLimit(size_t offset, size_t limit, size_t column_size)
     {
-        auto & state_ref = *state;
-        throw Exception("Invalid SerializeBinaryBulkState for DataTypeJSONB. Expected: "
-                        + demangle(typeid(SerializeBinaryBulkStateJSONB).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
+        if (limit == 0 || offset + limit > column_size)
+            return column_size - offset;
+        return limit;
     }
-
-    return jsonb_state;
-}
-
-static DeserializeBinaryBulkStateJSONB * checkAndGetJSONBDeserializeState(IDataType::DeserializeBinaryBulkStatePtr &state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeJSONB.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * deserialize_state = typeid_cast<DeserializeBinaryBulkStateJSONB *>(state.get());
-    if (!deserialize_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid DeserializeBinaryBulkState for DataTypeJSONB. Expected: "
-                        + demangle(typeid(DeserializeBinaryBulkStateJSONB).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return deserialize_state;
-}
-
-}
-
-inline static String sub_type_name(const String & prefix, const DataTypePtr & type)
-{
-    String type_index = toString(size_t(type->getTypeId()));
-    return prefix.empty() ? type_index : prefix + "." + type_index;
-}
-
-DataTypeJSONB::DataTypeJSONB(const DataTypes & nested_types)
-    : support_types(nested_types)
-{
 }
 
 MutableColumnPtr DataTypeJSONB::createColumn() const
 {
-    return ColumnJSONB::create();
+    /// TODO: Array(size_t) -> dynamic selection in Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)
+    /// Relational data is represented by Unique(Array(size_t)) types, but stored by Unique(String) types in storage
+    Columns binary_data_columns(2);
+    binary_data_columns[0] = ColumnArray::create(ColumnUInt64::create());
+    binary_data_columns[1] = ColumnString::create();
+    return ColumnJSONB::create(ColumnUnique<ColumnString>::create(DataTypeString()),
+        ColumnUnique<ColumnArray>::create(DataTypeArray(std::make_shared<DataTypeUInt64>())), std::move(binary_data_columns), false, false, false);
 }
 
 void DataTypeJSONB::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -177,7 +95,7 @@ void DataTypeJSONB::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeJSONB::deserializeWholeText(IColumn & /*column*/, ReadBuffer & /*istr*/, const FormatSettings & /*settings*/) const
 {
-    throw Exception("", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Method deserializeWholeText is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DataTypeJSONB::serializeProtobuf(const IColumn &, size_t, ProtobufWriter &, size_t &) const
@@ -192,58 +110,57 @@ void DataTypeJSONB::deserializeProtobuf(IColumn &, ProtobufReader &, bool, bool 
 
 void DataTypeJSONB::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::CSV>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::CSV>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::JSON>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::JSON>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::QUOTED>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::QUOTED>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&istr, settings));
+    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::ESCAPED>(&istr, settings));
 }
 
 void DataTypeJSONB::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&ostr, settings));
+    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::from<FormatStyle::ESCAPED>(&ostr, settings));
 }
 
 void DataTypeJSONB::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::fromBuffer<FormatStyle::JSON>(&ostr, settings));
+    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::from<FormatStyle::JSON>(&ostr, settings));
 }
 
 void DataTypeJSONB::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::fromBuffer<FormatStyle::CSV>(&ostr, settings));
+    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::from<FormatStyle::CSV>(&ostr, settings));
 }
 
 void DataTypeJSONB::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::fromBuffer<FormatStyle::QUOTED>(&ostr, settings));
+    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::from<FormatStyle::QUOTED>(&ostr, settings));
 }
 
 void DataTypeJSONB::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&ostr, settings));
+    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::from<FormatStyle::ESCAPED>(&ostr, settings));
 }
 
 void DataTypeJSONB::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::fromBuffer<FormatStyle::ESCAPED>(&ostr, settings));
+    JSONBSerialization::serialize(column, row_num, JSONBStreamFactory::from<FormatStyle::ESCAPED>(&ostr, settings));
 }
 
-void DataTypeJSONB::serializeBinaryBulkStatePrefix(SerializeBinaryBulkSettings & /*settings*/, SerializeBinaryBulkStatePtr & state) const
+void DataTypeJSONB::serializeBinaryBulkStatePrefix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & serialize_state) const
 {
-    /// TODO: version
-    state = std::make_shared<SerializeBinaryBulkStateJSONB>();
+    serialize_state = std::make_shared<SerializeBinaryBulkStateJSONB>(settings, 1);
 }
 
 void DataTypeJSONB::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
@@ -262,96 +179,68 @@ void DataTypeJSONB::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &
 //    std::cout << "fields: " << smallest_json_column.getFields().size() << "\n";
 }
 
-void DataTypeJSONB::deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & /*settings*/, DeserializeBinaryBulkStatePtr & state) const
+void DataTypeJSONB::deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & deserialize_state) const
 {
-    /// TODO: version
-    state = std::make_shared<DeserializeBinaryBulkStateJSONB>();
+    deserialize_state = std::make_shared<DeserializeBinaryBulkStateJSONB>(settings);
 }
 
 void DataTypeJSONB::serializeBinaryBulkWithMultipleStreams(
-    const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state_) const
+    const IColumn & column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
 {
-    auto * serialize_state = checkAndGetJSONBSerializeState(state_);
-    const auto & jsonb_column = static_cast<const ColumnJSONB &>(column);
-
-    settings.path.push_back(Substream::JSONInfo);
-    if (WriteBuffer * info_stream = settings.getter(settings.path))
+    if (size_t fixed_limit = fixAndGetLimit(offset, limit, column.size()))
     {
-        writeVarUInt(column.size(), *info_stream);
-        auto smallest_json_struct = jsonb_column.getStruct();
-        smallest_json_struct->serialize(*info_stream, settings, [&](const JSONStructAndDataColumn & json_struct, SerializeBinaryBulkSettings & data_settings)
-        {
-            data_settings.path.back().type = Substream::JSONMask;
-            DataTypeUInt8().serializeBinaryBulk(*json_struct.mark_column, *data_settings.getter(data_settings.path), offset, limit);
+        const auto & serialize_state = SerializeBinaryBulkStateJSONB::check(state);
+        const auto & serialize_column = checkAndGetColumn<ColumnJSONB>(column)->convertToMultipleIfNeed(offset, fixed_limit);
 
-            String sub_name_prefix = data_settings.path.back().tuple_element_name;
+        SCOPE_EXIT({settings.path.pop_back();});
+        settings.path.push_back(Substream::JSONBinaryRelations);
+        serialize_state->serializeRowRelationsColumn(*serialize_column, *settings.getter(settings.path), offset, fixed_limit);
 
-            for (const auto & type_and_column : json_struct.data_columns)
-            {
-                data_settings.path.back().type = Substream::JSONElements;
-                data_settings.path.back().tuple_element_name = sub_type_name(sub_name_prefix, type_and_column.first);
-                auto data_serialize_state = serialize_state->getOrCreateDataState(info_stream, json_struct.access_path, type_and_column.first);
-                type_and_column.first->serializeBinaryBulkWithMultipleStreams(*type_and_column.second, offset, limit, data_settings, data_serialize_state);
-            }
-        });
+        settings.path.back().type = Substream::JSONDictionaryKeys;
+        serialize_state->serializeJSONDictionaryColumn(serialize_column->getKeysDictionary(), *settings.getter(settings.path));
+        settings.path.back().type = Substream::JSONDictionaryRelations;
+        serialize_state->serializeJSONDictionaryColumn(serialize_column->getRelationsDictionary(), *settings.getter(settings.path));
+
+        settings.path.back().type = Substream::JSONBinaryMultipleData;
+        serialize_state->serializeJSONBinaryMultipleColumn(*serialize_column, settings, offset, fixed_limit);
     }
-
-    settings.path.pop_back();
 }
 
 void DataTypeJSONB::deserializeBinaryBulkWithMultipleStreams(
-    IColumn & column_, size_t limit, DeserializeBinaryBulkSettings & settings_, DeserializeBinaryBulkStatePtr & state_) const
+    IColumn & column, size_t limit, DeserializeBinaryBulkSettings & settings_, DeserializeBinaryBulkStatePtr & state) const
 {
     CachedDeserializeBinaryBulkSettings settings(settings_);
-    auto * serialize_state = checkAndGetJSONBDeserializeState(state_);
 
-    auto readPartOfJSONColumn = [&](IColumn & column, ReadBuffer * info_stream, size_t rows)
+    SCOPE_EXIT({settings.path.pop_back();});
+    settings.path.push_back(Substream::JSONBinaryRelations);
+    if (ReadBuffer * relations_stream = settings.getter(settings.path))
     {
-        ColumnJSONB & jsonb_column = typeid_cast<ColumnJSONB &>(column);
+        auto & full_binary_column = static_cast<ColumnJSONB &>(column);
+        const auto & deserialize_state = DeserializeBinaryBulkStateJSONB::check(state);
 
-        auto smallest_json_struct = jsonb_column.getStruct();
-        smallest_json_struct->deserialize(*info_stream, settings,
-            [&](JSONStructAndDataColumn & json_struct, size_t data_size, DeserializeBinaryBulkSettings & data_settings)
+        while (limit && !relations_stream->eof())
         {
-            data_settings.path.back().type = Substream::JSONMask;
-            DataTypeUInt8().deserializeBinaryBulk(*json_struct.getOrCreateMarkColumn(), *data_settings.getter(data_settings.path), rows, 0);
+            const auto & relations_info = deserialize_state->deserializeRowRelationsColumn(*relations_stream);
 
-            String sub_name_prefix = data_settings.path.back().tuple_element_name;
+            settings.path.back().type = Substream::JSONDictionaryKeys;
+            const auto & keys_dictionary = deserialize_state->deserializeJSONKeysDictionaryColumn(*settings.getter(settings.path));
+            settings.path.back().type = Substream::JSONDictionaryRelations;
+            const auto & relations_dictionary = deserialize_state->deserializeJSONRelationsDictionaryColumn(*settings.getter(settings.path));
 
-            for (size_t index = 0; index < data_size; ++index)
-            {
-                const auto & [type, data_state] = serialize_state->getOrCreateDataState(info_stream, json_struct.access_path);
+            settings.path.back().type = Substream::JSONBinaryMultipleData;
+            Columns data_columns = deserialize_state->deserializeJSONBinaryDataColumn(relations_info, settings);
+            MutableColumnPtr current_read_column = ColumnJSONB::create(keys_dictionary, relations_dictionary, data_columns);
 
-                data_settings.avg_value_size_hint = 0;
-                data_settings.path.back().type = Substream::JSONElements;
-                data_settings.path.back().tuple_element_name = sub_type_name(sub_name_prefix, type);
-                type->deserializeBinaryBulkWithMultipleStreams(*json_struct.getOrCreateDataColumn(type), rows, data_settings, *data_state);
-            }
-        });
-    };
-
-    settings.path.push_back(Substream::JSONInfo);
-    if (ReadBuffer * info_stream = settings.getter(settings.path))
-    {
-        ColumnJSONB & deserialize_column = typeid_cast<ColumnJSONB &>(column_);
-
-        while (limit)
-        {
-            if (info_stream->eof())
-                break;
-
-            size_t rows_to_read;
-            readVarUInt(rows_to_read, *info_stream);
-            size_t num_rows_to_read = std::min<UInt64>(limit, rows_to_read);
-
-            MutableColumnPtr temp_column = ColumnJSONB::create();
-            readPartOfJSONColumn(*temp_column.get(), info_stream, num_rows_to_read);
-            deserialize_column.insertRangeFrom(*temp_column, 0, num_rows_to_read);
-            limit -= num_rows_to_read;
+            size_t current_read_rows = std::min(limit, current_read_column->size());
+            full_binary_column.insertRangeFrom(*current_read_column, 0, current_read_rows);
+            limit -= current_read_rows;
         }
     }
+}
 
-    settings.path.pop_back();
+DataTypeJSONB::DataTypeJSONB(bool is_nullable_, bool is_low_cardinality_)
+    : is_nullable(is_nullable_), is_low_cardinality(is_low_cardinality_)
+{
 }
 
 void DataTypeJSONB::enumerateStreams(const IDataType::StreamCallback & callback, IDataType::SubstreamPath & path) const
@@ -363,13 +252,9 @@ void DataTypeJSONB::enumerateStreams(const IDataType::StreamCallback & callback,
     path.pop_back();
 }
 
-void registerDataTypeJSONB(DataTypeFactory &factory)
+void registerDataTypeJSONB(DataTypeFactory & factory)
 {
-    /// bool, number, string
-    static const DataTypes sub_types = {
-        std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeString>()};
-
-    factory.registerSimpleDataType("JSONB", [&]() { return std::make_shared<DataTypeJSONB>(sub_types); });
+    factory.registerSimpleDataType("JSONB", [&]() { return std::make_shared<DataTypeJSONB>(false, false); });
 }
 
 }

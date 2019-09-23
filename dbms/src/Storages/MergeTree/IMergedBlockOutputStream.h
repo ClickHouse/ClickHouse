@@ -71,7 +71,7 @@ protected:
     using ColumnWithSubstreams = std::map<String, ColumnStreams>;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns,
-        IDataType::SerializeBinaryBulkSettings & settings, const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets, bool filling_mark = true);
+        IDataType::SerializeBinaryBulkSettings & settings, const CompressionCodecPtr & stream_codec, size_t estimated_size, bool skip_offsets, bool filling_mark = true);
 
     /// Write data of one column.
     /// Return how many marks were written and
@@ -84,7 +84,7 @@ protected:
         bool skip_offsets,
         IDataType::SerializeBinaryBulkStatePtr & serialization_state,
         size_t from_mark,
-        const CompressionCodecPtr & codec, size_t estimated_size
+        const CompressionCodecPtr & column_codec, size_t estimated_size
     );
 
     /// Write single granule of one column (rows between 2 marks)
@@ -111,7 +111,7 @@ protected:
 
     ColumnStream * getOrCreateColumnStream(
         const String & column_name, const String & stream_name, IDataType::SerializeBinaryBulkSettings & settings,
-        const CompressionCodecPtr & codec, size_t estimated_size, bool filling_mark);
+        const CompressionCodecPtr & stream_codec, size_t estimated_size, bool filling_mark);
 
 protected:
     MergeTreeData & storage;

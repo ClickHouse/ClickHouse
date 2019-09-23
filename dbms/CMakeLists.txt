@@ -167,7 +167,7 @@ add_object_library(clickhouse_core src/Core)
 add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)
 add_object_library(clickhouse_datatypes src/DataTypes)
-add_object_library(clickhouse_datatypes src/DataTypes/SmallestJSON)
+add_object_library(clickhouse_datatypes src/DataTypes/JSONB)
 add_object_library(clickhouse_databases src/Databases)
 add_object_library(clickhouse_interpreters src/Interpreters)
 add_object_library(clickhouse_interpreters_clusterproxy src/Interpreters/ClusterProxy)
@@ -437,10 +437,10 @@ if (USE_JEMALLOC)
 endif ()
 
 # fleece
-target_link_libraries(clickhouse_datatypes PRIVATE ${FLEECE_LIBRARY})
-target_include_directories(clickhouse_datatypes PRIVATE ${FLEECE_INCLUDE_DIR})
+target_link_libraries(dbms PRIVATE ${FLEECE_LIBRARY})
+target_include_directories(dbms SYSTEM PRIVATE ${FLEECE_INCLUDE_DIR})
 
-target_include_directories (clickhouse_datatypes PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
+dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})

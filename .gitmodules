@@ -108,4 +108,4 @@
 	url = https://github.com/sparsehash/sparsehash-c11.git
 [submodule "contrib/fleece"]
 	path = contrib/fleece
-	url = git@github.com:zhang2014/fleece.git
+	url = https://github.com/zhang2014/fleece.git

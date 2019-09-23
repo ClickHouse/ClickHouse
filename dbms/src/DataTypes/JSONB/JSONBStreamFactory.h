@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <IO/BufferBase.h>
 #include <Columns/ColumnString.h>
 #include <Formats/FormatSettings.h>
 
@@ -15,16 +16,25 @@ enum class FormatStyle
     ESCAPED,
 };
 
-template <typename BufferType, FormatStyle format>
+template <FormatStyle format>
 struct JSONBStreamBuffer;
 
-template <typename BufferType, FormatStyle format>
-using JSONBStreamBufferPtr = std::unique_ptr<JSONBStreamBuffer<BufferType, format>>;
+template <FormatStyle format>
+using JSONBStreamBufferPtr = std::unique_ptr<JSONBStreamBuffer<format>>;
 
 struct JSONBStreamFactory
 {
-    template<FormatStyle format, typename BufferType>
-    static JSONBStreamBufferPtr<BufferType, format> fromBuffer(BufferType * buffer, const FormatSettings & settings);
+    template<FormatStyle format>
+    static JSONBStreamBufferPtr<format> from(ReadBuffer * buffer, const FormatSettings & settings)
+    {
+        return std::make_unique<JSONBStreamBuffer<format>>(buffer, settings);
+    }
+
+    template<FormatStyle format>
+    static JSONBStreamBufferPtr<format> from(WriteBuffer * buffer, const FormatSettings & settings)
+    {
+        return std::make_unique<JSONBStreamBuffer<format>>(buffer, settings);
+    }
 };
 
 }
