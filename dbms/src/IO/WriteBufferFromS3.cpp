@@ -15,6 +15,10 @@ namespace DB
 {
 
 const int DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT = 2;
+
+// S3 protocol does not allow to have multipart upload with more than 10000 parts.
+// In case server does not return an error on exceeding that number, we print a warning
+// because custom S3 implementation may allow relaxed requirements on that.
 const int S3_WARN_MAX_PARTS = 10000;
 
 
@@ -166,7 +170,7 @@ void WriteBufferFromS3::writePart(const String & data)
     if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
         // Don't throw exception here by ourselves but leave the decision to take by S3 server.
-        LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached (too much parts). Server may not accept this whole upload.");
+        LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
     }
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
