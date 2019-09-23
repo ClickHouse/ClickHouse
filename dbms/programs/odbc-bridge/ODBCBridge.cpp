@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
+#include <Poco/Data/ODBC/Connector.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/String.h>
@@ -137,6 +138,8 @@ void ODBCBridge::initialize(Application & self)
     keep_alive_timeout = config().getUInt("keep-alive-timeout", 10);
 
     initializeTerminationAndSignalProcessing();
+
+    Poco::Data::ODBC::Connector::registerConnector();
 
     ServerApplication::initialize(self);
 }
