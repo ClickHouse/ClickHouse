@@ -53,7 +53,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
 
-- `*` — Substitutes any number of any characters including none.
+- `*` — Substitutes any number of any characters except `/` including none.
 - `?` — Substitutes any single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
