@@ -1,7 +1,6 @@
 #include <Common/config.h>
-#if USE_POCO_NETSSL
+#if USE_POCO_NETSSL && USE_SSL
 #include <Common/OpenSSLHelpers.h>
-#include <Poco/Crypto/X509Certificate.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>

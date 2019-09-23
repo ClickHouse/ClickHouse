@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <thread>
 #include <future>
+#include <Poco/Version.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
@@ -645,7 +646,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-#if !UNBUNDLED
+#if POCO_VERSION >= 0x01090000
         auto free_space = Poco::File(params.tmp_path).freeSpace();
         if (current_memory_usage + params.min_free_disk_space > free_space)
             throw Exception("Not enough space for external aggregation in " + params.tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);

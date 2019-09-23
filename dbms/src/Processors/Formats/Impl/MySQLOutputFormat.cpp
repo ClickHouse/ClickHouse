@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#if USE_POCO_NETSSL
+#if USE_SSL
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 
 #include <Core/MySQLProtocol.h>

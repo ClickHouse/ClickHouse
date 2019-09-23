@@ -1,6 +1,6 @@
 #pragma once
-#include <Common/config.h>
-#if USE_POCO_NETSSL
+#include "config_core.h"
+#if USE_SSL
 
 #include <ext/scope_guard.h>
 #include <openssl/pem.h>

@@ -1,5 +1,5 @@
-#include <Common/config.h>
-#if USE_POCO_NETSSL
+#include "config_core.h"
+#if USE_SSL
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>

@@ -1,4 +1,6 @@
-option (ENABLE_PARQUET "Enable parquet" ON)
+if (Protobuf_PROTOC_EXECUTABLE)
+    option (ENABLE_PARQUET "Enable parquet" ${ENABLE_LIBRARIES})
+endif()
 
 if (ENABLE_PARQUET)
 

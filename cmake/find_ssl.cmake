@@ -1,4 +1,4 @@
-option (ENABLE_SSL "Enable ssl" ON)
+option (ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
 if (ENABLE_SSL)
 

@@ -1,14 +1,12 @@
+#include <Poco/Version.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Transforms/MergingSortedTransform.h>
-
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <common/config_common.h>
-
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
@@ -168,7 +166,7 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
-#if !UNBUNDLED
+#if POCO_VERSION >= 0x01090000
         auto free_space = Poco::File(tmp_path).freeSpace();
         if (sum_bytes_in_blocks + min_free_disk_space > free_space)
             throw Exception("Not enough space for external sort in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);

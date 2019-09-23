@@ -1,4 +1,4 @@
-option (ENABLE_PROTOBUF "Enable protobuf" ON)
+option (ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
 
 if (ENABLE_PROTOBUF)
 
@@ -104,4 +104,4 @@ endif()
 
 endif()
 
-message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY}")
+message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY} : ${Protobuf_PROTOC_EXECUTABLE}")

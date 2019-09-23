@@ -309,7 +309,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
-#if USE_POCO_NETSSL
+#if USE_SSL
     registerOutputFormatProcessorMySQLWrite(*this);
 #endif
 }
