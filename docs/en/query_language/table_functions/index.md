@@ -6,7 +6,7 @@ You can use table functions in:
 
 * [CREATE TABLE AS <table_function()>](../create.md#create-table-query) query.
 
-    A method for creating a table.
+    It's one of the methods of creating a table.
 
 * [FROM](../select.md#select-from) clause of the `SELECT` query.
 
