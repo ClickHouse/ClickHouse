@@ -563,7 +563,7 @@ You can use the following types of syntax:
     ON equi_cond AND closest_match_cond
     ```
 
-    You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. There is just `table_2.some_col <= table_1.some_col` and `table_1.some_col >= table2.some_col` types of conditions are available. You cannot apply other conditions like `>` or `!=`.
+    You can use any number of equality conditions and exactly one closest match condition. For example, `SELECT count() FROM A ASOF LEFT JOIN B ON A.a == B.b AND B.t <= A.t`. Only `table_2.some_col <= table_1.some_col` and `table_1.some_col >= table2.some_col` condition types are available. You can't apply other conditions like `>` or `!=`.
 
 - `ASOF JOIN ... USING`
 
@@ -590,7 +590,7 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
               ...                               ...
 ```
 
-`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest (equal or less) to the timestamp of the event from `table_1`. Herewith the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1`, `event_1_2` can be joined with `event_2_3`, but `event_2_2` cannot be joined.
+`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest (equal to or less) to the timestamp of the event from `table_1`. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
 
 
 !!! note "Note"
