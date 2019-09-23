@@ -145,7 +145,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx3"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx_na;"
 $CLICKHOUSE_CLIENT -n --query="
 SET allow_experimental_data_skipping_indices = 1;
-CREATE TABLE bloom_filter_na
+CREATE TABLE bloom_filter_idx_na
 (
     na Array(Array(String)),
     INDEX bf na TYPE bloom_filter(0.1) GRANULARITY 1
