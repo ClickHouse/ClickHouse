@@ -185,7 +185,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 - Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске.
 
 !!! warning "Внимание"
-  Запрос `OPTIMIZE` не может устранить причину появления ошибки "Too many parts".
+    Запрос `OPTIMIZE` не может устранить причину появления ошибки "Too many parts".
 
 ## RENAME {#misc_operations-rename}
 
