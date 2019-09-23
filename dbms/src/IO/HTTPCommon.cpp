@@ -223,11 +223,11 @@ std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
     auto & istr = session.receiveResponse(response);
-    assertResponseIsOk(request, response, istr);
+    assertResponseIsOk(request, response, istr, allow_redirects);
     return &istr;
 }
 
-void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr)
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects)
 {
     auto status = response.getStatus();
 
