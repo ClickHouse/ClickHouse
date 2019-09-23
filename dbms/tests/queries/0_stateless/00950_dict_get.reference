@@ -4,6 +4,9 @@ dictGetOrDefault	flat_ints	0	42	42	42	42	42	42	42	42
 dictGet	hashed_ints	1	1	1	1	1	1	1	1	1
 dictGetOrDefault	hashed_ints	1	1	1	1	1	1	1	1	1
 dictGetOrDefault	hashed_ints	0	42	42	42	42	42	42	42	42
+dictGet	hashed_sparse_ints	1	1	1	1	1	1	1	1	1
+dictGetOrDefault	hashed_sparse_ints	1	1	1	1	1	1	1	1	1
+dictGetOrDefault	hashed_sparse_ints	0	42	42	42	42	42	42	42	42
 dictGet	cache_ints	1	1	1	1	1	1	1	1	1
 dictGetOrDefault	cache_ints	1	1	1	1	1	1	1	1	1
 dictGetOrDefault	cache_ints	0	42	42	42	42	42	42	42	42

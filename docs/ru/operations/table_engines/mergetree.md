@@ -332,7 +332,7 @@ TTL date_time + INTERVAL 15 HOUR
 Создание таблицы с TTL
 
 ```sql
-CREATE TABLE example_table 
+CREATE TABLE example_table
 (
     d DateTime,
     a Int TTL d + INTERVAL 1 MONTH,
@@ -367,7 +367,7 @@ ALTER TABLE example_table
 Примеры:
 
 ```sql
-CREATE TABLE example_table 
+CREATE TABLE example_table
 (
     d DateTime,
     a Int
@@ -378,7 +378,7 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH;
 ```
 
-Изменение TTL 
+Изменение TTL
 
 ```sql
 ALTER TABLE example_table
@@ -488,10 +488,10 @@ CREATE TABLE table_with_non_default_policy (
     OrderID UInt64,
     BannerID UInt64,
     SearchPhrase String
-) ENGINE = MergeTree()
+) ENGINE = MergeTree
 ORDER BY (OrderID, BannerID)
 PARTITION BY toYYYYMM(EventDate)
-SETTINGS storage_policy_name='moving_from_ssd_to_hdd'
+SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 По умолчанию используется политика хранения `default` в которой есть один том и один диск, указанный в `<path>`. В данный момент менять политику хранения после создания таблицы нельзя.
@@ -502,7 +502,7 @@ SETTINGS storage_policy_name='moving_from_ssd_to_hdd'
 
 * В результате вставки (запрос `INSERT`).
 * В фоновых операциях слияний и [мутаций](../../query_language/alter.md#alter-mutations).
-* При скачивании данных с другой реплики. 
+* При скачивании данных с другой реплики.
 * В результате заморозки партиций [ALTER TABLE ... FREEZE PARTITION](../../query_language/alter.md#alter_freeze-partition).
 
 Во всех случаях, кроме мутаций и заморозки партиций, при записи куска выбирается том и диск в соответствии с указанной конфигурацией хранилища:
