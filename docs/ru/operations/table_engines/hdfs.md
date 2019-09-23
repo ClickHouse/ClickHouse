@@ -4,7 +4,7 @@
 
 ## Использование движка
 
-```
+```sql
 ENGINE = HDFS(URI, format)
 ```
 
@@ -15,22 +15,22 @@ ENGINE = HDFS(URI, format)
 
 **1.** Создадим на сервере таблицу `hdfs_engine_table`:
 
-``` sql
+```sql
 CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
 ```
 
 **2.** Заполним файл:
-``` sql
+```sql
 INSERT INTO hdfs_engine_table VALUES ('one', 1), ('two', 2), ('three', 3)
 ```
 
 **3.** Запросим данные:
 
-``` sql
+```sql
 SELECT * FROM hdfs_engine_table LIMIT 2
 ```
 
-```
+```text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │

@@ -13,11 +13,11 @@ We recommend that you store data in integer form whenever possible. For example,
 
 - Computations with floating-point numbers might produce a rounding error.
 
-``` sql
+```sql
 SELECT 1 - 0.9
 ```
 
-```
+```text
 ┌───────minus(1, 0.9)─┐
 │ 0.09999999999999998 │
 └─────────────────────┘
@@ -33,11 +33,11 @@ In contrast to standard SQL, ClickHouse supports the following categories of flo
 
 - `Inf` – Infinity.
 
-``` sql
+```sql
 SELECT 0.5 / 0
 ```
 
-```
+```text
 ┌─divide(0.5, 0)─┐
 │            inf │
 └────────────────┘
@@ -45,11 +45,11 @@ SELECT 0.5 / 0
 
 - `-Inf` – Negative infinity.
 
-``` sql
+```sql
 SELECT -0.5 / 0
 ```
 
-```
+```text
 ┌─divide(-0.5, 0)─┐
 │            -inf │
 └─────────────────┘
@@ -57,11 +57,11 @@ SELECT -0.5 / 0
 
 - `NaN` – Not a number.
 
-```
+```sql
 SELECT 0 / 0
 ```
 
-```
+```text
 ┌─divide(0, 0)─┐
 │          nan │
 └──────────────┘

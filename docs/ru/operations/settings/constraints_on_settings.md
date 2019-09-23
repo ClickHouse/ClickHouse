@@ -3,7 +3,7 @@
 Ограничения на изменение настроек могут находиться внутри секции `users` файла `user.xml` и запрещают пользователю менять некоторые настройки с помощью запроса `SET`.
 Выглядит это следующим образом:
 
-```
+```xml
 <profiles>
   <имя_пользователя>
     <constraints>
@@ -31,7 +31,7 @@
 
 **Пример:** Пусть файл `users.xml` содержит строки:
 
-```
+```xml
 <profiles>
   <default>
     <max_memory_usage>10000000000</max_memory_usage>
@@ -52,13 +52,13 @@
 
 Каждый из следующих запросов кинет исключение:
 
-```
+```sql
 SET max_memory_usage=20000000001;
 SET max_memory_usage=4999999999;
 SET force_index_by_date=1;
 ```
 
-```
+```text
 Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be greater than 20000000000.
 Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be less than 5000000000.
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.

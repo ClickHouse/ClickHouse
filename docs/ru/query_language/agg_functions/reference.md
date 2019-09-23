@@ -81,7 +81,7 @@ SELECT count(DISTINCT num) FROM t
 
 Выбирает часто встречающееся значение с помощью алгоритма "[heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf)". Если существует значение, которое встречается чаще, чем в половине случаев, в каждом потоке выполнения запроса, то возвращается данное значение. В общем случае, результат недетерминирован.
 
-```
+```sql
 anyHeavy(column)
 ```
 
@@ -98,7 +98,7 @@ SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
 
-```
+```text
 ┌───res─┐
 │ 19690 │
 └───────┘
@@ -113,7 +113,7 @@ FROM ontime
 
 Применяет побитовое `И` для последовательности чисел.
 
-```
+```sql
 groupBitAnd(expr)
 ```
 
@@ -129,7 +129,7 @@ groupBitAnd(expr)
 
 Тестовые данные:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -139,7 +139,7 @@ binary     decimal
 
 Запрос:
 
-```
+```sql
 SELECT groupBitAnd(num) FROM t
 ```
 
@@ -147,7 +147,7 @@ SELECT groupBitAnd(num) FROM t
 
 Результат:
 
-```
+```text
 binary     decimal
 00000100 = 4
 ```
@@ -156,7 +156,7 @@ binary     decimal
 
 Применяет побитовое `ИЛИ` для последовательности чисел.
 
-```
+```sql
 groupBitOr(expr)
 ```
 
@@ -172,7 +172,7 @@ groupBitOr(expr)
 
 Тестовые данные:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -182,7 +182,7 @@ binary     decimal
 
 Запрос:
 
-```
+```sql
 SELECT groupBitOr(num) FROM t
 ```
 
@@ -190,7 +190,7 @@ SELECT groupBitOr(num) FROM t
 
 Результат:
 
-```
+```text
 binary     decimal
 01111101 = 125
 ```
@@ -199,7 +199,7 @@ binary     decimal
 
 Применяет побитовое `ИСКЛЮЧАЮЩЕЕ ИЛИ` для последовательности чисел.
 
-```
+```sql
 groupBitXor(expr)
 ```
 
@@ -215,7 +215,7 @@ groupBitXor(expr)
 
 Тестовые данные:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -225,7 +225,7 @@ binary     decimal
 
 Запрос:
 
-```
+```sql
 SELECT groupBitXor(num) FROM t
 ```
 
@@ -233,7 +233,7 @@ SELECT groupBitXor(num) FROM t
 
 Результат:
 
-```
+```text
 binary     decimal
 01101000 = 104
 ```
@@ -242,7 +242,7 @@ binary     decimal
 
 Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../functions/bitmap_functions.md).
 
-```
+```sql
 groupBitmap(expr)
 ```
 
@@ -258,7 +258,7 @@ groupBitmap(expr)
 
 Тестовые данные:
 
-```
+```text
 UserID
 1
 1
@@ -268,13 +268,13 @@ UserID
 
 Запрос:
 
-```
+```sql
 SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Результат:
 
-```
+```text
 num
 3
 ```
@@ -293,15 +293,17 @@ num
 
 **Пример:**
 
-```
+```text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
 │ worker   │   1000 │
 └──────────┴────────┘
-
+```
+```sql
 SELECT argMin(user, salary) FROM salary
-
+```
+```text
 ┌─argMin(user, salary)─┐
 │ worker               │
 └──────────────────────┘
@@ -353,7 +355,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```
+```text
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -364,7 +366,7 @@ GROUP BY timeslot
 
 Вычисляет [коэффициент асимметрии](https://ru.wikipedia.org/wiki/Коэффициент_асимметрии) для последовательности.
 
-```
+```sql
 skewPop(expr)
 ```
 
@@ -388,7 +390,7 @@ SELECT skewPop(value) FROM series_with_value_column
 
 Он представляет собой несмещенную оценку асимметрии случайной величины, если переданные значения образуют ее выборку.
 
-```
+```sql
 skewSamp(expr)
 ```
 
@@ -410,7 +412,7 @@ SELECT skewSamp(value) FROM series_with_value_column
 
 Вычисляет [коэффициент эксцесса](https://ru.wikipedia.org/wiki/Коэффициент_эксцесса) последовательности.
 
-```
+```sql
 kurtPop(expr)
 ```
 
@@ -434,7 +436,7 @@ SELECT kurtPop(value) FROM series_with_value_column
 
 Он представляет собой несмещенную оценку эксцесса случайной величины, если переданные значения образуют ее выборку.
 
-```
+```sql
 kurtSamp(expr)
 ```
 
@@ -467,7 +469,7 @@ SELECT kurtSamp(value) FROM series_with_value_column
 
 Пример:
 
-```
+```text
 ┌─uid─┬─timestamp─┬─value─┐
 │ 1   │     2     │   0.2 │
 │ 1   │     7     │   0.7 │
@@ -482,7 +484,7 @@ SELECT kurtSamp(value) FROM series_with_value_column
 └─────┴───────────┴───────┘
 ```
 
-```
+```sql
 CREATE TABLE time_series(
     uid       UInt64,
     timestamp Int64,
@@ -500,7 +502,7 @@ FROM (
 
 И результат будет:
 
-```
+```text
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
@@ -511,7 +513,7 @@ FROM (
 
 Для пример из описания timeSeriesGroupRateSum результат будет следующим:
 
-```
+```text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
@@ -525,7 +527,7 @@ FROM (
 
 Приближённо вычисляет количество различных значений аргумента.
 
-```
+```sql
 uniq(x[, ...])
 ```
 
@@ -561,7 +563,7 @@ uniq(x[, ...])
 
 Приближённо вычисляет количество различных значений аргумента.
 
-```
+```sql
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
@@ -605,7 +607,7 @@ uniqCombined(HLL_precision)(x[, ...])
 
 Вычисляет приблизительное число различных значений аргументов, используя алгоритм [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-```
+```sql
 uniqHLL12(x[, ...])
 ```
 
@@ -641,7 +643,7 @@ uniqHLL12(x[, ...])
 
 Вычисляет точное количество различных значений аргументов.
 
-```
+```sql
 uniqExact(x[, ...])
 ```
 
@@ -685,7 +687,7 @@ uniqExact(x[, ...])
 
 Вычисляет скользящую сумму входных значений.
 
-```
+```sql
 groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
@@ -943,7 +945,7 @@ FROM t
 
 Реализует [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) алгоритм для анализа TopK, на основе reduce-and-combine алгоритма из методики [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
-```
+```sql
 topK(N)(column)
 ```
 
@@ -965,7 +967,7 @@ SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
 
-```
+```text
 ┌─res─────────────────┐
 │ [19393,19790,19805] │
 └─────────────────────┘
@@ -989,7 +991,7 @@ FROM ontime
 
 Выполняет простую (одномерную) линейную регрессию.
 
-```
+```sql
 simpleLinearRegression(x, y)
 ```
 
