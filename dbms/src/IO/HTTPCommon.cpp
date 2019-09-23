@@ -45,7 +45,7 @@ namespace ErrorCodes
 
 namespace
 {
-void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+    void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
 #if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
@@ -220,20 +220,25 @@ PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Connecti
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response)
 {
-    auto istr = &session.receiveResponse(response);
+    auto & istr = session.receiveResponse(response);
+    assertResponseIsOk(request, response, istr);
+    return &istr;
+}
+
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr)
+{
     auto status = response.getStatus();
 
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
         std::stringstream error_message;
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
-                      << response.getReason() << ", body: " << istr->rdbuf();
+                      << response.getReason() << ", body: " << istr.rdbuf();
 
         throw Exception(error_message.str(),
             status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
                                              : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
     }
-    return istr;
 }
 
 }
