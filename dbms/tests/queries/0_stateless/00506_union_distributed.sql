@@ -1,5 +1,5 @@
 
--- https://github.com/yandex/ClickHouse/issues/1059
+-- https://github.com/ClickHouse/ClickHouse/issues/1059
 
 DROP TABLE IF EXISTS union1;
 DROP TABLE IF EXISTS union2;
