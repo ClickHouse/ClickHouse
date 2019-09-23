@@ -5,7 +5,7 @@ Adding data.
 
 Basic query format:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -18,13 +18,13 @@ If [strict_insert_defaults=1](../operations/settings/settings.md), columns that 
 
 Data can be passed to the INSERT in any [format](../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
 For example, the following query format is identical to the basic version of INSERT ... VALUES:
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -32,7 +32,7 @@ ClickHouse removes all spaces and one line feed (if there is one) before the dat
 
 Example:
 
-``` sql
+```sql
 INSERT INTO t FORMAT TabSeparated
 11  Hello, world!
 22  Qwerty
@@ -46,7 +46,7 @@ If table has [constraints](create.md#constraints), their expressions will be che
 
 ### Inserting The Results of `SELECT` {#insert_query_insert-select}
 
-``` sql
+```sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 ```
 
@@ -56,6 +56,8 @@ None of the data formats except Values allow setting values to expressions such 
 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
+
+`FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](table_functions/input.md).
 
 ### Performance Considerations
 

@@ -32,6 +32,9 @@ endif
 
 CMAKE_FLAGS += -DENABLE_UTILS=0
 
+DEB_CC ?= $(shell which gcc-9 gcc-8 gcc | head -n1)
+DEB_CXX ?= $(shell which g++-9 g++-8 g++ | head -n1)
+
 ifdef DEB_CXX
     DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
     DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)

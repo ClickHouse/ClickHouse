@@ -65,10 +65,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        /// Format Native ignores header and write blocks as is.
-        if (query.format == "Native")
-            return {};
-        else if (query.no_destination)
+        if (query.no_destination)
             return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
@@ -155,7 +152,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
-        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context);
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
         res.out = nullptr;
     }

@@ -1,4 +1,8 @@
+#if defined(__MACH__)
+#include <stdlib.h>
+#else
 #include <malloc.h>
+#endif
 #include <new>
 
 #include <common/config_common.h>

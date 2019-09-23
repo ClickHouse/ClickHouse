@@ -160,11 +160,12 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join)
 {
     ExpressionAction a;
     a.type = JOIN;
     a.table_join = table_join;
+    a.join = join;
     return a;
 }
 
@@ -475,7 +476,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            table_join->joinBlock(block);
+            join->joinBlock(block);
             break;
         }
 
@@ -543,7 +544,7 @@ void ExpressionAction::executeOnTotals(Block & block) const
     if (type != JOIN)
         execute(block, false);
     else
-        table_join->joinTotals(block);
+        join->joinTotals(block);
 }
 
 
@@ -763,7 +764,7 @@ void ExpressionActions::execute(Block & block, bool dry_run) const
 bool ExpressionActions::hasTotalsInJoin() const
 {
     for (const auto & action : actions)
-        if (action.table_join && action.table_join->hasTotals())
+        if (action.table_join && action.join->hasTotals())
             return true;
     return false;
 }
@@ -1157,11 +1158,11 @@ void ExpressionActions::optimizeArrayJoin()
 }
 
 
-std::shared_ptr<const AnalyzedJoin> ExpressionActions::getTableJoin() const
+JoinPtr ExpressionActions::getTableJoinAlgo() const
 {
     for (const auto & action : actions)
-        if (action.table_join)
-            return action.table_join;
+        if (action.join)
+            return action.join;
     return {};
 }
 

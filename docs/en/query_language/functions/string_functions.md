@@ -64,7 +64,7 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
-```
+```sql
 toValidUTF8( input_string )
 ```
 
@@ -100,13 +100,16 @@ Formatting constant pattern with the string listed in the arguments. `pattern` i
 
 ```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
-
+```
+```text
 ┌─format('{1} {0} {1}', 'World', 'Hello')─┐
 │ Hello World Hello                       │
 └─────────────────────────────────────────┘
-
+```
+```sql
 SELECT format('{} {}', 'Hello', 'World')
-
+```
+```text
 ┌─format('{} {}', 'Hello', 'World')─┐
 │ Hello World                       │
 └───────────────────────────────────┘

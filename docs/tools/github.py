@@ -12,7 +12,7 @@ import util
 
 def choose_latest_releases():
     seen = collections.OrderedDict()
-    candidates = requests.get('https://api.github.com/repos/yandex/ClickHouse/tags?per_page=100').json()
+    candidates = requests.get('https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100').json()
     for tag in candidates:
         name = tag.get('name', '')
         if 'v18' in name or 'stable' not in name:

@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 
 #include <Core/MySQLProtocol.h>
@@ -116,3 +118,4 @@ void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory)
 }
 
 }
+#endif

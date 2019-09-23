@@ -257,7 +257,7 @@ SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 Полезный совет (выполните в консоли):
 
 ```bash
-watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
 ## SHOW TABLES

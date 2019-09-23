@@ -9,7 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'])
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'])
 
-#test reproducing issue https://github.com/yandex/ClickHouse/issues/3162
+#test reproducing issue https://github.com/ClickHouse/ClickHouse/issues/3162
 @pytest.fixture(scope="module")
 def started_cluster():
     try:

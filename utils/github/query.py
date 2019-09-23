@@ -180,10 +180,12 @@ class Query:
                                     totalCount
                                     nodes {{
                                         ... on PullRequest {{
+                                            id
                                             number
                                             author {{
                                                 login
                                             }}
+                                            bodyText
                                             mergedBy {{
                                                 login
                                             }}
@@ -301,7 +303,58 @@ class Query:
         '''
         return self._run(Query._DEFAULT)['repository']['defaultBranchRef']['name']
 
-    def _run(self, query):
+    _GET_LABEL = '''
+        repository(owner: "yandex" name: "ClickHouse") {{
+            labels(first: {max_page_size} {next} query: "{name}") {{
+                pageInfo {{
+                    hasNextPage
+                    endCursor
+                }}
+                nodes {{
+                    id
+                    name
+                    color
+                }}
+            }}
+        }}
+    '''
+    _SET_LABEL = '''
+        addLabelsToLabelable(input: {{ labelableId: "{pr_id}", labelIds: "{label_id}" }}) {{
+            clientMutationId
+        }}
+    '''
+    def set_label(self, pull_request, label_name):
+        '''Set label by name to the pull request
+
+        Args:
+            pull_request: JSON object returned by `get_pull_requests()`
+            label_name (string): label name
+        '''
+        labels = []
+        not_end = True
+        query = Query._GET_LABEL.format(name=label_name,
+                                        max_page_size=self._max_page_size,
+                                        next='')
+
+        while not_end:
+            result = self._run(query)['repository']['labels']
+            not_end = result['pageInfo']['hasNextPage']
+            query = Query._GET_LABEL.format(name=label_name,
+                                            max_page_size=self._max_page_size,
+                                            next=f'after: "{result["pageInfo"]["endCursor"]}"')
+
+            labels += [label for label in result['nodes']]
+
+        if not labels:
+            return
+
+        query = Query._SET_LABEL.format(pr_id = pull_request['id'], label_id = labels[0]['id'])
+        self._run(query, is_mutation=True)
+
+        pull_request['labels']['nodes'].append(labels[0])
+
+
+    def _run(self, query, is_mutation=False):
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
 
@@ -325,26 +378,34 @@ class Query:
             return session
 
         headers = {'Authorization': f'bearer {self._token}'}
-        query = f'''
-        {{
-            {query}
-            rateLimit {{
-                cost
-                remaining
+        if is_mutation:
+            query = f'''
+            mutation {{
+                {query}
             }}
-        }}
-        '''
+            '''
+        else:
+            query = f'''
+            query {{
+                {query}
+                rateLimit {{
+                    cost
+                    remaining
+                }}
+            }}
+            '''
         request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
         if request.status_code == 200:
             result = request.json()
             if 'errors' in result:
                 raise Exception(f'Errors occured: {result["errors"]}')
 
-            import inspect
-            caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
-            if caller not in self.api_costs.keys():
-                self.api_costs[caller] = 0
-            self.api_costs[caller] += result['data']['rateLimit']['cost']
+            if not is_mutation:
+                import inspect
+                caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
+                if caller not in self.api_costs.keys():
+                    self.api_costs[caller] = 0
+                self.api_costs[caller] += result['data']['rateLimit']['cost']
 
             return result['data']
         else:

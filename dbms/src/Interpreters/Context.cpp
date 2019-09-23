@@ -143,8 +143,11 @@ struct ContextShared
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
-    /// Allows to remove sensitive data from queries using set of regexp-based rules
-    std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
+    /// Storage disk chooser
+    mutable std::unique_ptr<DiskSpace::DiskSelector> merge_tree_disk_selector;
+    /// Storage policy chooser
+    mutable std::unique_ptr<DiskSpace::StoragePolicySelector> merge_tree_storage_policy_selector;
+
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -287,8 +290,6 @@ struct ContextShared
 
         /// Stop trace collector if any
         trace_collector.reset();
-
-        sensitive_data_masker.reset();
     }
 
     bool hasTraceCollector()
@@ -538,23 +539,6 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
-void Context::setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker)
-{
-    if (!sensitive_data_masker)
-        throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
-
-    if (sensitive_data_masker->rulesCount() > 0)
-    {
-        auto lock = getLock();
-        shared->sensitive_data_masker = std::move(sensitive_data_masker);
-    }
-}
-
-SensitiveDataMasker * Context::getSensitiveDataMasker() const
-{
-    return shared->sensitive_data_masker.get();
-}
-
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
@@ -723,6 +707,13 @@ bool Context::hasDatabaseAccessRights(const String & database_name) const
     auto lock = getLock();
     return client_info.current_user.empty() || (database_name == "system") ||
         shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name);
+}
+
+bool Context::hasDictionaryAccessRights(const String & dictionary_name) const
+{
+    auto lock = getLock();
+    return client_info.current_user.empty() ||
+        shared->users_manager->hasAccessToDictionary(client_info.current_user, dictionary_name);
 }
 
 void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
@@ -1222,8 +1213,8 @@ void Context::setCurrentQueryId(const String & query_id)
             } words;
         } random;
 
-        random.words.a = thread_local_rng();
-        random.words.b = thread_local_rng();
+        random.words.a = thread_local_rng(); //-V656
+        random.words.b = thread_local_rng(); //-V656
 
         /// Use protected constructor.
         struct qUUID : Poco::UUID
@@ -1780,6 +1771,56 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
+const DiskSpace::DiskPtr & Context::getDisk(const String & name) const
+{
+    auto lock = getLock();
+
+    const auto & disk_selector = getDiskSelector();
+
+    return disk_selector[name];
+}
+
+
+DiskSpace::DiskSelector & Context::getDiskSelector() const
+{
+    auto lock = getLock();
+
+    if (!shared->merge_tree_disk_selector)
+    {
+        constexpr auto config_name = "storage_configuration.disks";
+        auto & config = getConfigRef();
+
+        shared->merge_tree_disk_selector = std::make_unique<DiskSpace::DiskSelector>(config, config_name, getPath());
+    }
+    return *shared->merge_tree_disk_selector;
+}
+
+
+const DiskSpace::StoragePolicyPtr & Context::getStoragePolicy(const String & name) const
+{
+    auto lock = getLock();
+
+    auto & policy_selector = getStoragePolicySelector();
+
+    return policy_selector[name];
+}
+
+
+DiskSpace::StoragePolicySelector & Context::getStoragePolicySelector() const
+{
+    auto lock = getLock();
+
+    if (!shared->merge_tree_storage_policy_selector)
+    {
+        constexpr auto config_name = "storage_configuration.policies";
+        auto & config = getConfigRef();
+
+        shared->merge_tree_storage_policy_selector = std::make_unique<DiskSpace::StoragePolicySelector>(config, config_name, getDiskSelector());
+    }
+    return *shared->merge_tree_storage_policy_selector;
+}
+
+
 const MergeTreeSettings & Context::getMergeTreeSettings() const
 {
     auto lock = getLock();
@@ -2050,6 +2091,51 @@ void Context::initializeExternalTablesIfSet()
         /// Reset callback
         external_tables_initializer_callback = {};
     }
+}
+
+
+void Context::setInputInitializer(InputInitializer && initializer)
+{
+    if (input_initializer_callback)
+        throw Exception("Input initializer is already set", ErrorCodes::LOGICAL_ERROR);
+
+    input_initializer_callback = std::move(initializer);
+}
+
+
+void Context::initializeInput(const StoragePtr & input_storage)
+{
+    if (!input_initializer_callback)
+        throw Exception("Input initializer is not set", ErrorCodes::LOGICAL_ERROR);
+
+    input_initializer_callback(*this, input_storage);
+    /// Reset callback
+    input_initializer_callback = {};
+}
+
+
+void Context::setInputBlocksReaderCallback(InputBlocksReader && reader)
+{
+    if (input_blocks_reader)
+        throw Exception("Input blocks reader is already set", ErrorCodes::LOGICAL_ERROR);
+
+    input_blocks_reader = std::move(reader);
+}
+
+
+InputBlocksReader Context::getInputBlocksReaderCallback() const
+{
+    return input_blocks_reader;
+}
+
+
+void Context::resetInputCallbacks()
+{
+    if (input_initializer_callback)
+        input_initializer_callback = {};
+
+    if (input_blocks_reader)
+        input_blocks_reader = {};
 }
 
 

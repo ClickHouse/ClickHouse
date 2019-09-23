@@ -411,6 +411,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
+    query_pipeline.setMaxThreads(context.getSettingsRef().max_threads);
     executeImpl(query_pipeline, input);
     return query_pipeline;
 }
@@ -418,8 +419,6 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
-    FilterInfoPtr filter_info;
-
     /// Need to create sets before analyzeExpressions(). Otherwise some sets for index won't be created.
     query_analyzer->makeSetsForIndex(getSelectQuery().where());
     query_analyzer->makeSetsForIndex(getSelectQuery().prewhere());
@@ -431,8 +430,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             options.to_stage,
             context,
             storage,
-            true,
-            filter_info);
+            true,  // only_types
+            {}     // filter_info
+        );
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -790,7 +790,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
     if (query.limitLength())
     {
         length = getLimitUIntValue(query.limitLength(), context);
-        if (query.limitOffset())
+        if (query.limitOffset() && length)
             offset = getLimitUIntValue(query.limitOffset(), context);
     }
 
@@ -1118,9 +1118,9 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
                 }
 
-                if (auto join = expressions.before_join->getTableJoin())
+                if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
                 {
-                    if (auto stream = join->createStreamWithNonJoinedDataIfFullOrRightJoin(header_before_join, settings.max_block_size))
+                    if (auto stream = join->createStreamWithNonJoinedRows(header_before_join, settings.max_block_size))
                     {
                         if constexpr (pipeline_with_processors)
                         {
@@ -1209,33 +1209,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
-                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
             }
-            else
-            {
-                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
+            else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
+                throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::LOGICAL_ERROR);
 
-                if (query.group_by_with_totals && !aggregate_final)
-                {
-                    bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
-                    executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
-                }
-
-                if ((query.group_by_with_rollup || query.group_by_with_cube) && !aggregate_final)
-                {
-                    if (query.group_by_with_rollup)
-                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                    else if (query.group_by_with_cube)
-                        executeRollupOrCube(pipeline, Modificator::CUBE);
-
-                    if (expressions.has_having)
-                    {
-                        if (query.group_by_with_totals)
-                            throw Exception("WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING", ErrorCodes::NOT_IMPLEMENTED);
-                        executeHaving(pipeline, expressions.before_having);
-                    }
-                }
-            }
+            need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
 
             if (expressions.has_order_by)
             {
@@ -1636,6 +1614,9 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if constexpr (pipeline_with_processors)
         {
+            if (streams.size() == 1)
+                pipeline.setMaxThreads(streams.size());
+
             /// Unify streams. They must have same headers.
             if (streams.size() > 1)
             {
@@ -1658,6 +1639,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             Processors sources;
             sources.reserve(streams.size());
 
+            /// Pin sources for merge tree tables.
+            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+
             for (auto & stream : streams)
             {
                 bool force_add_agg_info = processing_stage == QueryProcessingStage::WithMergeableState;
@@ -1666,8 +1650,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (processing_stage == QueryProcessingStage::Complete)
                     source->addTotalsPort();
 
-                sources.emplace_back(std::move(source));
+                if (pin_sources)
+                    source->setStream(sources.size());
 
+                sources.emplace_back(std::move(source));
             }
 
             pipeline.init(std::move(sources));
@@ -1823,9 +1809,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumMainStreams() > 1)
     {
-        pipeline.resize(max_streams);
+        /// Add resize transform to uniformly distribute data between aggregating streams.
+        pipeline.resize(pipeline.getNumMainStreams(), true);
 
-        auto many_data = std::make_shared<ManyAggregatedData>(max_streams);
+        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumMainStreams());
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                 : static_cast<size_t>(settings.max_threads);

@@ -3,7 +3,7 @@
 
 Creates a table from a file in HDFS.
 
-```
+```sql
 hdfs(URI, format, structure)
 ```
 
@@ -27,7 +27,7 @@ FROM hdfs('hdfs://hdfs1:9000/test', 'TSV', 'column1 UInt32, column2 UInt32, colu
 LIMIT 2
 ```
 
-```
+```text
 ┌─column1─┬─column2─┬─column3─┐
 │       1 │       2 │       3 │
 │       3 │       2 │       1 │
