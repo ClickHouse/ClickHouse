@@ -24,7 +24,8 @@ class AsynchronousMetrics;
 
 
 /** Automatically sends
-  * - difference of ProfileEvents;
+  * - delta values of ProfileEvents;
+  * - cumulative values of ProfileEvents;
   * - values of CurrentMetrics;
   * - values of AsynchronousMetrics;
   *  to Graphite at beginning of every minute.
@@ -44,6 +45,7 @@ private:
     std::string config_name;
     UInt32 interval_seconds;
     bool send_events;
+    bool send_events_cumulative;
     bool send_metrics;
     bool send_asynchronous_metrics;
 
@@ -53,6 +55,7 @@ private:
     ThreadFromGlobalPool thread{&MetricsTransmitter::run, this};
 
     static inline constexpr auto profile_events_path_prefix = "ClickHouse.ProfileEvents.";
+    static inline constexpr auto profile_events_cumulative_path_prefix = "ClickHouse.ProfileEventsCumulative.";
     static inline constexpr auto current_metrics_path_prefix = "ClickHouse.Metrics.";
     static inline constexpr auto asynchronous_metrics_path_prefix = "ClickHouse.AsynchronousMetrics.";
 };

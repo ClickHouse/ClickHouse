@@ -59,4 +59,5 @@ bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status);
   */
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr);
 }

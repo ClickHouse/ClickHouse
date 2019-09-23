@@ -61,6 +61,10 @@ public:
     void insert(const Field & x) override;
     void insertFrom(const IColumn & src, size_t n) override;
 
+    void insertFromNotNullable(const IColumn & src, size_t n);
+    void insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length);
+    void insertManyFromNotNullable(const IColumn & src, size_t position, size_t length);
+
     void insertDefault() override
     {
         getNestedColumn().insertDefault();
