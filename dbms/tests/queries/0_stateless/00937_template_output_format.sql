@@ -6,7 +6,7 @@ INSERT INTO template VALUES
 SELECT * FROM template GROUP BY s1, s2, `s 3`, "s 4", n, d WITH TOTALS ORDER BY n LIMIT 4 FORMAT Template SETTINGS
 extremes = 1,
 format_schema = '{prefix} \n${data:None}\n------\n${totals:}\n------\n${min}\n------\n${max}\n${rows:Escaped} rows\nbefore limit ${rows_before_limit:XML}\nread ${rows_read:Escaped} $$ suffix $$',
-format_schema_rows = 'n:\t${n:JSON}, s1:\t${s1:Escaped}, s2:\t${s2:Quoted}, s3:\t${`s 3`:JSON}, s4:\t${"s 4":CSV}, d:\t${d:Escaped}, n:\t${n:Raw}\t',
+format_schema_rows = 'n:\t${n:JSON}, s1:\t${0:Escaped}, s2:\t${s2:Quoted}, s3:\t${`s 3`:JSON}, s4:\t${"s 4":CSV}, d:\t${d:Escaped}, n:\t${n:Raw}\t',
 format_schema_rows_between_delimiter = ';\n';
 
 DROP TABLE template;

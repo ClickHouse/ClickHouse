@@ -34,23 +34,29 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     for (size_t i = 0; i < format.format_idx_to_column_idx.size(); ++i)
     {
         if (!format.format_idx_to_column_idx[i])
-            format.throwInvalidFormat("Output part name cannot be empty, it's a bug.", i);
-        switch (static_cast<OutputPart>(*format.format_idx_to_column_idx[i]))
+            format.throwInvalidFormat("Output part name cannot be empty.", i);
+        switch (*format.format_idx_to_column_idx[i])
         {
-            case OutputPart::Data:
+            case static_cast<size_t>(OutputPart::Data):
                 data_idx = i;
                 [[fallthrough]];
-            case OutputPart::Totals:
-            case OutputPart::ExtremesMin:
-            case OutputPart::ExtremesMax:
+            case static_cast<size_t>(OutputPart::Totals):
+            case static_cast<size_t>(OutputPart::ExtremesMin):
+            case static_cast<size_t>(OutputPart::ExtremesMax):
                 if (format.formats[i] != ColumnFormat::None)
                     format.throwInvalidFormat("Serialization type for data, totals, min and max must be empty or None", i);
                 break;
-            default:
+            case static_cast<size_t>(OutputPart::Rows):
+            case static_cast<size_t>(OutputPart::RowsBeforeLimit):
+            case static_cast<size_t>(OutputPart::TimeElapsed):
+            case static_cast<size_t>(OutputPart::RowsRead):
+            case static_cast<size_t>(OutputPart::BytesRead):
                 if (format.formats[i] == ColumnFormat::None)
                     format.throwInvalidFormat("Serialization type for output part rows, rows_before_limit, time, "
                                               "rows_read or bytes_read is not specified", i);
                 break;
+            default:
+                format.throwInvalidFormat("Invalid output part", i);
         }
     }
     if (data_idx != 0)
@@ -69,6 +75,9 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     {
         if (!row_format.format_idx_to_column_idx[i])
             row_format.throwInvalidFormat("Cannot skip format field for output, it's a bug.", i);
+        if (header_.columns() <= *row_format.format_idx_to_column_idx[i])
+            row_format.throwInvalidFormat("Column index " + std::to_string(*row_format.format_idx_to_column_idx[i]) +
+                                          " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
         if (row_format.formats[i] == ColumnFormat::None)
             row_format.throwInvalidFormat("Serialization type for file column is not specified", i);
     }

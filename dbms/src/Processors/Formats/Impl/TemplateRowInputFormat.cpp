@@ -29,16 +29,6 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
     {
         if (partName == "data")
             return 0;
-        else if (partName.empty())      /// For skipping some values in prefix and suffix
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-            /// Suppress false-positive warning (bug in GCC 9: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=86465)
-            return {};
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
         throw Exception("Unknown input part " + partName, ErrorCodes::SYNTAX_ERROR);
     });
 
@@ -48,6 +38,8 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
     {
         if (format.format_idx_to_column_idx[i])
         {
+            if (*format.format_idx_to_column_idx[i] != 0)
+                format.throwInvalidFormat("Invalid input part", i);
             if (has_data)
                 format.throwInvalidFormat("${data} can occur only once", i);
             if (format.formats[i] != ColumnFormat::None)
@@ -65,15 +57,6 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
     /// Parse format string for rows
     row_format = ParsedTemplateFormatString(settings.template_settings.row_format, [&](const String & colName) -> std::optional<size_t>
     {
-        if (colName.empty())
-#if !__clang__
-            #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-            return {};
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
         return header_.getPositionByName(colName);
     });
 
@@ -86,6 +69,9 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
 
         if (row_format.format_idx_to_column_idx[i])
         {
+            if (header_.columns() <= *row_format.format_idx_to_column_idx[i])
+                row_format.throwInvalidFormat("Column index " + std::to_string(*row_format.format_idx_to_column_idx[i]) +
+                                              " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
             if (row_format.formats[i] == ColumnFormat::None)
                 row_format.throwInvalidFormat("Column is not skipped, but deserialization type is None", i);
 
