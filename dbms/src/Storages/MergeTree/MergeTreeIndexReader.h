@@ -16,6 +16,8 @@ public:
         size_t marks_count_,
         const MarkRanges & all_mark_ranges_);
 
+    size_t readBytes();
+
     void seek(size_t mark);
 
     MergeTreeIndexGranulePtr read();

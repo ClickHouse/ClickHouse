@@ -171,9 +171,12 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 
     if (!task->is_applied_indices)
     {
-        for (size_t index = 0; index < indices_and_conditions.size(); ++index)
+        for (size_t index = 0; index < indices_and_conditions.size() && !task->mark_ranges.empty(); ++index)
             task->mark_ranges = filterMarksUsingIndex(
                 indices_and_conditions[index].first, indices_and_conditions[index].second, task->data_part, task->mark_ranges);
+
+        if (task->mark_ranges.empty())
+            return {};
 
         task->is_applied_indices = true;
     }
@@ -401,6 +404,7 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
+    size_t prev_index_read_bytes = 0;
     for (const auto & range : ranges)
     {
         MarkRange index_range(range.begin / useful_index->granularity, (range.end + useful_index->granularity - 1) / useful_index->granularity);
@@ -411,7 +415,10 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
+            {
+                prev_index_read_bytes = index_reader.readBytes();
                 granule = index_reader.read();
+            }
 
             MarkRange data_range(
                 std::max(range.begin, index_mark * useful_index->granularity),
@@ -420,8 +427,8 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
             if (!condition->mayBeTrueOnGranule(granule))
             {
                 ++granules_dropped;
-                for (size_t index = range.begin; index < range.end; ++index)
-                    progressImpl({ part->index_granularity.getMarkRows(range.begin), 0 });
+                for (size_t index = data_range.begin; index < data_range.end; ++index)
+                    progressImpl(Progress(part->index_granularity.getMarkRows(index), index_reader.readBytes() - prev_index_read_bytes));
 
                 continue;
             }

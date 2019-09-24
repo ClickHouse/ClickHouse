@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include "MergeTreeIndexReader.h"
 
 
 namespace DB
@@ -14,6 +15,11 @@ MergeTreeIndexReader::MergeTreeIndexReader(
         ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE)
 {
     stream.seekToStart();
+}
+
+size_t MergeTreeIndexReader::readBytes()
+{
+    return stream.data_buffer->count();
 }
 
 void MergeTreeIndexReader::seek(size_t mark)
