@@ -476,10 +476,14 @@ void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
-        size_t left_position = left_cursor.position(); /// save inequal position
+        /// Not zero left_key_tail means there were equality for the last left key in previous leftJoin() call.
+        /// Do not join it twice: join only if it's equal with a first right key of current leftJoin() call and skip otherwise.
+        size_t left_unequal_position = left_cursor.position() + left_key_tail;
+        left_key_tail = 0;
+
         Range range = left_cursor.getNextEqualRange(right_cursor);
 
-        joinInequalsLeft(left_block, left_columns, right_columns, left_position, range.left_start, is_all);
+        joinInequalsLeft(left_block, left_columns, right_columns, left_unequal_position, range.left_start, is_all);
 
         if (range.empty())
             break;
