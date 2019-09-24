@@ -48,10 +48,12 @@ struct FixedHashMapCell
 };
 
 template<typename Key, typename Mapped, typename State>
-void * lookupResultGetKey(FixedHashMapCell<Key, Mapped, State> *) { return nullptr; }
+ALWAYS_INLINE inline void * lookupResultGetKey(FixedHashMapCell<Key, Mapped, State> *)
+{ return nullptr; }
 
 template<typename Key, typename Mapped, typename State>
-auto lookupResultGetMapped(FixedHashMapCell<Key, Mapped, State> * cell) { return &cell->getSecond(); }
+ALWAYS_INLINE inline auto lookupResultGetMapped(FixedHashMapCell<Key, Mapped, State> * cell)
+{ return &cell->getSecond(); }
 
 template <typename Key, typename Mapped, typename Allocator = HashTableAllocator>
 class FixedHashMap : public FixedHashTable<Key, FixedHashMapCell<Key, Mapped>, Allocator>

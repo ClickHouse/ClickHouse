@@ -15,10 +15,10 @@ struct ClearableHashMapCell : public ClearableHashTableCell<Key, HashMapCell<Key
 };
 
 template<typename Key, typename Mapped, typename Hash>
-auto lookupResultGetKey(ClearableHashMapCell<Key, Mapped, Hash> * cell) { return &cell->getFirst(); }
+ALWAYS_INLINE inline auto lookupResultGetKey(ClearableHashMapCell<Key, Mapped, Hash> * cell) { return &cell->getFirst(); }
 
 template<typename Key, typename Mapped, typename Hash>
-auto lookupResultGetMapped(ClearableHashMapCell<Key, Mapped, Hash> * cell) { return &cell->getSecond(); }
+ALWAYS_INLINE inline auto lookupResultGetMapped(ClearableHashMapCell<Key, Mapped, Hash> * cell) { return &cell->getSecond(); }
 
 template
 <
