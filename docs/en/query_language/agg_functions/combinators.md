@@ -16,7 +16,7 @@ The -Array suffix can be appended to any aggregate function. In this case, the a
 
 Example 1: `sumArray(arr)` - Totals all the elements of all 'arr' arrays. In this example, it could have been written more simply: `sum(arraySum(arr))`.
 
-Example 2: `uniqArray(arr)` – Count the number of unique elements in all 'arr' arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it's not always possible to add 'arrayJoin' to a query.
+Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr' arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it's not always possible to add 'arrayJoin' to a query.
 
 -If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument can't be an array.
 
@@ -44,9 +44,9 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
-## -Resample
+## -Resample {#agg_functions-combinator-resample}
 
-Allows to divide data by groups, and then separately aggregates the data in those groups. Groups are created by splitting the values of one of the columns into intervals.
+Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
 
 ```sql
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
@@ -54,16 +54,16 @@ Allows to divide data by groups, and then separately aggregates the data in thos
 
 **Parameters**
 
-- `start` — Starting value of the whole required interval for the values of `resampling_key`. 
-- `stop` — Ending value of the whole required interval for the values of `resampling_key`. The whole interval doesn't include the `stop` value `[start, stop)`.
-- `step` — Step for separating the whole interval by subintervals. The `aggFunction` is executed over each of those subintervals independently.
-- `resampling_key` — Column, which values are used for separating data by intervals.
-- `aggFunction_params` — Parameters of `aggFunction`.
+- `start` — Starting value of the whole required interval for `resampling_key` values. 
+- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn't include the `stop` value `[start, stop)`.
+- `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+- `resampling_key` — Column whose values are used for separating data into intervals.
+- `aggFunction_params` — `aggFunction` parameters.
 
 
 **Returned values**
 
-- Array of `aggFunction` results for each of subintervals.
+- Array of `aggFunction` results for each subinterval.
 
 **Example**
 
@@ -80,9 +80,9 @@ Consider the `people` table with the following data:
 └────────┴─────┴──────┘
 ```
 
-Let's get the names of the persons which age lies in the intervals of `[30,60)` and `[60,75)`. As we use integer representation of age, then there are ages of `[30, 59]` and `[60,74]`.
+Let's get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
 
-For aggregating names into the array, we use the aggregate function [groupArray](reference.md#agg_function-grouparray). It takes a single argument. For our case, it is the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define required intervals, we pass the `(30, 75, 30)` arguments into the `groupArrayResample` function.
+To aggregate names in an array, we use the [groupArray](reference.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it's the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
 
 ```sql
 SELECT groupArrayResample(30, 75, 30)(name, age) from people
@@ -95,9 +95,9 @@ SELECT groupArrayResample(30, 75, 30)(name, age) from people
 
 Consider the results.
 
-`Jonh` is out of the sample because he is too young. Other people are distributed according to the specified age intervals.
+`Jonh` is out of the sample because he's too young. Other people are distributed according to the specified age intervals.
 
-Now, let's count the total number of people and their average wage in the specified age intervals.
+Now let's count the total number of people and their average wage in the specified age intervals.
 
 ```sql
 SELECT
