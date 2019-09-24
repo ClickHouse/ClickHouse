@@ -50,7 +50,7 @@ private:
     PeekableReadBuffer buf;
     DataTypes data_types;
 
-    FormatSettings settings;
+    const FormatSettings settings;
     const bool ignore_spaces;
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;

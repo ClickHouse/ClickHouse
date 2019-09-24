@@ -2,6 +2,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -261,6 +262,21 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
                 });
 
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format);
+    });
+
+    factory.registerOutputFormatProcessor("CustomSeparated", [](
+            WriteBuffer & buf,
+            const Block & sample,
+            const Context & context,
+            FormatFactory::WriteCallback,
+            const FormatSettings & settings)
+    {
+        ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(context);
+        ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(context, sample);
+        FormatSettings format_settings = settings;
+        format_settings.template_settings.row_between_delimiter = context.getSettingsRef().format_custom_row_between_delimiter;
+
+        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, format_settings, resultset_format, row_format);
     });
 }
 }
