@@ -242,7 +242,7 @@ private:
     // Lookups can be stored in a HashTable because it is memmovable
     // A std::variant contains a currently active type id (memmovable), together with a union of the types
     // The types are all std::unique_ptr, which contains a single pointer, which is memmovable.
-    // Source: https://github.com/yandex/ClickHouse/issues/4906
+    // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
     Lookups lookups;
 };
 

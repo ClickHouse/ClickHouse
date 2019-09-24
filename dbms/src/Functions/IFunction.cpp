@@ -337,19 +337,43 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     size_t num_rows = input_rows_count;
     ColumnPtr indexes;
 
+    /// Find first LowCardinality column and replace it to nested dictionary.
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
         if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
+            /// Single LowCardinality column is supported now.
             if (indexes)
                 throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
 
-            indexes = low_cardinality_column->getIndexesPtr();
-            num_rows = low_cardinality_column->getDictionary().size();
+            auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
+
+            if (!low_cardinality_type)
+                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
+                                ErrorCodes::LOGICAL_ERROR);
+
+            if (can_be_executed_on_default_arguments)
+            {
+                /// Normal case, when function can be executed on values's default.
+                column.column = low_cardinality_column->getDictionary().getNestedColumn();
+                indexes = low_cardinality_column->getIndexesPtr();
+            }
+            else
+            {
+                /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
+                /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
+                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
+                column.column = dict_encoded.dictionary;
+                indexes = dict_encoded.indexes;
+            }
+
+            num_rows = column.column->size();
+            column.type = low_cardinality_type->getDictionaryType();
         }
     }
 
+    /// Change size of constants.
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
@@ -358,25 +382,11 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
             column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
             column.type = removeLowCardinality(column.type);
         }
-        else if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
-        {
-            auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
-
-            if (!low_cardinality_type)
-                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
-
-            if (can_be_executed_on_default_arguments)
-                column.column = low_cardinality_column->getDictionary().getNestedColumn();
-            else
-            {
-                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
-                column.column = dict_encoded.dictionary;
-                indexes = dict_encoded.indexes;
-            }
-            column.type = low_cardinality_type->getDictionaryType();
-        }
     }
+
+#ifndef NDEBUG
+    block.checkNumberOfRows(true);
+#endif
 
     return indexes;
 }

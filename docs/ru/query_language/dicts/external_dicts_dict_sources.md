@@ -132,7 +132,7 @@ ClickHouse получает от ODBC-драйвера информацию о �
 
 Сконфигурируем unixODBC для работы с PostgreSQL. Содержимое `/etc/odbc.ini`:
 
-```
+```text
 [gregtest]
 Driver = /usr/lib/psqlodbca.so
 Servername = localhost
@@ -145,7 +145,7 @@ PASSWORD = test
 
 Если выполнить запрос вида:
 
-```
+```sql
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
 ```
 
@@ -156,12 +156,12 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ОС Ubuntu.
 
 Установка unixODBC и ODBC-драйвера для PostgreSQL: :
-
-    sudo apt-get install -y unixodbc odbcinst odbc-postgresql
-
+```bash
+$ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
+```
 Настройка `/etc/odbc.ini` (или `~/.odbc.ini`):
 
-```
+```text
     [DEFAULT]
     Driver = myconnection
 
@@ -223,13 +223,13 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 Установка драйвера: :
 
-```
-    sudo apt-get install tdsodbc freetds-bin sqsh
+```bash
+$ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
 Настройка драйвера: :
 
-```
+```bash
     $ cat /etc/freetds/freetds.conf
     ...
 
