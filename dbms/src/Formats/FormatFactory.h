@@ -51,7 +51,6 @@ private:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        UInt64 rows_portion_size,
         ReadCallback callback,
         const FormatSettings & settings)>;
 
@@ -96,7 +95,6 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        UInt64 rows_portion_size = 0,
         ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
@@ -108,7 +106,6 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        UInt64 rows_portion_size = 0,
         ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(

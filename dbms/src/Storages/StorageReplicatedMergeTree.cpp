@@ -5110,38 +5110,29 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {
+    Stopwatch watch;
+
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeper());
 
-    Stopwatch watch;
-    Poco::Event event;
-    std::atomic<bool> cond_reached{false};
-
-    auto callback = [&event, &cond_reached, queue_size] (size_t new_queue_size)
+    Poco::Event target_size_event;
+    auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
     {
         if (new_queue_size <= queue_size)
-            cond_reached.store(true, std::memory_order_relaxed);
-
-        event.set();
+            target_size_event.set();
     };
+    const auto handler = queue.addSubscriber(std::move(callback));
 
-    auto handler = queue.addSubscriber(std::move(callback));
-
-    while (true)
+    while (!target_size_event.tryWait(50))
     {
-        event.tryWait(50);
-
         if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
-            break;
-
-        if (cond_reached)
-            break;
+            return false;
 
         if (partial_shutdown_called)
             throw Exception("Shutdown is called for table", ErrorCodes::ABORTED);
     }
 
-    return cond_reached.load(std::memory_order_relaxed);
+    return true;
 }
 
 

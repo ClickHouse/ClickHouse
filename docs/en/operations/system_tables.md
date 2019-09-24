@@ -91,6 +91,46 @@ The `system.columns` table contains the following columns (the column type is sh
 - `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 - `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
+## system.contributors {#system_contributors}
+
+Contains information about contributors. All constributors in random order. The order is random at query execution time.
+
+Columns:
+
+- `name` (String) — Contributor (author) name from git log.
+
+**Example**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+To find out yourself in the table, use a query:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
+
 ## system.databases
 
 This table contains a single String column called 'name' – the name of a database.
@@ -454,7 +494,7 @@ WHERE table = 'visits'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 database:           merge
@@ -480,7 +520,7 @@ active_replicas:    2
 
 Columns:
 
-```
+```text
 database:          Database name
 table:              Table name
 engine:            Table engine name
@@ -533,7 +573,7 @@ If you don't request the last 4 columns (log_max_index, log_pointer, total_repli
 
 For example, you can check that everything is working correctly like this:
 
-``` sql
+```sql
 SELECT
     database,
     table,
@@ -579,13 +619,13 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.settings
 WHERE changed
 ```
 
-```
+```text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
 │ use_uncompressed_cache │ 0           │       1 │
@@ -646,14 +686,14 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.zookeeper
 WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 name:           example01-08-1.yandex.ru

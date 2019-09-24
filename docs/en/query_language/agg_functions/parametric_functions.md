@@ -6,15 +6,15 @@ Some aggregate functions can accept not only argument columns (used for compress
 
 Calculates an adaptive histogram. It doesn't guarantee precise results.
 
-```
+```sql
 histogram(number_of_bins)(values)
 ```
  
-The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as a new data enters a function, and in common case the widths of bins are not equal.
+The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
 
 **Parameters**
 
-`number_of_bins` — Upper limit for a number of bins for the histogram. Function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses less number of bins.
+`number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
 `values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
 
 **Returned values**
@@ -69,7 +69,7 @@ FROM
 └────────┴───────┘
 ```
 
-In this case you should remember, that you don't know the borders of histogram bins.
+In this case, you should remember that you don't know the histogram bin borders.
 
 ## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
 
@@ -255,7 +255,7 @@ Set the following chain of events:
 
 To find out how far the user `user_id` could get through the chain in an hour in January of 2017, make the query:
 
-```
+```sql
 SELECT
     level,
     count() AS c
@@ -286,7 +286,7 @@ Consider you are doing a website analytics, intend to calculate the retention of
 
 This could be easily calculate by `retention`
 
-```
+```sql
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -320,7 +320,7 @@ It works as fast as possible, except for cases when a large N value is used and 
 
 Usage example:
 
-```
+```text
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```

@@ -179,7 +179,8 @@ Insert the [DateTime](../../data_types/datetime.md) type value with the differen
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Exception on client:
 Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
 ```
@@ -187,7 +188,8 @@ Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 
 ```sql
 SET input_format_values_interpret_expressions = 1;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Ok.
 ```
 
@@ -196,7 +198,8 @@ The last query is equivalent to the following:
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t SELECT now()
-
+```
+```text
 Ok.
 ```
 
@@ -473,7 +476,7 @@ The maximum number of query processing threads, excluding threads for retrieving
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
 For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-Default value: 2.
+Default value: the number of physical CPU cores.
 
 If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
 
@@ -599,7 +602,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 
 ### Random (by default) {#load_balancing-random}
 
-```
+```sql
 load_balancing = random
 ```
 
@@ -608,7 +611,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-```
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -622,7 +625,7 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### In Order {#load_balancing-in_order}
 
-```
+```sql
 load_balancing = in_order
 ```
 
@@ -632,7 +635,7 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-```
+```sql
 load_balancing = first_or_random
 ```
 
@@ -859,9 +862,9 @@ Default value: 0.
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Enables or disables throwing an exception if the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query have not performed a merge.
+Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn't perform a merge.
 
-By default `OPTIMIZE` returns successfully even if it haven't done anything. This setting allows to distinguish this situation and get the reason in exception message.
+By default, `OPTIMIZE` returns successfully even if it didn't do anything. This setting lets you differentiate these situations and get the reason in an exception message.
 
 Possible values:
 
@@ -869,6 +872,8 @@ Possible values:
 - 0 — Throwing an exception is disabled.
 
 Default value: 0.
+
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 - Type: seconds
@@ -896,16 +901,16 @@ Error count of each replica is capped at this value, preventing a single replica
 
 ## os_thread_priority {#setting-os_thread_priority}
 
-Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
+Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
 !!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments don't allow to set the `CAP_SYS_NICE` capability. In this case `clickhouse-server` shows a message about it at the start.
+    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments don't allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
 
 Possible values:
 
-You can set values in the `[-20, 19]` range.
+- You can set values in the range `[-20, 19]`.
 
-The lower value means a higher priority. Threads with low values of `nice` priority are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
+Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favor of short interactive queries when they arrive.
 
 Default value: 0.
 

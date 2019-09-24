@@ -27,8 +27,8 @@ if (GLIBC_COMPATIBILITY)
 
     target_include_directories(glibc-compatibility PRIVATE libcxxabi)
 
-    if (USE_STATIC_LIBRARIES=0 AND MAKE_STATIC_LIBRARIES=OFF)
-        target_compile_options(PRIVATE -fPIC)
+    if (NOT USE_STATIC_LIBRARIES AND NOT MAKE_STATIC_LIBRARIES)
+        target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
     target_link_libraries(global-libs INTERFACE glibc-compatibility)

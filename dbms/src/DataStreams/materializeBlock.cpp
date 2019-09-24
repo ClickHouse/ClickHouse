@@ -20,4 +20,10 @@ Block materializeBlock(const Block & block)
     return res;
 }
 
+void materializeBlockInplace(Block & block)
+{
+    for (size_t i = 0; i < block.columns(); ++i)
+        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
+}
+
 }
