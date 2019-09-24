@@ -260,7 +260,7 @@ Useful for breaking away from a specific network interface.
 
 ## interserver_http_credentials {#server-settings-interserver_http_credentials}
 
-The username and password used to authenticate during [replication](../table_engines/replication.md) with the Replicated* engines.
+The username and password used to authenticate during [replication](../table_engines/replication.md) with the Replicated* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
 By default, the authentication is not used.
 
 This section contains the following parameters:
