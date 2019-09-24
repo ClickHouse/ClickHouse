@@ -361,10 +361,42 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 └──────────────────┴─────────────────┘
 ```
 
-## xxHash32, xxHash64
+## xxHash32, xxHash64 {#hash_functions-xxhash32-xxhash64}
 
-Вычисляет xxHash от строки.
-Принимает аргумент типа String. Возвращает значение типа Uint64 или Uint32.
-Дополнительные сведения см. по ссылке: [xxHash](http://cyan4973.github.io/xxHash/)
+Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
+
+```sql
+SELECT xxHash32('');
+
+OR
+
+SELECT xxHash64('');
+```
+
+**Возвращаемое значение**
+
+Хэш-значение типа `Uint32` или `Uint64`.
+
+Тип: `xxHash`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT xxHash32('Hello, world!');
+```
+
+Ответ:
+
+```text
+┌─xxHash32('Hello, world!')─┐
+│                 834093149 │
+└───────────────────────────┘
+```
+
+**Смотрите также**
+
+- [xxHash](http://cyan4973.github.io/xxHash/).
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/hash_functions/) <!--hide-->
