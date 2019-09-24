@@ -307,7 +307,7 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 
 ## xxHash32, xxHash64 {#hash_functions-xxhash32}
 
-Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits. The current version of ClickHouse uses `xxHash` version 0.6.5.
+Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
 
 ```sql
 SELECT xxHash32('');
