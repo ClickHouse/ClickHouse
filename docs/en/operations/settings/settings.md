@@ -438,7 +438,7 @@ Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cash of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -449,7 +449,7 @@ Default value: 128 ✕ 8192.
 
 ## merge_tree_max_bytes_to_use_cache {#setting-merge_tree_max_bytes_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cash of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
