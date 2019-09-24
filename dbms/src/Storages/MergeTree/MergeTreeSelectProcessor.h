@@ -73,8 +73,6 @@ private:
     bool check_columns;
     String path;
     bool is_first_task = true;
-
-    Logger * log = &Logger::get("MergeTreeSelectProcessor");
 };
 
 }

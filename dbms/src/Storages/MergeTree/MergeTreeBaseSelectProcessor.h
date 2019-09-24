@@ -32,7 +32,8 @@ public:
         bool use_uncompressed_cache_,
         bool save_marks_in_cache_ = true,
         const Names & virt_column_names_ = {},
-        const IndicesAndConditions & indices_and_conditions_ = {});
+        const IndicesAndConditions & indices_and_conditions_ = {},
+        const String & log_name = {});
 
     ~MergeTreeBaseSelectProcessor() override;
 

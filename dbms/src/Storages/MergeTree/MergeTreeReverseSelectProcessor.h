@@ -75,8 +75,6 @@ private:
     String path;
 
     Chunks chunks;
-
-    Logger * log = &Logger::get("MergeTreeReverseSelectProcessor");
 };
 
 }

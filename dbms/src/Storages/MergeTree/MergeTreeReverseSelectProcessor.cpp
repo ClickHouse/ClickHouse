@@ -57,7 +57,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
         storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, min_rows_for_skip_, min_bytes_for_skip_, use_uncompressed_cache_, save_marks_in_cache_,
-        virt_column_names_, indices_and_conditions_},
+        virt_column_names_, indices_and_conditions_, "MergeTreeReverseSelectBlockInputStream"},
     required_columns{required_columns_},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),

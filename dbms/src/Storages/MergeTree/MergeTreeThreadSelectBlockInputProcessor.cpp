@@ -25,7 +25,8 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
                                  preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
                                  settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size,
                                  settings.merge_tree_min_rows_for_seek, settings.merge_tree_min_bytes_for_seek,
-                                 use_uncompressed_cache_, true, virt_column_names_, indices_and_conditions_},
+                                 use_uncompressed_cache_, true, virt_column_names_, indices_and_conditions_,
+                                 "MergeTreeThreadSelectBlockInputStream"},
     thread{thread_},
     pool{pool_}
 {

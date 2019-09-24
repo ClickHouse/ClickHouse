@@ -34,11 +34,12 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     bool use_uncompressed_cache_,
     bool save_marks_in_cache_,
     const Names & virt_column_names_,
-    const IndicesAndConditions & indices_and_conditions_)
+    const IndicesAndConditions & indices_and_conditions_,
+    const String & log_name)
 :
     SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_)),
     storage(storage_),
-    log(&Logger::get(storage.getLogName() + " (MergeTreeBaseSelectBlockInputStream)")),
+    log(&Logger::get(storage.getLogName() + " (" + log_name + ")")),
     prewhere_info(prewhere_info_),
     max_block_size_rows(max_block_size_rows_),
     preferred_block_size_bytes(preferred_block_size_bytes_),
