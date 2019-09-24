@@ -35,7 +35,7 @@ public:
 
     Block getHeader() const override { return sample_block; }
 
-    ~WindowBlockInputStream() { storage.data.clear(); }
+    ~WindowBlockInputStream() override { storage.data.clear(); }
 
 protected:
     void readPrefix() override { in->readPrefix(); }
