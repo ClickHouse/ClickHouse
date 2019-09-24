@@ -2,6 +2,8 @@
 #include <Formats/verbosePrintString.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/copyData.h>
 
 namespace DB
 {
@@ -11,11 +13,14 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-ParsedTemplateFormatString::ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idx_by_name)
+ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
 {
     try
     {
-        parse(format_string, idx_by_name);
+        ReadBufferFromFile schema_file(schema.absoluteSchemaPath());
+        WriteBufferFromOwnString format_string;
+        copyData(schema_file, format_string);
+        parse(format_string.str(), idx_by_name);
     }
     catch (DB::Exception & e)
     {

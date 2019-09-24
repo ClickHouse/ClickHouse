@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <functional>
 #include <optional>
+#include <Formats/FormatSchemaInfo.h>
 
 namespace DB
 {
@@ -34,7 +35,7 @@ struct ParsedTemplateFormatString
     typedef std::function<std::optional<size_t>(const String &)> ColumnIdxGetter;
 
     ParsedTemplateFormatString() = default;
-    ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idx_by_name);
+    ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name);
 
     void parse(const String & format_string, const ColumnIdxGetter & idx_by_name);
 
