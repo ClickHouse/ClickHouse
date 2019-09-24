@@ -199,7 +199,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         for (const ShuffledPool & pool: shuffled_pools)
         {
             auto & pool_state = shared_pool_states[pool.index];
-            pool_state.error_count = std::min(max_error_cap, static_cast<size_t>(pool_state.error_count + pool.error_count));
+            pool_state.error_count = std::min<UInt64>(max_error_cap, pool_state.error_count + pool.error_count);
         }
     });
 

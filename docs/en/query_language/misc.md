@@ -177,16 +177,16 @@ Changes already made by the mutation are not rolled back.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
-This query tries to initialize an unscheduled merge of data parts for tables with a table engine of [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines are not supported.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine from the [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines aren't supported.
 
-When `OPTIMIZE` is used with [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
+When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
 
-- If `OPTIMIZE` doesn't perform merging for any reason, it doesn't notify the client about it. To enable notification use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
+- If `OPTIMIZE` doesn't perform a merge for any reason, it doesn't notify the client. To enable notifications, use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
 - If you specify a `PARTITION`, only the specified partition is optimized.
 - If you specify `FINAL`, optimization is performed even when all the data is already in one part.
 
-!!! warning
-    OPTIMIZE can't fix the "Too many parts" error.
+!!! warning "Warning"
+    `OPTIMIZE` can't fix the "Too many parts" error.
 
 ## RENAME {#misc_operations-rename}
 

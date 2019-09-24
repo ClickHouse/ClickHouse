@@ -54,16 +54,16 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
-#include "MySQLHandlerFactory.h"
 #include <Common/SensitiveDataMasker.h>
 
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #include <Common/hasLinuxCapability.h>
 #include <sys/mman.h>
 #endif
 
 #if USE_POCO_NETSSL
+#include "MySQLHandlerFactory.h"
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif

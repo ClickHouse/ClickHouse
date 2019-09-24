@@ -1,5 +1,7 @@
 #pragma once
-#include <Common/config.h>
+
+#include "config_core.h"
+
 #if USE_SSL
 
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -42,4 +44,5 @@ private:
 };
 
 }
+
 #endif

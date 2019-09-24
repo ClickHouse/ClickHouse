@@ -47,7 +47,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of parameters, see the [CREATE query description](../../query_language/create.md).
 
-!!! note "Note"
+!!!note "Note"
     `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
 ### Query Clauses
@@ -288,24 +288,24 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 - `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    Stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
+    Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
 
     - `n` — ngram size,
     - `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-    - `number_of_hash_functions` — The number of hash functions used in the bloom filter.
-    - `random_seed` — The seed for bloom filter hash functions.
+    - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
+    - `random_seed` — The seed for Bloom filter hash functions.
 
 - `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
     The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
-- `bloom_filter([false_positive])` — Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+- `bloom_filter([false_positive])` — Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
 
-    The `false_positive` optional parameter is the probability of false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+    The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
 
     Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
-    Supported for the following functions: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
+    The following functions can use it: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -315,9 +315,9 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 #### Functions Support
 
-Conditions in the `WHERE` clause contain calls of functions over the columns. If the column is a part of some index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subset of functions for using indexes.
+Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
 
-The `set` index can be used with all functions. Functions subsets for other indexes are in the table below.
+The `set` index can be used with all functions. Function subsets for other indexes are shown in the table below.
 
 Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter
 ----------------------------|-------------|--------|------------|------------|---------------
@@ -326,7 +326,7 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
 [notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
 [startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
-[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ |
+[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ | ✗
 [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
 [in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
@@ -338,9 +338,9 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✔ | ✗ | ✗ | ✗
 hasToken  | ✗ | ✗ | ✗ | ✔ | ✗ 
 
-Functions with a constant argument less than ngram size couldn't be used by `ngrambf_v1` for the query optimization.
+Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `bloom_filter` indexes couldn't be used for optimizing queries where the result of a function is expected to be false, for example:
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can't be used for optimizing queries where the result of a function is expected to be false, for example:
 
 - Can be optimized:
     - `s LIKE '%test%'`

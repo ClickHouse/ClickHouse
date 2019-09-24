@@ -179,14 +179,65 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash {#hash_functions-javahash}
 
-Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки.
-Принимает аргумент типа String. Возвращает значение типа Int32.
+Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки. `JavaHash` не отличается ни скоростью, ни качеством, поэтому эту функцию следует считать устаревшей. Используйте эту функцию, если вам необходимо получить значение хэша по такому же алгоритму.
 
-## hiveHash
+```sql
+SELECT javaHash('');
+```
 
-Вычисляет HiveHash от строки.
-Принимает аргумент типа String. Возвращает значение типа Int32.
-HiveHash — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа.  Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии  3.0.
+**Возвращаемое значение**
+
+Хэш-значение типа `Int32`.
+
+Тип: `javaHash`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT javaHash('Hello, world!');
+```
+
+Ответ:
+
+```text
+┌─javaHash('Hello, world!')─┐
+│               -1880044555 │
+└───────────────────────────┘
+```
+
+## hiveHash {#hash_functions-hivehash}
+
+Вычисляет `HiveHash` от строки.
+
+```sql
+SELECT hiveHash('');
+```
+
+`HiveHash` — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа. Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии  3.0.
+
+**Возвращаемое значение**
+
+Хэш-значение типа `Int32`.
+
+Тип: `hiveHash`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT hiveHash('Hello, world!');
+```
+
+Ответ:
+
+```text
+┌─hiveHash('Hello, world!')─┐
+│                 267439093 │
+└───────────────────────────┘
+```
 
 ## metroHash64
 
@@ -310,10 +361,42 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 └──────────────────┴─────────────────┘
 ```
 
-## xxHash32, xxHash64
+## xxHash32, xxHash64 {#hash_functions-xxhash32-xxhash64}
 
-Вычисляет xxHash от строки.
-Принимает аргумент типа String. Возвращает значение типа Uint64 или Uint32.
-Дополнительные сведения см. по ссылке: [xxHash](http://cyan4973.github.io/xxHash/)
+Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
+
+```sql
+SELECT xxHash32('');
+
+OR
+
+SELECT xxHash64('');
+```
+
+**Возвращаемое значение**
+
+Хэш-значение типа `Uint32` или `Uint64`.
+
+Тип: `xxHash`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT xxHash32('Hello, world!');
+```
+
+Ответ:
+
+```text
+┌─xxHash32('Hello, world!')─┐
+│                 834093149 │
+└───────────────────────────┘
+```
+
+**Смотрите также**
+
+- [xxHash](http://cyan4973.github.io/xxHash/).
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/hash_functions/) <!--hide-->

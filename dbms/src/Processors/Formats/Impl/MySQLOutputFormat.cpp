@@ -1,6 +1,6 @@
-#include <Common/config.h>
-#if USE_SSL
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+
+#if USE_SSL
 
 #include <Core/MySQLProtocol.h>
 #include <Interpreters/ProcessList.h>
@@ -118,4 +118,5 @@ void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory)
 }
 
 }
-#endif
+
+#endif // USE_SSL

@@ -177,15 +177,65 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 ## javaHash {#hash_functions-javahash}
 
-Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452)
- from a string.
-Accepts a String-type argument. Returns Int32.
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
-## hiveHash
+```sql
+SELECT javaHash('');
+```
 
-Calculates HiveHash from a string.
-Accepts a String-type argument. Returns Int32.
-This is just [JavaHash](#hash_functions-javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
+**Returned value**
+
+A `Int32` data type hash value.
+
+Type: `javaHash`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT javaHash('Hello, world!');
+```
+
+Result:
+
+```text
+┌─javaHash('Hello, world!')─┐
+│               -1880044555 │
+└───────────────────────────┘
+```
+
+## hiveHash {#hash_functions-hivehash}
+
+Calculates `HiveHash` from a string.
+
+```sql
+SELECT hiveHash('');
+```
+
+This is just [JavaHash](#hash_functions-javahash) with zeroed out sign bit. This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
+
+**Returned value**
+
+A `Int32` data type hash value.
+
+Type: `hiveHash`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT hiveHash('Hello, world!');
+```
+
+Result:
+
+```text
+┌─hiveHash('Hello, world!')─┐
+│                 267439093 │
+└───────────────────────────┘
+```
 
 ## metroHash64
 
@@ -305,10 +355,42 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 └──────────────────┴─────────────────┘
 ```
 
-## xxHash32, xxHash64
+## xxHash32, xxHash64 {#hash_functions-xxhash32}
 
-Calculates xxHash from a string.
-Accepts a String-type argument. Returns UInt64 Or UInt32.
-For more information, see the link: [xxHash](http://cyan4973.github.io/xxHash/)
+Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
+
+```sql
+SELECT xxHash32('');
+
+OR
+
+SELECT xxHash64('');
+```
+
+**Returned value**
+
+A `Uint32` or `Uint64` data type hash value.
+
+Type: `xxHash`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT xxHash32('Hello, world!');
+```
+
+Result:
+
+```text
+┌─xxHash32('Hello, world!')─┐
+│                 834093149 │
+└───────────────────────────┘
+```
+
+**See Also**
+
+- [xxHash](http://cyan4973.github.io/xxHash/).
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/hash_functions/) <!--hide-->

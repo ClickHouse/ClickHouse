@@ -15,6 +15,7 @@ namespace ErrorCodes
 extern const int NETWORK_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
+extern const int BAD_ARGUMENTS;
 }
 
 
@@ -32,10 +33,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const std::string path = hdfs_uri.substr(begin_of_path);
-        if (path.find("*?{") != std::string::npos)
+        if (path.find_first_of("*?{") != std::string::npos)
             throw Exception("URI '" + hdfs_uri + "' contains globs, so the table is in readonly mode", ErrorCodes::CANNOT_OPEN_FILE);
 
-        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);
+        if (!hdfsExists(fs.get(), path.c_str()))
+            throw Exception("File: " + path + " is already exists", ErrorCodes::BAD_ARGUMENTS);
+        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
 
         if (fout == nullptr)
         {

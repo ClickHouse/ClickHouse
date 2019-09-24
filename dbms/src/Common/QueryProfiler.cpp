@@ -30,13 +30,13 @@ namespace
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
-# if !defined(__APPLE__)
+#if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
 #endif
 
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
     {
-# if !defined(__APPLE__)
+#if defined(OS_LINUX)
         /// Quickly drop if signal handler is called too frequently.
         /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
         ++write_trace_iteration;

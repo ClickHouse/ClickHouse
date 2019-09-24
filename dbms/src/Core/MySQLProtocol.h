@@ -1,5 +1,7 @@
 #pragma once
+
 #include "config_core.h"
+
 #if USE_SSL
 
 #include <ext/scope_guard.h>
@@ -1077,4 +1079,5 @@ private:
 
 }
 }
-#endif
+
+#endif // USE_SSL
