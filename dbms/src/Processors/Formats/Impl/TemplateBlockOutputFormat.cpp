@@ -12,22 +12,15 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_)
-        : IOutputFormat(header_, out_), settings(settings_)
+TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
+                                                     ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_)
+        : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_)), row_format(std::move(row_format_))
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     types.resize(columns);
     for (size_t i = 0; i < columns; ++i)
         types[i] = sample.safeGetByPosition(i).type;
-
-    /// Parse format string for whole output
-    static const String default_format("${data}");
-    const String & format_str = settings.template_settings.format.empty() ? default_format : settings.template_settings.format;
-    format = ParsedTemplateFormatString(format_str, [&](const String & partName)
-    {
-        return static_cast<size_t>(stringToOutputPart(partName));
-    });
 
     /// Validate format string for whole output
     size_t data_idx = format.format_idx_to_column_idx.size() + 1;
@@ -37,20 +30,20 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
             format.throwInvalidFormat("Output part name cannot be empty.", i);
         switch (*format.format_idx_to_column_idx[i])
         {
-            case static_cast<size_t>(OutputPart::Data):
+            case static_cast<size_t>(ResultsetPart::Data):
                 data_idx = i;
                 [[fallthrough]];
-            case static_cast<size_t>(OutputPart::Totals):
-            case static_cast<size_t>(OutputPart::ExtremesMin):
-            case static_cast<size_t>(OutputPart::ExtremesMax):
+            case static_cast<size_t>(ResultsetPart::Totals):
+            case static_cast<size_t>(ResultsetPart::ExtremesMin):
+            case static_cast<size_t>(ResultsetPart::ExtremesMax):
                 if (format.formats[i] != ColumnFormat::None)
                     format.throwInvalidFormat("Serialization type for data, totals, min and max must be empty or None", i);
                 break;
-            case static_cast<size_t>(OutputPart::Rows):
-            case static_cast<size_t>(OutputPart::RowsBeforeLimit):
-            case static_cast<size_t>(OutputPart::TimeElapsed):
-            case static_cast<size_t>(OutputPart::RowsRead):
-            case static_cast<size_t>(OutputPart::BytesRead):
+            case static_cast<size_t>(ResultsetPart::Rows):
+            case static_cast<size_t>(ResultsetPart::RowsBeforeLimit):
+            case static_cast<size_t>(ResultsetPart::TimeElapsed):
+            case static_cast<size_t>(ResultsetPart::RowsRead):
+            case static_cast<size_t>(ResultsetPart::BytesRead):
                 if (format.formats[i] == ColumnFormat::None)
                     format.throwInvalidFormat("Serialization type for output part rows, rows_before_limit, time, "
                                               "rows_read or bytes_read is not specified", i);
@@ -61,12 +54,6 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     }
     if (data_idx != 0)
         format.throwInvalidFormat("${data} must be the first output part", 0);
-
-    /// Parse format string for rows
-    row_format = ParsedTemplateFormatString(settings.template_settings.row_format, [&](const String & colName)
-    {
-        return sample.getPositionByName(colName);
-    });
 
     /// Validate format string for rows
     if (row_format.delimiters.size() == 1)
@@ -83,26 +70,26 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
     }
 }
 
-TemplateBlockOutputFormat::OutputPart TemplateBlockOutputFormat::stringToOutputPart(const String & part)
+TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResultsetPart(const String & part)
 {
     if (part == "data")
-        return OutputPart::Data;
+        return ResultsetPart::Data;
     else if (part == "totals")
-        return OutputPart::Totals;
+        return ResultsetPart::Totals;
     else if (part == "min")
-        return OutputPart::ExtremesMin;
+        return ResultsetPart::ExtremesMin;
     else if (part == "max")
-        return OutputPart::ExtremesMax;
+        return ResultsetPart::ExtremesMax;
     else if (part == "rows")
-        return OutputPart::Rows;
+        return ResultsetPart::Rows;
     else if (part == "rows_before_limit")
-        return OutputPart::RowsBeforeLimit;
+        return ResultsetPart::RowsBeforeLimit;
     else if (part == "time")
-        return OutputPart::TimeElapsed;
+        return ResultsetPart::TimeElapsed;
     else if (part == "rows_read")
-        return OutputPart::RowsRead;
+        return ResultsetPart::RowsRead;
     else if (part == "bytes_read")
-        return OutputPart::BytesRead;
+        return ResultsetPart::BytesRead;
     else
         throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
 }
@@ -193,38 +180,38 @@ void TemplateBlockOutputFormat::finalize()
     {
         auto type = std::make_shared<DataTypeUInt64>();
         ColumnWithTypeAndName col(type->createColumnConst(1, row_count), type, String("tmp"));
-        switch (static_cast<OutputPart>(*format.format_idx_to_column_idx[i]))
+        switch (static_cast<ResultsetPart>(*format.format_idx_to_column_idx[i]))
         {
-            case OutputPart::Totals:
+            case ResultsetPart::Totals:
                 if (!totals)
                     format.throwInvalidFormat("Cannot print totals for this request", i);
                 writeRow(totals, 0);
                 break;
-            case OutputPart::ExtremesMin:
+            case ResultsetPart::ExtremesMin:
                 if (!extremes)
                     format.throwInvalidFormat("Cannot print extremes for this request", i);
                 writeRow(extremes, 0);
                 break;
-            case OutputPart::ExtremesMax:
+            case ResultsetPart::ExtremesMax:
                 if (!extremes)
                     format.throwInvalidFormat("Cannot print extremes for this request", i);
                 writeRow(extremes, 1);
                 break;
-            case OutputPart::Rows:
+            case ResultsetPart::Rows:
                 writeValue<size_t, DataTypeUInt64>(row_count, format.formats[i]);
                 break;
-            case OutputPart::RowsBeforeLimit:
+            case ResultsetPart::RowsBeforeLimit:
                 if (!rows_before_limit_set)
                     format.throwInvalidFormat("Cannot print rows_before_limit for this request", i);
                 writeValue<size_t, DataTypeUInt64>(rows_before_limit, format.formats[i]);
                 break;
-            case OutputPart::TimeElapsed:
+            case ResultsetPart::TimeElapsed:
                 writeValue<double, DataTypeFloat64>(watch.elapsedSeconds(), format.formats[i]);
                 break;
-            case OutputPart::RowsRead:
+            case ResultsetPart::RowsRead:
                 writeValue<size_t, DataTypeUInt64>(progress.read_rows.load(), format.formats[i]);
                 break;
-            case OutputPart::BytesRead:
+            case ResultsetPart::BytesRead:
                 writeValue<size_t, DataTypeUInt64>(progress.read_bytes.load(), format.formats[i]);
                 break;
             default:
@@ -242,11 +229,38 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
+            const Context & context,
             FormatFactory::WriteCallback,
             const FormatSettings & settings)
     {
-        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings);
+        ParsedTemplateFormatString resultset_format;
+        if (settings.template_settings.resultset_format.empty())
+        {
+            /// Default format string: "${data}"
+            resultset_format.delimiters.resize(2);
+            resultset_format.formats.emplace_back(ParsedTemplateFormatString::ColumnFormat::None);
+            resultset_format.format_idx_to_column_idx.emplace_back(0);
+            resultset_format.column_names.emplace_back("data");
+        }
+        else
+        {
+            /// Read format string from file
+            resultset_format = ParsedTemplateFormatString(
+                    FormatSchemaInfo(context, settings.template_settings.resultset_format, "Template", false),
+                    [&](const String & partName)
+                    {
+                        return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
+                    });
+        }
+
+        ParsedTemplateFormatString row_format = ParsedTemplateFormatString(
+                FormatSchemaInfo(context, settings.template_settings.row_format, "Template", false),
+                [&](const String & colName)
+                {
+                    return sample.getPositionByName(colName);
+                });
+
+        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format);
     });
 }
 }
