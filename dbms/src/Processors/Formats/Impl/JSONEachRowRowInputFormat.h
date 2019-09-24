@@ -62,7 +62,7 @@ private:
     NameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<NameMap::iterator> prev_positions;
+    std::vector<NameMap::LookupResult> prev_positions;
 };
 
 }

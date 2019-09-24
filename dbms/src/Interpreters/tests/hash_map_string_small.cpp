@@ -137,15 +137,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<StringRef, Value>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->getSecond() = 0;
-            ++it->getSecond();
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
@@ -166,15 +166,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<SmallStringRef, Value>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(SmallStringRef(data[i].data, data[i].size), it, inserted);
             if (inserted)
-                it->getSecond() = 0;
-            ++it->getSecond();
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
