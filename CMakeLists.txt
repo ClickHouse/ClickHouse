@@ -375,7 +375,9 @@ endif ()
 
 include (cmake/print_flags.cmake)
 
-install (EXPORT global DESTINATION cmake)
+if (TARGET global-group)
+    install (EXPORT global DESTINATION cmake)
+endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
