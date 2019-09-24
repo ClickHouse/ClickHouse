@@ -33,6 +33,7 @@ logging.getLogger().addHandler(logging.StreamHandler())
 communication_port = int(sys.argv[1])
 bucket = sys.argv[2]
 
+
 def GetFreeTCPPortsAndIP(n):
     result = []
     sockets = []
@@ -52,6 +53,7 @@ def GetFreeTCPPortsAndIP(n):
     multipart_preserving_data_port,
     redirecting_preserving_data_port
 ), localhost = GetFreeTCPPortsAndIP(5)
+
 
 data = {
     "redirecting_to_http_port": redirecting_to_http_port,
