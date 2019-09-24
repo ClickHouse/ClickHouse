@@ -59,7 +59,7 @@ RUN apt-get update -y \
             gdb \
             rename \
             wget
-
+            
 # Build and install tools for cross-linking to Darwin
 
 ENV CC=clang-8

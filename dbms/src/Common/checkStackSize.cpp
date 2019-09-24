@@ -35,7 +35,9 @@ void checkStackSize()
         // Stack size for the main thread is 8MB on OSX excluding the guard page size.
         pthread_t thread = pthread_self();
         max_stack_size = pthread_main_np() ? (8 * 1024 * 1024) : pthread_get_stacksize_np(thread);
-        stack_address = pthread_get_stackaddr_np(thread);
+
+        // stack_address points to the start of the stack, not the end how it's returned by pthread_get_stackaddr_np
+        stack_address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - max_stack_size);
 #else
         pthread_attr_t attr;
 #   if defined(__FreeBSD__)

@@ -17,7 +17,7 @@
 
 **Пример**
 
-```
+```sql
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 
