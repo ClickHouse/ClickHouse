@@ -4,6 +4,7 @@ namespace DB
 {
 class FunctionFactory;
 
+void registerFunctionRepeat(FunctionFactory &);
 void registerFunctionEmpty(FunctionFactory &);
 void registerFunctionNotEmpty(FunctionFactory &);
 void registerFunctionLength(FunctionFactory &);
@@ -34,6 +35,7 @@ void registerFunctionTryBase64Decode(FunctionFactory &);
 
 void registerFunctionsString(FunctionFactory & factory)
 {
+    registerFunctionRepeat(factory);
     registerFunctionEmpty(factory);
     registerFunctionNotEmpty(factory);
     registerFunctionLength(factory);

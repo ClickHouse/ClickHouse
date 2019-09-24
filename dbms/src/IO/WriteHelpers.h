@@ -906,4 +906,10 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+
+/// Quote the identifier with backquotes, if required.
+String backQuoteIfNeed(const String & x);
+/// Quote the identifier with backquotes.
+String backQuote(const String & x);
+
 }

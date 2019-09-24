@@ -11,7 +11,7 @@ Returns `then` if `cond != 0`, or `else` if `cond = 0`.
 
 Allows you to write the [CASE](../operators.md#operator_case) operator more compactly in the query.
 
-```
+```sql
 multiIf(cond_1, then_1, cond_2, then_2...else)
 ```
 
@@ -31,7 +31,7 @@ The function returns one of the values `then_N` or `else`, depending on the cond
 
 Take the table
 
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -40,7 +40,7 @@ Take the table
 
 Run the query `SELECT multiIf(isNull(y) x, y < 3, y, NULL) FROM t_null`. Result:
 
-```
+```text
 ┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
 │                                          1 │
 │                                       ᴺᵁᴸᴸ │

@@ -158,7 +158,9 @@ struct ZooKeeperArgs
         }
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::shuffle(hosts_strings.begin(), hosts_strings.end(), thread_local_rng);
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), g);
 
         for (auto & host : hosts_strings)
         {
