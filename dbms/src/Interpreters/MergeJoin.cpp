@@ -133,7 +133,7 @@ public:
         return getNextEqualRangeImpl<false>(rhs);
     }
 
-    int intersect(const Block & right_block, const Block & right_table_keys)
+    int intersect(const Block & right_block, const Block & right_table_keys, const Names & key_names)
     {
         const Block min_max = extractMinMax(right_block, right_table_keys);
         if (end() == 0 || min_max.rows() != 2)
@@ -146,7 +146,7 @@ public:
         for (size_t i = 0; i < impl.sort_columns.size(); ++i)
         {
             auto & left_column = *impl.sort_columns[i];
-            auto & right_column = *min_max.getByPosition(i).column;
+            auto & right_column = *min_max.getByName(key_names[i]).column; /// cannot get by position cause of possible duplicates
 
             if (!first_vs_max)
                 first_vs_max = nullableCompareAt<true>(left_column, right_column, position(), 1);
@@ -426,7 +426,7 @@ void MergeJoin::joinBlock(Block & block)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(*it, right_table_keys);
+                int intersection = left_cursor.intersect(*it, right_table_keys, table_join->keyNamesRight());
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
@@ -452,7 +452,7 @@ void MergeJoin::joinBlock(Block & block)
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(*it, right_table_keys);
+                int intersection = left_cursor.intersect(*it, right_table_keys, table_join->keyNamesRight());
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
