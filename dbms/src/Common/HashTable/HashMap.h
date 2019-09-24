@@ -111,10 +111,12 @@ struct HashMapCell
 };
 
 template<typename Key, typename Mapped, typename Hash, typename State>
-auto lookupResultGetKey(HashMapCell<Key, Mapped, Hash, State> * cell) { return &cell->getFirst(); }
+ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCell<Key, Mapped, Hash, State> * cell)
+{ return &cell->getFirst(); }
 
 template<typename Key, typename Mapped, typename Hash, typename State>
-auto lookupResultGetMapped(HashMapCell<Key, Mapped, Hash, State> * cell) { return &cell->getSecond(); }
+ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCell<Key, Mapped, Hash, State> * cell)
+{ return &cell->getSecond(); }
 
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
@@ -135,10 +137,12 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 };
 
 template<typename Key, typename Mapped, typename Hash, typename State>
-auto lookupResultGetKey(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell) { return &cell->getFirst(); }
+ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
+{ return &cell->getFirst(); }
 
 template<typename Key, typename Mapped, typename Hash, typename State>
-auto lookupResultGetMapped(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell) { return &cell->getSecond(); }
+ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
+{ return &cell->getSecond(); }
 
 
 template <

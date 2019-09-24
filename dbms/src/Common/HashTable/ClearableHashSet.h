@@ -49,10 +49,10 @@ struct ClearableHashTableCell : public BaseCell
 };
 
 template<typename Key, typename BaseCell>
-auto lookupResultGetKey(ClearableHashTableCell<Key, BaseCell> * cell) { return &cell->key; }
+ALWAYS_INLINE inline auto lookupResultGetKey(ClearableHashTableCell<Key, BaseCell> * cell) { return &cell->key; }
 
 template<typename Key, typename BaseCell>
-void * lookupResultGetMapped(ClearableHashTableCell<Key, BaseCell> *) { return nullptr; }
+ALWAYS_INLINE inline void * lookupResultGetMapped(ClearableHashTableCell<Key, BaseCell> *) { return nullptr; }
 
 template
 <

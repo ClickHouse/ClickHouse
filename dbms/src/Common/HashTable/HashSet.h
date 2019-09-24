@@ -85,10 +85,12 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 };
 
 template<typename Key, typename Hash, typename State>
-auto lookupResultGetKey(HashSetCellWithSavedHash<Key, Hash, State> * cell) { return &cell->key; }
+ALWAYS_INLINE inline auto lookupResultGetKey(HashSetCellWithSavedHash<Key, Hash, State> * cell)
+{ return &cell->key; }
 
 template<typename Key, typename Hash, typename State>
-void * lookupResultGetMapped(HashSetCellWithSavedHash<Key, Hash, State> *) { return nullptr; }
+ALWAYS_INLINE inline void * lookupResultGetMapped(HashSetCellWithSavedHash<Key, Hash, State> *)
+{ return nullptr; }
 
 template
 <

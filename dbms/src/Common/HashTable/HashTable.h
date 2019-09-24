@@ -124,7 +124,7 @@ void set(T & x) { x = 0; }
   * The default implementation of GetMapped that is used for the above case (2).
   */
 template<typename PointerLike>
-inline auto lookupResultGetMapped(PointerLike && ptr) { return &*ptr; }
+ALWAYS_INLINE inline auto lookupResultGetMapped(PointerLike && ptr) { return &*ptr; }
 
 /**
   * Generic const wrapper for lookupResultGetMapped, that calls a non-const
@@ -132,7 +132,7 @@ inline auto lookupResultGetMapped(PointerLike && ptr) { return &*ptr; }
   * arithmetics.
   */
 template<typename T>
-auto lookupResultGetMapped(const T * obj)
+ALWAYS_INLINE inline auto lookupResultGetMapped(const T * obj)
 {
     auto mapped_ptr = lookupResultGetMapped(const_cast<T *>(obj));
     const auto const_mapped_ptr = mapped_ptr;
@@ -208,10 +208,12 @@ struct HashTableCell
 };
 
 template<typename Key, typename Hash, typename State>
-auto lookupResultGetKey(HashTableCell<Key, Hash, State> * cell) { return &cell->key; }
+ALWAYS_INLINE inline auto lookupResultGetKey(HashTableCell<Key, Hash, State> * cell)
+{ return &cell->key; }
 
 template<typename Key, typename Hash, typename State>
-void * lookupResultGetMapped(HashTableCell<Key, Hash, State> *) { return nullptr; }
+ALWAYS_INLINE inline void * lookupResultGetMapped(HashTableCell<Key, Hash, State> *)
+{ return nullptr; }
 
 /**
   * A helper function for HashTable::insert() to set the "mapped" value.
