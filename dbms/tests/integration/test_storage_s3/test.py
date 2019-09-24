@@ -64,9 +64,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_query(instance, query, stdin=None):
+def run_query(instance, query, stdin=None, settings=None):
     logging.info("Running query '{}'...".format(query))
-    result = instance.query(query, stdin=stdin)
+    result = instance.query(query, stdin=stdin, settings=settings)
     logging.info("Query finished")
     return result
 
@@ -150,8 +150,8 @@ def test_multipart_put(started_cluster):
     put_communication_data(started_cluster, "=== Multipart test ===")
     long_data = [[i, i+1, i+2] for i in range(100000)]
     long_values = "".join([ "{},{},{}\n".format(x,y,z) for x, y, z in long_data ])
-    put_query = "set s3_min_upload_part_size = 1000000; insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') format CSV".format(started_cluster.mock_host, started_cluster.multipart_preserving_data_port, started_cluster.bucket, format)
-    run_query(instance, put_query, stdin=long_values)
+    put_query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') format CSV".format(started_cluster.mock_host, started_cluster.multipart_preserving_data_port, started_cluster.bucket, format)
+    run_query(instance, put_query, stdin=long_values, settings={'s3_min_upload_part_size': 1000000})
     data = get_communication_data(started_cluster)
     assert "multipart_received_data" in data
     received_data = data["multipart_received_data"]
