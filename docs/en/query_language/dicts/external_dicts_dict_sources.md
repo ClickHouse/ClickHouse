@@ -131,7 +131,7 @@ If you have a problems with encodings when using Oracle, see the corresponding [
 
 Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
-```
+```text
 [gregtest]
 Driver = /usr/lib/psqlodbca.so
 Servername = localhost
@@ -144,7 +144,7 @@ PASSWORD = test
 
 If you then make a query such as
 
-```
+```sql
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
 ```
 
@@ -155,12 +155,13 @@ ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `so
 Ubuntu OS.
 
 Installing unixODBC and the ODBC driver for PostgreSQL:
-
-    sudo apt-get install -y unixodbc odbcinst odbc-postgresql
+```bash
+$ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
+```
 
 Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 
-```
+```text
     [DEFAULT]
     Driver = myconnection
 
@@ -222,13 +223,13 @@ Ubuntu OS.
 
 Installing the driver: :
 
-```
-    sudo apt-get install tdsodbc freetds-bin sqsh
+```bash
+$ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
-Configuring the driver: :
+Configuring the driver:
 
-```
+```bash
     $ cat /etc/freetds/freetds.conf
     ...
 

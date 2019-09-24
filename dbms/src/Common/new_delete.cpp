@@ -1,4 +1,8 @@
+#if defined(OS_LINUX)
 #include <malloc.h>
+#elif defined(OS_DARWIN)
+#include <malloc/malloc.h>
+#endif
 #include <new>
 
 #include <common/config_common.h>
