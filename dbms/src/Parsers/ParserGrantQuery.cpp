@@ -22,45 +22,67 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    ParserToken comma{TokenType::Comma};
-
-    int access = 0;
-    std::unordered_map<String, int> columns_access;
-    bool access_specifiers_found = false;
-    do
+    bool grant_option;
+    std::optional<bool> should_be_access_specifiers;
+    if (kind == Kind::REVOKE)
     {
-        for (const auto & [access_type, access_name] : ASTGrantQuery::getAccessTypeNames())
+        if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
         {
-            ParserKeyword access_p{access_name.c_str()};
-            if (access_p.ignore(pos, expected))
-            {
-                access_specifiers_found = true;
-
-                if (access_type == ASTGrantQuery::ALL)
-                    ParserKeyword{"PRIVILEGES"}.ignore(pos, expected);
-
-                ParserToken open(TokenType::OpeningRoundBracket);
-                ParserToken close(TokenType::ClosingRoundBracket);
-                if (open.ignore(pos, expected))
-                {
-                    do
-                    {
-                        ParserIdentifier column_name_p;
-                        ASTPtr column_name;
-                        if (!column_name_p.parse(pos, column_name, expected))
-                            return false;
-                        columns_access[getIdentifierName(column_name)] |= access_type;
-                    }
-                    while (comma.ignore(pos, expected));
-                    if (!close.ignore(pos, expected))
-                        return false;
-                }
-                else
-                    access |= access_type;
-            }
+            grant_option = true;
+            should_be_access_specifiers = true;
+        }
+        else if (ParserKeyword{"ADMIN OPTION FOR"}.ignore(pos, expected))
+        {
+            grant_option = true;
+            should_be_access_specifiers = false;
         }
     }
-    while (access_specifiers_found && comma.ignore(pos, expected));
+
+    ParserToken comma{TokenType::Comma};
+
+    using AccessType = ASTGrantQuery::AccessType;
+    AccessType access = 0;
+    std::unordered_map<String, AccessType> columns_access;
+    bool access_specifiers_found = false;
+    if (!should_be_access_specifiers || *should_be_access_specifiers)
+    {
+        do
+        {
+            for (const auto & [access_type, access_name] : ASTGrantQuery::getAccessTypeNames())
+            {
+                ParserKeyword access_p{access_name.c_str()};
+                if (access_p.ignore(pos, expected))
+                {
+                    access_specifiers_found = true;
+
+                    if (access_type == ASTGrantQuery::ALL)
+                        ParserKeyword{"PRIVILEGES"}.ignore(pos, expected);
+
+                    ParserToken open(TokenType::OpeningRoundBracket);
+                    ParserToken close(TokenType::ClosingRoundBracket);
+                    if (open.ignore(pos, expected))
+                    {
+                        do
+                        {
+                            ParserIdentifier column_name_p;
+                            ASTPtr column_name;
+                            if (!column_name_p.parse(pos, column_name, expected))
+                                return false;
+                            columns_access[getIdentifierName(column_name)] |= access_type;
+                        }
+                        while (comma.ignore(pos, expected));
+                        if (!close.ignore(pos, expected))
+                            return false;
+                    }
+                    else
+                        access |= access_type;
+                }
+            }
+        }
+        while (access_specifiers_found && comma.ignore(pos, expected));
+        if (should_be_access_specifiers && *should_be_access_specifiers && !access_specifiers_found)
+            return false;
+    }
 
     ASTPtr database;
     bool use_current_database = false;
@@ -129,18 +151,20 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     while (comma.ignore(pos, expected));
 
-    bool with_grant_option = false;
-    if (access_specifiers_found)
+    if (kind == Kind::GRANT)
     {
-        ParserKeyword with_grant_option_p{"WITH GRANT OPTION"};
-        if (with_grant_option_p.ignore(pos, expected))
-            with_grant_option = true;
-    }
-    else
-    {
-        ParserKeyword with_admin_option_p{"WITH ADMIN OPTION"};
-        if (with_admin_option_p.ignore(pos, expected))
-            with_grant_option = true;
+        if (access_specifiers_found)
+        {
+            ParserKeyword with_grant_option_p{"WITH GRANT OPTION"};
+            if (with_grant_option_p.ignore(pos, expected))
+                grant_option = true;
+        }
+        else
+        {
+            ParserKeyword with_admin_option_p{"WITH ADMIN OPTION"};
+            if (with_admin_option_p.ignore(pos, expected))
+                grant_option = true;
+        }
     }
 
     auto query = std::make_shared<ASTGrantQuery>();
@@ -153,7 +177,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->access = access;
     query->columns_access = std::move(columns_access);
     query->to_roles = std::move(to_roles);
-    query->with_grant_option = with_grant_option;
+    query->grant_option = grant_option;
     return true;
 }
 

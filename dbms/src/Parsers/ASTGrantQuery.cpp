@@ -17,11 +17,11 @@ ASTPtr ASTGrantQuery::clone() const
 }
 
 
-const std::vector<std::pair<ASTGrantQuery::AccessType, String>> & ASTGrantQuery::getAccessTypeNames()
+const std::vector<std::pair<ASTGrantQuery::AccessTypes, String>> & ASTGrantQuery::getAccessTypeNames()
 {
-    static const std::vector<std::pair<ASTGrantQuery::AccessType, String>> result = []
+    static const std::vector<std::pair<ASTGrantQuery::AccessTypes, String>> result = []
     {
-        return std::vector<std::pair<ASTGrantQuery::AccessType, String>>
+        return std::vector<std::pair<ASTGrantQuery::AccessTypes, String>>
         {
             {USAGE, "USAGE"},
             {SELECT, "SELECT"},
@@ -43,6 +43,13 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
                   << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
                   << (settings.hilite ? hilite_none : "");
 
+    if (grant_option && (kind == Kind::REVOKE))
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "")
+                      << (roles.empty() ? " GRANT OPTION FOR" : " ADMIN OPTION FOR")
+                      << (settings.hilite ? hilite_none : "");
+    }
+
     auto outputToRoles = [&]
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
@@ -61,7 +68,7 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
 
         outputToRoles();
 
-        if (with_grant_option)
+        if (grant_option)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
         return;
     }
@@ -70,13 +77,17 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     size_t count = 0;
     if (access)
     {
+        auto x = access;
         for (const auto & [access_type, access_name] : getAccessTypeNames())
         {
-            if ((access & access_type) && (access_type != ALL))
+            if ((x & access_type) && (access_type != ALL))
                 settings.ostr << (count++ ? ", " : " ")
                               << (settings.hilite ? hilite_keyword : "")
                               << access_name
                               << (settings.hilite ? hilite_none : "");
+            x &= ~access_type;
+            if (!x)
+                break;
         }
     }
 
@@ -128,7 +139,7 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
 
     outputToRoles();
 
-    if (with_grant_option)
+    if (grant_option && (kind == Kind::GRANT))
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
 }
 

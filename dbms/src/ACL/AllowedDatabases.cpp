@@ -1,6 +1,6 @@
 #include <ACL/AllowedDatabases.h>
 #include <Common/Exception.h>
-#include <Parsers/IAST.h>
+#include <Parsers/ASTGrantQuery.h>
 
 
 namespace DB
@@ -10,6 +10,19 @@ namespace ErrorCodes
     extern const int INVALID_GRANT;
     extern const int NOT_ENOUGH_PRIVILEGES;
 }
+
+
+const AllowedDatabases::AccessType AllowedDatabases::USAGE = ASTGrantQuery::USAGE;
+const AllowedDatabases::AccessType AllowedDatabases::SELECT = ASTGrantQuery::SELECT;
+const AllowedDatabases::AccessType AllowedDatabases::INSERT = ASTGrantQuery::INSERT;
+const AllowedDatabases::AccessType AllowedDatabases::DELETE = ASTGrantQuery::DELETE;
+const AllowedDatabases::AccessType AllowedDatabases::ALTER = ASTGrantQuery::ALTER;
+const AllowedDatabases::AccessType AllowedDatabases::CREATE = ASTGrantQuery::CREATE;
+const AllowedDatabases::AccessType AllowedDatabases::DROP = ASTGrantQuery::DROP;
+
+const AllowedDatabases::AccessType AllowedDatabases::COLUMN_LEVEL = SELECT;
+const AllowedDatabases::AccessType AllowedDatabases::TABLE_LEVEL = COLUMN_LEVEL | INSERT | DELETE | ALTER | DROP;
+const AllowedDatabases::AccessType AllowedDatabases::DATABASE_LEVEL = TABLE_LEVEL | CREATE;
 
 
 AllowedDatabases::Node::Node(Node && src) { *this = src; }
@@ -96,51 +109,53 @@ AllowedDatabases::Node & AllowedDatabases::Node::get(const String & child_name)
 }
 
 
-AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name) const
+AllowedDatabases::AccessType AllowedDatabases::Node::getAccess(const String & name) const
 {
     const Node * child = find(name);
     return child ? child->access : access;
 }
 
 
-AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const Strings & names) const
+AllowedDatabases::AccessType AllowedDatabases::Node::getAccess(const Strings & names) const
 {
-    AccessTypes result = ALL_PRIVILEGES;
-    for (const auto & name : names)
-        result &= getAccess(name);
+    if (names.empty())
+        return 0;
+    AccessType result = getAccess(names[0]);
+    for (size_t i = 1; i != names.size(); ++i)
+        result &= getAccess(names[i]);
     return result;
 }
 
 
-AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const String & name2) const
+AllowedDatabases::AccessType AllowedDatabases::Node::getAccess(const String & name1, const String & name2) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(name2) : access;
 }
 
 
-AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const Strings & names2) const
+AllowedDatabases::AccessType AllowedDatabases::Node::getAccess(const String & name1, const Strings & names2) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(names2) : access;
 }
 
 
-AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const String & name2, const String & name3) const
+AllowedDatabases::AccessType AllowedDatabases::Node::getAccess(const String & name1, const String & name2, const String & name3) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(name2, name3) : access;
 }
 
 
-AllowedDatabases::AccessTypes AllowedDatabases::Node::getAccess(const String & name1, const String & name2, const Strings & names3) const
+AllowedDatabases::AccessType AllowedDatabases::Node::getAccess(const String & name1, const String & name2, const Strings & names3) const
 {
     const Node * child = find(name1);
     return child ? child->getAccess(name2, names3) : access;
 }
 
 
-bool AllowedDatabases::Node::grant(AccessTypes add_access)
+bool AllowedDatabases::Node::grant(AccessType add_access)
 {
     add_access &= ~grants; /// Exclude access types which are already granted.
     if (!add_access)
@@ -155,7 +170,7 @@ bool AllowedDatabases::Node::grant(AccessTypes add_access)
 }
 
 
-void AllowedDatabases::Node::addAccess(AccessTypes add_access)
+void AllowedDatabases::Node::addAccess(AccessType add_access)
 {
     access |= add_access;
     if (children)
@@ -172,7 +187,7 @@ void AllowedDatabases::Node::addAccess(AccessTypes add_access)
 }
 
 
-bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name)
+bool AllowedDatabases::Node::grant(AccessType add_access, const String & name)
 {
     auto it = getIterator(name);
     if (!it->second.grant(add_access))
@@ -182,7 +197,7 @@ bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name)
 }
 
 
-bool AllowedDatabases::Node::grant(AccessTypes add_access, const Strings & names)
+bool AllowedDatabases::Node::grant(AccessType add_access, const Strings & names)
 {
     bool changed = false;
     for (const String & name : names)
@@ -191,7 +206,7 @@ bool AllowedDatabases::Node::grant(AccessTypes add_access, const Strings & names
 }
 
 
-bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const String & name2)
+bool AllowedDatabases::Node::grant(AccessType add_access, const String & name1, const String & name2)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, name2))
@@ -201,7 +216,7 @@ bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1,
 }
 
 
-bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const Strings & names2)
+bool AllowedDatabases::Node::grant(AccessType add_access, const String & name1, const Strings & names2)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, names2))
@@ -211,7 +226,7 @@ bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1,
 }
 
 
-bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const String & name2, const String & name3)
+bool AllowedDatabases::Node::grant(AccessType add_access, const String & name1, const String & name2, const String & name3)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, name2, name3))
@@ -221,7 +236,7 @@ bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1,
 }
 
 
-bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1, const String & name2, const Strings & names3)
+bool AllowedDatabases::Node::grant(AccessType add_access, const String & name1, const String & name2, const Strings & names3)
 {
     auto it = getIterator(name1);
     if (!it->second.grant(add_access, name2, names3))
@@ -231,7 +246,7 @@ bool AllowedDatabases::Node::grant(AccessTypes add_access, const String & name1,
 }
 
 
-bool AllowedDatabases::Node::revoke(AccessTypes remove_access, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessType remove_access, bool partial_revokes)
 {
     if (partial_revokes)
         remove_access &= access; /// Skip access types we don't have.
@@ -243,7 +258,7 @@ bool AllowedDatabases::Node::revoke(AccessTypes remove_access, bool partial_revo
 
     /// If (remove_access & ~grants) != 0 then it's a partial revoke.
     /// Partial revokes are implemented like https://dev.mysql.com/doc/refman/8.0/en/partial-revokes.html
-    AccessTypes new_partial_revokes = remove_access & ~grants;
+    AccessType new_partial_revokes = remove_access & ~grants;
 
     grants &= ~remove_access;
 
@@ -254,7 +269,7 @@ bool AllowedDatabases::Node::revoke(AccessTypes remove_access, bool partial_revo
 }
 
 
-void AllowedDatabases::Node::removeAccess(AccessTypes remove_access)
+void AllowedDatabases::Node::removeAccess(AccessType remove_access)
 {
     remove_access &= ~grants;
     if (!remove_access)
@@ -274,7 +289,7 @@ void AllowedDatabases::Node::removeAccess(AccessTypes remove_access)
 }
 
 
-bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessType add_access, const String & name, bool partial_revokes)
 {
     auto it = getIterator(name);
     if (!it->second.revoke(add_access, partial_revokes))
@@ -284,7 +299,7 @@ bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name,
 }
 
 
-bool AllowedDatabases::Node::revoke(AccessTypes add_access, const Strings & names, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessType add_access, const Strings & names, bool partial_revokes)
 {
     bool changed = false;
     for (const String & name : names)
@@ -293,7 +308,7 @@ bool AllowedDatabases::Node::revoke(AccessTypes add_access, const Strings & name
 }
 
 
-bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const String & name2, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessType add_access, const String & name1, const String & name2, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, name2, partial_revokes))
@@ -303,7 +318,7 @@ bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1
 }
 
 
-bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const Strings & names2, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessType add_access, const String & name1, const Strings & names2, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, names2, partial_revokes))
@@ -313,7 +328,7 @@ bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1
 }
 
 
-bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const String & name2, const String & name3, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessType add_access, const String & name1, const String & name2, const String & name3, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, name2, name3, partial_revokes))
@@ -323,7 +338,7 @@ bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1
 }
 
 
-bool AllowedDatabases::Node::revoke(AccessTypes add_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes)
+bool AllowedDatabases::Node::revoke(AccessType add_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes)
 {
     auto it = getIterator(name1);
     if (!it->second.revoke(add_access, name2, names3, partial_revokes))
@@ -371,7 +386,7 @@ void AllowedDatabases::Node::merge(const Node & other)
 }
 
 
-void AllowedDatabases::Node::addAccessRecalcGrants(AccessTypes add_access)
+void AllowedDatabases::Node::addAccessRecalcGrants(AccessType add_access)
 {
     access |= add_access;
     grants = access & ~getParentAccess();
@@ -401,12 +416,11 @@ bool AllowedDatabases::Node::operator ==(const AllowedDatabases::Node & other) c
 }
 
 
-String AllowedDatabases::accessToString(AccessTypes access)
+String AllowedDatabases::accessToString(AccessType access)
 {
-    struct AccessDesc { AccessTypes access; const char * text; };
+    struct AccessDesc { AccessType access; const char * text; };
     static constexpr AccessDesc descs[] =
     {
-        { ALL_PRIVILEGES, "ALL PRIVILEGES" },
         { SELECT, "SELECT" },
         { INSERT, "INSERT" },
         { DELETE, "DELETE" },
@@ -419,37 +433,36 @@ String AllowedDatabases::accessToString(AccessTypes access)
     for (size_t i = 0; i != std::size(descs) && access; ++i)
     {
         const auto & desc = descs[i];
-        if ((access & desc.access) == desc.access)
+        if (access & desc.access)
         {
-            if (!str.empty())
-                str += ",";
-            str += desc.text;
+            str += (str.empty() ? "" : ",") + String(desc.text);
             access &= ~desc.access;
         }
     }
+    if (access)
+        str += (str.empty() ? "" : ",") + std::to_string(access);
     if (str.empty())
         str += "USAGE";
     return str;
 }
 
 
-String AllowedDatabases::accessToString(AccessTypes access, const String & database)
+String AllowedDatabases::accessToString(AccessType access, const String & database)
 {
     return accessToString(access) + " ON " + backQuoteIfNeed(database) + ".*";
 }
 
 
-String AllowedDatabases::accessToString(AccessTypes access, const String & database, const String & table)
+String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table)
 {
     return accessToString(access) + " ON " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
 }
 
 
-String AllowedDatabases::accessToString(AccessTypes access, const String & database, const String & table, const String & column)
+String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table, const String & column)
 {
     String str;
-    access &= ALL_PRIVILEGES;
-    for (AccessTypes flag = 0x01; access; flag <<= 1)
+    for (AccessType flag = 0x01; access; flag <<= 1)
     {
         if (access & flag)
         {
@@ -463,11 +476,10 @@ String AllowedDatabases::accessToString(AccessTypes access, const String & datab
 }
 
 
-String AllowedDatabases::accessToString(AccessTypes access, const String & database, const String & table, const Strings & columns)
+String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table, const Strings & columns)
 {
     String str;
-    access &= ALL_PRIVILEGES;
-    for (AccessTypes flag = 0x01; access; flag <<= 1)
+    for (AccessType flag = 0x01; access; flag <<= 1)
     {
         if (access & flag)
         {
@@ -492,7 +504,6 @@ AllowedDatabases::AllowedDatabases()
 {
     static_assert(!(COLUMN_LEVEL & ~TABLE_LEVEL));
     static_assert(!(TABLE_LEVEL & ~DATABASE_LEVEL));
-    static_assert(DATABASE_LEVEL == ALL_PRIVILEGES);
 }
 
 
@@ -515,159 +526,156 @@ void AllowedDatabases::clear()
 }
 
 
-bool AllowedDatabases::grant(AccessTypes access)
+bool AllowedDatabases::grant(AccessType access)
 {
-    access &= ALL_PRIVILEGES;
+    if (access & ~DATABASE_LEVEL)
+        throw Exception("The privilege " + accessToString(access & ~DATABASE_LEVEL) + " cannot be granted on databases", ErrorCodes::INVALID_GRANT);
     return root.grant(access);
 }
 
 
-bool AllowedDatabases::grant(AccessTypes access, const String & database)
+bool AllowedDatabases::grant(AccessType access, const String & database)
 {
-    access &= ALL_PRIVILEGES;
     if (access & ~DATABASE_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~DATABASE_LEVEL) + " can't be granted on a database", ErrorCodes::INVALID_GRANT);
+        throw Exception("The privilege " + accessToString(access & ~DATABASE_LEVEL) + " cannot be granted on databases", ErrorCodes::INVALID_GRANT);
     return root.grant(access, database);
 }
 
 
-bool AllowedDatabases::grant(AccessTypes access, const String & database, const String & table)
+bool AllowedDatabases::grant(AccessType access, const String & database, const String & table)
 {
-    access &= ALL_PRIVILEGES;
     if (access & ~TABLE_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~TABLE_LEVEL) + " can't be granted on a table", ErrorCodes::INVALID_GRANT);
+        throw Exception("The privilege " + accessToString(access & ~TABLE_LEVEL) + " cannot be granted on tables", ErrorCodes::INVALID_GRANT);
     return root.grant(access, database, table);
 }
 
 
-bool AllowedDatabases::grant(AccessTypes access, const String & database, const String & table, const String & column)
+bool AllowedDatabases::grant(AccessType access, const String & database, const String & table, const String & column)
 {
-    access &= ALL_PRIVILEGES;
     if (access & ~COLUMN_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~COLUMN_LEVEL) + " can't be granted on a columns", ErrorCodes::INVALID_GRANT);
+        throw Exception("The privilege " + accessToString(access & ~COLUMN_LEVEL) + " cannot be granted on columns", ErrorCodes::INVALID_GRANT);
     return root.grant(access, database, table, column);
 }
 
 
-bool AllowedDatabases::grant(AccessTypes access, const String & database, const String & table, const Strings & columns)
+bool AllowedDatabases::grant(AccessType access, const String & database, const String & table, const Strings & columns)
 {
-    access &= ALL_PRIVILEGES;
     if (access & ~COLUMN_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~COLUMN_LEVEL) + " can't be granted on a columns", ErrorCodes::INVALID_GRANT);
+        throw Exception("The privilege " + accessToString(access & ~COLUMN_LEVEL) + " cannot be granted on columns", ErrorCodes::INVALID_GRANT);
     return root.grant(access, database, table, columns);
 }
 
 
-bool AllowedDatabases::revoke(AccessTypes access)
+bool AllowedDatabases::revoke(AccessType access)
 {
     return root.revoke(access);
 }
 
 
-bool AllowedDatabases::revoke(AccessTypes access, const String & database, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessType access, const String & database, bool partial_revokes)
 {
     return root.revoke(access, database, partial_revokes);
 }
 
 
-bool AllowedDatabases::revoke(AccessTypes access, const String & database, const String & table, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessType access, const String & database, const String & table, bool partial_revokes)
 {
     return root.revoke(access, database, table, partial_revokes);
 }
 
 
-bool AllowedDatabases::revoke(AccessTypes access, const String & database, const String & table, const String & column, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessType access, const String & database, const String & table, const String & column, bool partial_revokes)
 {
     return root.revoke(access, database, table, column, partial_revokes);
 }
 
 
-bool AllowedDatabases::revoke(AccessTypes access, const String & database, const String & table, const Strings & columns, bool partial_revokes)
+bool AllowedDatabases::revoke(AccessType access, const String & database, const String & table, const Strings & columns, bool partial_revokes)
 {
     return root.revoke(access, database, table, columns, partial_revokes);
 }
 
 
-void AllowedDatabases::checkAccess(AccessTypes access) const
+void AllowedDatabases::checkAccess(AccessType access) const
 {
     checkAccess(String(), access);
 }
 
 
-void AllowedDatabases::checkAccess(AccessTypes access, const String & database) const
+void AllowedDatabases::checkAccess(AccessType access, const String & database) const
 {
     checkAccess(String(), access, database);
 }
 
 
-void AllowedDatabases::checkAccess(AccessTypes access, const String & database, const String & table) const
+void AllowedDatabases::checkAccess(AccessType access, const String & database, const String & table) const
 {
     checkAccess(String(), access, database, table);
 }
 
 
-void AllowedDatabases::checkAccess(AccessTypes access, const String & database, const String & table, const String & column) const
+void AllowedDatabases::checkAccess(AccessType access, const String & database, const String & table, const String & column) const
 {
     checkAccess(String(), access, database, table, column);
 }
 
 
-void AllowedDatabases::checkAccess(AccessTypes access, const String & database, const String & table, const Strings & columns) const
+void AllowedDatabases::checkAccess(AccessType access, const String & database, const String & table, const Strings & columns) const
 {
     checkAccess(String(), access, database, table, columns);
 }
 
 
-void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessType access) const
 {
-    AccessTypes access_denied = (access & ~getAccess());
+    AccessType access_denied = (access & ~getAccess());
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
                 + accessToString(access_denied),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessType access, const String & database) const
 {
-    AccessTypes access_denied = (access & ~getAccess(database));
+    AccessType access_denied = (access & ~getAccess(database));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
                 + accessToString(access_denied, database),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessType access, const String & database, const String & table) const
 {
-    AccessTypes access_denied = (access & ~getAccess(database, table));
+    AccessType access_denied = (access & ~getAccess(database, table));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
                 + accessToString(access_denied, database, table),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table, const String & column) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessType access, const String & database, const String & table, const String & column) const
 {
-    AccessTypes access_denied = (access & ~getAccess(database, table, column));
+    AccessType access_denied = (access & ~getAccess(database, table, column));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
                 + accessToString(access_denied, database, table, column),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
 
 
-void AllowedDatabases::checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table, const Strings & columns) const
+void AllowedDatabases::checkAccess(const String & user_name, AccessType access, const String & database, const String & table, const Strings & columns) const
 {
-    AccessTypes access_denied = (access & ~getAccess(database, table, columns));
+    AccessType access_denied = (access & ~getAccess(database, table, columns));
     if (access_denied)
         throw Exception(
-            (user_name.empty() ? String() : user_name + ": ") + "Not enough AllowedDatabases. To run this command you should have been granted "
+            (user_name.empty() ? String() : user_name + ": ") + "Not enough privileges. To run this command you should have been granted "
                 + accessToString(access_denied, database, table, columns),
             ErrorCodes::NOT_ENOUGH_PRIVILEGES);
 }
@@ -680,9 +688,9 @@ AllowedDatabases & AllowedDatabases::merge(const AllowedDatabases & other)
 }
 
 
-std::vector<AllowedDatabases::Info> AllowedDatabases::getInfo() const
+AllowedDatabases::Infos AllowedDatabases::getInfo() const
 {
-    std::vector<Info> result;
+    Infos result;
     if (root.getGrants())
         result.emplace_back(Info{root.getGrants(), 0, {}, {}, {}});
     if (root.hasChildren())

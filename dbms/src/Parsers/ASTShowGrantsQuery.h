@@ -18,17 +18,9 @@ namespace DB
 ///     ON *.* | database.* | database.table | * | table
 ///     {TO | FROM} user_or_role [, user_or_role ...]
 ///     [WITH GRANT OPTION]
-class ASTGrantQuery : public IAST
+class ASTShowGrantsQuery : public IAST
 {
 public:
-    /// We use ASTGrantQuery for both GRANT and REVOKE queries.
-    enum class Kind
-    {
-        GRANT,
-        REVOKE,
-    };
-    Kind kind = Kind::GRANT;
-
     std::vector<String> roles;
 
     String database;

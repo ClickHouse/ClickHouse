@@ -13,44 +13,25 @@ class AllowedDatabases
 {
 public:
     /// Access types.
-    using AccessTypes = int; /// Combination of the constants below:
-    enum
-    {
-        /// No privileges.
-        USAGE = 0x00,
+    using AccessType = int;
+    static const AccessType USAGE;  /// No privileges.
+    static const AccessType SELECT; /// User can select data from tables.
+    static const AccessType INSERT; /// User can insert data to tables (via either INSERT or ATTACH PARTITION).
+    static const AccessType DELETE; /// User can delete data from tables (via either DETACH PARTITION or DROP PARTITION or TRUNCATE).
+    static const AccessType ALTER;  /// User can alter tables.
+    static const AccessType CREATE; /// User can create databases and tables and attach tables.
+    static const AccessType DROP;   /// User can drop tables / databases and detach tables.
 
-        /// User can select data from tables.
-        SELECT = 0x01,
-
-        /// User can insert data to tables (via either INSERT or ATTACH PARTITION).
-        INSERT = 0x02,
-
-        /// User can delete data from tables (via either DETACH PARTITION or DROP PARTITION or TRUNCATE).
-        DELETE = 0x04,
-
-        /// User can alter tables.
-        ALTER = 0x08,
-
-        /// User can create databases and tables and attach tables.
-        CREATE = 0x10,
-
-        /// User can drop tables / databases and detach tables.
-        DROP = 0x20,
-
-        /// All the privileges.
-        ALL_PRIVILEGES = 0x3F,
-    };
-
-    static constexpr AccessTypes COLUMN_LEVEL = SELECT;
-    static constexpr AccessTypes TABLE_LEVEL = COLUMN_LEVEL | INSERT | DELETE | ALTER | DROP;
-    static constexpr AccessTypes DATABASE_LEVEL = TABLE_LEVEL | CREATE;
+    static const AccessType COLUMN_LEVEL;   /// Access types which can be granted on columns.
+    static const AccessType TABLE_LEVEL;    /// Access types which can be granted on tables.
+    static const AccessType DATABASE_LEVEL; /// Access types which can be granted on databases.
 
     /// Outputs a grant to string in readable format, for example "SELECT(column), INSERT ON mydatabase.*".
-    static String accessToString(AccessTypes access);
-    static String accessToString(AccessTypes access, const String & database);
-    static String accessToString(AccessTypes access, const String & database, const String & table);
-    static String accessToString(AccessTypes access, const String & database, const String & table, const String & column);
-    static String accessToString(AccessTypes access, const String & database, const String & table, const Strings & columns);
+    static String accessToString(AccessType access);
+    static String accessToString(AccessType access, const String & database);
+    static String accessToString(AccessType access, const String & database, const String & table);
+    static String accessToString(AccessType access, const String & database, const String & table, const String & column);
+    static String accessToString(AccessType access, const String & database, const String & table, const Strings & columns);
 
     AllowedDatabases();
     ~AllowedDatabases();
@@ -67,46 +48,46 @@ public:
 
     /// Grants privileges.
     /// Returns false if the specified grant already exists.
-    bool grant(AccessTypes access);
-    bool grant(AccessTypes access, const String & database);
-    bool grant(AccessTypes access, const String & database, const String & table);
-    bool grant(AccessTypes access, const String & database, const String & table, const String & column);
-    bool grant(AccessTypes access, const String & database, const String & table, const Strings & columns);
+    bool grant(AccessType access);
+    bool grant(AccessType access, const String & database);
+    bool grant(AccessType access, const String & database, const String & table);
+    bool grant(AccessType access, const String & database, const String & table, const String & column);
+    bool grant(AccessType access, const String & database, const String & table, const Strings & columns);
 
     /// Revokes privileges.
     /// Returns false if there is nothing to revoke.
-    bool revoke(AccessTypes access);
-    bool revoke(AccessTypes access, const String & database, bool partial_revokes = false);
-    bool revoke(AccessTypes access, const String & database, const String & table, bool partial_revokes = false);
-    bool revoke(AccessTypes access, const String & database, const String & table, const String & column, bool partial_revokes = false);
-    bool revoke(AccessTypes access, const String & database, const String & table, const Strings & columns, bool partial_revokes = false);
+    bool revoke(AccessType access);
+    bool revoke(AccessType access, const String & database, bool partial_revokes = false);
+    bool revoke(AccessType access, const String & database, const String & table, bool partial_revokes = false);
+    bool revoke(AccessType access, const String & database, const String & table, const String & column, bool partial_revokes = false);
+    bool revoke(AccessType access, const String & database, const String & table, const Strings & columns, bool partial_revokes = false);
 
     /// Returns granted privileges for a specified object.
-    AccessTypes getAccess() const { return root.getAccess(); }
-    AccessTypes getAccess(const String & database) const { return root.getAccess(database); }
-    AccessTypes getAccess(const String & database, const String & table) const { return root.getAccess(database, table); }
-    AccessTypes getAccess(const String & database, const String & table, const String & column) const { return root.getAccess(database, table, column); }
-    AccessTypes getAccess(const String & database, const String & table, const Strings & columns) const { return root.getAccess(database, table, columns); }
+    AccessType getAccess() const { return root.getAccess(); }
+    AccessType getAccess(const String & database) const { return root.getAccess(database); }
+    AccessType getAccess(const String & database, const String & table) const { return root.getAccess(database, table); }
+    AccessType getAccess(const String & database, const String & table, const String & column) const { return root.getAccess(database, table, column); }
+    AccessType getAccess(const String & database, const String & table, const Strings & columns) const { return root.getAccess(database, table, columns); }
 
     /// Checks if a specified privilege is granted. Returns false if it isn't.
-    bool hasAccess(AccessTypes access) const { return !(access & ~getAccess()); }
-    bool hasAccess(AccessTypes access, const String & database) const { return !(access & getAccess(database)); }
-    bool hasAccess(AccessTypes access, const String & database, const String & table) const { return !(access & getAccess(database, table)); }
-    bool hasAccess(AccessTypes access, const String & database, const String & table, const String & column) const { return !(access & getAccess(database, table, column)); }
-    bool hasAccess(AccessTypes access, const String & database, const String & table, const Strings & columns) const { return !(access & getAccess(database, table, columns)); }
+    bool hasAccess(AccessType access) const { return !(access & ~getAccess()); }
+    bool hasAccess(AccessType access, const String & database) const { return !(access & getAccess(database)); }
+    bool hasAccess(AccessType access, const String & database, const String & table) const { return !(access & getAccess(database, table)); }
+    bool hasAccess(AccessType access, const String & database, const String & table, const String & column) const { return !(access & getAccess(database, table, column)); }
+    bool hasAccess(AccessType access, const String & database, const String & table, const Strings & columns) const { return !(access & getAccess(database, table, columns)); }
 
     /// Checks if a specified privilege is granted. Throws an exception if it isn't.
     /// `username` is only used for generating an error message if not enough privileges.
-    void checkAccess(AccessTypes access) const;
-    void checkAccess(AccessTypes access, const String & database) const;
-    void checkAccess(AccessTypes access, const String & database, const String & table) const;
-    void checkAccess(AccessTypes access, const String & database, const String & table, const String & column) const;
-    void checkAccess(AccessTypes access, const String & database, const String & table, const Strings & columns) const;
-    void checkAccess(const String & user_name, AccessTypes access) const;
-    void checkAccess(const String & user_name, AccessTypes access, const String & database) const;
-    void checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table) const;
-    void checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table, const String & column) const;
-    void checkAccess(const String & user_name, AccessTypes access, const String & database, const String & table, const Strings & columns) const;
+    void checkAccess(AccessType access) const;
+    void checkAccess(AccessType access, const String & database) const;
+    void checkAccess(AccessType access, const String & database, const String & table) const;
+    void checkAccess(AccessType access, const String & database, const String & table, const String & column) const;
+    void checkAccess(AccessType access, const String & database, const String & table, const Strings & columns) const;
+    void checkAccess(const String & user_name, AccessType access) const;
+    void checkAccess(const String & user_name, AccessType access, const String & database) const;
+    void checkAccess(const String & user_name, AccessType access, const String & database, const String & table) const;
+    void checkAccess(const String & user_name, AccessType access, const String & database, const String & table, const String & column) const;
+    void checkAccess(const String & user_name, AccessType access, const String & database, const String & table, const Strings & columns) const;
 
     /// Merges two sets of privileges together.
     /// It's used to combine privileges when several roles are being used by the same user.
@@ -114,15 +95,17 @@ public:
 
     struct Info
     {
-        AccessTypes grants;
-        AccessTypes partial_revokes;
-        std::optional<String> database; /// If not set that means all databases.
-        std::optional<String> table;    /// If not set that means all tables.
-        std::optional<String> column;   /// If not set that means all columns.
+        AccessType grants = 0;
+        AccessType partial_revokes = 0;
+        String database; /// If empty that means all databases.
+        String table;    /// If empty that means all tables.
+        String column;   /// If empty that means all columns.
     };
 
+    using Infos = std::vector<Info>;
+
     /// Returns the information about the privileges.
-    std::vector<Info> getInfo() const;
+    Infos getInfo() const;
 
     friend bool operator ==(const AllowedDatabases & left, const AllowedDatabases & right);
     friend bool operator !=(const AllowedDatabases & left, const AllowedDatabases & right) { return !(left == right); }
@@ -147,33 +130,33 @@ private:
         const Node * find(const String & child_name) const;
         Node & get(const String & child_name);
 
-        AccessTypes getAccess() const { return access; }
-        AccessTypes getAccess(const String & name) const;
-        AccessTypes getAccess(const Strings & names) const;
-        AccessTypes getAccess(const String & name1, const String & name2) const;
-        AccessTypes getAccess(const String & name1, const Strings & names2) const;
-        AccessTypes getAccess(const String & name1, const String & name2, const String & name3) const;
-        AccessTypes getAccess(const String & name1, const String & name2, const Strings & names3) const;
+        AccessType getAccess() const { return access; }
+        AccessType getAccess(const String & name) const;
+        AccessType getAccess(const Strings & names) const;
+        AccessType getAccess(const String & name1, const String & name2) const;
+        AccessType getAccess(const String & name1, const Strings & names2) const;
+        AccessType getAccess(const String & name1, const String & name2, const String & name3) const;
+        AccessType getAccess(const String & name1, const String & name2, const Strings & names3) const;
 
-        AccessTypes getParentAccess() const { return parent ? parent->access : 0; }
-        AccessTypes getGrants() const { return grants; }
-        AccessTypes getPartialRevokes() const { return getParentAccess() & ~access; }
+        AccessType getParentAccess() const { return parent ? parent->access : 0; }
+        AccessType getGrants() const { return grants; }
+        AccessType getPartialRevokes() const { return getParentAccess() & ~access; }
 
-        bool grant(AccessTypes add_access);
-        bool grant(AccessTypes add_access, const String & name);
-        bool grant(AccessTypes add_access, const Strings & names);
-        bool grant(AccessTypes add_access, const String & name1, const String & name2);
-        bool grant(AccessTypes add_access, const String & name1, const Strings & names2);
-        bool grant(AccessTypes add_access, const String & name1, const String & name2, const String & name3);
-        bool grant(AccessTypes add_access, const String & name1, const String & name2, const Strings & names3);
+        bool grant(AccessType add_access);
+        bool grant(AccessType add_access, const String & name);
+        bool grant(AccessType add_access, const Strings & names);
+        bool grant(AccessType add_access, const String & name1, const String & name2);
+        bool grant(AccessType add_access, const String & name1, const Strings & names2);
+        bool grant(AccessType add_access, const String & name1, const String & name2, const String & name3);
+        bool grant(AccessType add_access, const String & name1, const String & name2, const Strings & names3);
 
-        bool revoke(AccessTypes remove_access, bool partial_revokes = false);
-        bool revoke(AccessTypes remove_access, const String & name, bool partial_revokes = false);
-        bool revoke(AccessTypes remove_access, const Strings & names, bool partial_revokes = false);
-        bool revoke(AccessTypes remove_access, const String & name1, const String & name2, bool partial_revokes = false);
-        bool revoke(AccessTypes remove_access, const String & name1, const Strings & names2, bool partial_revokes = false);
-        bool revoke(AccessTypes remove_access, const String & name1, const String & name2, const String & name3, bool partial_revokes = false);
-        bool revoke(AccessTypes remove_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes = false);
+        bool revoke(AccessType remove_access, bool partial_revokes = false);
+        bool revoke(AccessType remove_access, const String & name, bool partial_revokes = false);
+        bool revoke(AccessType remove_access, const Strings & names, bool partial_revokes = false);
+        bool revoke(AccessType remove_access, const String & name1, const String & name2, bool partial_revokes = false);
+        bool revoke(AccessType remove_access, const String & name1, const Strings & names2, bool partial_revokes = false);
+        bool revoke(AccessType remove_access, const String & name1, const String & name2, const String & name3, bool partial_revokes = false);
+        bool revoke(AccessType remove_access, const String & name1, const String & name2, const Strings & names3, bool partial_revokes = false);
 
         void merge(const Node & other);
 
@@ -181,9 +164,9 @@ private:
         bool operator !=(const Node & other) const { return !(*this == other); }
 
     private:
-        void addAccess(AccessTypes add_access);
-        void addAccessRecalcGrants(AccessTypes add_access);
-        void removeAccess(AccessTypes remove_access);
+        void addAccess(AccessType add_access);
+        void addAccessRecalcGrants(AccessType add_access);
+        void removeAccess(AccessType remove_access);
 
         template <typename ChildrenMapT = ChildrenMap>
         typename ChildrenMapT::iterator getIterator(const String & child_name);
@@ -191,8 +174,8 @@ private:
         template <typename ChildrenMapT = ChildrenMap>
         void eraseOrIncrement(typename ChildrenMapT::iterator & it);
 
-        AccessTypes access = 0;
-        AccessTypes grants = 0;
+        AccessType access = 0;
+        AccessType grants = 0;
         Node * parent = nullptr;
         std::unique_ptr<ChildrenMap> children;
     };
