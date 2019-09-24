@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class Block;
+
 struct ParsedTemplateFormatString
 {
     enum class ColumnFormat
@@ -39,13 +41,16 @@ struct ParsedTemplateFormatString
 
     void parse(const String & format_string, const ColumnIdxGetter & idx_by_name);
 
-    ColumnFormat stringToFormat(const String & format) const;
+    static ColumnFormat stringToFormat(const String & format);
     static String formatToString(ColumnFormat format);
     static const char * readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s);
     size_t columnsCount() const;
 
     String dump() const;
     [[noreturn]] void throwInvalidFormat(const String & message, size_t column) const;
+
+    static ParsedTemplateFormatString setupCustomSeparatedResultsetFormat(const Context & context);
+    static ParsedTemplateFormatString setupCustomSeparatedRowFormat(const Context & context, const Block & sample);
 };
 
 }

@@ -518,6 +518,24 @@ void registerInputFormatProcessorTemplate(FormatFactory & factory)
             return std::make_shared<TemplateRowInputFormat>(sample, buf, params, settings, ignore_spaces, resultset_format, row_format);
         });
     }
+
+    for (bool ignore_spaces : {false, true})
+    {
+        factory.registerInputFormatProcessor(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", [=](
+                ReadBuffer & buf,
+                const Block & sample,
+                const Context & context,
+                IRowInputFormat::Params params,
+                const FormatSettings & settings)
+        {
+            ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(context);
+            ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(context, sample);
+            FormatSettings format_settings = settings;
+            format_settings.template_settings.row_between_delimiter = context.getSettingsRef().format_custom_row_between_delimiter;
+
+            return std::make_shared<TemplateRowInputFormat>(sample, buf, params, format_settings, ignore_spaces, resultset_format, row_format);
+        });
+    }
 }
 
 }

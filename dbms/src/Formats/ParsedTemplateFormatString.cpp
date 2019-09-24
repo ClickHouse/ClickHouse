@@ -4,6 +4,8 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/copyData.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -119,7 +121,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
 }
 
 
-ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format) const
+ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format)
 {
     if (col_format.empty())
         return ColumnFormat::None;
@@ -138,7 +140,7 @@ ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFor
     else if (col_format == "Raw")
         return ColumnFormat::Raw;
     else
-        throwInvalidFormat("Unknown field format " + col_format, columnsCount());
+        throw Exception("Unknown field format \"" + col_format + "\"", ErrorCodes::BAD_ARGUMENTS);
 }
 
 size_t ParsedTemplateFormatString::columnsCount() const
@@ -231,6 +233,40 @@ void ParsedTemplateFormatString::throwInvalidFormat(const String & message, size
     throw Exception("Invalid format string for Template: " + message + " (near column " + std::to_string(column) +
                     ")" + ". Parsed format string:\n" + dump() + "\n",
                     ErrorCodes::INVALID_TEMPLATE_FORMAT);
+}
+
+ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(const Context & context)
+{
+    const Settings & settings = context.getSettingsRef();
+
+    /// Set resultset format to "result_before_delimiter ${data} result_after_delimiter"
+    ParsedTemplateFormatString resultset_format;
+    resultset_format.delimiters.emplace_back(settings.format_custom_result_before_delimiter);
+    resultset_format.delimiters.emplace_back(settings.format_custom_result_after_delimiter);
+    resultset_format.formats.emplace_back(ParsedTemplateFormatString::ColumnFormat::None);
+    resultset_format.format_idx_to_column_idx.emplace_back(0);
+    resultset_format.column_names.emplace_back("data");
+    return resultset_format;
+}
+
+ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedRowFormat(const Context & context, const Block & sample)
+{
+    const Settings & settings = context.getSettingsRef();
+
+    /// Set row format to
+    /// "row_before_delimiter ${Col0:escaping} field_delimiter ${Col1:escaping} field_delimiter ... ${ColN:escaping} row_after_delimiter"
+    ParsedTemplateFormatString::ColumnFormat escaping = ParsedTemplateFormatString::stringToFormat(settings.format_custom_escaping_rule);
+    ParsedTemplateFormatString row_format;
+    row_format.delimiters.emplace_back(settings.format_custom_row_before_delimiter);
+    for (size_t i = 0; i < sample.columns(); ++i)
+    {
+        row_format.formats.emplace_back(escaping);
+        row_format.format_idx_to_column_idx.emplace_back(i);
+        row_format.column_names.emplace_back(sample.getByPosition(i).name);
+        bool last_column = i == sample.columns() - 1;
+        row_format.delimiters.emplace_back(last_column ? settings.format_custom_row_after_delimiter : settings.format_custom_field_delimiter);
+    }
+    return row_format;
 }
 
 }
