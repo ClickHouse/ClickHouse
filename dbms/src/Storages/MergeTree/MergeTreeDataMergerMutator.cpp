@@ -39,6 +39,7 @@ namespace ProfileEvents
     extern const Event MergedRows;
     extern const Event MergedUncompressedBytes;
     extern const Event MergesTimeMilliseconds;
+    extern const Event CountOfMerges;
 }
 
 namespace CurrentMetrics
@@ -507,8 +508,10 @@ public:
     void operator() (const Progress & value)
     {
         ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.read_bytes);
-        if (stage.is_first)
+        if (stage.is_first) {
             ProfileEvents::increment(ProfileEvents::MergedRows, value.read_rows);
+            ProfileEvents::increment(ProfileEvents::CountOfMerges);
+        }
         updateWatch();
 
         merge_entry->bytes_read_uncompressed += value.read_bytes;
