@@ -61,6 +61,7 @@ const char * auto_config_build[]
     "USE_SSL", "@USE_SSL@",
     "USE_HYPERSCAN", "@USE_HYPERSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
+    "USE_POCO_REDIS", "@USE_POCO_REDIS@",
 
     nullptr, nullptr
 };
