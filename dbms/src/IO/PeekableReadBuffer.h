@@ -36,10 +36,36 @@ public:
     Buffer & lastPeeked() { return sub_buf.buffer(); }
 
     /// Sets checkpoint at current position
-    void setCheckpoint();
+    inline void setCheckpoint()
+    {
+#ifndef NDEBUG
+        if (checkpoint)
+            throw DB::Exception("Does not support recursive checkpoints.", ErrorCodes::LOGICAL_ERROR);
+#endif
+        checkpoint_in_own_memory = currentlyReadFromOwnMemory();
+        if (!checkpoint_in_own_memory)
+        {
+            /// Don't need to store unread data anymore
+            peeked_size = 0;
+        }
+        checkpoint = pos;
+    }
 
     /// Forget checkpoint and all data between checkpoint and position
-    void dropCheckpoint();
+    inline void dropCheckpoint()
+    {
+#ifndef NDEBUG
+        if (!checkpoint)
+            throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
+#endif
+        if (!currentlyReadFromOwnMemory())
+        {
+            /// Don't need to store unread data anymore
+            peeked_size = 0;
+        }
+        checkpoint = nullptr;
+        checkpoint_in_own_memory = false;
+    }
 
     /// Sets position at checkpoint.
     /// All pointers (such as this->buffer().end()) may be invalidated
@@ -57,9 +83,9 @@ private:
 
     bool nextImpl() override;
 
-    inline bool useSubbufferOnly() const;
-    inline bool currentlyReadFromOwnMemory() const;
-    inline bool checkpointInOwnMemory() const;
+    inline bool useSubbufferOnly() const { return !peeked_size; }
+    inline bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf.buffer().begin(); }
+    inline bool checkpointInOwnMemory() const { return checkpoint_in_own_memory; }
 
     void checkStateCorrect() const;
 
