@@ -1,14 +1,15 @@
 #include <Interpreters/UsersManager.h>
 
-#include <Poco/Net/IPAddress.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/String.h>
+#include "config_core.h"
 #include <Common/Exception.h>
+#include <common/logger_useful.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
-#include "config_core.h"
+#include <Poco/Net/IPAddress.h>
+#include <Poco/SHA1Engine.h>
+#include <Poco/String.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #if USE_SSL
 #   include <openssl/sha.h>
 #endif
@@ -93,6 +94,21 @@ UserPtr UsersManager::authorizeAndGetUser(
         throw DB::Exception("SHA256 passwords support is disabled, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
+    else if (!it->second->password_double_sha1_hex.empty())
+    {
+        Poco::SHA1Engine engine;
+        engine.update(password);
+        const auto & first_sha1 = engine.digest();
+
+        /// If it was MySQL compatibility server, then first_sha1 already contains double SHA1.
+        if (Poco::SHA1Engine::digestToHex(first_sha1) == it->second->password_double_sha1_hex)
+            return it->second;
+
+        engine.update(first_sha1.data(), first_sha1.size());
+
+        if (Poco::SHA1Engine::digestToHex(engine.digest()) != it->second->password_double_sha1_hex)
+            on_wrong_password();
+    }
     else if (password != it->second->password)
     {
         on_wrong_password();
@@ -122,4 +138,14 @@ bool UsersManager::hasAccessToDatabase(const std::string & user_name, const std:
     return user->databases.empty() || user->databases.count(database_name);
 }
 
+bool UsersManager::hasAccessToDictionary(const std::string & user_name, const std::string & dictionary_name) const
+{
+    auto it = users.find(user_name);
+
+    if (users.end() == it)
+        throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
+
+    auto user = it->second;
+    return user->dictionaries.empty() || user->dictionaries.count(dictionary_name);
+}
 }

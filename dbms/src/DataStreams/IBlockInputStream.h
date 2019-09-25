@@ -128,7 +128,7 @@ public:
     virtual Block getTotals();
 
     /// The same for minimums and maximums.
-    Block getExtremes();
+    virtual Block getExtremes();
 
 
     /** Set the execution progress bar callback.
@@ -314,7 +314,11 @@ private:
         /// NOTE: Acquire a read lock, therefore f() should be thread safe
         std::shared_lock lock(children_mutex);
 
-        for (auto & child : children)
+        // Reduce lock scope and avoid recursive locking since that is undefined for shared_mutex.
+        const auto children_copy = children;
+        lock.unlock();
+
+        for (auto & child : children_copy)
             if (f(*child))
                 return;
     }

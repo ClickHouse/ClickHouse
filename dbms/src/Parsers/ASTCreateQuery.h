@@ -36,6 +36,7 @@ class ASTColumns : public IAST
 public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
+    ASTExpressionList * constraints = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
 
@@ -55,14 +56,17 @@ public:
     bool if_not_exists{false};
     bool is_view{false};
     bool is_materialized_view{false};
+    bool is_live_view{false};
     bool is_populate{false};
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;
+    ASTExpressionList *tables = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
+    ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */

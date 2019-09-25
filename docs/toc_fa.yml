@@ -85,6 +85,9 @@ nav:
   - 'Integrations':
     - 'Kafka': 'operations/table_engines/kafka.md'
     - 'MySQL': 'operations/table_engines/mysql.md'
+    - 'JDBC': 'operations/table_engines/jdbc.md'
+    - 'ODBC': 'operations/table_engines/odbc.md'
+    - 'HDFS': 'operations/table_engines/hdfs.md'
   - 'Special':
     - 'Distributed': 'operations/table_engines/distributed.md'
     - 'External data': 'operations/table_engines/external_data.md'
@@ -99,8 +102,6 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
-    - 'JDBC': 'operations/table_engines/jdbc.md'
-    - 'ODBC': 'operations/table_engines/odbc.md'
 
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
@@ -158,6 +159,8 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
+    - 'input': 'query_language/table_functions/input.md'   
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':

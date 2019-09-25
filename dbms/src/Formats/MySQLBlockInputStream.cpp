@@ -1,14 +1,15 @@
 #include "config_core.h"
 #if USE_MYSQL
 
-#    include <vector>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/WriteHelpers.h>
-#    include <ext/range.h>
-#    include "MySQLBlockInputStream.h"
+#include <vector>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <ext/range.h>
+#include "MySQLBlockInputStream.h"
 
 
 namespace DB
@@ -20,8 +21,8 @@ namespace ErrorCodes
 
 
 MySQLBlockInputStream::MySQLBlockInputStream(
-    const mysqlxx::PoolWithFailover::Entry & entry, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size, const bool auto_close)
-    : entry{entry}, query{this->entry->query(query_str)}, result{query.use()}, max_block_size{max_block_size}, auto_close{auto_close}
+    const mysqlxx::PoolWithFailover::Entry & entry_, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_, const bool auto_close_)
+    : entry{entry_}, query{this->entry->query(query_str)}, result{query.use()}, max_block_size{max_block_size_}, auto_close{auto_close_}
 {
     if (sample_block.columns() != result.getNumFields())
         throw Exception{"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while "
@@ -40,47 +41,47 @@ namespace
     {
         switch (type)
         {
-            case ValueType::UInt8:
-                static_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
+            case ValueType::vtUInt8:
+                assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
                 break;
-            case ValueType::UInt16:
-                static_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
+            case ValueType::vtUInt16:
+                assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
                 break;
-            case ValueType::UInt32:
-                static_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
+            case ValueType::vtUInt32:
+                assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
                 break;
-            case ValueType::UInt64:
-                static_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
+            case ValueType::vtUInt64:
+                assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
                 break;
-            case ValueType::Int8:
-                static_cast<ColumnInt8 &>(column).insertValue(value.getInt());
+            case ValueType::vtInt8:
+                assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
                 break;
-            case ValueType::Int16:
-                static_cast<ColumnInt16 &>(column).insertValue(value.getInt());
+            case ValueType::vtInt16:
+                assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
                 break;
-            case ValueType::Int32:
-                static_cast<ColumnInt32 &>(column).insertValue(value.getInt());
+            case ValueType::vtInt32:
+                assert_cast<ColumnInt32 &>(column).insertValue(value.getInt());
                 break;
-            case ValueType::Int64:
-                static_cast<ColumnInt64 &>(column).insertValue(value.getInt());
+            case ValueType::vtInt64:
+                assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
                 break;
-            case ValueType::Float32:
-                static_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
+            case ValueType::vtFloat32:
+                assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
                 break;
-            case ValueType::Float64:
-                static_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
+            case ValueType::vtFloat64:
+                assert_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
                 break;
-            case ValueType::String:
-                static_cast<ColumnString &>(column).insertData(value.data(), value.size());
+            case ValueType::vtString:
+                assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
                 break;
-            case ValueType::Date:
-                static_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
+            case ValueType::vtDate:
+                assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 break;
-            case ValueType::DateTime:
-                static_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
+            case ValueType::vtDateTime:
+                assert_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
                 break;
-            case ValueType::UUID:
-                static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+            case ValueType::vtUUID:
+                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
         }
     }
@@ -113,7 +114,7 @@ Block MySQLBlockInputStream::readImpl()
             {
                 if (description.types[idx].second)
                 {
-                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
                     insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
                     column_nullable.getNullMapData().emplace_back(0);
                 }
@@ -130,8 +131,6 @@ Block MySQLBlockInputStream::readImpl()
 
         row = result.fetch();
     }
-    if (auto_close)
-        entry.disconnect();
     return description.sample_block.cloneWithColumns(std::move(columns));
 }
 

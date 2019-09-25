@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
@@ -18,12 +19,12 @@ namespace ErrorCodes
 
 
 ODBCBlockInputStream::ODBCBlockInputStream(
-    Poco::Data::Session && session, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size)
-    : session{session}
+    Poco::Data::Session && session_, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
+    : session{session_}
     , statement{(this->session << query_str, Poco::Data::Keywords::now)}
     , result{statement}
     , iterator{result.begin()}
-    , max_block_size{max_block_size}
+    , max_block_size{max_block_size_}
     , log(&Logger::get("ODBCBlockInputStream"))
 {
     if (sample_block.columns() != result.columnCount())
@@ -43,47 +44,47 @@ namespace
     {
         switch (type)
         {
-            case ValueType::UInt8:
-                static_cast<ColumnUInt8 &>(column).insertValue(value.convert<UInt64>());
+            case ValueType::vtUInt8:
+                assert_cast<ColumnUInt8 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::UInt16:
-                static_cast<ColumnUInt16 &>(column).insertValue(value.convert<UInt64>());
+            case ValueType::vtUInt16:
+                assert_cast<ColumnUInt16 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::UInt32:
-                static_cast<ColumnUInt32 &>(column).insertValue(value.convert<UInt64>());
+            case ValueType::vtUInt32:
+                assert_cast<ColumnUInt32 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::UInt64:
-                static_cast<ColumnUInt64 &>(column).insertValue(value.convert<UInt64>());
+            case ValueType::vtUInt64:
+                assert_cast<ColumnUInt64 &>(column).insertValue(value.convert<UInt64>());
                 break;
-            case ValueType::Int8:
-                static_cast<ColumnInt8 &>(column).insertValue(value.convert<Int64>());
+            case ValueType::vtInt8:
+                assert_cast<ColumnInt8 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Int16:
-                static_cast<ColumnInt16 &>(column).insertValue(value.convert<Int64>());
+            case ValueType::vtInt16:
+                assert_cast<ColumnInt16 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Int32:
-                static_cast<ColumnInt32 &>(column).insertValue(value.convert<Int64>());
+            case ValueType::vtInt32:
+                assert_cast<ColumnInt32 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Int64:
-                static_cast<ColumnInt64 &>(column).insertValue(value.convert<Int64>());
+            case ValueType::vtInt64:
+                assert_cast<ColumnInt64 &>(column).insertValue(value.convert<Int64>());
                 break;
-            case ValueType::Float32:
-                static_cast<ColumnFloat32 &>(column).insertValue(value.convert<Float64>());
+            case ValueType::vtFloat32:
+                assert_cast<ColumnFloat32 &>(column).insertValue(value.convert<Float64>());
                 break;
-            case ValueType::Float64:
-                static_cast<ColumnFloat64 &>(column).insertValue(value.convert<Float64>());
+            case ValueType::vtFloat64:
+                assert_cast<ColumnFloat64 &>(column).insertValue(value.convert<Float64>());
                 break;
-            case ValueType::String:
-                static_cast<ColumnString &>(column).insert(value.convert<String>());
+            case ValueType::vtString:
+                assert_cast<ColumnString &>(column).insert(value.convert<String>());
                 break;
-            case ValueType::Date:
-                static_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{value.convert<String>()}.getDayNum()});
+            case ValueType::vtDate:
+                assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{value.convert<String>()}.getDayNum()});
                 break;
-            case ValueType::DateTime:
-                static_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{value.convert<String>()}});
+            case ValueType::vtDateTime:
+                assert_cast<ColumnUInt32 &>(column).insertValue(time_t{LocalDateTime{value.convert<String>()}});
                 break;
-            case ValueType::UUID:
-                static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
+            case ValueType::vtUUID:
+                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>()));
                 break;
         }
     }
@@ -114,7 +115,7 @@ Block ODBCBlockInputStream::readImpl()
             {
                 if (description.types[idx].second)
                 {
-                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
                     insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
                     column_nullable.getNullMapData().emplace_back(0);
                 }

@@ -2,6 +2,7 @@
 
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/LRUCache.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -141,8 +142,8 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
             {
                 MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
 
-                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
-                const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+                const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
                     if (src_null_map[i])
@@ -232,14 +233,13 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
         const ColumnWithTypeAndName & column = block.getByPosition(args[arg_num]);
 
         if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
-            if (column.column->empty())
-                temporary_block.insert({column.column->cloneResized(1), column.type, column.name});
-            else
-                temporary_block.insert(column);
+        {
+            temporary_block.insert({column.column->cloneResized(1), column.type, column.name});
+        }
         else
         {
             have_converted_columns = true;
-            temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
+            temporary_block.insert({ assert_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
         }
     }
 
@@ -337,19 +337,43 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     size_t num_rows = input_rows_count;
     ColumnPtr indexes;
 
+    /// Find first LowCardinality column and replace it to nested dictionary.
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
         if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
+            /// Single LowCardinality column is supported now.
             if (indexes)
                 throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
 
-            indexes = low_cardinality_column->getIndexesPtr();
-            num_rows = low_cardinality_column->getDictionary().size();
+            auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
+
+            if (!low_cardinality_type)
+                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
+                                ErrorCodes::LOGICAL_ERROR);
+
+            if (can_be_executed_on_default_arguments)
+            {
+                /// Normal case, when function can be executed on values's default.
+                column.column = low_cardinality_column->getDictionary().getNestedColumn();
+                indexes = low_cardinality_column->getIndexesPtr();
+            }
+            else
+            {
+                /// Special case when default value can't be used. Example: 1 % LowCardinality(Int).
+                /// LowCardinality always contains default, so 1 % 0 will throw exception in normal case.
+                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
+                column.column = dict_encoded.dictionary;
+                indexes = dict_encoded.indexes;
+            }
+
+            num_rows = column.column->size();
+            column.type = low_cardinality_type->getDictionaryType();
         }
     }
 
+    /// Change size of constants.
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
@@ -358,25 +382,11 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
             column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
             column.type = removeLowCardinality(column.type);
         }
-        else if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
-        {
-            auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
-
-            if (!low_cardinality_type)
-                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
-
-            if (can_be_executed_on_default_arguments)
-                column.column = low_cardinality_column->getDictionary().getNestedColumn();
-            else
-            {
-                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
-                column.column = dict_encoded.dictionary;
-                indexes = dict_encoded.indexes;
-            }
-            column.type = low_cardinality_type->getDictionaryType();
-        }
     }
+
+#ifndef NDEBUG
+    block.checkNumberOfRows(true);
+#endif
 
     return indexes;
 }
@@ -585,7 +595,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
         {
             bool is_const = arg.column && isColumnConst(*arg.column);
             if (is_const)
-                arg.column = static_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
+                arg.column = assert_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
 
             if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
             {

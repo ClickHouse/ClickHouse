@@ -18,7 +18,7 @@ namespace ErrorCodes
 class FunctionArrayPop : public IFunction
 {
 public:
-    FunctionArrayPop(bool pop_front, const char * name) : pop_front(pop_front), name(name) {}
+    FunctionArrayPop(bool pop_front_, const char * name_) : pop_front(pop_front_), name(name_) {}
 
     String getName() const override { return name; }
 

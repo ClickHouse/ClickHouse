@@ -1,5 +1,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <IO/WriteHelpers.h>    // toString
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -16,10 +17,13 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
+namespace
+{
 
-static bool isParseError(int code)
+bool isParseError(int code)
 {
     return code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
         || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
@@ -31,6 +35,7 @@ static bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
 }
 
+}
 
 Chunk IRowInputFormat::generate()
 {
@@ -43,7 +48,7 @@ Chunk IRowInputFormat::generate()
     MutableColumns columns = header.cloneEmptyColumns();
     size_t prev_rows = total_rows;
 
-    auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
+    ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
 
     try
     {
@@ -56,6 +61,8 @@ Chunk IRowInputFormat::generate()
                 RowReadExtension info;
                 if (!readRow(columns, info))
                     break;
+                if (params.callback)
+                    params.callback();
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
@@ -64,7 +71,7 @@ Chunk IRowInputFormat::generate()
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
                             throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-                        chunk_missing_values->setBit(column_idx, column_size - 1);
+                        block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
             }
@@ -134,12 +141,18 @@ Chunk IRowInputFormat::generate()
 
     if (columns.empty() || columns[0]->empty())
     {
+        if (params.allow_errors_num > 0 || params.allow_errors_ratio > 0)
+        {
+            Logger * log = &Logger::get("IRowInputFormat");
+            LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
+        }
+
         readSuffix();
         return {};
     }
 
     Chunk chunk(std::move(columns), total_rows - prev_rows);
-    chunk.setChunkInfo(std::move(chunk_missing_values));
+    //chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 

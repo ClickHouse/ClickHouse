@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <sstream>
 
@@ -40,7 +41,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     create.replace_view = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create.is_view && !create.is_materialized_view)
+    if (!create.is_view && !create.is_materialized_view && !create.is_live_view)
         create.select = nullptr;
 
     create.format = nullptr;
@@ -68,6 +69,13 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
 
+    if (ast_create_query.as_table_function)
+    {
+        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
+        const auto & factory = TableFunctionFactory::instance();
+        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
+        return {ast_create_query.table, storage};
+    }
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
@@ -75,6 +83,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
+    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
     return
     {
@@ -82,7 +91,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
         StorageFactory::instance().get(
             ast_create_query,
             database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
-            columns,
+            columns, constraints,
             true, has_force_restore_data_flag)
     };
 }

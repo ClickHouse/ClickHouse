@@ -107,8 +107,8 @@ void loadMetadata(Context & context)
         databases.emplace(unescapeForFileName(it.name()), it.path().toString());
     }
 
-    for (const auto & [name, path] : databases)
-        loadDatabase(context, name, path, has_force_restore_data_flag);
+    for (const auto & [name, db_path] : databases)
+        loadDatabase(context, name, db_path, has_force_restore_data_flag);
 
     if (has_force_restore_data_flag)
     {

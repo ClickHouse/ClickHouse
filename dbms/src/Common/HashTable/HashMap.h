@@ -11,32 +11,28 @@
   */
 
 
-struct NoInitTag {};
+struct NoInitTag
+{
+};
 
 /// A pair that does not initialize the elements, if not needed.
 template <typename First, typename Second>
-class PairNoInit
+struct PairNoInit
 {
     First first;
     Second second;
-    template <typename, typename, typename, typename>
-    friend class HashMapCell;
 
-public:
     PairNoInit() {}
 
     template <typename First_>
-    PairNoInit(First_ && first_, NoInitTag)
-        : first(std::forward<First_>(first_)) {}
+    PairNoInit(First_ && first_, NoInitTag) : first(std::forward<First_>(first_))
+    {
+    }
 
     template <typename First_, typename Second_>
-    PairNoInit(First_ && first_, Second_ && second_)
-        : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_)) {}
-
-    First & getFirstMutable() { return first; }
-    const First & getFirst() const { return first; }
-    Second & getSecond() { return second; }
-    const Second & getSecond() const { return second; }
+    PairNoInit(First_ && first_, Second_ && second_) : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_))
+    {
+    }
 };
 
 
@@ -53,12 +49,10 @@ struct HashMapCell
     HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) {}
     HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
-    Key & getFirstMutable() { return value.first; }
     const Key & getFirst() const { return value.first; }
     Mapped & getSecond() { return value.second; }
     const Mapped & getSecond() const { return value.second; }
 
-    value_type & getValueMutable() { return value; }
     const value_type & getValue() const { return value; }
 
     static const Key & getKey(const value_type & value) { return value.first; }
@@ -123,8 +117,8 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 
     using Base::Base;
 
-    bool keyEquals(const Key & key_) const { return this->value.getFirst() == key_; }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.getFirst() == key_; }
+    bool keyEquals(const Key & key_) const { return this->value.first == key_; }
+    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.first == key_; }
     bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
@@ -132,22 +126,73 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 };
 
 
-template
-<
+template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
 public:
+    using Self = HashMapTable;
     using key_type = Key;
     using mapped_type = typename Cell::Mapped;
     using value_type = typename Cell::value_type;
 
     using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
+
+    /// Merge every cell's value of current map into the destination map via emplace.
+    ///  Func should have signature void(Mapped & dst, Mapped & src, bool emplaced).
+    ///  Each filled cell in current map will invoke func once. If that map doesn't
+    ///  have a key equals to the given cell, a new cell gets emplaced into that map,
+    ///  and func is invoked with the third argument emplaced set to true. Otherwise
+    ///  emplaced is set to false.
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
+    {
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            decltype(it) res_it;
+            bool inserted;
+            that.emplace(it->getFirst(), res_it, inserted, it.getHash());
+            func(res_it->getSecond(), it->getSecond(), inserted);
+        }
+    }
+
+    /// Merge every cell's value of current map into the destination map via find.
+    ///  Func should have signature void(Mapped & dst, Mapped & src, bool exist).
+    ///  Each filled cell in current map will invoke func once. If that map doesn't
+    ///  have a key equals to the given cell, func is invoked with the third argument
+    ///  exist set to false. Otherwise exist is set to true.
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
+    {
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        {
+            decltype(it) res_it = that.find(it->getFirst(), it.getHash());
+            if (res_it == that.end())
+                func(it->getSecond(), it->getSecond(), false);
+            else
+                func(res_it->getSecond(), it->getSecond(), true);
+        }
+    }
+
+    /// Call func(const Key &, Mapped &) for each hash map element.
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        for (auto & v : *this)
+            func(v.getFirst(), v.getSecond());
+    }
+
+    /// Call func(Mapped &) for each hash map element.
+    template <typename Func>
+    void forEachMapped(Func && func)
+    {
+        for (auto & v : *this)
+            func(v.getSecond());
+    }
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
@@ -177,23 +222,19 @@ public:
 };
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
+    typename Allocator = HashTableAllocator>
 using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;

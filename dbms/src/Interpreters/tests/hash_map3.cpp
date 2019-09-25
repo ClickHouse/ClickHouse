@@ -38,7 +38,7 @@ public:
             if (this->buf[i].isZero(*this))
                 std::cerr << "[    ]";
             else
-                std::cerr << '[' << this->buf[i].getValue().getFirst().data << ", " << this->buf[i].getValue().getSecond() << ']';
+                std::cerr << '[' << this->buf[i].getValue().first.data << ", " << this->buf[i].getValue().second << ']';
         }
         std::cerr << std::endl;
     }

@@ -10,17 +10,6 @@ endif ()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-
-if (USE_INTERNAL_UNWIND_LIBRARY)
-    add_subdirectory (libunwind-cmake)
-endif ()
-
-if (USE_LIBCXX AND USE_INTERNAL_LIBCXX_LIBRARY)
-    add_subdirectory(libcxx-cmake)
-    add_subdirectory(libcxxabi-cmake)
-endif()
-
-
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
 endif ()
@@ -160,15 +149,6 @@ if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
-if (ENABLE_CAPNP AND USE_INTERNAL_CAPNP_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    set (_save ${CMAKE_CXX_EXTENSIONS})
-    set (CMAKE_CXX_EXTENSIONS)
-    add_subdirectory (capnproto/c++)
-    set (CMAKE_CXX_EXTENSIONS ${_save})
-    target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
-endif ()
-
 if (USE_INTERNAL_PARQUET_LIBRARY)
 if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
@@ -213,13 +193,15 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     endif()
 
 else()
-
     if(USE_INTERNAL_SNAPPY_LIBRARY)
         set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
         if (NOT MAKE_STATIC_LIBRARIES)
             set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
         endif()
+
         add_subdirectory(snappy)
+
+        set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
         if(SANITIZE STREQUAL "undefined")
             target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
         endif()
@@ -330,3 +312,11 @@ endif()
 if (USE_MIMALLOC)
     add_subdirectory (mimalloc)
 endif()
+
+if (USE_FASTOPS)
+    add_subdirectory (fastops-cmake)
+endif()
+
+#if (USE_INTERNAL_ORC_LIBRARY)
+#    add_subdirectory(orc-cmake)
+#endif ()

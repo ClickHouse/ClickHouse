@@ -130,7 +130,7 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) con
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
 {
-    return "(" + formatQuoted(x.name) + ")" + formatQuoted(x.data);
+    return formatQuoted(x.data);
 }
 
 String FieldVisitorToString::operator() (const Array & x) const
@@ -167,7 +167,7 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
 }
 
 
-FieldVisitorHash::FieldVisitorHash(SipHash & hash) : hash(hash) {}
+FieldVisitorHash::FieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
 void FieldVisitorHash::operator() (const Null &) const
 {

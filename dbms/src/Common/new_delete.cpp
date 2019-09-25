@@ -1,3 +1,8 @@
+#if defined(OS_LINUX)
+#include <malloc.h>
+#elif defined(OS_DARWIN)
+#include <malloc/malloc.h>
+#endif
 #include <new>
 
 #include <common/config_common.h>
@@ -7,7 +12,7 @@
 /// Replace default new/delete with memory tracking versions.
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
-#if NOT_UNBUNDLED
+#if !UNBUNDLED
 
 namespace Memory
 {
@@ -49,6 +54,11 @@ ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [
 #else
         if (size)
             CurrentMemoryTracker::free(size);
+#ifdef _GNU_SOURCE
+        /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
+        else
+            CurrentMemoryTracker::free(malloc_usable_size(ptr));
+#endif
 #endif
     }
     catch (...)

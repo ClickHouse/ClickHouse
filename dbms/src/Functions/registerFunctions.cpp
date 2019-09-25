@@ -20,7 +20,6 @@ void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
-void registerFunctionsConsistentHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
 void registerFunctionsLogical(FunctionFactory &);
 void registerFunctionsMiscellaneous(FunctionFactory &);
@@ -36,6 +35,7 @@ void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
+void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
@@ -45,6 +45,8 @@ void registerFunctionTransform(FunctionFactory &);
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
 #endif
+void registerFunctionsIntrospection(FunctionFactory &);
+void registerFunctionsConsistentHashing(FunctionFactory & factory);
 
 void registerFunctions()
 {
@@ -64,7 +66,6 @@ void registerFunctions()
     registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
     registerFunctionsHashing(factory);
-    registerFunctionsConsistentHashing(factory);
     registerFunctionsHigherOrder(factory);
     registerFunctionsLogical(factory);
     registerFunctionsMiscellaneous(factory);
@@ -84,7 +85,8 @@ void registerFunctions()
     registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
     registerFunctionsZOrder(factory);
-
+    registerFunctionsIntrospection(factory);
+    registerFunctionsConsistentHashing(factory);
 }
 
 }

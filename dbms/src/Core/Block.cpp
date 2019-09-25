@@ -5,7 +5,9 @@
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -217,11 +219,14 @@ size_t Block::getPositionByName(const std::string & name) const
 }
 
 
-void Block::checkNumberOfRows() const
+void Block::checkNumberOfRows(bool allow_null_columns) const
 {
     ssize_t rows = -1;
     for (const auto & elem : data)
     {
+        if (!elem.column && allow_null_columns)
+            continue;
+
         if (!elem.column)
             throw Exception("Column " + elem.name + " in block is nullptr, in method checkNumberOfRows."
                 , ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -475,14 +480,17 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
             return on_error("Block structure mismatch in " + context_description + " stream: different types:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
+        if (!actual.column || !expected.column)
+            continue;
+
         if (actual.column->getName() != expected.column->getName())
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
 
         if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
         {
-            Field actual_value = static_cast<const ColumnConst &>(*actual.column).getField();
-            Field expected_value = static_cast<const ColumnConst &>(*expected.column).getField();
+            Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
+            Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
 
             if (actual_value != expected_value)
                 return on_error("Block structure mismatch in " + context_description + " stream: different values of constants, actual: "

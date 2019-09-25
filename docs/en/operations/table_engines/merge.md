@@ -6,7 +6,7 @@ The `Merge` engine accepts parameters: the database name and a regular expressio
 
 Example:
 
-```
+```sql
 Merge(hits, '^WatchLog')
 ```
 
@@ -26,7 +26,7 @@ Example 2:
 
 Let's say you have a old table (WatchLog_old) and decided to change partitioning without moving data to a new table (WatchLog_new) and you need to see data from both tables.
 
-```
+```sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
 ENGINE=MergeTree(date, (UserId, EventType), 8192);
 INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
@@ -39,33 +39,25 @@ CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog
 
 SELECT *
 FROM WatchLog
-
+```
+```text
 ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
 │ 2018-01-01 │      1 │ hit       │   3 │
 └────────────┴────────┴───────────┴─────┘
 ┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
 │ 2018-01-02 │      2 │ hit       │   3 │
 └────────────┴────────┴───────────┴─────┘
-
 ```
 
 ## Virtual Columns
 
-Virtual columns are columns that are provided by the table engine, regardless of the table definition. In other words, these columns are not specified in `CREATE TABLE`, but they are accessible for `SELECT`.
+- `_table` — Contains the name of the table from which data was read. Type: [String](../../data_types/string.md).
 
-Virtual columns differ from normal columns in the following ways:
+    You can set the constant conditions on `_table` in the `WHERE/PREWHERE` clause (for example, `WHERE _table='xyz'`). In this case the read operation is performed only for that tables where the condition on `_table` is satisfied, so the `_table` column acts as an index.
 
-- They are not specified in table definitions.
-- Data can't be added to them with `INSERT`.
-- When using `INSERT` without specifying the list of columns, virtual columns are ignored.
-- They are not selected when using the asterisk (`SELECT *`).
-- Virtual columns are not shown in `SHOW CREATE TABLE` and `DESC TABLE` queries.
+**See Also**
 
-The `Merge` type table contains the virtual column `_table` of the type `String`. It contains the name of the table that data was read from. If any underlying table already has the column `_table`, then the virtual column is shadowed and is not accessible.
-
-<!-- TODO: what if underlying tables have different set of columns? -->
-
-If the `WHERE/PREWHERE` clause contains conditions for the `_table` column that do not depend on other table columns (as one of the conjunction elements, or as an entire expression), these conditions are used as an index. The conditions are performed on a data set of table names to read data from, and the read operation will be performed from only those tables that the condition was triggered on.
+- [Virtual columns](index.md#table_engines-virtual_columns)
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/merge/) <!--hide-->

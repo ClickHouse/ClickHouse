@@ -8,6 +8,8 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
+#include <Interpreters/AnalyzedJoin.h>
+#include <Common/assert_cast.h>
 
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
@@ -18,7 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SET_DATA_VARIANT;
+    extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -35,8 +37,9 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Kind kind_,
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     bool overwrite)
-    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_}
+    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_, constraints_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -47,21 +50,20 @@ StorageJoin::StorageJoin(
         if (!getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness, overwrite);
-    join->setSampleBlock(getSampleBlock().sortColumns());
+    table_join = std::make_shared<AnalyzedJoin>(limits, use_nulls, kind, strictness, key_names);
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
 
-void StorageJoin::truncate(const ASTPtr &, const Context &)
+void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness);
-    join->setSampleBlock(getSampleBlock().sortColumns());
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns());
 }
 
 
@@ -73,7 +75,7 @@ void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Stric
 }
 
 
-void StorageJoin::insertBlock(const Block & block) { join->insertFromBlock(block); }
+void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block); }
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 
@@ -90,7 +92,7 @@ void registerStorageJoin(StorageFactory & factory)
                 "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto opt_strictness_id = getIdentifierName(engine_args[0]);
+        auto opt_strictness_id = tryGetIdentifierName(engine_args[0]);
         if (!opt_strictness_id)
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -103,7 +105,7 @@ void registerStorageJoin(StorageFactory & factory)
         else
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-        auto opt_kind_id = getIdentifierName(engine_args[1]);
+        auto opt_kind_id = tryGetIdentifierName(engine_args[1]);
         if (!opt_kind_id)
             throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -124,7 +126,7 @@ void registerStorageJoin(StorageFactory & factory)
         key_names.reserve(engine_args.size() - 2);
         for (size_t i = 2, size = engine_args.size(); i < size; ++i)
         {
-            auto opt_key = getIdentifierName(engine_args[i]);
+            auto opt_key = tryGetIdentifierName(engine_args[i]);
             if (!opt_key)
                 throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -164,11 +166,12 @@ void registerStorageJoin(StorageFactory & factory)
             args.database_name,
             args.table_name,
             key_names,
-            join_use_nulls.value,
-            SizeLimits{max_rows_in_join.value, max_bytes_in_join.value, join_overflow_mode.value},
+            join_use_nulls,
+            SizeLimits{max_rows_in_join, max_bytes_in_join, join_overflow_mode},
             kind,
             strictness,
             args.columns,
+            args.constraints,
             join_any_take_last_row);
     });
 }
@@ -206,10 +209,10 @@ public:
         for (size_t i = 0; i < sample_block.columns(); ++i)
         {
             auto & [_, type, name] = sample_block.getByPosition(i);
-            if (parent.sample_block_with_keys.has(name))
+            if (parent.right_table_keys.has(name))
             {
                 key_pos = i;
-                column_with_null[i] = parent.sample_block_with_keys.getByName(name).type->isNullable();
+                column_with_null[i] = parent.right_table_keys.getByName(name).type->isNullable();
             }
             else
             {
@@ -264,7 +267,7 @@ private:
                 if (key_pos == i)
                 {
                     // unwrap null key column
-                    ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*columns[i]);
+                    ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*columns[i]);
                     columns[i] = nullable_col.getNestedColumnPtr()->assumeMutable();
                 }
                 else
@@ -285,7 +288,8 @@ private:
 #undef M
 
             default:
-                throw Exception("Unknown JOIN keys variant for limited use", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(parent.type)),
+                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
         if (!rows_added)
@@ -299,7 +303,7 @@ private:
                     res.getByPosition(i).column = makeNullable(std::move(columns[i]));
                 else
                 {
-                    const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
+                    const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
                     res.getByPosition(i).column = nullable_col.getNestedColumnPtr();
                 }
             }
