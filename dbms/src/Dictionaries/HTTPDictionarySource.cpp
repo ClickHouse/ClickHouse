@@ -52,7 +52,7 @@ HTTPDictionarySource::HTTPDictionarySource(
         this->header_entries.reserve(config_keys.size());
         for (const auto & key : config_keys)
         {
-            const auto header_key = config.getString(http_headers_prefix + "." + key + ".key", "");
+            const auto header_key = config.getString(http_headers_prefix + "." + key + ".name", "");
             const auto header_value = config.getString(http_headers_prefix + "." + key + ".value", "");
             this->header_entries.emplace_back(std::make_tuple(header_key, header_value));
         }
