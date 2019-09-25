@@ -119,4 +119,6 @@ public:
 struct ASTTableExpression;
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
+bool isMergeJoin(const JoinPtr &);
+
 }
