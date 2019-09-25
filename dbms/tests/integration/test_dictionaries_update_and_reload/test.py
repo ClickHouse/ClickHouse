@@ -127,9 +127,10 @@ def test_reload_after_loading(started_cluster):
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "102\n"
 
     # Configuration files are reloaded and lifetimes are checked automatically once in 5 seconds.
+    # Wait slightly more, to be sure it did reload.
     replace_in_file_in_container('/etc/clickhouse-server/config.d/executable.xml', '82', '83')
     replace_in_file_in_container('/etc/clickhouse-server/config.d/file.txt', '102', '103')
-    time.sleep(5)
+    time.sleep(7)
     assert query("SELECT dictGetInt32('file', 'a', toUInt64(9))") == "103\n"
     assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "83\n"
 
