@@ -209,9 +209,9 @@ int main(int argc, char ** argv)
 
         for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
         {
-            RefsHashMap::iterator inserted_it;
+            RefsHashMap::LookupResult inserted_it;
             bool inserted;
-            set.emplace(StringRef(*it), inserted_it, inserted);
+            set.emplace(StringRef(*lookupResultGetMapped(it)), inserted_it, inserted);
         }
 
         std::cerr << "Inserted refs into HashMap in " << watch.elapsedSeconds() << " sec, "
@@ -236,7 +236,7 @@ int main(int argc, char ** argv)
 
         for (Vec::iterator it = vec.begin(); it != vec.end(); ++it)
         {
-            RefsHashMap::iterator inserted_it;
+            RefsHashMap::LookupResult inserted_it;
             bool inserted;
             set.emplace(StringRef(pool.insert(it->data(), it->size()), it->size()), inserted_it, inserted);
         }
