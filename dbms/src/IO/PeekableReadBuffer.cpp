@@ -91,40 +91,6 @@ bool PeekableReadBuffer::peekNext()
     return sub_buf.next();
 }
 
-void PeekableReadBuffer::setCheckpoint()
-{
-    checkStateCorrect();
-#ifndef NDEBUG
-    if (checkpoint)
-        throw DB::Exception("Does not support recursive checkpoints.", ErrorCodes::LOGICAL_ERROR);
-#endif
-    checkpoint_in_own_memory = currentlyReadFromOwnMemory();
-    if (!checkpoint_in_own_memory)
-    {
-        /// Don't need to store unread data anymore
-        peeked_size = 0;
-    }
-    checkpoint = pos;
-    checkStateCorrect();
-}
-
-void PeekableReadBuffer::dropCheckpoint()
-{
-    checkStateCorrect();
-#ifndef NDEBUG
-    if (!checkpoint)
-        throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
-#endif
-    if (!currentlyReadFromOwnMemory())
-    {
-        /// Don't need to store unread data anymore
-        peeked_size = 0;
-    }
-    checkpoint = nullptr;
-    checkpoint_in_own_memory = false;
-    checkStateCorrect();
-}
-
 void PeekableReadBuffer::rollbackToCheckpoint()
 {
     checkStateCorrect();
@@ -176,10 +142,6 @@ bool PeekableReadBuffer::nextImpl()
     return res;
 }
 
-bool PeekableReadBuffer::useSubbufferOnly() const
-{
-    return !peeked_size;
-}
 
 void PeekableReadBuffer::checkStateCorrect() const
 {
@@ -311,16 +273,6 @@ std::shared_ptr<BufferWithOwnMemory<ReadBuffer>> PeekableReadBuffer::takeUnreadD
     BufferBase::set(sub_buf.buffer().begin(), sub_buf.buffer().size(), sub_buf.offset());
     checkStateCorrect();
     return unread;
-}
-
-bool PeekableReadBuffer::currentlyReadFromOwnMemory() const
-{
-    return working_buffer.begin() != sub_buf.buffer().begin();
-}
-
-bool PeekableReadBuffer::checkpointInOwnMemory() const
-{
-    return checkpoint_in_own_memory;
 }
 
 void PeekableReadBuffer::assertCanBeDestructed() const

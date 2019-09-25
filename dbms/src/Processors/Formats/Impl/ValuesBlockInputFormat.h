@@ -45,12 +45,14 @@ private:
 
     Chunk generate() override;
 
+    void readRow(MutableColumns & columns);
+
     void tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
-    void tryReadValue(IColumn & column, size_t column_idx);
+    ALWAYS_INLINE void tryReadValue(IColumn & column, size_t column_idx);
     void parseExpression(IColumn & column, size_t column_idx);
 
-    inline void assertDelimiterAfterValue(size_t column_idx);
-    inline bool checkDelimiterAfterValue(size_t column_idx);
+    ALWAYS_INLINE void assertDelimiterAfterValue(size_t column_idx);
+    ALWAYS_INLINE bool checkDelimiterAfterValue(size_t column_idx);
 
     bool shouldDeduceNewTemplate(size_t column_idx);
 
@@ -77,6 +79,8 @@ private:
     ParserExpression parser;
     ConstantExpressionTemplates templates;
     ConstantExpressionTemplate::Cache templates_cache;
+
+    DataTypes types;
 };
 
 }

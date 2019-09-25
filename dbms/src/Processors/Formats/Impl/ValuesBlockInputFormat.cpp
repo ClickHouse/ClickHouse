@@ -37,7 +37,7 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
           format_settings(format_settings_), num_columns(header_.columns()),
           parser_type_for_column(num_columns, ParserType::Streaming),
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-          rows_parsed_using_template(num_columns), templates(num_columns)
+          rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(buf);
@@ -55,30 +55,7 @@ Chunk ValuesBlockInputFormat::generate()
             skipWhitespaceIfAny(buf);
             if (buf.eof() || *buf.position() == ';')
                 break;
-            assertChar('(', buf);
-
-            for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-            {
-                skipWhitespaceIfAny(buf);
-                PeekableReadBufferCheckpoint checkpoint{buf};
-
-                /// Parse value using fast streaming parser for literals and slow SQL parser for expressions.
-                /// If there is SQL expression in some row, template of this expression will be deduced,
-                /// so it makes possible to parse the following rows much faster
-                /// if expressions in the following rows have the same structure
-                if (parser_type_for_column[column_idx] == ParserType::Streaming)
-                    tryReadValue(*columns[column_idx], column_idx);
-                else if (parser_type_for_column[column_idx] == ParserType::BatchTemplate)
-                    tryParseExpressionUsingTemplate(columns[column_idx], column_idx);
-                else /// if (parser_type_for_column[column_idx] == ParserType::SingleExpressionEvaluation)
-                    parseExpression(*columns[column_idx], column_idx);
-            }
-
-            skipWhitespaceIfAny(buf);
-            if (!buf.eof() && *buf.position() == ',')
-                ++buf.position();
-
-            ++total_rows;
+            readRow(columns);
         }
         catch (Exception & e)
         {
@@ -110,6 +87,34 @@ Chunk ValuesBlockInputFormat::generate()
 
     size_t rows_in_block = columns[0]->size();
     return Chunk{std::move(columns), rows_in_block};
+}
+
+void ValuesBlockInputFormat::readRow(MutableColumns & columns)
+{
+    assertChar('(', buf);
+
+    for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+    {
+        skipWhitespaceIfAny(buf);
+        PeekableReadBufferCheckpoint checkpoint{buf};
+
+        /// Parse value using fast streaming parser for literals and slow SQL parser for expressions.
+        /// If there is SQL expression in some row, template of this expression will be deduced,
+        /// so it makes possible to parse the following rows much faster
+        /// if expressions in the following rows have the same structure
+        if (parser_type_for_column[column_idx] == ParserType::Streaming)
+            tryReadValue(*columns[column_idx], column_idx);
+        else if (parser_type_for_column[column_idx] == ParserType::BatchTemplate)
+            tryParseExpressionUsingTemplate(columns[column_idx], column_idx);
+        else /// if (parser_type_for_column[column_idx] == ParserType::SingleExpressionEvaluation)
+            parseExpression(*columns[column_idx], column_idx);
+    }
+
+    skipWhitespaceIfAny(buf);
+    if (!buf.eof() && *buf.position() == ',')
+        ++buf.position();
+
+    ++total_rows;
 }
 
 void ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
@@ -145,8 +150,7 @@ void ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     bool rollback_on_exception = false;
     try
     {
-        const Block & header = getPort().getHeader();
-        header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
+        types[column_idx]->deserializeAsTextQuoted(column, buf, format_settings);
         rollback_on_exception = true;
 
         skipWhitespaceIfAny(buf);
@@ -330,7 +334,7 @@ bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_size, int balance)
 
 void ValuesBlockInputFormat::assertDelimiterAfterValue(size_t column_idx)
 {
-    if (!checkDelimiterAfterValue(column_idx))
+    if (unlikely(!checkDelimiterAfterValue(column_idx)))
         throwAtAssertionFailed((column_idx + 1 == num_columns) ? ")" : ",", buf);
 }
 
@@ -338,7 +342,7 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
 {
     skipWhitespaceIfAny(buf);
 
-    if (column_idx + 1 != num_columns)
+    if (likely(column_idx + 1 != num_columns))
         return checkChar(',', buf);
     else
         return checkChar(')', buf);
