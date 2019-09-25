@@ -55,7 +55,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 - `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно.
 
-Конструкция с `{}` аналогична табличной функции [remote](remote.md).
+Конструкция с `{}` аналогична табличной функции [remote](../../query_language/table_functions/remote.md).
 
 **Пример**
 
