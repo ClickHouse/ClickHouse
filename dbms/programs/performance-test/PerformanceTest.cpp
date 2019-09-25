@@ -347,12 +347,12 @@ bool gotSIGINTOnAnyConnection(TestStats & statistics_by_connections)
 
 bool conditionsFulfilledOnEveryConnection(TestStopConditions & stop_conditions_by_connections)
 {
-    bool are_fulfilled = true;
     for (const auto & stop_conditions : stop_conditions_by_connections)
     {
-        are_fulfilled &= stop_conditions.areFulfilled();
+        if (!stop_conditions.areFulfilled())
+            return false;
     }
-    return are_fulfilled;
+    return true;
 };
 
 void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes, std::vector<TestStats> & statistics_by_run)

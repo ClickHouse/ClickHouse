@@ -26,7 +26,7 @@ std::string getMainMetric(const PerformanceTestInfo & test_info)
         if (test_info.exec_type == ExecutionType::Loop)
             main_metric = "min_time";
         else
-            main_metric = "rows_per_second";
+            main_metric = "max_rows_per_second";
     else
         main_metric = test_info.main_metric;
     return main_metric;
@@ -53,7 +53,6 @@ std::string ReportBuilder::buildFullReport(
     json_output.set("test_name", test_info.test_name);
     json_output.set("path", test_info.path);
     json_output.set("main_metric", getMainMetric(test_info));
-    json_output.set("connections", connections.size());
 
     if (!test_info.substitutions.empty())
     {
@@ -107,6 +106,10 @@ void ReportBuilder::buildRunsReport(
             run_info.set("query", std::regex_replace(test_info.queries[query_index], QUOTE_REGEX, "\\\""));
             run_info.set("query_index", query_index);
 
+            bool t_test_status = test_info.stop_conditions_by_run[run_index][0].isInitializedTTestWithConfidenceLevel();
+            if (t_test_status)
+                run_info.set("t_test_status", t_test.reportResults(ConnectionTestStats::t_test_confidence_level, ConnectionTestStats::t_test_comparison_precision));
+
             std::vector<JSONString> run_by_connection_infos;
 
             for (size_t connection_index = 0; connection_index < connections.size(); ++connection_index)
@@ -133,10 +136,6 @@ void ReportBuilder::buildRunsReport(
                 std::string connection_server_version = ss.str();
 
                 run_by_connection.set("server_version", connection_server_version);
-
-                bool t_test_status = test_info.stop_conditions_by_run[run_index][connection_index].isInitializedTTestWithConfidenceLevel();
-                if (t_test_status)
-                    run_by_connection.set("t_test_status", t_test.reportResults(ConnectionTestStats::t_test_confidence_level, ConnectionTestStats::t_test_comparison_precision));
 
                 if (!statistics.exception.empty())
                 {
