@@ -62,7 +62,7 @@ namespace detail
 }
 
 static void loadTable(
-    Context & context,
+    const Context & context,
     const String & database_metadata_path,
     DatabaseLazy & database,
     const String & database_name,
@@ -95,8 +95,11 @@ static void loadTable(
     {
         String table_name;
         StoragePtr table;
+        Context context_copy(context);
         std::tie(table_name, table) = createTableFromDefinition(
-            s, database_name, database_data_path, context, has_force_restore_data_flag, "in file " + table_metadata_path);
+            s, database_name, database_data_path, context_copy, has_force_restore_data_flag, "in file " + table_metadata_path);
+        if (table->getName().substr(table->getName().size() - 3, 3) != "Log")
+            throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
         database.attachTable(table_name, table);
     }
     catch (const Exception & e)
@@ -108,10 +111,11 @@ static void loadTable(
 }
 
 
-DatabaseLazy::DatabaseLazy(String name_, const String & metadata_path_, const Context & context)
+DatabaseLazy::DatabaseLazy(String name_, const String & metadata_path_, const std::chrono::seconds & expiration_time_, const Context & context)
     : DatabaseWithOwnTablesBase(std::move(name_))
     , metadata_path(metadata_path_)
     , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
+    , expiration_time(expiration_time_)
     , log(&Logger::get("DatabaseLazy (" + name + ")"))
 {
     Poco::File(data_path).createDirectories();
@@ -399,22 +403,38 @@ StoragePtr DatabaseLazy::tryGetTable(
     
     if (!Poco::File(getTableMetadataPath(table_name)).exists())
         return nullptr;
-    loadTable(context, metadata_path, *this, name, data_path, table_name + ".sql", has_force_restore_data_flag);
+    //loadTable(context, metadata_path, *this, name, data_path, table_name + ".sql", false);
 
     return tryGetTable(context, table_name);
 }
 
-DatabaseIteratorPtr DatabaseLazy::getIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
+DatabaseIteratorPtr DatabaseLazy::getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
-    return DatabaseLazyIterator(*this, filter_by_table_name);
+    Strings filtered_tables;
+    iterateTableFiles([&filtered_tables, &filter_by_table_name](const auto & dir_it) {
+        /// ends with .sql
+        std::string cur_table = dir_it.name().substr(0, dir_it.name().size() - 4);
+        if (filter_by_table_name(cur_table))
+        {
+            filtered_tables.push_back(cur_table);
+        }
+        return true;
+    });
+    std::sort(filtered_tables.begin(), filtered_tables.end());
+    return std::make_unique<DatabaseLazyIterator>(*this, context, std::move(filtered_tables));
 }
 
 bool DatabaseLazy::empty(const Context & context) const
 {
     if (!DatabaseWithOwnTablesBase::empty(context))
         return true;
-    return getIterator(context)->isValid();
+    bool has_tables = false;
+    iterateTableFiles([&has_tables](const auto & /* dir_it */) {
+        has_tables = true;    
+        return false;
+    });
+    return has_tables;
 }
 
 String DatabaseLazy::getDataPath() const
@@ -437,18 +457,10 @@ String DatabaseLazy::getTableMetadataPath(const String & table_name) const
     return detail::getTableMetadataPath(metadata_path, table_name);
 }
 
-DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, bool has_force_restore_data_flag_)
-    : database(database_)
-    , has_force_restore_data_flag(has_force_restore_data_flag_)
-    , dir_it(database.metadata_path)
-{
-    moveToTable();
-}
-
-void DatabaseLazyIterator::moveToTable()
+void DatabaseLazy::iterateTableFiles(const IteratingFunction & iterating_function) const
 {
     Poco::DirectoryIterator dir_end;
-    for (; dir_it != dir_end; ++dir_it)
+    for (Poco::DirectoryIterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
     {
         /// For '.svn', '.gitignore' directory and similar.
         if (dir_it.name().at(0) == '.')
@@ -486,35 +498,42 @@ void DatabaseLazyIterator::moveToTable()
 
         /// The required files have names like `table_name.sql`
         if (endsWith(dir_it.name(), ".sql"))
-            return;
+        {
+            if (!iterating_function(dir_it))
+                return;
+        }
         else
             throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + metadata_path,
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
 }
 
+DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, const Context & context_, Strings && table_names_)
+    : database(database_)
+    , table_names(std::move(table_names_))
+    , context(context_)
+    , iterator(table_names.begin())
+{
+}
+
 void DatabaseLazyIterator::next()
 {
-    ++dir_it;
-    moveToTable();
+    ++iterator;
 }
 
 bool DatabaseLazyIterator::isValid() const
 {
-    return dir_it != Poco::DirectoryIterator{};
+    return iterator != table_names.end();
 }
 
 const String & DatabaseLazyIterator::name() const
 {
-    /// cut .sql
-    const std::string & table_file = dir_it.name();
-    return table_file.substr(0, table_file.size() - 4);
+    return *iterator;
 }
 
-StoragePtr & table() const
+StoragePtr & DatabaseLazyIterator::table() const
 {
-    loadTable(context, database.metadata_path, database, database.name, database.data_path, table, has_force_restore_data_flag);
-    return database.tryGetTable(name());
+    return database.tryGetTable(context, name());
 }
 
 }

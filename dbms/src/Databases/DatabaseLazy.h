@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <Poco/DirectoryIterator.h>
+#include <Interpreters/Context.h>
 #include <Databases/DatabasesCommon.h>
 #include <Common/ThreadPool.h>
 
@@ -12,12 +14,13 @@ class DatabaseLazyIterator;
 
 
 /** Lazy engine of databases.
-  * Works like DatabaseOrdinary, but stores in memory only cached tables.
+  * Works like DatabaseOrdinary, but stores in memory only cache.
+  * Can be used only with *Log engines.
   */
 class DatabaseLazy : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseLazy(String name_, const String & metadata_path_, const Context & context);
+    DatabaseLazy(String name_, const String & metadata_path_, const std::chrono::seconds & expiration_time_, const Context & context);
 
     String getEngineName() const override { return "Lazy"; }
 
@@ -84,13 +87,20 @@ public:
     DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
 private:
+    String name;
     const String metadata_path;
     const String data_path;
-    bool has_force_restore_data_flag = false;
+    const std::chrono::seconds expiration_time;
+
+    Tables tables_cache;
+    Times last_touch;
 
     Poco::Logger * log;
 
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
+    
+    using IteratingFunction = std::function<bool(const Poco::DirectoryIterator &)>;
+    void iterateTableFiles(const IteratingFunction & iterating_function) const;
 
     friend class DatabaseLazyIterator;
 };
@@ -99,7 +109,7 @@ private:
 class DatabaseLazyIterator final : public IDatabaseIterator
 {
 public:
-    DatabaseLazyIterator(DatabaseLazy & database_, bool has_force_restore_data_flag_ = false);
+    DatabaseLazyIterator(DatabaseLazy & database_, const Context & context_, Strings && table_names_);
 
     void next() override;
     bool isValid() const override;
@@ -107,11 +117,10 @@ public:
     StoragePtr & table() const override;
 
 private:
-    void moveToTable();
-
-    DatabaseLazy & database;
-    bool has_force_restore_data_flag;
-    Poco::DirectoryIterator dir_it;
+    const DatabaseLazy & database;
+    const Strings table_names;
+    const Context context;
+    Strings::const_iterator iterator;
 };
 
 }
