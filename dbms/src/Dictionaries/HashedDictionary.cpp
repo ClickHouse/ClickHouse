@@ -696,7 +696,7 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
-        out[i] = attr.find(ids[i]) != std::end(attr);
+        out[i] = attr.find(ids[i]) != nullptr;
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }

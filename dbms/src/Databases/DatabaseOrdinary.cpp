@@ -263,11 +263,8 @@ void DatabaseOrdinary::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
-    {
-        std::lock_guard lock(mutex);
-        if (tables.find(table_name) != tables.end())
-            throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-    }
+    if (isTableExist(context, table_name))
+        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     String table_metadata_path = getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -288,11 +285,7 @@ void DatabaseOrdinary::createTable(
     try
     {
         /// Add a table to the map of known tables.
-        {
-            std::lock_guard lock(mutex);
-            if (!tables.emplace(table_name, table).second)
-                throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-        }
+        attachTable(table_name, table);
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -487,27 +480,6 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
     }
 
     return ast;
-}
-
-
-void DatabaseOrdinary::shutdown()
-{
-    /// You can not hold a lock during shutdown.
-    /// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
-
-    Tables tables_snapshot;
-    {
-        std::lock_guard lock(mutex);
-        tables_snapshot = tables;
-    }
-
-    for (const auto & kv: tables_snapshot)
-    {
-        kv.second->shutdown();
-    }
-
-    std::lock_guard lock(mutex);
-    tables.clear();
 }
 
 void DatabaseOrdinary::alterTable(
