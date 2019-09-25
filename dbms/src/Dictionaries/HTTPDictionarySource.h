@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/URI.h>
 #include <common/LocalDateTime.h>
@@ -58,6 +59,7 @@ private:
     const DictionaryStructure dict_struct;
     const std::string url;
     Poco::Net::HTTPBasicCredentials credentials;
+    ReadWriteBufferFromHTTP::HttpHeaderEntries header_entries;
     std::string update_field;
     const std::string format;
     Block sample_block;

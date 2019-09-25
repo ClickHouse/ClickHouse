@@ -86,6 +86,10 @@ namespace detail
     template <typename UpdatableSessionPtr>
     class ReadWriteBufferFromHTTPBase : public ReadBuffer
     {
+    public:
+        using HttpHeaderEntry = std::tuple<std::string, std::string>;
+        using HttpHeaderEntries = std::vector<HttpHeaderEntry>;
+
     protected:
         Poco::URI uri;
         std::string method;
@@ -96,6 +100,7 @@ namespace detail
         std::function<void(std::ostream &)> out_stream_callback;
         const Poco::Net::HTTPBasicCredentials & credentials;
         std::vector<Poco::Net::HTTPCookie> cookies;
+        HttpHeaderEntries http_header_entries;
 
         std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -109,10 +114,15 @@ namespace detail
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
 
+            for (auto & http_header_entry: http_header_entries)
+            {
+                request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
+            }
+
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
-            LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
+           LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
 
             auto sess = session->getSession();
 
@@ -146,13 +156,15 @@ namespace detail
             const std::string & method_ = {},
             OutStreamCallback out_stream_callback_ = {},
             const Poco::Net::HTTPBasicCredentials & credentials_ = {},
-            size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+            size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+            HttpHeaderEntries http_header_entries_ = {})
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session {session_}
             , out_stream_callback {out_stream_callback_}
             , credentials {credentials_}
+            , http_header_entries {http_header_entries_}
         {
             Poco::Net::HTTPResponse response;
 
@@ -230,8 +242,9 @@ public:
         const ConnectionTimeouts & timeouts = {},
         const DB::SettingUInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects), uri_, method_, out_stream_callback_, credentials_, buffer_size_)
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        const HttpHeaderEntries & http_header_entries_ = {})
+        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects), uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_)
     {
     }
 };
