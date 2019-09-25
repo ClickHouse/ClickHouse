@@ -19,11 +19,14 @@ public:
         Truncate,
     };
 
-    /// Name of the role to be dropped.
-    String role_name;
-
     Kind kind;
     bool if_exists{false};
+
+    /// Names of the roles to be dropped.
+    std::vector<String> roles;
+
+    /// Names of the users to be dropped.
+    std::vector<String> users;
 
     /// Useful if we already have a DDL lock
     bool no_ddl_lock{false};
@@ -39,7 +42,7 @@ public:
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    bool formatDropRoleQuery(const FormatSettings & settings) const;
+    bool formatDropACLQuery(const FormatSettings & settings) const;
 };
 
 }

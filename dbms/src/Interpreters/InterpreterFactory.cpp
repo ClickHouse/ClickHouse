@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -33,6 +34,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
+#include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -148,6 +150,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTGrantQuery>())
     {
         return std::make_unique<InterpreterGrantQuery>(query, context);
+    }
+    else if (query->as<ASTShowGrantsQuery>())
+    {
+        return std::make_unique<InterpreterShowGrantsQuery>(query, context);
     }
     else if (query->as<ASTDescribeQuery>())
     {

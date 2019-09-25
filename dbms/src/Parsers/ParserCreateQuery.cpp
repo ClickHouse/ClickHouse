@@ -348,7 +348,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    if (parseCreateRoleQuery(pos, node, expected))
+    if (parseCreateRoleQuery(pos, node, expected) || parseCreateUserQuery(pos, node, expected))
         return true;
 
     if (s_temporary.ignore(pos, expected))
@@ -585,6 +585,33 @@ bool ParserCreateQuery::parseCreateRoleQuery(Pos & pos, ASTPtr & node, Expected 
     auto role_attributes = std::make_shared<Role::Attributes>();
     role_attributes->name = getIdentifierName(name);
     query->role_attributes = role_attributes;
+    query->if_not_exists = if_not_exists;
+    return true;
+}
+
+
+bool ParserCreateQuery::parseCreateUserQuery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword user_p("USER");
+    if (!user_p.ignore(pos, expected))
+        return false;
+
+    ParserKeyword if_not_exists_p("IF NOT EXISTS");
+    bool if_not_exists = false;
+    if (if_not_exists_p.ignore(pos, expected))
+        if_not_exists = true;
+
+    ParserIdentifier name_p;
+    ASTPtr name;
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    auto query = std::make_shared<ASTCreateQuery>();
+    node = query;
+
+    auto user_attributes = std::make_shared<User2::Attributes>();
+    user_attributes->name = getIdentifierName(name);
+    query->user_attributes = user_attributes;
     query->if_not_exists = if_not_exists;
     return true;
 }

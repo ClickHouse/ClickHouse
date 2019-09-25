@@ -29,6 +29,8 @@ public:
         const Type & getType() const override { return TYPE; }
         std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
         bool equal(const IControlAttributes & other) const override;
+        bool hasReferences(const UUID & id) const override;
+        void removeReferences(const UUID & id) override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;

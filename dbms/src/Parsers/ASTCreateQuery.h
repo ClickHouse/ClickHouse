@@ -3,6 +3,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <ACL/Role.h>
+#include <ACL/User2.h>
 
 
 namespace DB
@@ -67,6 +68,7 @@ public:
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
     Role::AttributesPtr role_attributes;
+    User2::AttributesPtr user_attributes;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override;
@@ -83,6 +85,7 @@ protected:
 
 private:
     bool formatCreateRoleQuery(const FormatSettings & settings) const;
+    bool formatCreateUserQuery(const FormatSettings & settings) const;
 };
 
 }

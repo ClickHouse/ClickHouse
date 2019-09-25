@@ -22,7 +22,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    bool grant_option;
+    bool grant_option = false;
     std::optional<bool> should_be_access_specifiers;
     if (kind == Kind::REVOKE)
     {

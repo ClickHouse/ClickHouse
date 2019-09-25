@@ -191,7 +191,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 {
     frame.need_parens = false;
 
-    if (formatCreateRoleQuery(settings))
+    if (formatCreateRoleQuery(settings) || formatCreateUserQuery(settings))
         return;
 
     if (!database.empty() && table.empty())
@@ -280,6 +280,19 @@ bool ASTCreateQuery::formatCreateRoleQuery(const FormatSettings & settings) cons
                   << (if_not_exists ? "IF NOT EXISTS " : "")
                   << (settings.hilite ? hilite_none : "")
                   << backQuoteIfNeed(role_attributes->name);
+    return true;
+}
+
+
+bool ASTCreateQuery::formatCreateUserQuery(const FormatSettings & settings) const
+{
+    if (!user_attributes)
+        return false;
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << "CREATE USER "
+                  << (if_not_exists ? "IF NOT EXISTS " : "")
+                  << (settings.hilite ? hilite_none : "")
+                  << backQuoteIfNeed(user_attributes->name);
     return true;
 }
 }

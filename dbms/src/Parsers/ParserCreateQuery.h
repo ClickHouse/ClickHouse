@@ -310,6 +310,7 @@ protected:
 
 private:
     bool parseCreateRoleQuery(Pos & pos, ASTPtr & node, Expected & expected);
+    bool parseCreateUserQuery(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }

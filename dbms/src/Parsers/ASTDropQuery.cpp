@@ -13,7 +13,7 @@ namespace ErrorCodes
 String ASTDropQuery::getID(char delim) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
-        return "DropQuery" + (delim + database) + delim + table + role_name;
+        return "DropQuery" + (delim + database) + delim + table;
     else if (kind == ASTDropQuery::Kind::Detach)
         return "DetachQuery" + (delim + database) + delim + table;
     else if (kind == ASTDropQuery::Kind::Truncate)
@@ -31,7 +31,7 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    if (formatDropRoleQuery(settings))
+    if (formatDropACLQuery(settings))
         return;
 
     settings.ostr << (settings.hilite ? hilite_keyword : "");
@@ -63,16 +63,23 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 }
 
 
-bool ASTDropQuery::formatDropRoleQuery(const FormatSettings & settings) const
+bool ASTDropQuery::formatDropACLQuery(const FormatSettings & settings) const
 {
-    if (role_name.empty() || (kind != ASTDropQuery::Kind::Drop))
+    if (kind != ASTDropQuery::Kind::Drop)
         return false;
 
+    const auto & names = !roles.empty() ? roles : users;
+    if (names.empty())
+        return false;
+
+    const char * type = !roles.empty() ? "ROLE" : "USER";
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP ROLE "
-                  << (if_exists ? "IF EXISTS " : "")
-                  << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(role_name);
+                  << "DROP " << type
+                  << (if_exists ? " IF EXISTS" : "")
+                  << (settings.hilite ? hilite_none : "");
+
+    for (size_t i = 0; i != names.size(); ++i)
+        settings.ostr << (i ? " " : ", ") << backQuoteIfNeed(names[i]);
     return true;
 }
 }

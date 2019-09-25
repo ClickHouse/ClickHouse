@@ -13,6 +13,10 @@ BlockIO InterpreterGrantQuery::execute()
     String database = query.use_current_database ? context.getCurrentDatabase() : query.database;
     AccessControlManager & manager = context.getAccessControlManager();
 
+    std::vector<UUID> role_ids;
+    for (const auto & role_name : query.roles)
+        role_ids.emplace_back(manager.getRole(role_name).getID());
+
     for (const auto & to_role_name : query.to_roles)
     {
         Role to_role(manager.getRole(to_role_name));
@@ -32,9 +36,8 @@ BlockIO InterpreterGrantQuery::execute()
                 }
             };
 
-            auto grant_or_revoke_role = [&](const String & role_name)
+            auto grant_or_revoke_role = [&](const UUID & role_id)
             {
-                UUID role_id = manager.getRole(role_name).getID();
                 if (is_grant)
                 {
                     role_attributes.granted_roles_by_admin_option[query.grant_option].insert(role_id);
@@ -60,8 +63,8 @@ BlockIO InterpreterGrantQuery::execute()
             for (const auto & [column_name, column_access] : query.columns_access)
                 grant_or_revoke_access(column_access, database, query.table, column_name);
 
-            for (const auto & role_name : query.roles)
-                grant_or_revoke_role(role_name);
+            for (const auto & role_id : role_ids)
+                grant_or_revoke_role(role_id);
         });
     }
     return {};

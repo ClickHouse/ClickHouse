@@ -6,48 +6,48 @@
 namespace DB
 {
 /// Represents an user in Role-based Access Control.
-class User2 : public Role
+class ConstUser : public ConstRole
 {
 public:
-    struct Attributes : public Role::Attributes
+    struct Attributes : public ConstRole::Attributes
     {
         //PasswordHash password_hash;
         //AllowedHosts allowed_hosts;
+
+        //std::unordered_set<UUID> default_roles;
+        //bool default_all_roles = false;
+
         //SettingsChanges settings;
 
-        Type getType() const override { return Type::USER; }
-        std::shared_ptr<IAccessControlElement::Attributes> clone() const override;
-
-    protected:
-        bool equal(const IAccessControlElement::Attributes & other) const override;
+        static const Type TYPE;
+        const Type & getType() const override { return TYPE; }
+        std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
+        bool equal(const IControlAttributes & other) const override;
+        bool hasReferences(const UUID & id) const override;
+        void removeReferences(const UUID & id) override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;
-    using Role::Role;
+    using Storage = IControlAttributesStorage;
+    using Type = Attributes::Type;
+    static const Type & TYPE;
 
-    AttributesPtr getAttributes() const { return getAttributesImpl<Attributes>(); }
-    AttributesPtr getAttributesStrict() const { return getAttributesStrictImpl<Attributes>(); }
-
-   /// Sets the default roles, i.e. roles which are set immediately after login.
-    /// You can set only granted roles to be default.
-    void setDefaultRoles(const std::vector<Role> & roles) { perform(setDefaultRolesOp(roles)); }
-    Operation setDefaultRolesOp(const std::vector<Role> & roles) const;
-    std::vector<Role> getDefaultRoles() const;
-
-    class Context;
-    virtual std::unique_ptr<Context> authorize();
-
-private:
-    Operation prepareOperation(const std::function<void(Attributes &)> & fn) const;
-    const String & getTypeName() const override;
-    int getNotFoundErrorCode() const override;
-    int getAlreadyExistsErrorCode() const override;
+    ConstUser(const UUID & id_, const Storage & storage_) : ConstRole(id_, storage_) {}
+    AttributesPtr getAttributes() const;
+    AttributesPtr tryGetAttributes() const;
 };
 
 
-class User2::Context
+
+class User2 : public ConstUser
 {
 public:
-};
+    User2(const UUID & id_, Storage & storage_) : ConstUser(id_, storage_) {}
 
+    void update(const std::function<void(Attributes &)> & update_func);
+    void drop(bool if_exists);
+
+protected:
+    Storage & getStorage() { return const_cast<Storage &>(storage); }
+};
 }

@@ -129,7 +129,7 @@ protected:
 template <typename AttributesT>
 std::shared_ptr<const AttributesT> IControlAttributesStorage::read(const UUID & id) const
 {
-    static const Type type = AttributesT::TYPE;
+    static const Type & type = AttributesT::TYPE;
     return std::static_pointer_cast<const AttributesT>(read(id, type));
 }
 
@@ -137,7 +137,7 @@ std::shared_ptr<const AttributesT> IControlAttributesStorage::read(const UUID & 
 template <typename AttributesT>
 std::shared_ptr<const AttributesT> IControlAttributesStorage::tryRead(const UUID & id) const
 {
-    static const Type type = AttributesT::TYPE;
+    static const Type & type = AttributesT::TYPE;
     return std::static_pointer_cast<const AttributesT>(tryRead(id, type));
 }
 

@@ -1,6 +1,5 @@
-#if 0
 #include <ACL/User2.h>
-#include <Common/Exception.h>
+#include <ACL/IControlAttributesStorage.h>
 
 
 namespace DB
@@ -9,80 +8,68 @@ namespace ErrorCodes
 {
     extern const int USER_NOT_FOUND;
     extern const int USER_ALREADY_EXISTS;
-    extern const int NOT_GRANTED_ROLE_SET;
 }
 
-using Operation = IAccessControlElement::Operation;
 
-
-bool User2::Attributes::equal(const IAccessControlElement::Attributes & other) const
+namespace AccessControlNames
 {
-    if (!Role::Attributes::equal(other))
+    extern const size_t ROLE_NAMESPACE_IDX;
+}
+
+
+const ConstUser::Type ConstUser::Attributes::TYPE{"User",
+                                                  AccessControlNames::ROLE_NAMESPACE_IDX,
+                                                  &Role::TYPE,
+                                                  ErrorCodes::USER_NOT_FOUND,
+                                                  ErrorCodes::USER_ALREADY_EXISTS};
+
+const ConstUser::Type & ConstUser::TYPE = ConstUser::Attributes::TYPE;
+
+
+bool ConstUser::Attributes::equal(const IControlAttributes & other) const
+{
+    if (!ConstRole::Attributes::equal(other))
         return false;
-    //const auto * o = dynamic_cast<const Attributes *>(&other);
+    //const auto & o = *other.cast<Attributes>();
     return true;
 }
 
 
-std::shared_ptr<IAccessControlElement::Attributes> User2::Attributes::clone() const
+bool ConstUser::Attributes::hasReferences(const UUID & id) const
 {
-    auto result = std::make_shared<Attributes>();
-    *result = *this;
-    return result;
+    return ConstRole::Attributes::hasReferences(id);
 }
 
 
-Operation User2::setDefaultRolesOp(const std::vector<Role> & roles) const
+void ConstUser::Attributes::removeReferences(const UUID & id)
 {
-    return prepareOperation([roles](Attributes & attrs)
-    {
-        for (const auto & role : roles)
-            if (!attrs.granted_roles.count(role.getID()))
-                throw Exception("Role " + role.getName() + " is not granted, only granted roles can be set", ErrorCodes::NOT_GRANTED_ROLE_SET);
-        for (auto & granted_id_with_settings : attrs.granted_roles)
-        {
-            auto & settings = granted_id_with_settings.second;
-            settings.enabled_by_default = false;
-        }
-        for (const auto & role : roles)
-            attrs.granted_roles[role.getID()].enabled_by_default = true;
-    });
+    ConstRole::Attributes::removeReferences(id);
 }
 
 
-std::vector<Role> User2::getDefaultRoles() const
+ConstUser::AttributesPtr ConstUser::getAttributes() const
 {
-    auto attrs = getAttributesStrict();
-    std::vector<Role> result;
-    result.reserve(attrs->granted_roles.size());
-    for (const auto & [granted_id, settings] : attrs->granted_roles)
-    {
-        if (settings.enabled_by_default)
-            result.push_back({granted_id, getManager()});
-    }
-    return result;
+    return storage.read<Attributes>(id);
 }
 
 
-Operation User2::prepareOperation(const std::function<void(Attributes &)> & fn) const
+ConstUser::AttributesPtr ConstUser::tryGetAttributes() const
 {
-    return prepareOperationImpl<Attributes>(fn);
+    return storage.tryRead<Attributes>(id);
 }
 
-const String & User2::getTypeName() const
+
+void User2::update(const std::function<void(Attributes &)> & update_func)
 {
-    static const String type_name = "user";
-    return type_name;
+    getStorage().update(id, update_func);
 }
 
-int User2::getNotFoundErrorCode() const
-{
-    return ErrorCodes::USER_NOT_FOUND;
-}
 
-int User2::getAlreadyExistsErrorCode() const
+void User2::drop(bool if_exists)
 {
-    return ErrorCodes::USER_ALREADY_EXISTS;
+    if (if_exists)
+         getStorage().tryRemove(id);
+    else
+         getStorage().remove(id, TYPE);
 }
 }
-#endif

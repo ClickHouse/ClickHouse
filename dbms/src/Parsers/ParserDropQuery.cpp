@@ -54,7 +54,7 @@ bool ParserDropQuery::parseTruncateQuery(Pos & pos, ASTPtr & node, Expected & ex
 
 bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (parseDropRoleQuery(pos, node, expected))
+    if (parseDropACLQuery(pos, node, expected))
         return true;
 
     ParserKeyword s_temporary("TEMPORARY");
@@ -128,10 +128,17 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
 }
 
 
-bool ParserDropQuery::parseDropRoleQuery(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserDropQuery::parseDropACLQuery(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    bool drop_roles = false;
+    bool drop_users = false;
     ParserKeyword role_p("ROLE");
-    if (!role_p.ignore(pos, expected))
+    ParserKeyword user_p("USER");
+    if (role_p.ignore(pos, expected))
+        drop_roles = true;
+    else if (user_p.ignore(pos, expected))
+        drop_users = true;
+    else
         return false;
 
     ParserKeyword if_exists_p("IF EXISTS");
@@ -139,17 +146,26 @@ bool ParserDropQuery::parseDropRoleQuery(Pos & pos, ASTPtr & node, Expected & ex
     if (if_exists_p.ignore(pos, expected))
         if_exists = true;
 
-    ParserIdentifier name_p;
-    ASTPtr name;
-    if (!name_p.parse(pos, name, expected))
-        return false;
+    Strings names;
+    ParserToken comma_p{TokenType::Comma};
+    do
+    {
+        ParserIdentifier name_p;
+        ASTPtr name;
+        if (!name_p.parse(pos, name, expected))
+            return false;
+        names.emplace_back(getIdentifierName(name));
+    }
+    while (comma_p.ignore(pos, expected));
 
     auto query = std::make_shared<ASTDropQuery>();
     node = query;
-
     query->kind = ASTDropQuery::Kind::Drop;
     query->if_exists = if_exists;
-    query->role_name = getIdentifierName(name);
+    if (drop_roles)
+        query->roles = std::move(names);
+    else if (drop_users)
+        query->users = std::move(names);
 
     return true;
 }

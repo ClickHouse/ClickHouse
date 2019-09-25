@@ -20,13 +20,13 @@ namespace AccessControlNames
 }
 
 
-const ConstRole::Type ConstRole::Attributes::TYPE = {"Role",
-                                                     nullptr,
-                                                     ErrorCodes::ROLE_NOT_FOUND,
-                                                     ErrorCodes::ROLE_ALREADY_EXISTS,
-                                                     AccessControlNames::ROLE_NAMESPACE_IDX};
+const ConstRole::Type ConstRole::Attributes::TYPE{"Role",
+                                                  AccessControlNames::ROLE_NAMESPACE_IDX,
+                                                  nullptr,
+                                                  ErrorCodes::ROLE_NOT_FOUND,
+                                                  ErrorCodes::ROLE_ALREADY_EXISTS};
 
-const ConstRole::Type & ConstRole::TYPE = Role::Attributes::TYPE;
+const ConstRole::Type & ConstRole::TYPE = ConstRole::Attributes::TYPE;
 
 
 bool ConstRole::Attributes::equal(const IControlAttributes & other) const
@@ -38,6 +38,19 @@ bool ConstRole::Attributes::equal(const IControlAttributes & other) const
         && (allowed_databases_by_grant_option[true] == o.allowed_databases_by_grant_option[true])
         && (granted_roles_by_admin_option[false] == o.granted_roles_by_admin_option[false])
         && (granted_roles_by_admin_option[true] == o.granted_roles_by_admin_option[true]);
+}
+
+
+bool ConstRole::Attributes::hasReferences(const UUID & id) const
+{
+    return granted_roles_by_admin_option[false].count(id) || granted_roles_by_admin_option[true].count(id);
+}
+
+
+void ConstRole::Attributes::removeReferences(const UUID & id)
+{
+    granted_roles_by_admin_option[false].erase(id);
+    granted_roles_by_admin_option[true].erase(id);
 }
 
 
