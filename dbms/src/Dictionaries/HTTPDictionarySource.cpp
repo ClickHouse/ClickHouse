@@ -57,7 +57,6 @@ HTTPDictionarySource::HTTPDictionarySource(
             this->header_entries.emplace_back(std::make_tuple(header_key, header_value));
         }
     }
-
 }
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
