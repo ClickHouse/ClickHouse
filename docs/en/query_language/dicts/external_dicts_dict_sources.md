@@ -84,6 +84,16 @@ Example of settings:
     <http>
         <url>http://[::1]/os.tsv</url>
         <format>TabSeparated</format>
+        <credentials>
+            <user>user</user>
+            <password>password</password>
+        </credentials>
+        <http-headers>
+            <http-header>
+                <name>API-KEY</name>
+                <value>key</value>
+            </http-header>
+        </http-headers>
     </http>
 </source>
 ```
@@ -94,7 +104,13 @@ Setting fields:
 
 - `url` – The source URL.
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
-
+- `credentials` – Basic HTTP authentification.
+    - `user` – Username required for the authentification.
+    - `password` – Password required for the authentification.
+- `http-headers` – All custom HTTP headers entries used for the HTTP request.
+    - `http-header` – Single HTTP header entry.
+        - `key` – Identifiant name used for the header send on the request.
+        - `value` – Value set for a specific identifiant name.
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
