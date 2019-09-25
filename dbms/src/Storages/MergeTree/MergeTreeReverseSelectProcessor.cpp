@@ -128,6 +128,10 @@ try
         ? nullptr
         : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
 
+    for (size_t index = 0; index < indices_and_conditions.size(); ++index)
+        mark_ranges_for_task = filterMarksUsingIndex(
+            indices_and_conditions[index].first, indices_and_conditions[index].second, data_part, mark_ranges_for_task);
+
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set,
         task_columns.columns, task_columns.pre_columns, prewhere_info && prewhere_info->remove_prewhere_column,

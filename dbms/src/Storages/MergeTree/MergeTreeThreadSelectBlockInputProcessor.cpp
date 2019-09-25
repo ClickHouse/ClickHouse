@@ -48,7 +48,16 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
 {
-    task = pool->getTask(min_marks_to_read, thread, ordered_names);
+    const auto & indices_apply_function = [&](const MergeTreeData::DataPartPtr & part, const MarkRanges & ranges)
+    {
+        MarkRanges res = ranges;
+        for (size_t index = 0; index < indices_and_conditions.size(); ++index)
+            res = filterMarksUsingIndex(indices_and_conditions[index].first, indices_and_conditions[index].second, part, res);
+
+        return res;
+    };
+
+    task = pool->getTask(min_marks_to_read, thread, ordered_names, indices_apply_function);
 
     if (!task)
     {

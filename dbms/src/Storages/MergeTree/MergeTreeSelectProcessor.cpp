@@ -111,6 +111,10 @@ try
     const auto & column_names = task_columns.columns.getNames();
     column_name_set = NameSet{column_names.begin(), column_names.end()};
 
+    for (size_t index = 0; index < indices_and_conditions.size(); ++index)
+        remaining_mark_ranges = filterMarksUsingIndex(
+            indices_and_conditions[index].first, indices_and_conditions[index].second, data_part, remaining_mark_ranges);
+
     task = std::make_unique<MergeTreeReadTask>(
         data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set, task_columns.columns,
         task_columns.pre_columns, prewhere_info && prewhere_info->remove_prewhere_column,

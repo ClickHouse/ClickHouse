@@ -72,7 +72,8 @@ public:
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
         const bool do_not_steal_tasks_ = false);
 
-    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names);
+    using IndicesApplyFunc = std::function<MarkRanges(const MergeTreeData::DataPartPtr & part, const MarkRanges &)>;
+    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names, const IndicesApplyFunc & apply_function);
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
@@ -119,10 +120,12 @@ private:
         {
             size_t part_idx;
             MarkRanges ranges;
+            bool is_applied_indices{false};
         };
 
         std::vector<PartIndexAndRange> parts_and_ranges;
         std::vector<size_t> sum_marks_in_parts;
+        std::shared_ptr<std::mutex> thread_task_mutex = std::make_shared<std::mutex>();
     };
 
     std::vector<ThreadTask> threads_tasks;
@@ -134,6 +137,7 @@ private:
     mutable std::mutex mutex;
 
     Logger * log = &Logger::get("MergeTreeReadPool");
+
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;

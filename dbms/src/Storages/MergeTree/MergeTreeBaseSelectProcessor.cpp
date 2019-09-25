@@ -169,18 +169,6 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     UInt64 recommended_rows = estimateNumRows(*task, task->range_reader);
     UInt64 rows_to_read = std::max(UInt64(1), std::min(current_max_block_size_rows, recommended_rows));
 
-    if (!task->is_applied_indices)
-    {
-        for (size_t index = 0; index < indices_and_conditions.size() && !task->mark_ranges.empty(); ++index)
-            task->mark_ranges = filterMarksUsingIndex(
-                indices_and_conditions[index].first, indices_and_conditions[index].second, task->data_part, task->mark_ranges);
-
-        if (task->mark_ranges.empty())
-            return {};
-
-        task->is_applied_indices = true;
-    }
-
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
 
     /// All rows were filtered. Repeat.
@@ -382,17 +370,13 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
     MergeTreeIndexPtr useful_index, MergeTreeIndexConditionPtr condition, MergeTreeData::DataPartPtr part, const MarkRanges & ranges)
 {
     if (!Poco::File(part->getFullPath() + useful_index->getFileName() + ".idx").exists())
-    {
-        LOG_DEBUG(log, "File for useful_index " << backQuote(useful_index->name) << " does not exist. Skipping it.");
         return ranges;
-    }
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         merge_tree_min_rows_for_seek, merge_tree_min_bytes_for_seek,
         part->index_granularity_info.index_granularity_bytes, part->index_granularity_info.fixed_index_granularity);
 
     size_t granules_dropped = 0;
-
     size_t marks_count = part->getMarksCount();
     size_t final_mark = part->index_granularity.hasFinalMark();
     size_t index_marks_count = (marks_count - final_mark + useful_index->granularity - 1) / useful_index->granularity;
@@ -405,8 +389,9 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
     size_t prev_index_read_bytes = 0;
-    for (const auto & range : ranges)
+    for (size_t range_index = ranges.size(); range_index > 0; --range_index)
     {
+        const MarkRange & range = ranges[range_index - 1];
         MarkRange index_range(range.begin / useful_index->granularity, (range.end + useful_index->granularity - 1) / useful_index->granularity);
 
         if (last_index_mark != index_range.begin || !granule)
@@ -441,8 +426,6 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
 
         last_index_mark = index_range.end - 1;
     }
-
-    LOG_DEBUG(log, "Index " << backQuote(useful_index->name) << " has dropped " << granules_dropped << " granules.");
 
     return res;
 }
