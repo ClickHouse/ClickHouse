@@ -79,13 +79,13 @@ namespace
     public:
         StorageS3BlockOutputStream(const Poco::URI & uri,
             const String & format,
+            UInt64 min_upload_part_size,
             const Block & sample_block_,
             const Context & context,
             const ConnectionTimeouts & timeouts)
             : sample_block(sample_block_)
         {
-            auto minimum_upload_part_size = context.getConfigRef().getUInt64("s3.minimum_upload_part_size", 512 * 1024 * 1024);
-            write_buf = std::make_unique<WriteBufferFromS3>(uri, minimum_upload_part_size, timeouts);
+            write_buf = std::make_unique<WriteBufferFromS3>(uri, min_upload_part_size, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -124,6 +124,7 @@ StorageS3::StorageS3(
     const std::string & database_name_,
     const std::string & table_name_,
     const String & format_name_,
+    UInt64 min_upload_part_size_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_)
@@ -133,6 +134,7 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , database_name(database_name_)
     , table_name(table_name_)
+    , min_upload_part_size(min_upload_part_size_)
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -171,7 +173,7 @@ void StorageS3::rename(const String & /*new_path_to_db*/, const String & new_dat
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageS3BlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
+        uri, format_name, min_upload_part_size, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
 }
 
 void registerStorageS3(StorageFactory & factory)
@@ -193,7 +195,9 @@ void registerStorageS3(StorageFactory & factory)
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageS3::create(uri, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
+        UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
+
+        return StorageS3::create(uri, args.database_name, args.table_name, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     });
 }
 }
