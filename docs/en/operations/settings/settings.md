@@ -390,7 +390,7 @@ If the number of rows to be read from a file of a [MergeTree*](../table_engines/
 
 Possible values:
 
-Any positive integer.
+- Any positive integer.
 
 Default value: 163840.
 
@@ -400,7 +400,7 @@ If a number of bytes to read from one file of a [MergeTree*](../table_engines/me
 
 Possible values:
 
-Any positive integer.
+- Any positive integer.
 
 Default value: 240 ✕ 1024 ✕ 1024.
 
@@ -411,7 +411,7 @@ If the distance between two data blocks to be read in one file is less than `mer
 
 Possible values:
 
-Any positive integer.
+- Any positive integer.
 
 Default value: 0.
 
@@ -421,7 +421,7 @@ If the distance between two data blocks to be read in one file is less than `mer
 
 Possible values:
 
-Any positive integer.
+- Any positive integer.
 
 Default value: 0.
 
@@ -432,7 +432,7 @@ When searching data, ClickHouse checks the data marks in the index file. If Clic
 
 Possible values:
 
-Any positive even integer.
+- Any positive even integer.
 
 Default value: 8.
 
@@ -440,9 +440,11 @@ Default value: 8.
 
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries returning a large amount of data.
+
 Possible values:
 
-Any positive integer.
+- Any positive integer.
 
 Default value: 128 ✕ 8192.
 
@@ -451,9 +453,11 @@ Default value: 128 ✕ 8192.
 
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries returning a large amount of data.
+
 Possible values:
 
-Any positive integer.
+- Any positive integer.
 
 Default value: 1920 ✕ 1024 ✕ 1024.
 
