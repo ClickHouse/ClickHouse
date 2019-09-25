@@ -112,6 +112,7 @@ Setting fields:
         - `key` – Identifiant name used for the header send on the request.
         - `value` – Value set for a specific identifiant name.
 
+
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
 You can use this method to connect any database that has an ODBC driver.
