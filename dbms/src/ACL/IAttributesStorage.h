@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ACL/IControlAttributes.h>
+#include <ACL/IAttributes.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <functional>
@@ -12,17 +12,17 @@
 
 namespace DB
 {
-/// Contains attributes, i.e. instances of classes derived from IControlAttributes.
+/// Contains attributes, i.e. instances of classes derived from IAttributes.
 /// The implementations of this class MUST be thread-safe.
-class IControlAttributesStorage
+class IAttributesStorage
 {
 public:
-    using Attributes = IControlAttributes;
+    using Attributes = IAttributes;
     using AttributesPtr = ControlAttributesPtr;
     using Type = Attributes::Type;
 
-    IControlAttributesStorage() {}
-    virtual ~IControlAttributesStorage() {}
+    IAttributesStorage() {}
+    virtual ~IAttributesStorage() {}
 
     /// Returns the name of this storage.
     virtual const String & getStorageName() const = 0;
@@ -77,7 +77,7 @@ public:
 
     /// Updates the attributes in the storage.
     /// `UpdateFunc` must be declared as `void updateFunc(AttributesT & attrs);` where `AttributesT` is a class
-    /// derived from IControlAttributes.
+    /// derived from IAttributes.
     template <typename Func>
     void update(const UUID & id, const Func & update_func);
 
@@ -106,7 +106,7 @@ public:
     /// Subscribes for changes.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
     /// The `on_changed` function should be declared as `void onChanged(const std::shared_ptr<const AttributesT> & attrs);`
-    /// where `AttributesT` is a class derived from IControlAttributes.
+    /// where `AttributesT` is a class derived from IAttributes.
     template <typename Func>
     SubscriptionPtr subscribeForChanges(const UUID & id, const Func & on_changed) const;
 
@@ -127,7 +127,7 @@ protected:
 
 
 template <typename AttributesT>
-std::shared_ptr<const AttributesT> IControlAttributesStorage::read(const UUID & id) const
+std::shared_ptr<const AttributesT> IAttributesStorage::read(const UUID & id) const
 {
     static const Type & type = AttributesT::TYPE;
     return std::static_pointer_cast<const AttributesT>(read(id, type));
@@ -135,7 +135,7 @@ std::shared_ptr<const AttributesT> IControlAttributesStorage::read(const UUID & 
 
 
 template <typename AttributesT>
-std::shared_ptr<const AttributesT> IControlAttributesStorage::tryRead(const UUID & id) const
+std::shared_ptr<const AttributesT> IAttributesStorage::tryRead(const UUID & id) const
 {
     static const Type & type = AttributesT::TYPE;
     return std::static_pointer_cast<const AttributesT>(tryRead(id, type));
@@ -143,14 +143,14 @@ std::shared_ptr<const AttributesT> IControlAttributesStorage::tryRead(const UUID
 
 
 template <typename AttributesT>
-void IControlAttributesStorage::update(const UUID & id, const std::function<void(AttributesT &)> & update_func)
+void IAttributesStorage::update(const UUID & id, const std::function<void(AttributesT &)> & update_func)
 {
     updateImpl(id, AttributesT::TYPE, [update_func](Attributes & attrs) { update_func(*attrs.cast<AttributesT>()); });
 }
 
 
 template <typename Func>
-void IControlAttributesStorage::update(const UUID & id, const Func & update_func)
+void IAttributesStorage::update(const UUID & id, const Func & update_func)
 {
     using ParamTypes = typename boost::function_types::parameter_types<decltype(&Func::operator())>::type;
     using ArgType = typename boost::mpl::at<ParamTypes, boost::mpl::int_<1> >::type;
@@ -161,7 +161,7 @@ void IControlAttributesStorage::update(const UUID & id, const Func & update_func
 
 
 template <typename AttributesT>
-IControlAttributesStorage::SubscriptionPtr IControlAttributesStorage::subscribeForChanges(
+IAttributesStorage::SubscriptionPtr IAttributesStorage::subscribeForChanges(
     const UUID & id, const std::function<void(const std::shared_ptr<const AttributesT> &)> & on_changed) const
 {
     return subscribeForChangesImpl(id, [on_changed](const AttributesPtr & attrs)
@@ -173,7 +173,7 @@ IControlAttributesStorage::SubscriptionPtr IControlAttributesStorage::subscribeF
 
 
 template <typename Func>
-IControlAttributesStorage::SubscriptionPtr IControlAttributesStorage::subscribeForChanges(const UUID & id, const Func & on_changed) const
+IAttributesStorage::SubscriptionPtr IAttributesStorage::subscribeForChanges(const UUID & id, const Func & on_changed) const
 {
     using ParamTypes = typename boost::function_types::parameter_types<decltype(&Func::operator())>::type;
     using ArgType = typename boost::mpl::at<ParamTypes, boost::mpl::int_<1> >::type;

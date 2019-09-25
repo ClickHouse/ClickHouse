@@ -43,7 +43,7 @@ const ACLAttributesTypeInfo & ACLAttributesTypeInfo::get(ACLAttributesType type)
     {
         { ACLAttributesType::USER, "User", {}, ACLAttributesType::ROLE, ErrorCodes::USER_NOT_FOUND, ErrorCodes::USER_ALREADY_EXISTS },
         { ACLAttributesType::ROLE, "Role",
-          []() -> std::shared_ptr<IControlAttributes> { return std::make_shared<Role::Attributes>(); },
+          []() -> std::shared_ptr<IAttributes> { return std::make_shared<Role::Attributes>(); },
           {}, ErrorCodes::ROLE_NOT_FOUND, ErrorCodes::ROLE_ALREADY_EXISTS },
         { ACLAttributesType::QUOTA, "Quota", {}, {}, ErrorCodes::QUOTA_NOT_FOUND, ErrorCodes::QUOTA_ALREADY_EXISTS },
         { ACLAttributesType::ROW_FILTER_POLICY, "Policy", {}, {}, ErrorCodes::ROW_FILTER_POLICY_NOT_FOUND, ErrorCodes::ROW_FILTER_POLICY_ALREADY_EXISTS },

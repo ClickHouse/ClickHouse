@@ -72,7 +72,7 @@ public:
         IP_ADDRESS, /// Resource usage is calculated for each IP address separately.
     };
 
-    struct Attributes : public IControlAttributes
+    struct Attributes : public IAttributes
     {
         KeyType key_type = KeyType::NOT_KEYED;
         bool allow_custom_key = true;
@@ -81,10 +81,10 @@ public:
         std::vector<UUID> roles_disallowed_consume;
 
         const Type & getType() const override;
-        std::shared_ptr<IControlAttributes> clone() const override;
+        std::shared_ptr<IAttributes> clone() const override;
 
     protected:
-        bool equal(const IControlAttributes & other) const override;
+        bool equal(const IAttributes & other) const override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;

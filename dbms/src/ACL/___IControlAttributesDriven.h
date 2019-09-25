@@ -1,12 +1,12 @@
 #pragma once
 
-#include <ACL/IControlAttributesStorage.h>
+#include <ACL/IAttributesStorage.h>
 #include <optional>
 
 
 namespace DB
 {
-class IControlAttributesStorageManager;
+class IAttributesStorageManager;
 
 
 /// A named object that controls access somehow.
@@ -16,11 +16,11 @@ class IControlAttributesStorageManager;
 class IControlAttributesDriven
 {
 public:
-    using Attributes = IControlAttributes;
+    using Attributes = IAttributes;
     using AttributesPtr = ControlAttributesPtr;
     using Type = Attributes::Type;
-    using Storage = IControlAttributesStorage;
-    using Manager = IControlAttributesStorageManager;
+    using Storage = IAttributesStorage;
+    using Manager = IAttributesStorageManager;
 
     struct CreateTag {};
 
@@ -118,7 +118,7 @@ public:
     Changes & operator =(Changes && src);
 
     Changes(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists = false);
-    Changes(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IControlAttributes &)> & update_func, bool if_exists = false);
+    Changes(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IAttributes &)> & update_func, bool if_exists = false);
 
     template <typename UpdateFunc>
     Changes(UpdateTag, Storage & storage, const UUID & id, const UpdateFunc & update_func, bool if_exists = false)
@@ -134,7 +134,7 @@ public:
 
     Changes & then(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists = false);
 
-    Changes & then(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IControlAttributes &)> & update_func, bool if_exists = false);
+    Changes & then(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IAttributes &)> & update_func, bool if_exists = false);
 
     template <typename UpdateFunc>
     Changes & then(UpdateTag, Storage & storage, const UUID & id, const UpdateFunc & update_func, bool if_exists = false)
@@ -148,7 +148,7 @@ public:
             UpdateTag{},
             id,
             type,
-            [update_func](IControlAttributes & attrs)
+            [update_func](IAttributes & attrs)
             {
                 update_func(*attrs.cast<AttributesT>());
                 return true;
@@ -165,6 +165,6 @@ private:
     Storage::Change & addChange(Storage & storage);
     Storage::Changes & findStoragePosition(Storage & storage);
 
-    std::vector<std::pair<IControlAttributesStorage *, Storage::Changes>> all_changes;
+    std::vector<std::pair<IAttributesStorage *, Storage::Changes>> all_changes;
 };
 }

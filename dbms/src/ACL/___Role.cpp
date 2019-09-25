@@ -28,9 +28,9 @@ const Role::Type Role::Attributes::TYPE = {"Role",
 const Role::Type & Role::TYPE = Role::Attributes::TYPE;
 
 
-bool Role::Attributes::equal(const IControlAttributes & other) const
+bool Role::Attributes::equal(const IAttributes & other) const
 {
-    if (!IControlAttributes::equal(other))
+    if (!IAttributes::equal(other))
         return false;
     return true;
     //const auto * o = dynamic_cast<const Attributes *>(&other);
@@ -45,7 +45,7 @@ ACLAttributesType Role::Attributes::getType() const
 }
 
 
-bool Role::Attributes::equal(const IControlAttributes & other) const
+bool Role::Attributes::equal(const IAttributes & other) const
 {
     if (!ACLAttributable::Attributes::equal(other))
         return false;

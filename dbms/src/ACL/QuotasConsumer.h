@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ACL/Quota2.h>
-#include <ACL/IControlAttributesStorage.h>
+#include <ACL/IAttributesStorage.h>
 #include <Poco/Net/IPAddress.h>
 #include <atomic>
 #include <chrono>
@@ -50,7 +50,7 @@ private:
     const String custom_consumption_key;
 
     using AtomicIntervalPtr = std::atomic<Intervals *>;
-    using SubscriptionPtr = IControlAttributesStorage::SubscriptionPtr;
+    using SubscriptionPtr = IAttributesStorage::SubscriptionPtr;
 
     std::unique_ptr<AtomicIntervalPtr[]> intervals_for_quotas;
     std::unique_ptr<SubscriptionPtr[]> subscriptions;

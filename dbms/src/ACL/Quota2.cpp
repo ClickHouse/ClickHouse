@@ -56,7 +56,7 @@ ACLAttributesType Quota2::Attributes::getType() const
 }
 
 
-std::shared_ptr<IControlAttributes> Quota2::Attributes::clone() const
+std::shared_ptr<IAttributes> Quota2::Attributes::clone() const
 {
     auto result = std::make_shared<Attributes>();
     *result = *this;
@@ -64,7 +64,7 @@ std::shared_ptr<IControlAttributes> Quota2::Attributes::clone() const
 }
 
 
-bool Quota2::Attributes::equal(const IControlAttributes & other) const
+bool Quota2::Attributes::equal(const IAttributes & other) const
 {
     if (!ACLAttributable::Attributes::equal(other))
         return false;

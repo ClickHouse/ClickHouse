@@ -1,4 +1,4 @@
-#include <ACL/IControlAttributes.h>
+#include <ACL/IAttributes.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
@@ -8,7 +8,7 @@ namespace DB
 String backQuoteIfNeed(const String & x);
 
 
-IControlAttributes::Type::Type(const char * name_, size_t namespace_idx_, const Type *  base_type_, int error_code_not_found_, int error_code_already_exists_)
+IAttributes::Type::Type(const char * name_, size_t namespace_idx_, const Type *  base_type_, int error_code_not_found_, int error_code_already_exists_)
     : name(name_),
       namespace_idx(namespace_idx_),
       base_type(base_type_),
@@ -16,13 +16,13 @@ IControlAttributes::Type::Type(const char * name_, size_t namespace_idx_, const 
       error_code_already_exists(error_code_already_exists_) {}
 
 
-bool IControlAttributes::equal(const IControlAttributes & other) const
+bool IAttributes::equal(const IAttributes & other) const
 {
     return (name == other.name) && (getType() == other.getType());
 }
 
 
-bool IControlAttributes::Type::isDerived(const Type & base_type_) const
+bool IAttributes::Type::isDerived(const Type & base_type_) const
 {
     const Type * type = this;
     while (*type != base_type_)
@@ -35,13 +35,13 @@ bool IControlAttributes::Type::isDerived(const Type & base_type_) const
 }
 
 
-bool IControlAttributes::isDerived(const Type & base_type) const
+bool IAttributes::isDerived(const Type & base_type) const
 {
     return getType().isDerived(base_type);
 }
 
 
-void IControlAttributes::checkIsDerived(const Type & base_type) const
+void IAttributes::checkIsDerived(const Type & base_type) const
 {
     if (!isDerived(base_type))
     {

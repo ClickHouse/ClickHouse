@@ -1,20 +1,20 @@
 #pragma once
 
-#include <ACL/IControlAttributesStorage.h>
+#include <ACL/IAttributesStorage.h>
 #include <Common/LRUCache.h>
 #include <mutex>
 
 
 namespace DB
 {
-/// Implementation of IControlAttributesStorage which contains multiple nested storages.
-class MultipleControlAttributesStorage : public IControlAttributesStorage
+/// Implementation of IAttributesStorage which contains multiple nested storages.
+class MultipleAttributesStorage : public IAttributesStorage
 {
 public:
-    using Storage = IControlAttributesStorage;
+    using Storage = IAttributesStorage;
 
-    MultipleControlAttributesStorage(std::vector<std::unique_ptr<Storage>> nested_storages_, size_t index_of_nested_storage_for_insertion_ = 0);
-    ~MultipleControlAttributesStorage() override;
+    MultipleAttributesStorage(std::vector<std::unique_ptr<Storage>> nested_storages_, size_t index_of_nested_storage_for_insertion_ = 0);
+    ~MultipleAttributesStorage() override;
 
     const String & getStorageName() const override;
     std::vector<UUID> findPrefixed(const String & prefix, const Type & type) const override;
@@ -35,7 +35,7 @@ private:
     class SubscriptionForNew;
 
     std::vector<std::unique_ptr<Storage>> nested_storages;
-    IControlAttributesStorage * nested_storage_for_insertion;
+    IAttributesStorage * nested_storage_for_insertion;
 
     using NameAndType = std::pair<String, const Type *>;
     using IDAndStorage = std::pair<std::optional<UUID>, Storage *>;

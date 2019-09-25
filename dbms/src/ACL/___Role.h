@@ -15,11 +15,11 @@ namespace DB
 class ConstRole
 {
 public:
-    struct Attributes : public IControlAttributes
+    struct Attributes : public IAttributes
     {
         static const Type TYPE;
         const Type & getType() const override { return TYPE; }
-        std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
+        std::shared_ptr<IAttributes> clone() const override { return cloneImpl<Attributes>(); }
     };
 
     static const Type & TYPE = Attributes::TYPE;
@@ -84,11 +84,11 @@ public:
     std::optional<ConstRole> findRole(const String & name) const;
 
 private:
-    MultipleControlAttributesStorage storage;
+    MultipleAttributesStorage storage;
 };
 
 
-struct Attributes : public IControlAttributes
+struct Attributes : public IAttributes
 {
 #if 0
     /// Granted privileges. This doesn't include the privileges from the granted roles.
@@ -121,13 +121,13 @@ struct Attributes : public IControlAttributes
 
     static const Type TYPE;
     const Type & getType() const override { return TYPE; }
-    std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
+    std::shared_ptr<IAttributes> clone() const override { return cloneImpl<Attributes>(); }
 #if 0
     bool hasReferences(UUID ref_id) const override;
     void removeReferences(UUID ref_id) override;
 #endif
 protected:
-    bool equal(const IControlAttributes & other) const override;
+    bool equal(const IAttributes & other) const override;
 };
 
 using AttributesPtr = std::shared_ptr<const Attributes>;
@@ -226,7 +226,7 @@ std::pair<AttributesPtr, IControlAttributesDrivenManager *> getAttributesWithMan
 class Role
 {
 public:
-    struct Attributes : public IControlAttributes
+    struct Attributes : public IAttributes
     {
 #if 0
         /// Granted privileges. This doesn't include the privileges from the granted roles.
@@ -259,13 +259,13 @@ public:
 
         static const Type TYPE;
         const Type & getType() const override { return TYPE; }
-        std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
+        std::shared_ptr<IAttributes> clone() const override { return cloneImpl<Attributes>(); }
 #if 0
         bool hasReferences(UUID ref_id) const override;
         void removeReferences(UUID ref_id) override;
 #endif
     protected:
-        bool equal(const IControlAttributes & other) const override;
+        bool equal(const IAttributes & other) const override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;

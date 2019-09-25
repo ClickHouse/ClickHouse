@@ -1,5 +1,5 @@
 #include <ACL/User2.h>
-#include <ACL/IControlAttributesStorage.h>
+#include <ACL/IAttributesStorage.h>
 
 
 namespace DB
@@ -26,7 +26,7 @@ const ConstUser::Type ConstUser::Attributes::TYPE{"User",
 const ConstUser::Type & ConstUser::TYPE = ConstUser::Attributes::TYPE;
 
 
-bool ConstUser::Attributes::equal(const IControlAttributes & other) const
+bool ConstUser::Attributes::equal(const IAttributes & other) const
 {
     if (!ConstRole::Attributes::equal(other))
         return false;

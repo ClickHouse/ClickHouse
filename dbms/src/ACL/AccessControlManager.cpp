@@ -1,6 +1,6 @@
 #include <ACL/AccessControlManager.h>
-#include <ACL/MultipleControlAttributesStorage.h>
-#include <ACL/MemoryControlAttributesStorage.h>
+#include <ACL/MultipleAttributesStorage.h>
+#include <ACL/MemoryAttributesStorage.h>
 
 
 namespace DB
@@ -13,7 +13,7 @@ namespace AccessControlNames
 
 AccessControlManager::AccessControlManager()
 {
-    storage = std::make_unique<MemoryControlAttributesStorage>();
+    storage = std::make_unique<MemoryAttributesStorage>();
 }
 
 

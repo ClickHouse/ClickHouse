@@ -12,7 +12,7 @@ class RowPolicy : public IControlAttributesDriven
 public:
     static const Type TYPE;
 
-    struct Attributes : public IControlAttributes
+    struct Attributes : public IAttributes
     {
         /// Granted privileges. This doesn't include the privileges from the granted roles.
         Privileges privileges;

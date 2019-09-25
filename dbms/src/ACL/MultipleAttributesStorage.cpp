@@ -1,4 +1,4 @@
-#include <ACL/MultipleControlAttributesStorage.h>
+#include <ACL/MultipleAttributesStorage.h>
 #include <string>
 #include <functional>
 
@@ -11,32 +11,32 @@ namespace
 }
 
 
-size_t MultipleControlAttributesStorage::NameAndTypeHash::operator()(const NameAndType & pr) const
+size_t MultipleAttributesStorage::NameAndTypeHash::operator()(const NameAndType & pr) const
 {
     return std::hash<String>()(pr.first) + std::hash<const Type *>()(pr.second);
 }
 
 
-MultipleControlAttributesStorage::MultipleControlAttributesStorage(std::vector<std::unique_ptr<Storage>> nested_storages_, size_t index_of_nested_storage_for_insertion_)
+MultipleAttributesStorage::MultipleAttributesStorage(std::vector<std::unique_ptr<Storage>> nested_storages_, size_t index_of_nested_storage_for_insertion_)
     : nested_storages(std::move(nested_storages_)), nested_storage_for_insertion(nested_storages[index_of_nested_storage_for_insertion_].get()),
       names_and_types_cache(CACHE_MAX_SIZE), ids_cache(CACHE_MAX_SIZE)
 {
 }
 
 
-MultipleControlAttributesStorage::~MultipleControlAttributesStorage()
+MultipleAttributesStorage::~MultipleAttributesStorage()
 {
 }
 
 
-const String & MultipleControlAttributesStorage::getStorageName() const
+const String & MultipleAttributesStorage::getStorageName() const
 {
     static const String storage_name = "Multiple";
     return storage_name;
 }
 
 
-std::vector<UUID> MultipleControlAttributesStorage::findPrefixed(const String & prefix, const Type & type) const
+std::vector<UUID> MultipleAttributesStorage::findPrefixed(const String & prefix, const Type & type) const
 {
     std::vector<UUID> all_ids;
     for (const auto & nested_storage : nested_storages)
@@ -48,7 +48,7 @@ std::vector<UUID> MultipleControlAttributesStorage::findPrefixed(const String & 
 }
 
 
-std::optional<UUID> MultipleControlAttributesStorage::find(const String & name, const Type & type) const
+std::optional<UUID> MultipleAttributesStorage::find(const String & name, const Type & type) const
 {
     std::unique_lock lock{mutex};
     auto from_cache = names_and_types_cache.get({name, &type});
@@ -78,13 +78,13 @@ std::optional<UUID> MultipleControlAttributesStorage::find(const String & name, 
 }
 
 
-bool MultipleControlAttributesStorage::exists(const UUID & id) const
+bool MultipleAttributesStorage::exists(const UUID & id) const
 {
     return findStorageByID(id) != nullptr;
 }
 
 
-IControlAttributesStorage * MultipleControlAttributesStorage::findStorageByID(const UUID & id) const
+IAttributesStorage * MultipleAttributesStorage::findStorageByID(const UUID & id) const
 {
     std::unique_lock lock{mutex};
     auto from_cache = ids_cache.get(id);
@@ -112,7 +112,7 @@ IControlAttributesStorage * MultipleControlAttributesStorage::findStorageByID(co
 }
 
 
-std::pair<UUID, bool> MultipleControlAttributesStorage::tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision)
+std::pair<UUID, bool> MultipleAttributesStorage::tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision)
 {
     auto [id, inserted] = nested_storage_for_insertion->tryInsert(attrs, caused_name_collision);
     if (inserted)
@@ -125,7 +125,7 @@ std::pair<UUID, bool> MultipleControlAttributesStorage::tryInsertImpl(const Attr
 }
 
 
-bool MultipleControlAttributesStorage::tryRemoveImpl(const UUID & id)
+bool MultipleAttributesStorage::tryRemoveImpl(const UUID & id)
 {
     std::unique_lock lock{mutex};
     auto from_cache = ids_cache.get(id);
@@ -149,7 +149,7 @@ bool MultipleControlAttributesStorage::tryRemoveImpl(const UUID & id)
 }
 
 
-ControlAttributesPtr MultipleControlAttributesStorage::tryReadImpl(const UUID & id) const
+ControlAttributesPtr MultipleAttributesStorage::tryReadImpl(const UUID & id) const
 {
     std::unique_lock lock{mutex};
     auto from_cache = ids_cache.get(id);
@@ -178,7 +178,7 @@ ControlAttributesPtr MultipleControlAttributesStorage::tryReadImpl(const UUID & 
     return nullptr;
 }
 
-void MultipleControlAttributesStorage::updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+void MultipleAttributesStorage::updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
 {
     auto * storage = findStorageByID(id);
     if (!storage)
@@ -187,7 +187,7 @@ void MultipleControlAttributesStorage::updateImpl(const UUID & id, const Type & 
 }
 
 
-IControlAttributesStorage::SubscriptionPtr MultipleControlAttributesStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const
+IAttributesStorage::SubscriptionPtr MultipleAttributesStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const
 {
     auto storage = findStorageByID(id);
     if (!storage)
@@ -196,7 +196,7 @@ IControlAttributesStorage::SubscriptionPtr MultipleControlAttributesStorage::sub
 }
 
 
-class MultipleControlAttributesStorage::SubscriptionForNew : public IControlAttributesStorage::Subscription
+class MultipleAttributesStorage::SubscriptionForNew : public IAttributesStorage::Subscription
 {
 public:
     SubscriptionForNew(std::vector<SubscriptionPtr> nested_subscriptions_) : nested_subscriptions(std::move(nested_subscriptions_)) {}
@@ -207,7 +207,7 @@ private:
 };
 
 
-IControlAttributesStorage::SubscriptionPtr MultipleControlAttributesStorage::subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const
+IAttributesStorage::SubscriptionPtr MultipleAttributesStorage::subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const
 {
     std::vector<SubscriptionPtr> nested_subscriptions;
     for (const auto & nested_storage : nested_storages)

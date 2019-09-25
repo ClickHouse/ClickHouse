@@ -1,5 +1,5 @@
 #include <ACL/Role.h>
-#include <ACL/IControlAttributesStorage.h>
+#include <ACL/IAttributesStorage.h>
 #include <Parsers/ASTGrantQuery.h>
 #include <common/StringRef.h>
 #include <map>
@@ -29,9 +29,9 @@ const ConstRole::Type ConstRole::Attributes::TYPE{"Role",
 const ConstRole::Type & ConstRole::TYPE = ConstRole::Attributes::TYPE;
 
 
-bool ConstRole::Attributes::equal(const IControlAttributes & other) const
+bool ConstRole::Attributes::equal(const IAttributes & other) const
 {
-    if (!IControlAttributes::equal(other))
+    if (!IAttributes::equal(other))
         return false;
     const auto & o = *other.cast<Attributes>();
     return (allowed_databases_by_grant_option[false] == o.allowed_databases_by_grant_option[false])

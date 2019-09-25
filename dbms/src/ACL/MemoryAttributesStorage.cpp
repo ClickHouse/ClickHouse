@@ -1,21 +1,21 @@
-#include <ACL/MemoryControlAttributesStorage.h>
+#include <ACL/MemoryAttributesStorage.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
 {
-MemoryControlAttributesStorage::MemoryControlAttributesStorage() {}
-MemoryControlAttributesStorage::~MemoryControlAttributesStorage() {}
+MemoryAttributesStorage::MemoryAttributesStorage() {}
+MemoryAttributesStorage::~MemoryAttributesStorage() {}
 
 
-const String & MemoryControlAttributesStorage::getStorageName() const
+const String & MemoryAttributesStorage::getStorageName() const
 {
     static const String storage_name = "Memory";
     return storage_name;
 }
 
 
-std::vector<UUID> MemoryControlAttributesStorage::findPrefixed(const String & prefix, const Type & type) const
+std::vector<UUID> MemoryAttributesStorage::findPrefixed(const String & prefix, const Type & type) const
 {
     std::lock_guard lock{mutex};
     size_t namespace_idx = type.namespace_idx;
@@ -47,7 +47,7 @@ std::vector<UUID> MemoryControlAttributesStorage::findPrefixed(const String & pr
 }
 
 
-std::optional<UUID> MemoryControlAttributesStorage::find(const String & name, const Type & type) const
+std::optional<UUID> MemoryAttributesStorage::find(const String & name, const Type & type) const
 {
     std::lock_guard lock{mutex};
     size_t namespace_idx = type.namespace_idx;
@@ -63,14 +63,14 @@ std::optional<UUID> MemoryControlAttributesStorage::find(const String & name, co
 }
 
 
-bool MemoryControlAttributesStorage::exists(const UUID & id) const
+bool MemoryAttributesStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     return entries.count(id);
 }
 
 
-std::pair<UUID, bool> MemoryControlAttributesStorage::tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision)
+std::pair<UUID, bool> MemoryAttributesStorage::tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision)
 {
     std::unique_lock lock{mutex};
     caused_name_collision = nullptr;
@@ -120,7 +120,7 @@ std::pair<UUID, bool> MemoryControlAttributesStorage::tryInsertImpl(const Attrib
 }
 
 
-bool MemoryControlAttributesStorage::tryRemoveImpl(const UUID & id)
+bool MemoryAttributesStorage::tryRemoveImpl(const UUID & id)
 {
     std::unique_lock lock{mutex};
     auto it = entries.find(id);
@@ -162,7 +162,7 @@ bool MemoryControlAttributesStorage::tryRemoveImpl(const UUID & id)
 }
 
 
-ControlAttributesPtr MemoryControlAttributesStorage::tryReadImpl(const UUID & id) const
+ControlAttributesPtr MemoryAttributesStorage::tryReadImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     auto it = entries.find(id);
@@ -173,7 +173,7 @@ ControlAttributesPtr MemoryControlAttributesStorage::tryReadImpl(const UUID & id
 }
 
 
-void MemoryControlAttributesStorage::updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+void MemoryAttributesStorage::updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
 {
     std::unique_lock lock{mutex};
 
@@ -228,24 +228,24 @@ void MemoryControlAttributesStorage::updateImpl(const UUID & id, const Type & ty
 }
 
 
-class MemoryControlAttributesStorage::SubscriptionForNew : public IControlAttributesStorage::Subscription
+class MemoryAttributesStorage::SubscriptionForNew : public IAttributesStorage::Subscription
 {
 public:
     SubscriptionForNew(
-        const MemoryControlAttributesStorage * storage_, size_t namespace_idx_, const std::multimap<String, OnNewHandler>::iterator & handler_it_)
+        const MemoryAttributesStorage * storage_, size_t namespace_idx_, const std::multimap<String, OnNewHandler>::iterator & handler_it_)
         : storage(storage_), namespace_idx(namespace_idx_), handler_it(handler_it_)
     {
     }
     ~SubscriptionForNew() override { storage->removeSubscription(namespace_idx, handler_it); }
 
 private:
-    const MemoryControlAttributesStorage * storage;
+    const MemoryAttributesStorage * storage;
     size_t namespace_idx;
     std::multimap<String, OnNewHandler>::iterator handler_it;
 };
 
 
-IControlAttributesStorage::SubscriptionPtr MemoryControlAttributesStorage::subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const
+IAttributesStorage::SubscriptionPtr MemoryAttributesStorage::subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const
 {
     std::lock_guard lock{mutex};
     size_t namespace_idx = type.namespace_idx;
@@ -255,7 +255,7 @@ IControlAttributesStorage::SubscriptionPtr MemoryControlAttributesStorage::subsc
 }
 
 
-void MemoryControlAttributesStorage::removeSubscription(size_t namespace_idx, const std::multimap<String, OnNewHandler>::iterator & handler_it) const
+void MemoryAttributesStorage::removeSubscription(size_t namespace_idx, const std::multimap<String, OnNewHandler>::iterator & handler_it) const
 {
     std::lock_guard lock{mutex};
     if (namespace_idx >= on_new_handlers.size())
@@ -264,24 +264,24 @@ void MemoryControlAttributesStorage::removeSubscription(size_t namespace_idx, co
 }
 
 
-class MemoryControlAttributesStorage::SubscriptionForChanges : public IControlAttributesStorage::Subscription
+class MemoryAttributesStorage::SubscriptionForChanges : public IAttributesStorage::Subscription
 {
 public:
     SubscriptionForChanges(
-        const MemoryControlAttributesStorage * storage_, const UUID & id_, const std::list<OnChangedHandler>::iterator & handler_it_)
+        const MemoryAttributesStorage * storage_, const UUID & id_, const std::list<OnChangedHandler>::iterator & handler_it_)
         : storage(storage_), id(id_), handler_it(handler_it_)
     {
     }
     ~SubscriptionForChanges() override { storage->removeSubscription(id, handler_it); }
 
 private:
-    const MemoryControlAttributesStorage * storage;
+    const MemoryAttributesStorage * storage;
     UUID id;
     std::list<OnChangedHandler>::iterator handler_it;
 };
 
 
-IControlAttributesStorage::SubscriptionPtr MemoryControlAttributesStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const
+IAttributesStorage::SubscriptionPtr MemoryAttributesStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const
 {
     std::lock_guard lock{mutex};
     auto it = entries.find(id);
@@ -293,7 +293,7 @@ IControlAttributesStorage::SubscriptionPtr MemoryControlAttributesStorage::subsc
 }
 
 
-void MemoryControlAttributesStorage::removeSubscription(const UUID & id, const std::list<OnChangedHandler>::iterator & handler_it) const
+void MemoryAttributesStorage::removeSubscription(const UUID & id, const std::list<OnChangedHandler>::iterator & handler_it) const
 {
     std::lock_guard lock{mutex};
     auto it = entries.find(id);

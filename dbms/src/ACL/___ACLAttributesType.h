@@ -9,7 +9,7 @@
 
 namespace DB
 {
-class IControlAttributes;
+class IAttributes;
 
 
 struct ACLAttributesType
@@ -20,7 +20,7 @@ struct ACLAttributesType
     static const ACLAttributesType ROW_FILTER_POLICY;
 
     const String name;
-    const std::function<std::shared_ptr<IControlAttributes>()> create_func;
+    const std::function<std::shared_ptr<IAttributes>()> create_func;
     const ACLAttributesType * const base_type;
     const int not_found_error_code;
     const int already_exists_error_code;

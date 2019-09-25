@@ -21,14 +21,14 @@ public:
 
         static const Type TYPE;
         const Type & getType() const override { return TYPE; }
-        std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
-        bool equal(const IControlAttributes & other) const override;
+        std::shared_ptr<IAttributes> clone() const override { return cloneImpl<Attributes>(); }
+        bool equal(const IAttributes & other) const override;
         bool hasReferences(const UUID & id) const override;
         void removeReferences(const UUID & id) override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;
-    using Storage = IControlAttributesStorage;
+    using Storage = IAttributesStorage;
     using Type = Attributes::Type;
     static const Type & TYPE;
 

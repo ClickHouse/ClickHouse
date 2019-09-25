@@ -1,6 +1,6 @@
 #if 0
 #include <ACL/IControlAttributesDriven.h>
-#include <ACL/IControlAttributesStorageManager.h>
+#include <ACL/IAttributesStorageManager.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
@@ -69,20 +69,20 @@ std::optional<UUID> IControlAttributesDriven::tryGetID() const
 }
 
 
-IControlAttributesStorageManager & IControlAttributesDriven::getManager() const
+IAttributesStorageManager & IControlAttributesDriven::getManager() const
 {
     assert(manager);
     return *manager;
 }
 
 
-IControlAttributesStorageManager * IControlAttributesDriven::tryGetManager() const
+IAttributesStorageManager * IControlAttributesDriven::tryGetManager() const
 {
     return manager;
 }
 
 
-IControlAttributesStorage & IControlAttributesDriven::getStorage() const
+IAttributesStorage & IControlAttributesDriven::getStorage() const
 {
     tryGetStorage();
     if (!storage)
@@ -91,7 +91,7 @@ IControlAttributesStorage & IControlAttributesDriven::getStorage() const
 }
 
 
-IControlAttributesStorage * IControlAttributesDriven::tryGetStorage() const
+IAttributesStorage * IControlAttributesDriven::tryGetStorage() const
 {
     if (!storage)
     {
@@ -167,7 +167,7 @@ IControlAttributesDriven::Changes IControlAttributesDriven::setNameChanges(const
             existing_type.error_code_already_exists);
     }
 
-    auto update_func = [new_name](IControlAttributes & attrs) { attrs.name = new_name; };
+    auto update_func = [new_name](IAttributes & attrs) { attrs.name = new_name; };
     return {Changes::UpdateTag, getStorage(), getID(), getType(), update_func};
 }
 
@@ -242,7 +242,7 @@ IControlAttributesDriven::Changes::Changes(InsertTag, Storage & storage, const C
 }
 
 
-IControlAttributesDriven::Changes::Changes(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IControlAttributes &)> & update_func, bool if_exists)
+IControlAttributesDriven::Changes::Changes(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IAttributes &)> & update_func, bool if_exists)
 {
     then(UpdateTag{}, storage, id, type, update_func, if_exists);
 }
@@ -317,7 +317,7 @@ IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(Inse
 }
 
 
-IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IControlAttributes &)> & update_func, bool if_exists)
+IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IAttributes &)> & update_func, bool if_exists)
 {
     auto & change = addChange(storage);
     change.change_type = Storage::ChangeType::UPDATE;
@@ -356,7 +356,7 @@ void IControlAttributesDriven::Changes::apply() const
 }
 
 
-IControlAttributesStorage::Change & IControlAttributesDriven::Changes::addChange(Storage & storage)
+IAttributesStorage::Change & IControlAttributesDriven::Changes::addChange(Storage & storage)
 {
     auto & changes = findStoragePosition(storage);
     changes.push_back({});
@@ -364,7 +364,7 @@ IControlAttributesStorage::Change & IControlAttributesDriven::Changes::addChange
 }
 
 
-IControlAttributesStorage::Changes & IControlAttributesDriven::Changes::findStoragePosition(Storage & storage)
+IAttributesStorage::Changes & IControlAttributesDriven::Changes::findStoragePosition(Storage & storage)
 {
     for (auto & [stor, chn] : all_changes)
     {
@@ -377,7 +377,7 @@ IControlAttributesStorage::Changes & IControlAttributesDriven::Changes::findStor
 
 
 /*
-void IControlAttributesStorage::throwCannotInsertNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
+void IAttributesStorage::throwCannotInsertNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
 {
     throw Exception(
         String(type.name) + " " + backQuoteIfNeed(name) + ": cannot create because this name is already used by " + existing_type.name + " "

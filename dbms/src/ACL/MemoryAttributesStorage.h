@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ACL/IControlAttributesStorage.h>
+#include <ACL/IAttributesStorage.h>
 #include <list>
 #include <map>
 #include <unordered_map>
@@ -9,12 +9,12 @@
 
 namespace DB
 {
-/// Implementation of IControlAttributesStorage which keeps all data in memory.
-class MemoryControlAttributesStorage : public IControlAttributesStorage
+/// Implementation of IAttributesStorage which keeps all data in memory.
+class MemoryAttributesStorage : public IAttributesStorage
 {
 public:
-    MemoryControlAttributesStorage();
-    ~MemoryControlAttributesStorage() override;
+    MemoryAttributesStorage();
+    ~MemoryAttributesStorage() override;
     const String & getStorageName() const override;
 
     std::vector<UUID> findPrefixed(const String & prefix, const Type & type) const override;

@@ -1,4 +1,4 @@
-#include <ACL/IControlAttributesStorage.h>
+#include <ACL/IAttributesStorage.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
@@ -9,7 +9,7 @@ namespace DB
 String backQuoteIfNeed(const String & x);
 
 
-UUID IControlAttributesStorage::getID(const String & name, const Type & type) const
+UUID IAttributesStorage::getID(const String & name, const Type & type) const
 {
     auto id = find(name, type);
     if (!id)
@@ -18,7 +18,7 @@ UUID IControlAttributesStorage::getID(const String & name, const Type & type) co
 }
 
 
-UUID IControlAttributesStorage::insert(const Attributes & attrs)
+UUID IAttributesStorage::insert(const Attributes & attrs)
 {
     AttributesPtr caused_name_collision;
     auto [id, inserted] = tryInsertImpl(attrs, caused_name_collision);
@@ -31,33 +31,33 @@ UUID IControlAttributesStorage::insert(const Attributes & attrs)
 }
 
 
-std::pair<UUID, bool> IControlAttributesStorage::tryInsert(const Attributes & attrs)
+std::pair<UUID, bool> IAttributesStorage::tryInsert(const Attributes & attrs)
 {
     AttributesPtr caused_name_collision;
     return tryInsertImpl(attrs, caused_name_collision);
 }
 
 
-std::pair<UUID, bool> IControlAttributesStorage::tryInsert(const Attributes & attrs, AttributesPtr & caused_name_collision)
+std::pair<UUID, bool> IAttributesStorage::tryInsert(const Attributes & attrs, AttributesPtr & caused_name_collision)
 {
     return tryInsertImpl(attrs, caused_name_collision);
 }
 
 
-void IControlAttributesStorage::remove(const UUID & id, const Type & type)
+void IAttributesStorage::remove(const UUID & id, const Type & type)
 {
     if (!tryRemoveImpl(id))
         throwNotFound(id, type);
 }
 
 
-bool IControlAttributesStorage::tryRemove(const UUID & id)
+bool IAttributesStorage::tryRemove(const UUID & id)
 {
     return tryRemoveImpl(id);
 }
 
 
-ControlAttributesPtr IControlAttributesStorage::read(const UUID & id, const Type & type) const
+ControlAttributesPtr IAttributesStorage::read(const UUID & id, const Type & type) const
 {
     auto attrs = tryReadImpl(id);
     if (!attrs)
@@ -67,13 +67,13 @@ ControlAttributesPtr IControlAttributesStorage::read(const UUID & id, const Type
 }
 
 
-ControlAttributesPtr IControlAttributesStorage::tryRead(const UUID & id) const
+ControlAttributesPtr IAttributesStorage::tryRead(const UUID & id) const
 {
     return tryReadImpl(id);
 }
 
 
-ControlAttributesPtr IControlAttributesStorage::tryRead(const UUID & id, const Type & type) const
+ControlAttributesPtr IAttributesStorage::tryRead(const UUID & id, const Type & type) const
 {
     auto attrs = tryReadImpl(id);
     if (!attrs || !attrs->isDerived(type))
@@ -82,19 +82,19 @@ ControlAttributesPtr IControlAttributesStorage::tryRead(const UUID & id, const T
 }
 
 
-void IControlAttributesStorage::update(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+void IAttributesStorage::update(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
 {
     updateImpl(id, type, update_func);
 }
 
 
-IControlAttributesStorage::SubscriptionPtr IControlAttributesStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & on_changed) const
+IAttributesStorage::SubscriptionPtr IAttributesStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & on_changed) const
 {
     return subscribeForChangesImpl(id, on_changed);
 }
 
 
-UUID IControlAttributesStorage::generateRandomID()
+UUID IAttributesStorage::generateRandomID()
 {
     static Poco::UUIDGenerator generator;
     UUID id;
@@ -102,19 +102,19 @@ UUID IControlAttributesStorage::generateRandomID()
     return id;
 }
 
-void IControlAttributesStorage::throwNotFound(const UUID & id, const Type & type)
+void IAttributesStorage::throwNotFound(const UUID & id, const Type & type)
 {
     throw Exception(String(type.name) + " {" + toString(id) + "} not found", type.error_code_not_found);
 }
 
 
-void IControlAttributesStorage::throwNotFound(const String & name, const Type & type)
+void IAttributesStorage::throwNotFound(const String & name, const Type & type)
 {
     throw Exception(String(type.name) + " " + backQuoteIfNeed(name) + " not found", type.error_code_not_found);
 }
 
 
-void IControlAttributesStorage::throwCannotRenameNewNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
+void IAttributesStorage::throwCannotRenameNewNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
 {
     throw Exception(
         String(type.name) + " " + backQuoteIfNeed(name) + ": cannot rename to " + backQuoteIfNeed(existing_name) + " because " + existing_type.name

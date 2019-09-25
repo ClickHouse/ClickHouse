@@ -7,14 +7,14 @@
 
 namespace DB
 {
-class IControlAttributesStorage;
+class IAttributesStorage;
 
 
-class AccessControlManager : public IControlAttributesStorageManager
+class AccessControlManager : public IAttributesStorageManager
 {
 public:
-    using Storage = IControlAttributesStorage;
-    using StoragePtr = std::shared_ptr<IControlAttributesStorage>;
+    using Storage = IAttributesStorage;
+    using StoragePtr = std::shared_ptr<IAttributesStorage>;
     using ElementType = IAccessControlElement::Type;
 
     //std::pair<StoragePtr, UUID> findElement(const String & name, ElementType type);

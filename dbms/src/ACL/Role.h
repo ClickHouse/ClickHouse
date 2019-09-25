@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ACL/IControlAttributes.h>
+#include <ACL/IAttributes.h>
 #include <ACL/AllowedDatabases.h>
 #include <Parsers/IAST_fwd.h>
 #include <functional>
@@ -9,7 +9,7 @@
 
 namespace DB
 {
-class IControlAttributesStorage;
+class IAttributesStorage;
 
 
 /// Represents a role in Role-based Access Control.
@@ -20,21 +20,21 @@ class IControlAttributesStorage;
 class ConstRole
 {
 public:
-    struct Attributes : public IControlAttributes
+    struct Attributes : public IAttributes
     {
         AllowedDatabases allowed_databases_by_grant_option[2 /* 0 - without grant option, 1 - with grant option */];
         std::unordered_set<UUID> granted_roles_by_admin_option[2 /* 0 - without admin option, 1 - with admin option */];
 
         static const Type TYPE;
         const Type & getType() const override { return TYPE; }
-        std::shared_ptr<IControlAttributes> clone() const override { return cloneImpl<Attributes>(); }
-        bool equal(const IControlAttributes & other) const override;
+        std::shared_ptr<IAttributes> clone() const override { return cloneImpl<Attributes>(); }
+        bool equal(const IAttributes & other) const override;
         bool hasReferences(const UUID & id) const override;
         void removeReferences(const UUID & id) override;
     };
 
     using AttributesPtr = std::shared_ptr<const Attributes>;
-    using Storage = IControlAttributesStorage;
+    using Storage = IAttributesStorage;
     using Type = Attributes::Type;
     static const Type & TYPE;
 

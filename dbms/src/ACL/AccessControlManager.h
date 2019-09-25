@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class IControlAttributesStorage;
+class IAttributesStorage;
 
 
 /// Manages access control entities.
@@ -33,7 +33,7 @@ public:
     std::optional<ConstUser> findUser(const String & name) const;
 
 private:
-    std::unique_ptr<IControlAttributesStorage> storage;
+    std::unique_ptr<IAttributesStorage> storage;
 };
 
 }
