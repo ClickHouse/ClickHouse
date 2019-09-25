@@ -508,7 +508,8 @@ public:
     void operator() (const Progress & value)
     {
         ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.read_bytes);
-        if (stage.is_first) {
+        if (stage.is_first)
+        {
             ProfileEvents::increment(ProfileEvents::MergedRows, value.read_rows);
             ProfileEvents::increment(ProfileEvents::CountOfMerges);
         }
