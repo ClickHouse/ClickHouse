@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <Poco/DirectoryIterator.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabasesCommon.h>
@@ -17,10 +16,12 @@ class DatabaseLazyIterator;
   * Works like DatabaseOrdinary, but stores in memory only cache.
   * Can be used only with *Log engines.
   */
-class DatabaseLazy : public DatabaseWithOwnTablesBase
+class DatabaseLazy : public IDatabase
 {
 public:
-    DatabaseLazy(String name_, const String & metadata_path_, const std::chrono::seconds & expiration_time_, const Context & context);
+    using Times = std::unordered_map<String, time_t>;
+
+    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context);
 
     String getEngineName() const override { return "Lazy"; }
 
@@ -86,14 +87,23 @@ public:
 
     DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
+    void attachTable(const String & table_name, const StoragePtr & table) override;
+
+    StoragePtr detachTable(const String & table_name) override;
+
+    void shutdown() override;
+
+    ~DatabaseLazy() override;
+
 private:
     String name;
     const String metadata_path;
     const String data_path;
-    const std::chrono::seconds expiration_time;
+    const time_t expiration_time;
 
-    Tables tables_cache;
-    Times last_touch;
+    mutable std::mutex tables_mutex;
+    mutable Tables tables_cache;
+    mutable Times last_metadata_modification;
 
     Poco::Logger * log;
 
@@ -101,6 +111,8 @@ private:
     
     using IteratingFunction = std::function<bool(const Poco::DirectoryIterator &)>;
     void iterateTableFiles(const IteratingFunction & iterating_function) const;
+
+    void clearExpiredTables() const;
 
     friend class DatabaseLazyIterator;
 };
@@ -114,13 +126,14 @@ public:
     void next() override;
     bool isValid() const override;
     const String & name() const override;
-    StoragePtr & table() const override;
+    const StoragePtr & table() const override;
 
 private:
     const DatabaseLazy & database;
     const Strings table_names;
     const Context context;
     Strings::const_iterator iterator;
+    mutable StoragePtr current_storage;
 };
 
 }

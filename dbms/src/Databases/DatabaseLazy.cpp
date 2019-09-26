@@ -64,7 +64,9 @@ namespace detail
 static void loadTable(
     const Context & context,
     const String & database_metadata_path,
-    DatabaseLazy & database,
+    std::mutex & tables_mutex,
+    Tables & tables_cache,
+    DatabaseLazy::Times & /* last_touched */,
     const String & database_name,
     const String & database_data_path,
     const String & file_name,
@@ -95,12 +97,16 @@ static void loadTable(
     {
         String table_name;
         StoragePtr table;
-        Context context_copy(context);
+        Context context_copy(context); /// some tables can change metadata
         std::tie(table_name, table) = createTableFromDefinition(
             s, database_name, database_data_path, context_copy, has_force_restore_data_flag, "in file " + table_metadata_path);
         if (table->getName().substr(table->getName().size() - 3, 3) != "Log")
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
-        database.attachTable(table_name, table);
+        {
+            std::lock_guard lock(tables_mutex);
+            if (!tables_cache.emplace(table_name, table).second)
+                throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        }
     }
     catch (const Exception & e)
     {
@@ -110,9 +116,21 @@ static void loadTable(
     }
 }
 
+static size_t getLastModifiedEpochTime(const String & table_metadata_path) {
+    Poco::File meta_file(table_metadata_path);
 
-DatabaseLazy::DatabaseLazy(String name_, const String & metadata_path_, const std::chrono::seconds & expiration_time_, const Context & context)
-    : DatabaseWithOwnTablesBase(std::move(name_))
+    if (meta_file.exists())
+    {
+        return meta_file.getLastModified().epochTime();
+    }
+    else
+    {
+        return static_cast<time_t>(0);
+    }
+}
+
+DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context)
+    : name(name_)
     , metadata_path(metadata_path_)
     , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
     , expiration_time(expiration_time_)
@@ -172,6 +190,7 @@ void DatabaseLazy::createTable(
     {
         /// Add a table to the map of known tables.
         attachTable(table_name, table);
+        last_metadata_modification[table_name] = getLastModifiedEpochTime(getTableMetadataPath(table_name));
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -306,17 +325,8 @@ time_t DatabaseLazy::getTableMetadataModificationTime(
     const Context & /*context*/,
     const String & table_name)
 {
-    String table_metadata_path = getTableMetadataPath(table_name);
-    Poco::File meta_file(table_metadata_path);
-
-    if (meta_file.exists())
-    {
-        return meta_file.getLastModified().epochTime();
-    }
-    else
-    {
-        return static_cast<time_t>(0);
-    }
+    std::lock_guard lock(tables_mutex);
+    return last_metadata_modification[table_name];
 }
 
 ASTPtr DatabaseLazy::getCreateTableQueryImpl(const Context & context,
@@ -387,30 +397,35 @@ void DatabaseLazy::drop()
 }
 
 bool DatabaseLazy::isTableExist(
-    const Context & context,
+    const Context & /* context */,
     const String & table_name) const
 {
-    return DatabaseWithOwnTablesBase::isTableExist(context, table_name) || Poco::File(getTableMetadataPath(table_name)).exists();
+    {
+        std::lock_guard lock(tables_mutex);
+        if (tables_cache.find(table_name) != tables_cache.end())
+            return true;
+    }
+    return Poco::File(getTableMetadataPath(table_name)).exists();
 }
 
 StoragePtr DatabaseLazy::tryGetTable(
     const Context & context,
     const String & table_name) const
 {
-    auto storage_ptr = DatabaseWithOwnTablesBase::tryGetTable(context, table_name);
-    if (storage_ptr)
-        return storage_ptr;
+    auto it = tables_cache.find(table_name);
+    if (it != tables_cache.end())
+        return it->second;
     
     if (!Poco::File(getTableMetadataPath(table_name)).exists())
         return nullptr;
-    //loadTable(context, metadata_path, *this, name, data_path, table_name + ".sql", false);
+    loadTable(context, metadata_path, tables_mutex, tables_cache, last_metadata_modification, name, data_path, table_name + ".sql", false);
 
     return tryGetTable(context, table_name);
 }
 
 DatabaseIteratorPtr DatabaseLazy::getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(tables_mutex);
     Strings filtered_tables;
     iterateTableFiles([&filtered_tables, &filter_by_table_name](const auto & dir_it) {
         /// ends with .sql
@@ -425,9 +440,9 @@ DatabaseIteratorPtr DatabaseLazy::getIterator(const Context & context, const Fil
     return std::make_unique<DatabaseLazyIterator>(*this, context, std::move(filtered_tables));
 }
 
-bool DatabaseLazy::empty(const Context & context) const
+bool DatabaseLazy::empty(const Context & /* context */) const
 {
-    if (!DatabaseWithOwnTablesBase::empty(context))
+    if (!tables_cache.empty())
         return true;
     bool has_tables = false;
     iterateTableFiles([&has_tables](const auto & /* dir_it */) {
@@ -435,6 +450,63 @@ bool DatabaseLazy::empty(const Context & context) const
         return false;
     });
     return has_tables;
+}
+
+void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & table)
+{
+    std::lock_guard lock(tables_mutex);
+    if (!tables_cache.emplace(table_name, table).second)
+        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+}
+
+StoragePtr DatabaseLazy::detachTable(const String & table_name)
+{
+    StoragePtr res;
+    {
+        std::lock_guard lock(tables_mutex);
+        auto it = tables_cache.find(table_name);
+        if (it == tables_cache.end())
+            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        res = it->second;
+        tables_cache.erase(it);
+
+        auto it2 = last_metadata_modification.find(table_name);
+        if (it2 == last_metadata_modification.end())
+            throw Exception("Metadata modification time for table " + name + "." + table_name + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        last_metadata_modification.erase(it2);
+    }
+
+    return res;
+}
+
+void DatabaseLazy::shutdown()
+{
+    Tables tables_snapshot;
+    {
+        std::lock_guard lock(tables_mutex);
+        tables_snapshot = tables_cache;
+    }
+
+    for (const auto & kv : tables_snapshot)
+    {
+        kv.second->shutdown();
+    }
+
+    std::lock_guard lock(tables_mutex);
+    tables_cache.clear();
+    last_metadata_modification.clear();
+}
+
+DatabaseLazy::~DatabaseLazy()
+{
+    try
+    {
+        shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 String DatabaseLazy::getDataPath() const
@@ -508,16 +580,24 @@ void DatabaseLazy::iterateTableFiles(const IteratingFunction & iterating_functio
     }
 }
 
+void DatabaseLazy::clearExpiredTables() const
+{
+    std::unique_lock lock(tables_mutex);
+}
+
+
 DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, const Context & context_, Strings && table_names_)
     : database(database_)
     , table_names(std::move(table_names_))
     , context(context_)
     , iterator(table_names.begin())
+    , current_storage(nullptr)
 {
 }
 
 void DatabaseLazyIterator::next()
 {
+    current_storage.reset();
     ++iterator;
 }
 
@@ -531,9 +611,11 @@ const String & DatabaseLazyIterator::name() const
     return *iterator;
 }
 
-StoragePtr & DatabaseLazyIterator::table() const
+const StoragePtr & DatabaseLazyIterator::table() const
 {
-    return database.tryGetTable(context, name());
+    if (!current_storage)
+        current_storage = database.tryGetTable(context, *iterator);
+    return current_storage;
 }
 
 }
