@@ -42,7 +42,7 @@ public:
     }
     ~ConfigFilesReader() = default;
 
-    void addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository, const ExternalLoaderConfigSettings & settings)
+    void addConfigRepository(std::unique_ptr<ExternalLoaderConfigRepository> repository, const ExternalLoaderConfigSettings & settings)
     {
         std::lock_guard lock{mutex};
         repositories.emplace_back(std::move(repository), std::move(settings));
@@ -140,7 +140,7 @@ private:
     }
 
     bool readFileInfo(
-        IExternalLoaderConfigRepository & repository,
+        ExternalLoaderConfigRepository & repository,
         const String & path,
         const ExternalLoaderConfigSettings & settings,
         bool ignore_last_modification_time,
@@ -205,7 +205,7 @@ private:
     Logger * log;
 
     std::mutex mutex;
-    std::vector<std::pair<std::unique_ptr<IExternalLoaderConfigRepository>, ExternalLoaderConfigSettings>> repositories;
+    std::vector<std::pair<std::unique_ptr<ExternalLoaderConfigRepository>, ExternalLoaderConfigSettings>> repositories;
     ObjectConfigs configs;
     std::unordered_map<String /* config path */, FileInfo> file_infos;
 };
@@ -1031,7 +1031,7 @@ ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & main_co
 ExternalLoader::~ExternalLoader() = default;
 
 void ExternalLoader::addConfigRepository(
-    std::unique_ptr<IExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings)
+    std::unique_ptr<ExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings)
 {
     config_files_reader->addConfigRepository(std::move(config_repository), config_settings);
     loading_dispatcher->setConfiguration(config_files_reader->read());

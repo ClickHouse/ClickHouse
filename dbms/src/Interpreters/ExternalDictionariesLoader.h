@@ -19,7 +19,7 @@ public:
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     ExternalDictionariesLoader(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+        std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
         const Poco::Util::AbstractConfiguration & config,
         Context & context_);
 

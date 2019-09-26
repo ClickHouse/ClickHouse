@@ -11,7 +11,7 @@ namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
 
 class RegionsHierarchies;
 class RegionsNames;
-class IGeoDictionariesLoader;
+class GeoDictionariesLoader;
 
 
 namespace DB
@@ -31,7 +31,7 @@ private:
     MultiVersion<RegionsHierarchies> regions_hierarchies;
     MultiVersion<RegionsNames> regions_names;
 
-    std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader;
+    std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader;
 
     /// Directories' updating periodicity (in seconds).
     int reload_period;
@@ -68,7 +68,7 @@ private:
 public:
     /// Every reload_period seconds directories are updated inside a separate thread.
     EmbeddedDictionaries(
-        std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader,
+        std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader,
         Context & context,
         const bool throw_on_error);
 

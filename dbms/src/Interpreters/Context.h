@@ -43,7 +43,6 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class RuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
@@ -174,7 +173,6 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal(std::unique_ptr<RuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
     Context(const Context &);

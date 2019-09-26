@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <Core/Types.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <Interpreters/IExternalLoaderConfigRepository.h>
+#include <Interpreters/ExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
 
 
@@ -83,7 +83,7 @@ public:
 
     /// Adds a repository which will be used to read configurations from.
     void addConfigRepository(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings);
+        std::unique_ptr<ExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings);
 
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
