@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 AnalyzedJoin::AnalyzedJoin(const Settings & settings)
@@ -31,9 +32,13 @@ AnalyzedJoin::AnalyzedJoin(const Settings & settings)
         settings.join_overflow_mode})
     , join_use_nulls(settings.join_use_nulls)
     , partial_merge_join(settings.partial_merge_join)
-    , partial_merge_join_optimisations(settings.partial_merge_join_optimisations)
+    , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
-{}
+{
+    Float32 memory_coef = settings.partial_merge_join_memory_coefficient;
+    if (memory_coef < 0.0f || memory_coef > 1.0f)
+        throw Exception("Wrond partial_merge_join_memory_coefficient. It should be in range [0,1]", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 {

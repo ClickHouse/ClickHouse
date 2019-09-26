@@ -1118,10 +1118,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     for (auto & stream : pipeline.streams)
                         stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
 
-                    if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimisations)
+                    if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
                     {
                         /// TODO: * min(query_memoty_limit, max_bytes_in_join)
                         size_t bytes_in_block = settings.partial_merge_join_memory_coefficient * settings.max_bytes_in_join;
+                        if (pipeline.streams.size())
+                            bytes_in_block /= pipeline.streams.size();
                         if (bytes_in_block)
                             for (auto & stream : pipeline.streams)
                                 stream = std::make_shared<SquashingBlockInputStream>(stream, 0, bytes_in_block);
