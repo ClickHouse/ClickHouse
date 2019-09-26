@@ -102,6 +102,7 @@ void DatabaseLazy::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    clearExpiredTables();
     const auto & settings = context.getSettingsRef();
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
@@ -156,6 +157,7 @@ void DatabaseLazy::removeTable(
     const Context & /*context*/,
     const String & table_name)
 {
+    clearExpiredTables();
     StoragePtr res = detachTable(table_name);
 
     String table_metadata_path = getTableMetadataPath(table_name);
@@ -231,6 +233,7 @@ void DatabaseLazy::renameTable(
     const String & to_table_name,
     TableStructureWriteLockHolder & lock)
 {
+    clearExpiredTables();
     DatabaseLazy * to_database_concrete = typeid_cast<DatabaseLazy *>(&to_database);
 
     if (!to_database_concrete)
@@ -338,6 +341,7 @@ void DatabaseLazy::alterTable(
     const ConstraintsDescription & /* constraints */,
     const ASTModifier & /* storage_modifier */)
 {
+    clearExpiredTables();
     throw Exception("ALTER query is not supported for Lazy database.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
@@ -352,6 +356,7 @@ bool DatabaseLazy::isTableExist(
     const Context & /* context */,
     const String & table_name) const
 {
+    clearExpiredTables();
     std::lock_guard lock(tables_mutex);
     return tables_cache.find(table_name) != tables_cache.end();
 }
@@ -360,6 +365,7 @@ StoragePtr DatabaseLazy::tryGetTable(
     const Context & context,
     const String & table_name) const
 {
+    clearExpiredTables();
     {
         std::lock_guard lock(tables_mutex);
         auto it = tables_cache.find(table_name);
@@ -524,6 +530,8 @@ void DatabaseLazy::iterateTableFiles(const IteratingFunction & iterating_functio
 
 StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table_name) const
 {
+    clearExpiredTables();
+
     const String table_metadata_path = metadata_path + "/" + table_name + ".sql";
 
     String s;
