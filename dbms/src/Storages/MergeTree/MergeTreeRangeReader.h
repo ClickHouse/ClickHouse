@@ -22,8 +22,7 @@ class MergeTreeRangeReader
 public:
     MergeTreeRangeReader(MergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
                          ExpressionActionsPtr alias_actions_, ExpressionActionsPtr prewhere_actions_,
-                         const String * prewhere_column_name_, const Names * ordered_names_,
-                         bool always_reorder_, bool remove_prewhere_column_, bool last_reader_in_chain_);
+                         const String * prewhere_column_name_, bool remove_prewhere_column_, bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
 
@@ -185,6 +184,8 @@ public:
 
     ReadResult read(size_t max_rows, MarkRanges & ranges);
 
+    const Block & getSampleBlock() const { return sample_block; }
+
 private:
 
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
@@ -197,13 +198,13 @@ private:
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
 
     const String * prewhere_column_name = nullptr;
-    const Names * ordered_names = nullptr;
     ExpressionActionsPtr alias_actions = nullptr; /// If not nullptr, calculate aliases.
     ExpressionActionsPtr prewhere_actions = nullptr; /// If not nullptr, calculate filter.
 
     Stream stream;
 
-    bool always_reorder = true;
+    Block sample_block;
+
     bool remove_prewhere_column = false;
     bool last_reader_in_chain = false;
     bool is_initialized = false;
