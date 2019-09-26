@@ -211,6 +211,7 @@ nav:
   - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
+  - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
   - 'Сторонние библиотеки': 'development/contrib.md'

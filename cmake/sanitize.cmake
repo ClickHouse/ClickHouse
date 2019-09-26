@@ -14,6 +14,15 @@ if (SANITIZE)
         endif ()
 
     elseif (SANITIZE STREQUAL "memory")
+        # MemorySanitizer flags are set according to the official documentation:
+        # https://clang.llvm.org/docs/MemorySanitizer.html#usage
+        #
+        # For now, it compiles with `cmake -DSANITIZE=memory -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS_ADD="-O1" -DCMAKE_C_FLAGS_ADD="-O1"`
+        # Compiling with -DCMAKE_BUILD_TYPE=Debug leads to ld.lld failures because
+        # of large files (was not tested with ld.gold). This is why we compile with
+        # RelWithDebInfo, and downgrade optimizations to -O1 but not to -Og, to
+        # keep the binary size down.
+        # TODO: try compiling with -Og and with ld.gold.
         set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-track-origins -fno-optimize-sibling-calls")
 
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")

@@ -469,7 +469,7 @@ private:
         {
             const StringRef key = keys_array[row];
             const auto it = map.find(key);
-            const auto string_ref = it != std::end(map) ? it->getSecond() : get_default(row);
+            const auto string_ref = it ? *lookupResultGetMapped(it) : get_default(row);
             out->insertData(string_ref.data, string_ref.size);
         }
     }
