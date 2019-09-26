@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <Poco/DirectoryIterator.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabasesCommon.h>
@@ -99,11 +101,33 @@ private:
         time_t last_touched;
         time_t metadata_modification_time;
 
+        CachedTable() {}
         CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
             : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
     };
 
     using TablesCache = std::unordered_map<String, CachedTable>;
+
+    struct CacheExpirationQueueElement
+    {
+        time_t last_touched;
+        String table_name;
+
+        CacheExpirationQueueElement(time_t last_touched_, String table_name_)
+            : last_touched(last_touched_), table_name(table_name_) {}
+
+        bool operator<(const CacheExpirationQueueElement & expiration_element) const
+        {
+            return last_touched < expiration_element.last_touched;
+        }
+
+        bool operator==(const CacheExpirationQueueElement & expiration_element) const
+        {
+            return last_touched == expiration_element.last_touched && table_name == expiration_element.table_name;
+        }
+    };
+
+    using CacheExpirationQueue = std::set<CacheExpirationQueueElement>;
 
     String name;
     const String metadata_path;
@@ -113,6 +137,8 @@ private:
 
     mutable std::mutex tables_mutex;
     mutable TablesCache tables_cache;
+
+    mutable CacheExpirationQueue cache_expiration_queue;
 
     Poco::Logger * log;
 
