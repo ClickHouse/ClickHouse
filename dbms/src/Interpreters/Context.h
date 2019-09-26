@@ -47,7 +47,7 @@ class RuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
-class ExternalModels;
+class ExternalModelsLoader;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class BackgroundSchedulePool;
@@ -322,10 +322,10 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
-    const ExternalModels & getExternalModels() const;
+    const ExternalModelsLoader & getExternalModelsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionaries & getExternalDictionaries();
-    ExternalModels & getExternalModels();
+    ExternalModelsLoader & getExternalModelsLoader();
     void tryCreateEmbeddedDictionaries() const;
 
     /// I/O formats.
