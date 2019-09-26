@@ -88,12 +88,12 @@ Example of settings:
             <user>user</user>
             <password>password</password>
         </credentials>
-        <http-headers>
-            <http-header>
+        <headers>
+            <header>
                 <name>API-KEY</name>
                 <value>key</value>
-            </http-header>
-        </http-headers>
+            </header>
+        </headers>
     </http>
 </source>
 ```
@@ -108,7 +108,7 @@ Setting fields:
     - `user` – Username required for the authentification.
     - `password` – Password required for the authentification.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
-    - `http-header` – Single HTTP header entry.
+    - `header` – Single HTTP header entry.
         - `name` – Identifiant name used for the header send on the request.
         - `value` – Value set for a specific identifiant name.
 
