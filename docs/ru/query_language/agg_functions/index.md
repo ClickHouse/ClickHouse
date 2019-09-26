@@ -15,7 +15,7 @@ ClickHouse поддерживает также:
 
 Рассмотрим таблицу:
 
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -27,17 +27,14 @@ ClickHouse поддерживает также:
 
 Выполним суммирование значений в столбце `y`:
 
+```sql
+SELECT sum(y) FROM t_null_big
 ```
-:) SELECT sum(y) FROM t_null_big
-
-SELECT sum(y)
-FROM t_null_big
-
+```text
 ┌─sum(y)─┐
 │      7 │
 └────────┘
 
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 Функция `sum` работает с `NULL` как с `0`. В частности, это означает, что если на вход в функцию подать выборку, где все значения `NULL`, то результат будет `0`, а не `NULL`.
@@ -45,17 +42,13 @@ FROM t_null_big
 
 Теперь с помощью фукции `groupArray` сформируем массив из стобца `y`:
 
+```sql
+SELECT groupArray(y) FROM t_null_big
 ```
-:) SELECT groupArray(y) FROM t_null_big
-
-SELECT groupArray(y)
-FROM t_null_big
-
+```text
 ┌─groupArray(y)─┐
 │ [2,2,3]       │
 └───────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 `groupArray` не включает `NULL` в результирующий массив.

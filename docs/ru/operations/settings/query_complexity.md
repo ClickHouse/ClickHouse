@@ -38,7 +38,7 @@
 
 Максимальный возможный объем оперативной памяти для запросов пользователя на одном сервере.
 
-Значения по умолчанию определены в файле [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
+Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
 
 Смотрите также описание настройки [max_memory_usage](#settings_max_memory_usage).
 
@@ -46,7 +46,7 @@
 
 Максимальный возможный объем оперативной памяти для всех запросов на одном сервере.
 
-Значения по умолчанию определены в файле [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
+Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
 
 Смотрите также описание настройки [max_memory_usage](#settings_max_memory_usage).
 

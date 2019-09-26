@@ -89,7 +89,7 @@ patterns
 
 Structure of the `patterns` section:
 
-```
+```text
 pattern
     regexp
     function

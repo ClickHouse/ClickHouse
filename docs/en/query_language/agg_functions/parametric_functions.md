@@ -6,15 +6,15 @@ Some aggregate functions can accept not only argument columns (used for compress
 
 Calculates an adaptive histogram. It doesn't guarantee precise results.
 
-```
+```sql
 histogram(number_of_bins)(values)
 ```
  
-The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as a new data enters a function, and in common case the widths of bins are not equal.
+The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
 
 **Parameters**
 
-`number_of_bins` — Upper limit for a number of bins for the histogram. Function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses less number of bins.
+`number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
 `values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
 
 **Returned values**
@@ -69,53 +69,155 @@ FROM
 └────────┴───────┘
 ```
 
-In this case you should remember, that you don't know the borders of histogram bins.
+In this case, you should remember that you don't know the histogram bin borders.
 
-## sequenceMatch(pattern)(time, cond1, cond2, ...)
+## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
 
-Pattern matching for event chains.
+Checks whether the sequence contains the event chain that matches the pattern.
 
-`pattern` is a string containing a pattern to match. The pattern is similar to a regular expression.
-
-`time` is the time of the event, type support: `Date`,`DateTime`, and other unsigned integer types.
-
-`cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event.
-
-The function collects a sequence of events in RAM. Then it checks whether this sequence matches the pattern.
-It returns UInt8: 0 if the pattern isn't matched, or 1 if it matches.
-
-Example: `sequenceMatch ('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE '%cart%')`
-
-- whether there was a chain of events in which a pageview with 'company' in the address occurred earlier than a pageview with 'cart' in the address.
-
-This is a singular example. You could write it using other aggregate functions:
-
-```
-minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
+```sql
+sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-However, there is no such solution for more complex situations.
+!!! warning "Warning"
+    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 
-Pattern syntax:
 
-`(?1)` refers to the condition (any number can be used in place of 1).
+**Parameters**
 
-`.*` is any number of any events.
+- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
-`(?t>=1800)` is a time condition.
+- `timestamp` — Column that considered to contain time data. Typical data types are `Date`, and `DateTime`. You can use also any of the supported [UInt](../../data_types/int_uint.md) data types.
 
-Any quantity of any type of events is allowed over the specified time.
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes into account only the events described in these conditions. If the sequence contains data that are not described with conditions the function skips them.
 
-Instead of `>=`, the following operators can be used:`<`, `>`, `<=`.
 
-Any number may be specified in place of 1800.
+**Returned values**
 
-Events that occur during the same second can be put in the chain in any order. This may affect the result of the function.
+- 1, if the pattern is matched.
+- 0, if the pattern isn't matched.
 
-## sequenceCount(pattern)(time, cond1, cond2, ...)
 
-Works the same way as the sequenceMatch function, but instead of returning whether there is an event chain, it returns UInt64 with the number of event chains found.
-Chains are searched for without overlapping. In other words, the next chain can start only after the end of the previous one.
+Type: `UInt8`.
+
+
+<a name="sequence-function-pattern-syntax"></a>
+**Pattern syntax**
+
+- `(?N)` — Matches the condition argument at the position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
+
+- `.*` — Matches any number of any events. You don't need the conditional arguments to match this element of the pattern.
+
+- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that distanced from each other for more than 1800 seconds. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
+
+**Examples**
+
+Consider data in the `t` table:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+└──────┴────────┘
+```
+
+Perform the query:
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
+```
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                     1 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+The function has found the event chain where number 2 follows number 1. It skipped number 3 between them, because the number is not described as an event. If we want to take this number into account when searching for the event chain, showed in the example, we should make a condition for it.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM t
+```
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 3))─┐
+│                                                                                        0 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+In this case the function couldn't find the event chain matching the pattern, because there is the event for number 3 occured between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
+```
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
+│                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+**See Also**
+
+- [sequenceCount](#function-sequencecount)
+
+
+## sequenceCount(pattern)(time, cond1, cond2, ...) {#function-sequencecount}
+
+Counts the number of event chains that matched the pattern. The function searches event chains that not overlap. It starts to search for the next chain after the current chain is matched.
+
+!!! warning "Warning"
+    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+
+```sql
+sequenceCount(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**Parameters**
+
+- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+
+- `timestamp` — Column that considered to contain time data. Typical data types are `Date`, and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
+
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes into account only the events described in these conditions. If the sequence contains data that are not described with conditions the function skips them.
+
+
+**Returned values**
+
+- Number of non-overlapping event chains that are matched
+
+Type: `UInt64`.
+
+
+**Example**
+
+Consider data in the `t` table:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      3 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+Count how many times the number 2 occurs after the number 1 with any amount of other numbers between them:
+
+```sql
+SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
+```
+```text
+┌─sequenceCount('(?1).*(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                       2 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [sequenceMatch](#function-sequencematch)
+
 
 ## windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 
@@ -128,7 +230,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 **Parameters:**
 
 - `window` — Length of the sliding window in seconds.
-- `timestamp` — Name of the column containing the timestamp. Data type support: `Date`,`DateTime`, and other unsigned integer types(Note that though timestamp support `UInt64` type, there is a limitation it's value can't overflow maximum of Int64, which is 2^63 - 1).
+- `timestamp` — Name of the column containing the timestamp. Data type support: `Date`,`DateTime`, and other unsigned integer types (note that though timestamp support `UInt64` type, there is a limitation it's value can't overflow maximum of Int64, which is 2^63 - 1).
 - `cond1`, `cond2`... — Conditions or data describing the chain of events. Data type: `UInt8`. Values can be 0 or 1.
 
 **Algorithm**
@@ -153,7 +255,7 @@ Set the following chain of events:
 
 To find out how far the user `user_id` could get through the chain in an hour in January of 2017, make the query:
 
-```
+```sql
 SELECT
     level,
     count() AS c
@@ -184,7 +286,7 @@ Consider you are doing a website analytics, intend to calculate the retention of
 
 This could be easily calculate by `retention`
 
-```
+```sql
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -218,7 +320,7 @@ It works as fast as possible, except for cases when a large N value is used and 
 
 Usage example:
 
-```
+```text
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```

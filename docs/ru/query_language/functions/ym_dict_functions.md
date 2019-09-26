@@ -21,7 +21,7 @@ ClickHouse поддерживает работу одновременно с н�
 Во все функции по работе с регионами, в конце добавлен один необязательный аргумент - ключ словаря. Далее он обозначен как geobase.
 Пример:
 
-```
+```text
 regionToCountry(RegionID) - использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt;
 regionToCountry(RegionID, '') - использует словарь по умолчанию: /opt/geo/regions_hierarchy.txt;
 regionToCountry(RegionID, 'ua') - использует словарь для ключа ua: /opt/geo/regions_hierarchy_ua.txt;
@@ -33,13 +33,13 @@ regionToCountry(RegionID, 'ua') - использует словарь для к�
 ### regionToArea(id\[, geobase\])
 Переводит регион в область (тип в геобазе - 5). В остальном, аналогично функции regionToCity.
 
-``` sql
+```sql
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
 ```
 
-```
+```text
 ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
 │                                                      │
 │ Москва и Московская область                          │
@@ -62,13 +62,13 @@ LIMIT 15
 ### regionToDistrict(id\[, geobase\])
 Переводит регион в федеральный округ (тип в геобазе - 4). В остальном, аналогично функции regionToCity.
 
-``` sql
+```sql
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
 ```
 
-```
+```text
 ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
 │                                                          │
 │ Центральный федеральный округ                            │

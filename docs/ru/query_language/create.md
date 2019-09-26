@@ -51,7 +51,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы `db2.name2`.
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
 ```
 
@@ -105,9 +105,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 ### Ограничения (constraints) {#constraints}
 
-WARNING: Находится в экспериментальном режиме, поддержано в MergeTree (работоспособность на других типах движков таблиц не гарантируется).
-
-Наряду с объявлением столбцов можно объявить ограчения на значения в столбцах таблицы:
+Наряду с объявлением столбцов можно объявить ограничения на значения в столбцах таблицы:
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

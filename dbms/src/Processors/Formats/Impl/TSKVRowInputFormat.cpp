@@ -118,7 +118,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 /// and quickly checking for the next expected field, instead of searching the hash table.
 
                 auto it = name_map.find(name_ref);
-                if (name_map.end() == it)
+                if (!it)
                 {
                     if (!format_settings.skip_unknown_fields)
                         throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -129,7 +129,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 }
                 else
                 {
-                    index = it->getSecond();
+                    index = *lookupResultGetMapped(it);
 
                     if (read_columns[index])
                         throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);

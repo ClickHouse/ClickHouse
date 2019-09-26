@@ -18,8 +18,6 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
-    new_settings.connection_pool_max_wait_ms = Cluster::saturate(new_settings.connection_pool_max_wait_ms, settings.max_execution_time);
-    new_settings.replace_running_query_max_wait_ms = Cluster::saturate(new_settings.replace_running_query_max_wait_ms, settings.max_execution_time);
 
     /// Does not matter on remote servers, because queries are sent under different user.
     new_settings.max_concurrent_queries_for_user = 0;
@@ -39,8 +37,8 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
 }
 
 BlockInputStreams executeQuery(
-        IStreamFactory & stream_factory, const ClusterPtr & cluster,
-        const ASTPtr & query_ast, const Context & context, const Settings & settings)
+    IStreamFactory & stream_factory, const ClusterPtr & cluster,
+    const ASTPtr & query_ast, const Context & context, const Settings & settings)
 {
     BlockInputStreams res;
 
