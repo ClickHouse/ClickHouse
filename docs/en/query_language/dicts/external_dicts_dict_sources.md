@@ -109,7 +109,7 @@ Setting fields:
     - `password` – Password required for the authentification.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
     - `http-header` – Single HTTP header entry.
-        - `key` – Identifiant name used for the header send on the request.
+        - `name` – Identifiant name used for the header send on the request.
         - `value` – Value set for a specific identifiant name.
 
 
