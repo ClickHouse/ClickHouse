@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnNothing.h>
 #include <ext/range.h>
 #include <DataTypes/DataTypeNothing.h>
 
@@ -409,14 +408,27 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 MergeTreeRangeReader::MergeTreeRangeReader(
         MergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
         ExpressionActionsPtr alias_actions_, ExpressionActionsPtr prewhere_actions_,
-        const String * prewhere_column_name_, const Names * ordered_names_,
-        bool always_reorder_, bool remove_prewhere_column_, bool last_reader_in_chain_)
+        const String * prewhere_column_name_, bool remove_prewhere_column_, bool last_reader_in_chain_)
         : merge_tree_reader(merge_tree_reader_), index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , prev_reader(prev_reader_), prewhere_column_name(prewhere_column_name_)
-        , ordered_names(ordered_names_), alias_actions(std::move(alias_actions_)), prewhere_actions(std::move(prewhere_actions_))
-        , always_reorder(always_reorder_), remove_prewhere_column(remove_prewhere_column_)
+        , alias_actions(std::move(alias_actions_)), prewhere_actions(std::move(prewhere_actions_))
+        , remove_prewhere_column(remove_prewhere_column_)
         , last_reader_in_chain(last_reader_in_chain_), is_initialized(true)
 {
+    if (prev_reader)
+        sample_block = prev_reader->getSampleBlock();
+
+    for (auto & name_and_type : merge_tree_reader->getColumns())
+        sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
+
+    if (alias_actions)
+        alias_actions->execute(sample_block, true);
+
+    if (prewhere_actions)
+        prewhere_actions->execute(sample_block, true);
+
+    if (remove_prewhere_column)
+        sample_block.erase(*prewhere_column_name);
 }
 
 bool MergeTreeRangeReader::isReadingFinished() const

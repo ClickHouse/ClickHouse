@@ -84,22 +84,25 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
-    initialize(sample_block, columns);
+    initialize(sample_block, {}, columns);
 }
 
-void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Names & columns, bool from_update)
+void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update)
 {
     fixed_columns_bytes_per_row = 0;
     dynamic_columns_infos.clear();
 
     std::unordered_set<String> names_set;
     if (!from_update)
-        names_set.insert(columns.begin(), columns.end());
+        names_set.insert(names.begin(), names.end());
 
-    for (const auto & column_with_type_and_name : sample_block)
+    size_t num_columns = sample_block.columns();
+    for (size_t pos = 0; pos < num_columns; ++pos)
     {
+        const auto & column_with_type_and_name = sample_block.getByPosition(pos);
         const String & column_name = column_with_type_and_name.name;
-        const ColumnPtr & column_data = column_with_type_and_name.column;
+        const ColumnPtr & column_data = from_update ? columns[pos]
+                                                    : column_with_type_and_name.column;
 
         if (!from_update && !names_set.count(column_name))
             continue;
@@ -151,25 +154,30 @@ void MergeTreeBlockSizePredictor::startBlock()
 
 
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
-void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
+void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
 {
+    if (columns.size() != sample_block.columns())
+        throw Exception("Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
+                        "Have " + toString(sample_block.columns()) + " in sample block "
+                        "and " + toString(columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+
     if (!is_initialized_in_update)
     {
         /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
-        initialize(block, {}, true);
+        initialize(sample_block, columns, {}, true);
         is_initialized_in_update = true;
     }
-    size_t new_rows = block.rows();
-    if (new_rows < block_size_rows)
+
+    if (num_rows < block_size_rows)
     {
-        throw Exception("Updated block has less rows (" + toString(new_rows) + ") than previous one (" + toString(block_size_rows) + ")",
+        throw Exception("Updated block has less rows (" + toString(num_rows) + ") than previous one (" + toString(block_size_rows) + ")",
                         ErrorCodes::LOGICAL_ERROR);
     }
 
-    size_t diff_rows = new_rows - block_size_rows;
-    block_size_bytes = new_rows * fixed_columns_bytes_per_row;
+    size_t diff_rows = num_rows - block_size_rows;
+    block_size_bytes = num_rows * fixed_columns_bytes_per_row;
     bytes_per_row_current = fixed_columns_bytes_per_row;
-    block_size_rows = new_rows;
+    block_size_rows = num_rows;
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
     /// Use sum of geometric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
@@ -179,7 +187,7 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
     max_size_per_row_dynamic = 0;
     for (auto & info : dynamic_columns_infos)
     {
-        size_t new_size = block.getByName(info.name).column->byteSize();
+        size_t new_size = columns[sample_block.getPositionByName(info.name)]->byteSize();
         size_t diff_size = new_size - info.size_bytes;
 
         double local_bytes_per_row = static_cast<double>(diff_size) / diff_rows;

@@ -161,6 +161,14 @@ Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
     if (read_result.num_rows == 0)
         read_result.columns.clear();
 
+    auto & sample_block = getPort().getHeader();
+    if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
+        throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
+                        "Have " + toString(sample_block.columns()) + " in sample block "
+                        "and " + toString(read_result.columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+
+    /// TODO: check columns have the same types as in header.
+
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
 
     /// TODO
@@ -171,7 +179,7 @@ Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
         task->size_predictor->updateFilteredRowsRation(read_result.numReadRows(), num_filtered_rows);
 
         if (!read_result.columns.empty())
-            task->size_predictor->update(read_result.columns);
+            task->size_predictor->update(sample_block, read_result.columns, read_result.num_rows);
     }
 
     return Chunk(std::move(read_result.columns), read_result.num_rows);
