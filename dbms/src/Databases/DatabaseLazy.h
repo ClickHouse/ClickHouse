@@ -99,7 +99,6 @@ private:
         time_t last_touched;
         time_t metadata_modification_time;
 
-        CachedTable() {}
         CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
             : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
     };
@@ -119,7 +118,7 @@ private:
 
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
     
-    using IteratingFunction = std::function<bool(const Poco::DirectoryIterator &)>;
+    using IteratingFunction = std::function<void(const Poco::DirectoryIterator &)>;
     void iterateTableFiles(const IteratingFunction & iterating_function) const;
     
     StoragePtr loadTable(const Context & context, const String & table_name) const;
