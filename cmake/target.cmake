@@ -64,6 +64,15 @@ if (CMAKE_CROSSCOMPILING)
 
         set (HAS_POST_2038_EXITCODE "0" CACHE STRING "Result from TRY_RUN" FORCE)
         set (HAS_POST_2038_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
+
+        # FIXME: broken dependencies
+        set (USE_SNAPPY OFF)
+        set (ENABLE_SSL OFF)
+        set (ENABLE_PROTOBUF OFF)
+        set (ENABLE_PARQUET OFF)
+        set (ENABLE_READLINE OFF)
+        set (ENABLE_ICU OFF)
+        set (ENABLE_FASTOPS OFF)
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation
