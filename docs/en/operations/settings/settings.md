@@ -377,52 +377,90 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ClickHouse uses multiple threads when reading from [MergeTree*](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
 
-**Possible values**
+Possible values:
 
 - 0 — Do not use uniform read distribution.
 - 1 — Use uniform read distribution.
 
-**Default value**: 1.
+Default value: 1.
 
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
 
 If the number of rows to be read from a file of a [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
-**Possible values**
+Possible values:
 
-Any positive integer.
+- Any positive integer.
 
-**Default value**: 163840.
+Default value: 163840.
+
+## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
+
+If a number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 240 ✕ 1024 ✕ 1024.
+
 
 ## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
 
 If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
 
-**Possible values**
+Possible values:
 
-Any positive integer.
+- Any positive integer.
 
-**Default value**: 0.
+Default value: 0.
+
+## merge_tree_min_bytes_for_seek {#setting-merge_tree_min_bytes_for_seek}
+
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 0.
+
 
 ## merge_tree_coarse_index_granularity {#setting-merge_tree_coarse_index_granularity}
 
 When searching data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
 
-**Possible values**
+Possible values:
 
-Any positive even integer.
+- Any positive even integer.
 
-**Default value**: 8.
+Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cash of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
-**Possible values**
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
 
-Any positive integer.
+Possible values:
 
-**Default value**: 1048576.
+- Any positive integer.
+
+Default value: 128 ✕ 8192.
+
+
+## merge_tree_max_bytes_to_use_cache {#setting-merge_tree_max_bytes_to_use_cache}
+
+If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 1920 ✕ 1024 ✕ 1024.
+
 
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 
