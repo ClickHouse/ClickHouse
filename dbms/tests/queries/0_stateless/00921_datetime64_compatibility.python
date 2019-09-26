@@ -148,6 +148,9 @@ for f, args in extra_ops:
         func = f.format(**dict(zip(args_keys, args_vals)))
         functions.append(func)
 
+# TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
 for func in functions:
     f = func.format(datetime="now64()")
     print("""SELECT {function};""".format(function=f))
+
+print("SELECT CAST( )")

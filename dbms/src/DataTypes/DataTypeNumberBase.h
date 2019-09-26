@@ -7,6 +7,9 @@
 namespace DB
 {
 
+template <typename T>
+class ColumnVector;
+
 /** Implements part of the IDataType interface, common to all numbers and for Date and DateTime.
   */
 template <typename T>
@@ -17,6 +20,8 @@ class DataTypeNumberBase : public DataTypeWithSimpleSerialization
 public:
     static constexpr bool is_parametric = false;
     using FieldType = T;
+
+    using ColumnType = ColumnVector<T>;
 
     const char * getFamilyName() const override { return TypeName<T>::get(); }
     TypeIndex getTypeId() const override { return TypeId<T>::value; }

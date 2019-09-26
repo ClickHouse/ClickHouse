@@ -12,6 +12,7 @@
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 
@@ -760,16 +761,16 @@ inline void writeDateTimeText(DateTime64 datetime64, WriteBuffer & buf, const Da
         return;
     }
 
-    auto c = datetime64.split();
-    const auto & values = date_lut.getValues(c.datetime);
+    auto c = decimalSplit(datetime64, 9);
+    const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
-                      date_lut.toHour(c.datetime), date_lut.toMinute(c.datetime), date_lut.toSecond(c.datetime)), buf);
+                      date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
 
     buf.write(fractional_time_delimiter);
 
     char data[10];
-    int written = sprintf(data, "%09d", c.nanos);
+    int written = sprintf(data, "%09ld", c.fractional); // TODO(nemkov): can it be negative ? if yes, do abs() on it.
     writeText(&data[0], static_cast<size_t>(written), buf);
 }
 
@@ -778,12 +779,6 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
-
-template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
-template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
-template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
-template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
-
 
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)

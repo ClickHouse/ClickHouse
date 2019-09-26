@@ -29,6 +29,7 @@ enum class TypeIndex
     Float64,
     Date,
     DateTime,
+    DateTime32 = DateTime,
     DateTime64,
     String,
     FixedString,
@@ -151,6 +152,10 @@ struct Decimal
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
+
+// TODO (nemkov): consider making a strong typedef
+//using DateTime32 = time_t;
+using DateTime64 = Decimal64;
 
 template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };
 template <> struct TypeName<Decimal64>   { static const char * get() { return "Decimal64";   } };

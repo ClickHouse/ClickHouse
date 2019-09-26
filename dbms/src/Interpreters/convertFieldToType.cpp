@@ -146,7 +146,7 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
-DateTime64::Type stringToDateTime64(const String & s)
+DateTime64::NativeType stringToDateTime64(const String & s)
 {
     ReadBufferFromString in(s);
     DateTime64 datetime64 {0};
@@ -155,7 +155,7 @@ DateTime64::Type stringToDateTime64(const String & s)
     if (!in.eof())
         throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-    return datetime64.get();
+    return datetime64.value;
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)

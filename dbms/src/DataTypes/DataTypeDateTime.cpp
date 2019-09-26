@@ -5,7 +5,8 @@
 #include <common/DateLUT.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -28,8 +29,9 @@ struct TypeGetter;
 template<>
 struct TypeGetter<UInt32> {
     using Type = time_t;
-    using Column = ColumnUInt32;
+    using Column = ColumnVector<UInt32>;
     using Convertor = time_t;
+    using FieldType = NearestFieldType<Type>;
 
     // This is not actually true, which is bad form as it truncates the value from time_t (long int) into uint32_t
     // static_assert(sizeof(Column::value_type) == sizeof(Type));
@@ -39,16 +41,30 @@ struct TypeGetter<UInt32> {
 };
 
 template<>
-struct TypeGetter<DateTime64::Type> {
-    using Type = DateTime64::Type;
-    using Column = ColumnUInt64;
+struct TypeGetter<DateTime64> {
+    using Type = DateTime64;
+    using Column = ColumnDecimal<DateTime64>;
     using Convertor = DateTime64;
+    using FieldType = NearestFieldType<typename Type::NativeType>;
 
-    static_assert(sizeof(Column::value_type) == sizeof(Type));
+    static_assert(sizeof(typename Column::Container::value_type) == sizeof(Type));
 
     static constexpr TypeIndex Index = TypeIndex::DateTime64;
     static constexpr const char * Name = "DateTime64";
 };
+
+template <typename T>
+bool protobufReadDateTime(ProtobufReader & protobuf, T & date_time)
+{
+    return protobuf.readDateTime(date_time);
+}
+
+template <>
+bool protobufReadDateTime<DateTime64>(ProtobufReader & protobuf, DateTime64 & date_time)
+{
+    // TODO (vnemkov): protobuf.readDecimal ?
+    return protobuf.readDateTime(date_time.value);
+}
 
 template<typename NumberBase>
 DataTypeDateTimeBase<NumberBase>::DataTypeDateTimeBase(const std::string & time_zone_name)
@@ -229,7 +245,7 @@ void DataTypeDateTimeBase<NumberBase>::deserializeProtobuf(IColumn & column, Pro
 {
     row_added = false;
     typename TypeGetter<NumberBase>::Type t;
-    if (!protobuf.readDateTime(t))
+    if (protobufReadDateTime(protobuf, t))
         return;
 
     auto & container = assert_cast<typename TypeGetter<NumberBase>::Column &>(column).getData();
@@ -240,6 +256,40 @@ void DataTypeDateTimeBase<NumberBase>::deserializeProtobuf(IColumn & column, Pro
     }
     else
         container.back() = t;
+}
+
+// TODO (vnemkov): Binary serialization/deserialization is same as for DataTypeNumberBase<T>.
+
+template<typename NumberBase>
+void DataTypeDateTimeBase<NumberBase>::serializeBinary(const Field& /*field*/, WriteBuffer& /*ostr*/) const
+{
+//    // Same as
+//    typename TypeGetter<NumberBase>::Column::value_type x = get<NearestFieldType<FieldType>>(field);
+//    writeBinary(x, ostr);
+}
+
+template<typename NumberBase>
+void DataTypeDateTimeBase<NumberBase>::deserializeBinary(Field&, ReadBuffer&) const
+{
+
+}
+
+template<typename NumberBase>
+void DataTypeDateTimeBase<NumberBase>::serializeBinary(const IColumn&, size_t, WriteBuffer&) const
+{
+
+}
+
+template<typename NumberBase>
+void DataTypeDateTimeBase<NumberBase>::deserializeBinary(IColumn&, ReadBuffer&) const
+{
+
+}
+
+template<typename NumberBase>
+Field DataTypeDateTimeBase<NumberBase>::getDefault() const
+{
+    return typename TypeGetter<NumberBase>::FieldType{};
 }
 
 template<typename NumberBase>
@@ -272,19 +322,51 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeDateTime>(arg->value.get<String>());
 }
 
+struct ArgumentSpec
+{
+    enum ArgumentKind
+    {
+        Optional,
+        Mandatory
+    };
+
+    size_t index;
+    const char * name;
+    ArgumentKind kind;
+};
+
+template <typename T>
+T getArgument(const ASTPtr & arguments, ArgumentSpec argument_spec, const std::string context_data_type_name)
+{
+    using NearestResultType = NearestFieldType<T>;
+    const auto fieldType = Field::TypeToEnum<NearestResultType>::value;
+
+    if (!arguments || arguments->children.size() <= argument_spec.index)
+    {
+        if (argument_spec.kind == ArgumentSpec::Optional)
+            return {};
+        else
+            throw Exception("Parameter #" + std::to_string(argument_spec.index) + "'" + argument_spec.name + "' for " + context_data_type_name + " is missing.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
+    const auto * argument = arguments->children[argument_spec.index]->as<ASTLiteral>();
+    if (!argument || argument->value.getType() != fieldType)
+        throw Exception("'" + std::string(argument_spec.name) + "' parameter for " +
+                        context_data_type_name + " must be " + Field::Types::toString(fieldType) +
+                        " literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return argument->value.get<NearestResultType>();
+}
+
 static DataTypePtr create64(const ASTPtr & arguments)
 {
     if (!arguments)
-        return std::make_shared<DataTypeDateTime64>();
+        return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
 
-    if (arguments->children.size() != 1)
-        throw Exception("DateTime64 data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    const auto scale = getArgument<UInt64>(arguments, ArgumentSpec{0, "scale", ArgumentSpec::Mandatory}, "DateType64");
+    const auto timezone = getArgument<String>(arguments, ArgumentSpec{0, "timezone", ArgumentSpec::Optional}, "DateType64");
 
-    const auto * timezone_arg = arguments->children[0]->as<ASTLiteral>();
-    if (!timezone_arg || timezone_arg->value.getType() != Field::Types::String)
-        throw Exception("Timezone parameter for DateTime64 data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return std::make_shared<DataTypeDateTime64>(timezone_arg->value.get<String>());
+    return std::make_shared<DataTypeDateTime64>(scale, timezone);
 }
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
@@ -293,6 +375,27 @@ void registerDataTypeDateTime(DataTypeFactory & factory)
     factory.registerDataType("DateTime64", create64, DataTypeFactory::CaseInsensitive);
 
     factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::CaseInsensitive);
+}
+
+/// Explicit template instantiations.
+template class DataTypeDateTimeBase<UInt32>;
+template class DataTypeDateTimeBase<DateTime64>;
+
+MutableColumnPtr DataTypeDateTime::createColumn() const
+{
+    return ColumnVector<UInt32>::create();
+}
+
+DataTypeDateTime64::DataTypeDateTime64(UInt8 scale_, const std::string & time_zone_name)
+    : Base(time_zone_name),
+      scale(scale_)
+{
+    // TODO(vnemkov): validate scale
+}
+
+MutableColumnPtr DataTypeDateTime64::createColumn() const
+{
+    return ColumnDecimal<DateTime64>::create(0, scale);
 }
 
 

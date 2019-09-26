@@ -169,7 +169,7 @@ struct ToDateTimeImpl
 };
 
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
-    : DateTimeTransformImpl<UInt16, UInt32, ToDateTimeImpl> {};
+    : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, ToDateTimeImpl> {};
 
 
 /// Implementation of toDate function.
@@ -188,10 +188,10 @@ struct ToDateTransform32Or64
 /** Conversion of DateTime to Date: throw off time component.
   */
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt32, UInt16, ToDateImpl> {};
+    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, ToDateImpl> {};
 
 template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name>
-    : DateTimeTransformImpl<DateTime64::Type, UInt16, ToDateImpl> {};
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, ToDateImpl> {};
 
 /** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
   * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
@@ -201,17 +201,17 @@ template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Na
   *  (otherwise such usage would be frequent mistake).
   */
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt32, UInt16, ToDateTransform32Or64<UInt32, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt64, UInt16, ToDateTransform32Or64<UInt64, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
-    : DateTimeTransformImpl<Int32, UInt16, ToDateTransform32Or64<Int32, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64<Int32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
-    : DateTimeTransformImpl<Int64, UInt16, ToDateTransform32Or64<Int64, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64<Int64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
-    : DateTimeTransformImpl<Float32, UInt16, ToDateTransform32Or64<Float32, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64<Float32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
-    : DateTimeTransformImpl<Float64, UInt16, ToDateTransform32Or64<Float64, UInt16>> {};
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64<Float64, UInt16>> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
@@ -251,7 +251,7 @@ struct FormatImpl<DataTypeDateTime64>
 {
     static void execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 *, const DateLUTImpl * time_zone)
     {
-        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDateTime64> v=" << x << " tz=" << (void*)time_zone << std::endl;
+        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDateTime64> v=" << x << " tz=" << time_zone << std::endl;
         writeDateTimeText(DateTime64(x), wb, *time_zone);
     }
 };
@@ -827,15 +827,25 @@ public:
         }
         else
         {
+            UInt8 max_args = 2;
+//            UInt8 scale = 3;
+//            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+//            {
+//                max_args += 1;
+//                if (arguments.size() == max_args - 1)
+//                {
+
+//                }
+//            }
             /** Optional second argument with time zone is supported:
               * - for functions toDateTime, toUnixTimestamp, toDate;
               * - for function toString of DateTime argument.
               */
 
-            if (arguments.size() == 2)
+            if (arguments.size() == max_args)
             {
-                if (!checkAndGetDataType<DataTypeString>(arguments[1].type.get()))
-                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                if (!checkAndGetDataType<DataTypeString>(arguments[max_args - 1].type.get()))
+                    throw Exception("Illegal type " + arguments[max_args - 1].type->getName() + " of 2nd argument of function " + getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 static constexpr bool to_date_or_time = std::is_same_v<Name, NameToDateTime>
@@ -853,8 +863,8 @@ public:
 
             if (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-            else if (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return std::make_shared<DataTypeDateTime64>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+//            else if (std::is_same_v<ToDataType, DataTypeDateTime64>)
+//                return std::make_shared<DataTypeDateTime64>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else
                 return std::make_shared<ToDataType>();
         }

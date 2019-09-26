@@ -14,19 +14,20 @@
 #include <common/StringRef.h>
 
 #include <Core/Types.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
+#include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-
 #include <DataTypes/DataTypeDateTime.h>
 
 #ifdef __clang__
@@ -318,6 +319,12 @@ template <typename T>
 bool tryReadIntText(T & x, ReadBuffer & buf)
 {
     return readIntTextImpl<T, bool>(x, buf);
+}
+
+template <typename T>
+void readIntText(Decimal<T> & x, ReadBuffer & buf)
+{
+    readIntText(x.value, buf);
 }
 
 /** More efficient variant (about 1.5 times on real dataset).
@@ -630,13 +637,26 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
 
 inline void readDateTimeText(DateTime64 & datetime64, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    DateTime64::Components c;
-    readDateTimeTextImpl<void>(c.datetime, buf, date_lut);
-    buf.ignore(); // ignore the "."
+    DB::DecimalComponents<DateTime64::NativeType> c;
+    readDateTimeTextImpl<void>(c.whole, buf, date_lut);
+
+    char separator;
+    if (buf.read(separator))
+    {
+        if (separator != '.')
+        {
+            throw Exception("Cannot parse DateTime64 from text.", ErrorCodes::CANNOT_PARSE_DATETIME);
+        }
+    }
+
     auto remaining = buf.available();
-    readIntText(c.nanos, buf);
-    c.nanos *= static_cast<UInt32>(std::pow(10, 9 - remaining));
-    datetime64 = DateTime64(c);
+    readIntText(c.fractional, buf);
+
+    // TODO: hardcoded precision, use something similar to DataTypeDecimal<T>::readText()
+    const int scale = common::exp10_i32(9);
+    c.fractional *= static_cast<UInt32>(std::pow(10, 9 - remaining));
+
+    datetime64 = decimalFromComponents(c, scale);
 }
 
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())

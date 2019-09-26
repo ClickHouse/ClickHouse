@@ -20,8 +20,8 @@ struct WithDateTime64Converter : public Transform {
     static inline auto execute(DataTypeDateTime64::FieldType t, const DateLUTImpl & time_zone)
     {
         auto x = DateTime64(t);
-        auto res = Transform::execute(static_cast<UInt32>(x.split().datetime), time_zone);
-        std::cout << "calling through datetime64 wrapper v=" << x.get() << "tz= " << time_zone.getTimeZone() << " result=" << res << std::endl;
+        auto res = Transform::execute(static_cast<UInt32>(decimalWholePart(x, DataTypeDateTime64::default_scale)), time_zone);
+        std::cout << "calling through datetime64 wrapper v=" << x.value << "tz= " << time_zone.getTimeZone() << " result=" << res << std::endl;
         return res;
     }
 };
@@ -93,11 +93,11 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
+            DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(block, arguments, result, input_rows_count);
         else if (which.isDateTime())
-            DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
+            DateTimeTransformImpl<DataTypeDateTime, ToDataType, Transform>::execute(block, arguments, result, input_rows_count);
         else if (which.isDateTime64())
-            DateTimeTransformImpl<DataTypeDateTime64::FieldType, typename ToDataType::FieldType, WithDateTime64Converter<Transform>>::execute(block, arguments, result, input_rows_count);
+            DateTimeTransformImpl<DataTypeDateTime64, ToDataType, WithDateTime64Converter<Transform>>::execute(block, arguments, result, input_rows_count);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

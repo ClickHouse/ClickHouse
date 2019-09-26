@@ -1,17 +1,19 @@
-#include <type_traits>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
+
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
-#include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST.h>
 
+#include <type_traits>
 
 namespace DB
 {

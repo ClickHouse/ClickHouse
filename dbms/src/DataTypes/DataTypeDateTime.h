@@ -6,7 +6,6 @@
 
 class DateLUTImpl;
 
-
 template <class, template <class, class...> class>
 struct is_instance : public std::false_type {};
 
@@ -16,6 +15,12 @@ struct is_instance<U<Ts...>, U> : public std::true_type {};
 namespace DB
 {
 
+template <typename T>
+class ColumnDecimal;
+
+template <typename T>
+class ColumnVector;
+
 /** DateTime stores time as unix timestamp.
   * The value itself is independent of time zone.
   *
@@ -23,7 +28,7 @@ namespace DB
   * In text format it is serialized to and parsed from YYYY-MM-DD hh:mm:ss format.
   * The text format is dependent of time zone.
   *
-  * To convert from/to text format, time zone may be specified explicitly or implicit time zone may be used.
+  * To constt from/to text format, time zone may be specified explicitly or implicit time zone may be used.
   *
   * Time zone may be specified explicitly as type parameter, example: DateTime('Europe/Moscow').
   * As it does not affect the internal representation of values,
@@ -36,10 +41,12 @@ namespace DB
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
   *  or system time zone at the moment of server startup.
   */
-template<typename NumberBase>
-class DataTypeDateTimeBase : public DataTypeNumberBase<NumberBase>
+template<typename DateTimeType>
+class DataTypeDateTimeBase : public IDataType
 {
 public:
+    using FieldType = DateTimeType;
+
     DataTypeDateTimeBase(const std::string & time_zone_name = "");
 
     const char * getFamilyName() const override;
@@ -59,10 +66,18 @@ public:
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
-    bool canBeUsedAsVersion() const override { return true; }
+    void serializeBinary(const Field&, WriteBuffer&) const override;
+    void deserializeBinary(Field&, ReadBuffer&) const override;
+    void serializeBinary(const IColumn&, size_t, WriteBuffer&) const override;
+    void deserializeBinary(IColumn&, ReadBuffer&) const override;
+    Field getDefault() const override;
+    bool canBePromoted() const override { return false; }
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
+
 
     const DateLUTImpl & getTimeZone() const { return time_zone; }
 
@@ -73,11 +88,24 @@ protected:
 };
 
 struct DataTypeDateTime : DataTypeDateTimeBase<UInt32> {
-    using DataTypeDateTimeBase::DataTypeDateTimeBase;
+    using Base = DataTypeDateTimeBase<UInt32>;
+    using Base::Base;
+
+    using ColumnType = ColumnVector<UInt32>;
+
+    MutableColumnPtr createColumn() const override;
 };
 
-struct DataTypeDateTime64 : DataTypeDateTimeBase<DateTime64::Type> {
-    using DataTypeDateTimeBase::DataTypeDateTimeBase;
+struct DataTypeDateTime64 : DataTypeDateTimeBase<DateTime64> {
+    using Base = DataTypeDateTimeBase<DateTime64>;
+    DataTypeDateTime64(UInt8 scale_, const std::string & time_zone_name = "");
+
+    using ColumnType = ColumnDecimal<DateTime64>;
+    MutableColumnPtr createColumn() const override;
+
+    static constexpr UInt8 default_scale = 3;
+private:
+    const UInt8 scale;
 };
 
 }
