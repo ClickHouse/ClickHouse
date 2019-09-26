@@ -30,7 +30,7 @@
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
-#include <Interpreters/ExternalModels.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
@@ -125,7 +125,7 @@ struct ContextShared
     Databases databases;                                    /// List of databases and tables in them.
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionaries> external_dictionaries;
-    mutable std::optional<ExternalModels> external_models;
+    mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     std::unique_ptr<IUsersManager> users_manager;           /// Known users.
@@ -283,7 +283,7 @@ struct ContextShared
         system_logs.reset();
         embedded_dictionaries.reset();
         external_dictionaries.reset();
-        external_models.reset();
+        external_models_loader.reset();
         background_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
@@ -1339,23 +1339,23 @@ ExternalDictionaries & Context::getExternalDictionaries()
 }
 
 
-const ExternalModels & Context::getExternalModels() const
+const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
     std::lock_guard lock(shared->external_models_mutex);
-    if (!shared->external_models)
+    if (!shared->external_models_loader)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
         auto config_repository = shared->runtime_components_factory->createExternalModelsConfigRepository();
-        shared->external_models.emplace(std::move(config_repository), *this->global_context);
+        shared->external_models_loader.emplace(std::move(config_repository), *this->global_context);
     }
-    return *shared->external_models;
+    return *shared->external_models_loader;
 }
 
-ExternalModels & Context::getExternalModels()
+ExternalModelsLoader & Context::getExternalModelsLoader()
 {
-    return const_cast<ExternalModels &>(const_cast<const Context *>(this)->getExternalModels());
+    return const_cast<ExternalModelsLoader &>(const_cast<const Context *>(this)->getExternalModelsLoader());
 }
 
 
