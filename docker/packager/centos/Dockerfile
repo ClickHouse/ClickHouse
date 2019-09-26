@@ -22,7 +22,7 @@ RUN yum -y install epel-release centos-release-scl \
     && yum -y install readline-devel libicu-devel libtool-ltdl-devel make devtoolset-8-gcc devtoolset-8-gcc-c++ cmake3 \
     && yum clean all
 
-# non root build is
+# non-root build is safer
 USER rpmbuilder
 
 CMD rpmdev-setuptree \
@@ -53,8 +53,8 @@ CMD rpmdev-setuptree \
     && sudo yum-builddep -y ~/rpmbuild/SPECS/clickhouse.spec \
     && rpmbuild -v -ba ~/rpmbuild/SPECS/clickhouse.spec \
     # more artefacts
-    && cp ~/rpmbuild/RPMS/* /output/ \
-    && cp ~/rpmbuild/SRPMS/* /output/
+    && cp -r ~/rpmbuild/RPMS/* /output/ \
+    && cp -r ~/rpmbuild/SRPMS/* /output/
 
 # Install ClickHouse from local RPMs
 # yum localinstall -y /clickhouse/*.rpm
