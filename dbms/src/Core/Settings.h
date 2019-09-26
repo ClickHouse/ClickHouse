@@ -225,11 +225,11 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingString, format_template_row, "", "Path to file which contains format string for rows (for Template format)") \
     M(SettingString, format_template_rows_between_delimiter, "\n", "Delimiter between rows (for Template format)") \
     \
-    M(SettingString, format_custom_escaping_rule, "", "Field escaping rule (for CustomSeparated format)") \
+    M(SettingString, format_custom_escaping_rule, "Escaped", "Field escaping rule (for CustomSeparated format)") \
     M(SettingString, format_custom_field_delimiter, "\t", "Delimiter between fields (for CustomSeparated format)") \
     M(SettingString, format_custom_row_before_delimiter, "", "Delimiter before field of the first column (for CustomSeparated format)") \
-    M(SettingString, format_custom_row_after_delimiter, "", "Delimiter after field of the last column (for CustomSeparated format)") \
-    M(SettingString, format_custom_row_between_delimiter, "\n", "Delimiter between rows (for CustomSeparated format)") \
+    M(SettingString, format_custom_row_after_delimiter, "\n", "Delimiter after field of the last column (for CustomSeparated format)") \
+    M(SettingString, format_custom_row_between_delimiter, "", "Delimiter between rows (for CustomSeparated format)") \
     M(SettingString, format_custom_result_before_delimiter, "", "Prefix before result set (for CustomSeparated format)") \
     M(SettingString, format_custom_result_after_delimiter, "", "Suffix after result set (for CustomSeparated format)") \
     \

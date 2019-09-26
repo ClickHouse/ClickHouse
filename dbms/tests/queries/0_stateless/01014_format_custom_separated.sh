@@ -12,6 +12,7 @@ format_custom_escaping_rule = 'CSV', \
 format_custom_field_delimiter = '\t|\t', \
 format_custom_row_before_delimiter = '||', \
 format_custom_row_after_delimiter = '\t||', \
+format_custom_row_between_delimiter = '\n', \
 format_custom_result_before_delimiter = '========== result ==========\n', \
 format_custom_result_after_delimiter = '\n============================\n'"
 

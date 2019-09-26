@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/copyData.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -19,10 +18,10 @@ ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & 
 {
     try
     {
-        ReadBufferFromFile schema_file(schema.absoluteSchemaPath());
-        WriteBufferFromOwnString format_string;
-        copyData(schema_file, format_string);
-        parse(format_string.str(), idx_by_name);
+        ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
+        String format_string;
+        readStringUntilEOF(format_string, schema_file);
+        parse(format_string, idx_by_name);
     }
     catch (DB::Exception & e)
     {
