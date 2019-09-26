@@ -9,6 +9,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
 #include <Functions/IFunction.h>
@@ -147,6 +148,18 @@ public:
     }
 };
 
+template <typename T>
+struct ColumnType
+{
+    using Type = ColumnVector<T>;
+};
+
+template <typename T>
+struct ColumnType<Decimal<T>>
+{
+    using Type = ColumnDecimal<Decimal<T>>;
+};
+
 
 template <typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
@@ -156,6 +169,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretStringAs>(); }
 
     using ToFieldType = typename ToDataType::FieldType;
+    using ColumnType = typename ColumnType<ToFieldType>::Type;
 
     String getName() const override
     {
@@ -179,12 +193,12 @@ public:
     {
         if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_res = ColumnVector<ToFieldType>::create();
+            auto col_res = ColumnType::create();
 
             const ColumnString::Chars & data_from = col_from->getChars();
             const ColumnString::Offsets & offsets_from = col_from->getOffsets();
             size_t size = offsets_from.size();
-            typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();
+            typename ColumnType::Container & vec_res = col_res->getData();
             vec_res.resize(size);
 
             size_t offset = 0;

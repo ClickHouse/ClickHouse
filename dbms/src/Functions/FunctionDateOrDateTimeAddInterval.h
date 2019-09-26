@@ -72,6 +72,12 @@ struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
 
+    static inline UInt32 execute(UInt64 t, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        // TODO (nemkov): LUT does not support out-of range date values for now.
+        return time_zone.addDays(t, delta);
+    }
+
     static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addDays(t, delta);

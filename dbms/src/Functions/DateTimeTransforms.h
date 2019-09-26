@@ -1,8 +1,10 @@
 #pragma once
 #include <Core/Types.h>
+#include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
 #include <common/DateLUTImpl.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -45,10 +47,10 @@ struct ToDateImpl
 {
     static constexpr auto name = "toDate";
 
-    static inline UInt16 execute(DateTime64::Type t, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(DateTime64::NativeType t, const DateLUTImpl & time_zone)
     {
         std::cout << "converting DateTime64 t=" << t << " " << name << std::endl;
-        return UInt16(time_zone.toDayNum(DateTime64(t).split().datetime));
+        return UInt16(time_zone.toDayNum(decimalWholePart(DateTime64(t), 9)));
     }
 
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
@@ -653,14 +655,14 @@ struct DateTimeTransformImpl
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
-        using Op = Transformer<FromType, ToType, Transform>;
+        using Op = Transformer<typename FromType::FieldType, typename ToType::FieldType, Transform>;
 
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-        if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
+        if (const auto * sources = checkAndGetColumn<typename FromType::ColumnType>(source_col.get()))
         {
-            auto col_to = ColumnVector<ToType>::create();
+            auto col_to = ColumnVector<typename ToType::FieldType>::create();
             Op::vector(sources->getData(), col_to->getData(), time_zone);
             block.getByPosition(result).column = std::move(col_to);
         }
