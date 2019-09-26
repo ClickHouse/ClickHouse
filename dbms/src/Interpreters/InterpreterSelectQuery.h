@@ -90,6 +90,7 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
+    Block getSampleBlockImpl();
 
     struct Pipeline
     {
@@ -135,7 +136,7 @@ private:
     };
 
     template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
+    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input);
 
     struct AnalysisResult
     {
@@ -172,12 +173,19 @@ private:
         FilterInfoPtr filter_info;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run, const FilterInfoPtr & filter_info);
-
+    static AnalysisResult analyzeExpressions(
+        const ASTSelectQuery & query,
+        SelectQueryExpressionAnalyzer & query_analyzer,
+        QueryProcessingStage::Enum from_stage,
+        QueryProcessingStage::Enum to_stage,
+        const Context & context,
+        const StoragePtr & storage,
+        bool only_types,
+        const FilterInfoPtr & filter_info);
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */
-    void getDatabaseAndTableNames(String & database_name, String & table_name);
+    static void getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context);
 
     /// Different stages of query execution.
 
@@ -196,9 +204,10 @@ private:
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(Pipeline & pipeline, SortingInfoPtr sorting_info);
+    void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
-    void executeUnion(Pipeline & pipeline);
+    void executeUnion(Pipeline & pipeline, Block header); /// If header is not empty, convert streams structure to it.
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
@@ -213,6 +222,7 @@ private:
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(QueryPipeline & pipeline, SortingInfoPtr sorting_info);
+    void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline);
     void executeLimitBy(QueryPipeline & pipeline);
@@ -222,8 +232,8 @@ private:
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
-    /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
-    void unifyStreams(Pipeline & pipeline);
+    /// Add ConvertingBlockInputStream to specified header.
+    void unifyStreams(Pipeline & pipeline, Block header);
 
     enum class Modificator
     {
@@ -246,7 +256,6 @@ private:
     const SelectQueryOptions options;
     ASTPtr query_ptr;
     Context context;
-    NamesAndTypesList source_columns;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;

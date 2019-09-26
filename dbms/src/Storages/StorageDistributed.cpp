@@ -209,6 +209,7 @@ StorageDistributed::StorageDistributed(
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
@@ -216,13 +217,20 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach_)
-    : IStorage{columns_}, table_name(table_name_), database_name(database_name_),
+    : table_name(table_name_), database_name(database_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, global_context, getColumns().getAllPhysical(), false) : nullptr),
-    sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
+    if (sharding_key_)
+    {
+        sharding_key_expr = buildShardingKeyExpression(sharding_key_, global_context, getColumns().getAllPhysical(), false);
+        sharding_key_column_name = sharding_key_->getColumnName();
+    }
+
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (!attach_ && !cluster_name.empty())
     {
@@ -237,15 +245,16 @@ StorageDistributed::StorageDistributed(
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     ASTPtr remote_table_function_ptr_,
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach)
-    : StorageDistributed(database_name_, table_name_, columns_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
+    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
 {
-        remote_table_function_ptr = remote_table_function_ptr_;
+    remote_table_function_ptr = remote_table_function_ptr_;
 }
 
 
@@ -257,11 +266,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr owned_cluster_,
     const Context & context_)
 {
-    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, table_name_, columns_, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
-
+    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
     res->owned_cluster = owned_cluster_;
-
     return res;
 }
 
@@ -273,11 +279,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
-    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, table_name_, columns_, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
-
+    auto res = create(String{}, table_name_, columns_, ConstraintsDescription{}, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
     res->owned_cluster = owned_cluster_;
-
     return res;
 }
 
@@ -317,8 +320,8 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
-    Block header = materializeBlock(
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
+    Block header =
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
@@ -358,7 +361,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
     const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
-    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
+    if (path.empty() && !owned_cluster && !settings.insert_distributed_sync)
     {
         throw Exception("Storage " + getName() + " must has own data directory to enable asynchronous inserts",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -383,15 +386,18 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
 
 void StorageDistributed::alter(
-    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
-    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
+    const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
+    const String current_database_name = getDatabaseName();
+    const String current_table_name = getTableName();
+
     auto new_columns = getColumns();
     auto new_indices = getIndices();
-    params.apply(new_columns);
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
+    auto new_constraints = getConstraints();
+    params.applyForColumnsOnly(new_columns);
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, {});
     setColumns(std::move(new_columns));
 }
 
@@ -409,7 +415,7 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::truncate(const ASTPtr &, const Context &)
+void StorageDistributed::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
@@ -633,7 +639,7 @@ void registerStorageDistributed(StorageFactory & factory)
         }
 
         return StorageDistributed::create(
-            args.database_name, args.table_name, args.columns,
+            args.database_name, args.table_name, args.columns, args.constraints,
             remote_database, remote_table, cluster_name,
             args.context, sharding_key, args.data_path,
             args.attach);

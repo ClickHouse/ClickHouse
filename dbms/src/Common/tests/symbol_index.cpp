@@ -12,10 +12,11 @@ NO_INLINE const void * getAddress()
     return __builtin_return_address(0);
 }
 
-using namespace DB;
-
 int main(int argc, char ** argv)
 {
+#ifdef __ELF__
+    using namespace DB;
+
     if (argc < 2)
     {
         std::cerr << "Usage: ./symbol_index address\n";
@@ -53,6 +54,12 @@ int main(int argc, char ** argv)
 
     std::cerr << "\n";
     std::cerr << StackTrace().toString() << "\n";
+#else
+    (void)argc;
+    (void)argv;
+
+    std::cerr << "This test does not make sense for non-ELF objects.\n";
+#endif
 
     return 0;
 }

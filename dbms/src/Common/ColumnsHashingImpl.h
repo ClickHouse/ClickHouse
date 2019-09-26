@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>
+
 
 namespace DB
 {
@@ -115,26 +118,22 @@ public:
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
-        auto key = static_cast<Derived &>(*this).getKey(row, pool);
-        return emplaceKeyImpl(key, data, pool);
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return emplaceImpl(key_holder, data);
     }
 
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
-        auto key = static_cast<Derived &>(*this).getKey(row, pool);
-        auto res = findKeyImpl(key, data);
-        static_cast<Derived &>(*this).onExistingKey(key, pool);
-        return res;
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return findKeyImpl(keyHolderGetKey(key_holder), data);
     }
 
     template <typename Data>
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
-        auto key = static_cast<Derived &>(*this).getKey(row, pool);
-        auto res = data.hash(key);
-        static_cast<Derived &>(*this).onExistingKey(key, pool);
-        return res;
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return data.hash(keyHolderGetKey(key_holder));
     }
 
 protected:
@@ -155,20 +154,13 @@ protected:
         }
     }
 
-    template <typename Key>
-    static ALWAYS_INLINE void onNewKey(Key & /*key*/, Arena & /*pool*/) {}
-    template <typename Key>
-    static ALWAYS_INLINE void onExistingKey(Key & /*key*/, Arena & /*pool*/) {}
-
-    template <typename Data, typename Key>
-    ALWAYS_INLINE EmplaceResult emplaceKeyImpl(Key key, Data & data, Arena & pool)
+    template <typename Data, typename KeyHolder>
+    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
     {
         if constexpr (Cache::consecutive_keys_optimization)
         {
-            if (cache.found && cache.check(key))
+            if (cache.found && cache.check(keyHolderGetKey(key_holder)))
             {
-                static_cast<Derived &>(*this).onExistingKey(key, pool);
-
                 if constexpr (has_mapped)
                     return EmplaceResult(cache.value.second, cache.value.second, false);
                 else
@@ -176,39 +168,41 @@ protected:
             }
         }
 
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         bool inserted = false;
-        data.emplace(key, it, inserted);
+        data.emplace(key_holder, it, inserted);
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
-            cached = &it->getSecond();
+            cached = lookupResultGetMapped(it);
 
         if (inserted)
         {
             if constexpr (has_mapped)
             {
-                new(&it->getSecond()) Mapped();
-                static_cast<Derived &>(*this).onNewKey(it->getFirstMutable(), pool);
+                new(lookupResultGetMapped(it)) Mapped();
             }
-            else
-                static_cast<Derived &>(*this).onNewKey(it->getValueMutable(), pool);
         }
-        else
-            static_cast<Derived &>(*this).onExistingKey(key, pool);
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.value = it->getValue();
             cache.found = true;
             cache.empty = false;
 
             if constexpr (has_mapped)
+            {
+                cache.value.first = *lookupResultGetKey(it);
+                cache.value.second = *lookupResultGetMapped(it);
                 cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = *lookupResultGetKey(it);
+            }
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->getSecond(), *cached, inserted);
+            return EmplaceResult(*lookupResultGetMapped(it), *cached, inserted);
         else
             return EmplaceResult(inserted);
     }
@@ -228,28 +222,30 @@ protected:
         }
 
         auto it = data.find(key);
-        bool found = it != data.end();
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.found = found;
+            cache.found = it != nullptr;
             cache.empty = false;
 
-            if (found)
-                cache.value = it->getValue();
+            if constexpr (has_mapped)
+            {
+                cache.value.first = key;
+                if (it)
+                {
+                    cache.value.second = *lookupResultGetMapped(it);
+                }
+            }
             else
             {
-                if constexpr (has_mapped)
-                    cache.value.first = key;
-                else
-                    cache.value = key;
+                cache.value = key;
             }
         }
 
         if constexpr (has_mapped)
-            return FindResult(found ? &it->getSecond() : nullptr, found);
+            return FindResult(it ? lookupResultGetMapped(it) : nullptr, it != nullptr);
         else
-            return FindResult(found);
+            return FindResult(it != nullptr);
     }
 };
 
@@ -310,7 +306,7 @@ protected:
         {
             if (null_maps[k] != nullptr)
             {
-                const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
                 if (null_map[row] == 1)
                 {
                     size_t bucket = k / 8;

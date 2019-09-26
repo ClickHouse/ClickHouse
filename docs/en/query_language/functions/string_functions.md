@@ -64,7 +64,7 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
-```
+```sql
 toValidUTF8( input_string )
 ```
 
@@ -100,13 +100,16 @@ Formatting constant pattern with the string listed in the arguments. `pattern` i
 
 ```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
-
+```
+```text
 ┌─format('{1} {0} {1}', 'World', 'Hello')─┐
 │ Hello World Hello                       │
 └─────────────────────────────────────────┘
-
+```
+```sql
 SELECT format('{} {}', 'Hello', 'World')
-
+```
+```text
 ┌─format('{} {}', 'Hello', 'World')─┐
 │ Hello World                       │
 └───────────────────────────────────┘
@@ -145,11 +148,11 @@ Decode base64-encoded string 's' into original string. In case of failure raises
 ## tryBase64Decode(s)
 Similar to base64Decode, but in case of error an empty string would be returned.
 
-## endsWith(s, suffix)
+## endsWith(s, suffix) {#function-endswith}
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(s, prefix)
+## startsWith(s, prefix) {#function-startswith}
 
 Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
 

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -169,8 +170,8 @@ public:
         ConstAggregateDataPtr place,
         IColumn & to) const override
     {
-        auto & col = static_cast<ColumnArray &>(to);
-        auto & col_offsets = static_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+        auto & col = assert_cast<ColumnArray &>(to);
+        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
             nested_function->insertResultInto(place + i * sod, col.getData());

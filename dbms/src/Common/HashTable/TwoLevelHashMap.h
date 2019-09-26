@@ -20,18 +20,28 @@ public:
     using mapped_type = typename Cell::Mapped;
     using value_type = typename Cell::value_type;
 
+    using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
+    using LookupResult = typename Impl::LookupResult;
+
     using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>::TwoLevelHashTable;
+
+    template <typename Func>
+    void ALWAYS_INLINE forEachMapped(Func && func)
+    {
+        for (auto i = 0u; i < this->NUM_BUCKETS; ++i)
+            this->impls[i].forEachMapped(func);
+    }
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
-        typename TwoLevelHashMapTable::iterator it;
+        typename TwoLevelHashMapTable::LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
 
         if (inserted)
-            new(&it->getSecond()) mapped_type();
+            new(lookupResultGetMapped(it)) mapped_type();
 
-        return it->getSecond();
+        return *lookupResultGetMapped(it);
     }
 };
 

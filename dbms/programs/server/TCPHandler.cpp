@@ -182,11 +182,11 @@ void TCPHandler::runImpl()
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && client_logs_level.value != LogsLevel::none)
+                && client_logs_level != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
-                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level.value);
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
             }
 
             query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
@@ -201,6 +201,43 @@ void TCPHandler::runImpl()
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
                 state.block_in.reset();
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+            });
+
+            /// Send structure of columns to client for function input()
+            query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
+            {
+                if (&context != &query_context.value())
+                    throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+
+                state.need_receive_data_for_input = true;
+
+                /// Send ColumnsDescription for input storage.
+                if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
+                    && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+                {
+                    sendTableColumns(input_storage->getColumns());
+                }
+
+                /// Send block to the client - input storage structure.
+                state.input_header = input_storage->getSampleBlock();
+                sendData(state.input_header);
+            });
+
+            query_context->setInputBlocksReaderCallback([&connection_settings, this] (Context & context) -> Block
+            {
+                if (&context != &query_context.value())
+                    throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
+
+                size_t poll_interval;
+                int receive_timeout;
+                std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
+                if (!readDataNext(poll_interval, receive_timeout))
+                {
+                    state.block_in.reset();
+                    state.maybe_compressed_in.reset();
+                    return Block();
+                }
+                return state.block_for_input;
             });
 
             customizeContext(*query_context);
@@ -218,6 +255,13 @@ void TCPHandler::runImpl()
             /// Does the request require receive data from client?
             if (state.need_receive_data_for_insert)
                 processInsertQuery(connection_settings);
+            else if (state.need_receive_data_for_input)
+            {
+                /// It is special case for input(), all works for reading data from client will be done in callbacks.
+                /// state.io.in is NullAndDoCopyBlockInputStream so read it once.
+                state.io.in->read();
+                state.io.onFinish();
+            }
             else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads);
             else
@@ -324,58 +368,74 @@ void TCPHandler::runImpl()
 }
 
 
-void TCPHandler::readData(const Settings & connection_settings)
+bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_timeout)
+{
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+
+    /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
+    while (true)
+    {
+        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(poll_interval))
+            break;
+
+        /// Do we need to shut down?
+        if (server.isCancelled())
+            return false;
+
+        /** Have we waited for data for too long?
+         *  If we periodically poll, the receive_timeout of the socket itself does not work.
+         *  Therefore, an additional check is added.
+         */
+        double elapsed = watch.elapsedSeconds();
+        if (elapsed > receive_timeout)
+        {
+            std::stringstream ss;
+            ss << "Timeout exceeded while receiving data from client.";
+            ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
+            ss << " timeout is " << receive_timeout << " seconds.";
+
+            throw Exception(ss.str(), ErrorCodes::SOCKET_TIMEOUT);
+        }
+    }
+
+    /// If client disconnected.
+    if (in->eof())
+        return false;
+
+    /// We accept and process data. And if they are over, then we leave.
+    if (!receivePacket())
+        return false;
+
+    sendLogs();
+    return true;
+}
+
+
+std::tuple<size_t, int> TCPHandler::getReadTimeouts(const Settings & connection_settings)
 {
     const auto receive_timeout = query_context->getSettingsRef().receive_timeout.value;
 
     /// Poll interval should not be greater than receive_timeout
-    const size_t default_poll_interval = connection_settings.poll_interval.value * 1000000;
+    const size_t default_poll_interval = connection_settings.poll_interval * 1000000;
     size_t current_poll_interval = static_cast<size_t>(receive_timeout.totalMicroseconds());
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
 
+    return std::make_tuple(poll_interval, receive_timeout.totalSeconds());
+}
+
+
+void TCPHandler::readData(const Settings & connection_settings)
+{
+    size_t poll_interval;
+    int receive_timeout;
+
+    std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
     sendLogs();
 
     while (true)
-    {
-        Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-
-        /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (true)
-        {
-            if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(poll_interval))
-                break;
-
-            /// Do we need to shut down?
-            if (server.isCancelled())
-                return;
-
-            /** Have we waited for data for too long?
-             *  If we periodically poll, the receive_timeout of the socket itself does not work.
-             *  Therefore, an additional check is added.
-             */
-            double elapsed = watch.elapsedSeconds();
-            if (elapsed > receive_timeout.totalSeconds())
-            {
-                std::stringstream ss;
-                ss << "Timeout exceeded while receiving data from client.";
-                ss << " Waited for " << static_cast<size_t>(elapsed) << " seconds,";
-                ss << " timeout is " << receive_timeout.totalSeconds() << " seconds.";
-
-                throw Exception(ss.str(), ErrorCodes::SOCKET_TIMEOUT);
-            }
-        }
-
-        /// If client disconnected.
-        if (in->eof())
+        if (!readDataNext(poll_interval, receive_timeout))
             return;
-
-        /// We accept and process data. And if they are over, then we leave.
-        if (!receivePacket())
-            break;
-
-        sendLogs();
-    }
 }
 
 
@@ -485,6 +545,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 {
     auto & pipeline = state.io.pipeline;
 
+    if (pipeline.getMaxThreads())
+        num_threads = pipeline.getMaxThreads();
+
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         auto & header = pipeline.getHeader();
@@ -534,7 +597,15 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 lazy_format->finish();
                 lazy_format->clearQueue();
 
-                pool.wait();
+                try
+                {
+                    pool.wait();
+                }
+                catch (...)
+                {
+                    /// If exception was thrown during pipeline execution, skip it while processing other exception.
+                }
+
                 pipeline = QueryPipeline()
         );
 
@@ -633,6 +704,13 @@ void TCPHandler::processTablesStatusRequest()
     response.write(*out, client_revision);
 }
 
+void TCPHandler::receiveUnexpectedTablesStatusRequest()
+{
+    TablesStatusRequest skip_request;
+    skip_request.read(*in, client_revision);
+
+    throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
@@ -722,6 +800,23 @@ void TCPHandler::receiveHello()
 }
 
 
+void TCPHandler::receiveUnexpectedHello()
+{
+    UInt64 skip_uint_64;
+    String skip_string;
+
+    readStringBinary(skip_string, *in);
+    readVarUInt(skip_uint_64, *in);
+    readVarUInt(skip_uint_64, *in);
+    readVarUInt(skip_uint_64, *in);
+    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in);
+    readStringBinary(skip_string, *in);
+
+    throw NetException("Unexpected packet Hello received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
+
+
 void TCPHandler::sendHello()
 {
     writeVarUInt(Protocol::Server::Hello, *out);
@@ -744,19 +839,19 @@ bool TCPHandler::receivePacket()
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
-//    std::cerr << "Packet: " << packet_type << std::endl;
+//    std::cerr << "Server got packet: " << Protocol::Client::toString(packet_type) << "\n";
 
     switch (packet_type)
     {
         case Protocol::Client::Query:
             if (!state.empty())
-                throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                receiveUnexpectedQuery();
             receiveQuery();
             return true;
 
         case Protocol::Client::Data:
             if (state.empty())
-                throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                receiveUnexpectedData();
             return receiveData();
 
         case Protocol::Client::Ping:
@@ -768,12 +863,11 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Hello:
-            throw Exception("Unexpected packet " + String(Protocol::Client::toString(packet_type)) + " received from client",
-                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            receiveUnexpectedHello();
 
         case Protocol::Client::TablesStatusRequest:
             if (!state.empty())
-                throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                receiveUnexpectedTablesStatusRequest();
             processTablesStatusRequest();
             out->next();
             return false;
@@ -842,6 +936,26 @@ void TCPHandler::receiveQuery()
     readStringBinary(state.query, *in);
 }
 
+void TCPHandler::receiveUnexpectedQuery()
+{
+    UInt64 skip_uint_64;
+    String skip_string;
+
+    readStringBinary(skip_string, *in);
+
+    ClientInfo & skip_client_info = query_context->getClientInfo();
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+        skip_client_info.read(*in, client_revision);
+
+    Settings & skip_settings = query_context->getSettingsRef();
+    skip_settings.deserialize(*in);
+
+    readVarUInt(skip_uint_64, *in);
+    readVarUInt(skip_uint_64, *in);
+    readStringBinary(skip_string, *in);
+
+    throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
 
 bool TCPHandler::receiveData()
 {
@@ -858,21 +972,23 @@ bool TCPHandler::receiveData()
     {
         /// If there is an insert request, then the data should be written directly to `state.io.out`.
         /// Otherwise, we write the blocks in the temporary `external_table_name` table.
-        if (!state.need_receive_data_for_insert)
+        if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
         {
             StoragePtr storage;
             /// If such a table does not exist, create it.
             if (!(storage = query_context->tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create("_external", external_table_name, ColumnsDescription{columns});
+                storage = StorageMemory::create("_external", external_table_name, ColumnsDescription{columns}, ConstraintsDescription{});
                 storage->startup();
                 query_context->addExternalTable(external_table_name, storage);
             }
             /// The data will be written directly to the table.
             state.io.out = storage->write(ASTPtr(), *query_context);
         }
-        if (block)
+        if (state.need_receive_data_for_input)
+            state.block_for_input = block;
+        else
             state.io.out->write(block);
         return true;
     }
@@ -880,6 +996,26 @@ bool TCPHandler::receiveData()
         return false;
 }
 
+void TCPHandler::receiveUnexpectedData()
+{
+    String skip_external_table_name;
+    readStringBinary(skip_external_table_name, *in);
+
+    std::shared_ptr<ReadBuffer> maybe_compressed_in;
+
+    if (last_block_in.compression == Protocol::Compression::Enable)
+        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+    else
+        maybe_compressed_in = in;
+
+    auto skip_block_in = std::make_shared<NativeBlockInputStream>(
+            *maybe_compressed_in,
+            last_block_in.header,
+            client_revision);
+
+    Block skip_block = skip_block_in->read();
+    throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
 
 void TCPHandler::initBlockInput()
 {
@@ -893,12 +1029,16 @@ void TCPHandler::initBlockInput()
         Block header;
         if (state.io.out)
             header = state.io.out->getHeader();
+        else if (state.need_receive_data_for_input)
+            header = state.input_header;
+
+        last_block_in.header = header;
+        last_block_in.compression = state.compression;
 
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision,
-            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+            client_revision);
     }
 }
 

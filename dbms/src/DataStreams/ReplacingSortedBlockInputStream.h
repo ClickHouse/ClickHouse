@@ -41,11 +41,11 @@ private:
     bool finished = false;
 
     /// Primary key of current row.
-    RowRef current_key;
+    SharedBlockRowRef current_key;
     /// Primary key of next row.
-    RowRef next_key;
+    SharedBlockRowRef next_key;
     /// Last row with maximum version for current primary key.
-    RowRef selected_row;
+    SharedBlockRowRef selected_row;
     /// The position (into current_row_sources) of the row with the highest version.
     size_t max_pos = 0;
 

@@ -19,9 +19,11 @@ struct PartitionCommand
     enum Type
     {
         ATTACH_PARTITION,
+        MOVE_PARTITION,
         CLEAR_COLUMN,
         CLEAR_INDEX,
         DROP_PARTITION,
+        DROP_DETACHED_PARTITION,
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
@@ -37,7 +39,7 @@ struct PartitionCommand
     /// true for DETACH PARTITION.
     bool detach = false;
 
-    /// true for ATTACH PART (and false for PARTITION)
+    /// true for ATTACH PART and DROP DETACHED PART (and false for PARTITION)
     bool part = false;
 
     /// For ATTACH PARTITION partition FROM db.table
@@ -50,6 +52,16 @@ struct PartitionCommand
 
     /// For FREEZE PARTITION
     String with_name;
+
+    enum MoveDestinationType
+    {
+        DISK,
+        VOLUME,
+    };
+
+    MoveDestinationType move_destination_type;
+
+    String move_destination_name;
 
     static std::optional<PartitionCommand> parse(const ASTAlterCommand * command);
 };

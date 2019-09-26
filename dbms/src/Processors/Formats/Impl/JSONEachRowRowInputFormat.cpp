@@ -49,7 +49,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
         }
     }
 
-    prev_positions.assign(num_columns, name_map.end());
+    prev_positions.resize(num_columns);
 }
 
 const String & JSONEachRowRowInputFormat::columnName(size_t i) const
@@ -63,21 +63,21 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index] != name_map.end()
-        && name == prev_positions[key_index]->getFirst())
+        && prev_positions[key_index]
+        && name == *lookupResultGetKey(prev_positions[key_index]))
     {
-        return prev_positions[key_index]->getSecond();
+        return *lookupResultGetMapped(prev_positions[key_index]);
     }
     else
     {
         const auto it = name_map.find(name);
 
-        if (name_map.end() != it)
+        if (it)
         {
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->getSecond();
+            return *lookupResultGetMapped(it);
         }
         else
             return UNKNOWN_FIELD;

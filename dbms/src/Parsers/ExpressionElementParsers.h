@@ -289,6 +289,7 @@ protected:
 /** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
   *  and optionally, NULLS LAST|FIRST
   *  and optionally, COLLATE 'locale'.
+  *  and optionally, WITH FILL [FROM x] [TO y] [STEP z]
   */
 class ParserOrderByElement : public IParserBase
 {

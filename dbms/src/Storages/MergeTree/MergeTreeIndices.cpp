@@ -51,6 +51,7 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
                                 return lft + ", " + rht.first;
                         }),
                 ErrorCodes::INCORRECT_QUERY);
+
     return it->second(columns, node, context);
 }
 
@@ -83,6 +84,12 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerIndex("ngrambf_v1", bloomFilterIndexCreator);
     registerIndex("tokenbf_v1", bloomFilterIndexCreator);
     registerIndex("bloom_filter", bloomFilterIndexCreatorNew);
+}
+
+MergeTreeIndexFactory & MergeTreeIndexFactory::instance()
+{
+    static MergeTreeIndexFactory instance;
+    return instance;
 }
 
 }

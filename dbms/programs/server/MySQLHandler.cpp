@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_POCO_NETSSL
 #include "MySQLHandler.h"
 
 #include <limits>
@@ -293,10 +295,12 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         should_replace = true;
     }
 
-    executeQuery(should_replace ? empty_select : payload, *out, true, connection_context, set_content_type, nullptr);
+    Context query_context = connection_context;
+    executeQuery(should_replace ? empty_select : payload, *out, true, query_context, set_content_type, nullptr);
 
     if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
 }
 
 }
+#endif

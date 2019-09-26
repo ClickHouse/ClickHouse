@@ -135,7 +135,25 @@ void DatabaseOrdinary::loadTables(
         if (endsWith(dir_it.name(), ".sql.bak"))
             continue;
 
-        /// There are files .sql.tmp - delete.
+        // There are files that we tried to delete previously
+        static const char * tmp_drop_ext = ".sql.tmp_drop";
+        if (endsWith(dir_it.name(), tmp_drop_ext))
+        {
+            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+            if (Poco::File(data_path + '/' + table_name).exists())
+            {
+                Poco::File(dir_it->path()).renameTo(table_name + ".sql");
+                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
+            }
+            else
+            {
+                LOG_INFO(log, "Removing file " << dir_it->path());
+                Poco::File(dir_it->path()).remove();
+            }
+            continue;
+        }
+
+        /// There are files .sql.tmp - delete
         if (endsWith(dir_it.name(), ".sql.tmp"))
         {
             LOG_INFO(log, "Removing file " << dir_it->path());
@@ -245,11 +263,8 @@ void DatabaseOrdinary::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
-    {
-        std::lock_guard lock(mutex);
-        if (tables.find(table_name) != tables.end())
-            throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-    }
+    if (isTableExist(context, table_name))
+        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     String table_metadata_path = getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -270,11 +285,7 @@ void DatabaseOrdinary::createTable(
     try
     {
         /// Add a table to the map of known tables.
-        {
-            std::lock_guard lock(mutex);
-            if (!tables.emplace(table_name, table).second)
-                throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-        }
+        attachTable(table_name, table);
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -302,6 +313,15 @@ void DatabaseOrdinary::removeTable(
     }
     catch (...)
     {
+        try
+        {
+            Poco::File(table_metadata_path + ".tmp_drop").remove();
+            return;
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        }
         attachTable(table_name, res);
         throw;
     }
@@ -355,7 +375,8 @@ void DatabaseOrdinary::renameTable(
     const Context & context,
     const String & table_name,
     IDatabase & to_database,
-    const String & to_table_name)
+    const String & to_table_name,
+    TableStructureWriteLockHolder & lock)
 {
     DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
@@ -372,7 +393,7 @@ void DatabaseOrdinary::renameTable(
     {
         table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
             to_database_concrete->name,
-            to_table_name);
+            to_table_name, lock);
     }
     catch (const Exception &)
     {
@@ -461,32 +482,12 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
     return ast;
 }
 
-
-void DatabaseOrdinary::shutdown()
-{
-    /// You can not hold a lock during shutdown.
-    /// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
-
-    Tables tables_snapshot;
-    {
-        std::lock_guard lock(mutex);
-        tables_snapshot = tables;
-    }
-
-    for (const auto & kv: tables_snapshot)
-    {
-        kv.second->shutdown();
-    }
-
-    std::lock_guard lock(mutex);
-    tables.clear();
-}
-
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
     const ColumnsDescription & columns,
     const IndicesDescription & indices,
+    const ConstraintsDescription & constraints,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -509,6 +510,7 @@ void DatabaseOrdinary::alterTable(
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(constraints);
 
     ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
 
@@ -516,6 +518,11 @@ void DatabaseOrdinary::alterTable(
         ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
     else
         ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
+
+    if (ast_create_query.columns_list->constraints)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->constraints, new_constraints);
+    else
+        ast_create_query.columns_list->set(ast_create_query.columns_list->constraints, new_constraints);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);

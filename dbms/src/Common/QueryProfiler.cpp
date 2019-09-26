@@ -30,10 +30,13 @@ namespace
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     constexpr size_t QUERY_ID_MAX_LEN = 1024;
 
+#if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
+#endif
 
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
     {
+#if defined(OS_LINUX)
         /// Quickly drop if signal handler is called too frequently.
         /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
         ++write_trace_iteration;
@@ -50,6 +53,9 @@ namespace
                 return;
             }
         }
+#else
+        UNUSED(info);
+#endif
 
         constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
                                     8 * sizeof(char) + // maximum VarUInt length for string size
@@ -100,7 +106,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const 
     : log(&Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
-#if USE_INTERNAL_UNWIND_LIBRARY
+#if USE_UNWIND
     /// Sanity check.
     if (!hasPHDRCache())
         throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
@@ -173,7 +179,7 @@ QueryProfilerBase<ProfilerImpl>::~QueryProfilerBase()
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
-#if USE_INTERNAL_UNWIND_LIBRARY
+#if USE_UNWIND
     if (timer_id != nullptr && timer_delete(timer_id))
         LOG_ERROR(log, "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 

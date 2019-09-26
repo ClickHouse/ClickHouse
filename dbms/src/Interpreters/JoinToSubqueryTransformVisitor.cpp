@@ -6,6 +6,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -193,14 +194,14 @@ struct ColumnAliasesMatcher
         }
     };
 
-    static bool needChildVisit(ASTPtr & node, const ASTPtr &)
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
         if (node->as<ASTQualifiedAsterisk>())
             return false;
         return true;
     }
 
-    static void visit(ASTPtr & ast, Data & data)
+    static void visit(const ASTPtr & ast, Data & data)
     {
         if (auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
@@ -209,8 +210,9 @@ struct ColumnAliasesMatcher
             throw Exception("Multiple JOIN do not support asterisks for complex queries yet", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    static void visit(ASTIdentifier & node, ASTPtr &, Data & data)
+    static void visit(const ASTIdentifier & const_node, const ASTPtr &, Data & data)
     {
+        ASTIdentifier & node = const_cast<ASTIdentifier &>(const_node); /// we know it's not const
         if (node.isShort())
             return;
 
@@ -295,6 +297,23 @@ struct RewriteTablesVisitorData
     }
 };
 
+/// Attach alias to the first visited subquery
+struct SetSubqueryAliasVisitorData
+{
+    using TypeToVisit = ASTSubquery;
+
+    const String & alias;
+    bool done = false;
+
+    void visit(ASTSubquery &, ASTPtr & ast)
+    {
+        if (done)
+            return;
+        ast->setAlias(alias);
+        done = true;
+    }
+};
+
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables())
@@ -354,8 +373,10 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
 
 using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
+using SetSubqueryAliasMatcher = OneTypeMatcher<SetSubqueryAliasVisitorData>;
+using SetSubqueryAliasVisitor = InDepthNodeVisitor<SetSubqueryAliasMatcher, true>;
 using ExtractAsterisksVisitor = ExtractAsterisksMatcher::Visitor;
-using ColumnAliasesVisitor = InDepthNodeVisitor<ColumnAliasesMatcher, true>;
+using ColumnAliasesVisitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
 using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
@@ -383,15 +404,19 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     if (select.select())
     {
         aliases_data.public_names = true;
-        ColumnAliasesVisitor(aliases_data).visit(select.refSelect());
+        ColumnAliasesVisitor(aliases_data).visit(select.select());
         aliases_data.public_names = false;
     }
     if (select.where())
-        ColumnAliasesVisitor(aliases_data).visit(select.refWhere());
+        ColumnAliasesVisitor(aliases_data).visit(select.where());
     if (select.prewhere())
-        ColumnAliasesVisitor(aliases_data).visit(select.refPrewhere());
+        ColumnAliasesVisitor(aliases_data).visit(select.prewhere());
+    if (select.orderBy())
+        ColumnAliasesVisitor(aliases_data).visit(select.orderBy());
+    if (select.groupBy())
+        ColumnAliasesVisitor(aliases_data).visit(select.groupBy());
     if (select.having())
-        ColumnAliasesVisitor(aliases_data).visit(select.refHaving());
+        ColumnAliasesVisitor(aliases_data).visit(select.having());
 
     /// JOIN sections
     for (auto & child : select.tables()->children)
@@ -418,6 +443,14 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         left_table = replaceJoin(left_table, src_tables[i]);
         if (!left_table)
             throw Exception("Cannot replace tables with subselect", ErrorCodes::LOGICAL_ERROR);
+
+        /// attach an alias to subquery.
+        /// TODO: remove setting check after testing period
+        if (data.context.getSettingsRef().joined_subquery_requires_alias)
+        {
+            SetSubqueryAliasVisitor::Data alias_data{String("--.join") + std::to_string(i)};
+            SetSubqueryAliasVisitor(alias_data).visit(left_table);
+        }
 
         /// attach data to generated asterisk
         AppendSemanticVisitor::Data semantic_data{rev_aliases, false};

@@ -84,6 +84,9 @@ public:
     using key_type = typename Impl::key_type;
     using value_type = typename Impl::value_type;
 
+    using LookupResult = typename Impl::LookupResult;
+    using ConstLookupResult = typename Impl::ConstLookupResult;
+
     Impl impls[NUM_BUCKETS];
 
 
@@ -206,15 +209,15 @@ public:
 
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
-    std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
         size_t hash_value = hash(Cell::getKey(x));
 
-        std::pair<iterator, bool> res;
+        std::pair<LookupResult, bool> res;
         emplace(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
-            res.first.getPtr()->setMapped(x);
+            insertSetMapped(lookupResultGetMapped(res.first), x);
 
         return res;
     }
@@ -235,47 +238,37 @@ public:
       * if (inserted)
       *     new(&it->second) Mapped(value);
       */
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
-        size_t hash_value = hash(x);
-        emplace(x, it, inserted, hash_value);
+        size_t hash_value = hash(keyHolderGetKey(key_holder));
+        emplace(key_holder, it, inserted, hash_value);
     }
 
 
     /// Same, but with a precalculated values of hash function.
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it,
+                                  bool & inserted, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
-        typename Impl::iterator impl_it;
-        impls[buck].emplace(x, impl_it, inserted, hash_value);
-        it = iterator(this, buck, impl_it);
+        impls[buck].emplace(key_holder, it, inserted, hash_value);
     }
 
-
-    iterator ALWAYS_INLINE find(Key x, size_t hash_value)
+    LookupResult ALWAYS_INLINE find(Key x, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
-
-        typename Impl::iterator found = impls[buck].find(x, hash_value);
-        return found != impls[buck].end()
-            ? iterator(this, buck, found)
-            : end();
+        return impls[buck].find(x, hash_value);
     }
 
-
-    const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
+    ConstLookupResult ALWAYS_INLINE find(Key x, size_t hash_value) const
     {
-        size_t buck = getBucketFromHash(hash_value);
-
-        typename Impl::const_iterator found = impls[buck].find(x, hash_value);
-        return found != impls[buck].end()
-            ? const_iterator(this, buck, found)
-            : end();
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x, hash_value);
     }
 
+    LookupResult ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
 
-    iterator ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
-    const_iterator ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
+    ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
 
     void write(DB::WriteBuffer & wb) const
