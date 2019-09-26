@@ -11,24 +11,19 @@
 
 Кортеж можно создать с помощью функции
 
-```
+```sql
 tuple(T1, T2, ...)
 ```
 
 Пример создания кортежа:
 
+```sql
+SELECT tuple(1,'a') AS x, toTypeName(x)
 ```
-:) SELECT tuple(1,'a') AS x, toTypeName(x)
-
-SELECT
-    (1, 'a') AS x,
-    toTypeName(x)
-
+```text
 ┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
 │ (1,'a') │ Tuple(UInt8, String)      │
 └─────────┴───────────────────────────┘
-
-1 rows in set. Elapsed: 0.021 sec.
 ```
 
 ## Особенности работы с типами данных
@@ -37,18 +32,13 @@ SELECT
 
 Пример автоматического определения типа данных:
 
-```
+```sql
 SELECT tuple(1,NULL) AS x, toTypeName(x)
-
-SELECT
-    (1, NULL) AS x,
-    toTypeName(x)
-
+```
+```text
 ┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
 │ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
 └──────────┴─────────────────────────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/tuple/) <!--hide-->

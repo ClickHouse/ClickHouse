@@ -21,7 +21,7 @@ endif()
 
 if(ARROW_INCLUDE_DIR AND PARQUET_INCLUDE_DIR)
 elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
-    include(cmake/find_snappy.cmake)
+    include(cmake/find/snappy.cmake)
     set(CAN_USE_INTERNAL_PARQUET_LIBRARY 1)
     include(CheckCXXSourceCompiles)
     if(NOT USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)

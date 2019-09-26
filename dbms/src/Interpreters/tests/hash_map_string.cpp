@@ -330,15 +330,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<Key, Value, DefaultHash<Key>, Grower>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->getSecond() = 0;
-            ++it->getSecond();
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
@@ -359,15 +359,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<Key, Value, FastHash64, Grower>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->getSecond() = 0;
-            ++it->getSecond();
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
@@ -389,15 +389,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<Key, Value, CrapWow, Grower>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->getSecond() = 0;
-            ++it->getSecond();
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
@@ -419,15 +419,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<Key, Value, SimpleHash, Grower>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->getSecond() = 0;
-            ++it->getSecond();
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();

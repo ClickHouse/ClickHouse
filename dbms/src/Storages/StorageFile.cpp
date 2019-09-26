@@ -48,10 +48,11 @@ namespace ErrorCodes
 
 namespace
 {
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -86,7 +87,8 @@ std::vector<std::string> LSWithRegexpMatching(const std::string & path_for_ls, c
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
+                /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
+                Strings result_part = listFilesWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -143,7 +145,7 @@ StorageFile::StorageFile(
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
             const std::string path = poco_path.absolute().toString();
-            paths = LSWithRegexpMatching("/", path);
+            paths = listFilesWithRegexpMatching("/", path);
             for (const auto & cur_path : paths)
                 checkCreationIsAllowed(context_global, db_dir_path, cur_path);
             is_db_table = false;
@@ -282,7 +284,7 @@ public:
         else
         {
             if (storage.paths.size() != 1)
-                throw Exception("Table '" + storage.table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+                throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
             write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 

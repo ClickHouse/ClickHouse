@@ -494,7 +494,7 @@ WHERE table = 'visits'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 database:           merge
@@ -520,7 +520,7 @@ active_replicas:    2
 
 Columns:
 
-```
+```text
 database:          Database name
 table:              Table name
 engine:            Table engine name
@@ -573,7 +573,7 @@ If you don't request the last 4 columns (log_max_index, log_pointer, total_repli
 
 For example, you can check that everything is working correctly like this:
 
-``` sql
+```sql
 SELECT
     database,
     table,
@@ -619,13 +619,13 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.settings
 WHERE changed
 ```
 
-```
+```text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
 │ use_uncompressed_cache │ 0           │       1 │
@@ -686,14 +686,14 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.zookeeper
 WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 name:           example01-08-1.yandex.ru

@@ -67,7 +67,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Operator for Working With Dates and Times {#operators-datetime}
 
-``` sql
+```sql
 EXTRACT(part FROM date);
 ```
 
@@ -88,7 +88,7 @@ The `date` parameter specifies the date or the time to process. Either [Date](..
 
 Examples:
 
-``` sql
+```sql
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
 SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
@@ -96,7 +96,7 @@ SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 
 In the following example we create a table and insert into it a value with the `DateTime` type.
 
-``` sql
+```sql
 CREATE TABLE test.Orders
 (
     OrderId UInt64,
@@ -106,10 +106,10 @@ CREATE TABLE test.Orders
 ENGINE = Log;
 ```
 
-``` sql
+```sql
 INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
 ```
-``` sql
+```sql
 SELECT
     toYear(OrderDate) AS OrderYear,
     toMonth(OrderDate) AS OrderMonth,
@@ -118,13 +118,15 @@ SELECT
     toMinute(OrderDate) AS OrderMinute,
     toSecond(OrderDate) AS OrderSecond
 FROM test.Orders;
+```
+```text
 
 ┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
 │      2008 │         10 │       11 │        13 │          23 │          44 │
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
-You can see more examples in [tests](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
 
 ## Logical Negation Operator
 
@@ -148,7 +150,7 @@ The conditional operator calculates the values of b and c, then checks whether c
 
 ## Conditional Expression {#operator_case}
 
-``` sql
+```sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -198,18 +200,13 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
     - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
 
-```bash
-:) SELECT x+100 FROM t_null WHERE y IS NULL
-
-SELECT x + 100
-FROM t_null
-WHERE isNull(y)
-
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+```text
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 
@@ -220,18 +217,13 @@ WHERE isNull(y)
     - `1` otherwise.
 - For other values, the `IS NOT NULL` operator always returns `1`.
 
-```bash
-:) SELECT * FROM t_null WHERE y IS NOT NULL
-
-SELECT *
-FROM t_null
-WHERE isNotNull(y)
-
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+```text
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/operators/) <!--hide-->

@@ -5,6 +5,7 @@
 #include <common/logger_useful.h>
 #include <ext/shared_ptr_helper.h>
 
+
 namespace DB
 {
 /**
@@ -15,22 +16,15 @@ namespace DB
 class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage
 {
 public:
-    StorageS3(const Poco::URI & uri_,
+    StorageS3(
+        const Poco::URI & uri_,
         const std::string & database_name_,
         const std::string & table_name_,
         const String & format_name_,
+        UInt64 min_upload_part_size_,
         const ColumnsDescription & columns_,
-        Context & context_
-    )
-        : IStorage(columns_)
-        , uri(uri_)
-        , context_global(context_)
-        , format_name(format_name_)
-        , database_name(database_name_)
-        , table_name(table_name_)
-    {
-        setColumns(columns_);
-    }
+        const ConstraintsDescription & constraints_,
+        Context & context_);
 
     String getName() const override
     {
@@ -47,7 +41,8 @@ public:
         return table_name;
     }
 
-    BlockInputStreams read(const Names & column_names,
+    BlockInputStreams read(
+        const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
@@ -58,14 +53,14 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
-protected:
+private:
     Poco::URI uri;
     const Context & context_global;
 
-private:
     String format_name;
     String database_name;
     String table_name;
+    UInt64 min_upload_part_size;
 };
 
 }

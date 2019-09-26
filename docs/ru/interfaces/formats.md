@@ -51,7 +51,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```
+```text
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -83,7 +83,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Строки выводятся с экранированием спецсимволов с помощью обратного слеша. При выводе, используются следующие escape-последовательности: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Парсер также поддерживает последовательности `\a`, `\v`, и `\xHH` (последовательности hex escape) и любые последовательности вида `\c`, где `c` — любой символ (такие последовательности преобразуются в `c`). Таким образом, при чтении поддерживаются форматы, где перевод строки может быть записан как `\n` и как `\` и перевод строки. Например, строка `Hello world`, где между словами вместо пробела стоит перевод строки, может быть считана в любом из следующих вариантов:
 
-```
+```text
 Hello\nworld
 
 Hello\
@@ -218,7 +218,7 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 ```
 
 Пример ввода:
-```
+```text
 Some header
 Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
 Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
@@ -253,7 +253,7 @@ format_schema_rows_between_delimiter = ','
 
 Похож на TabSeparated, но выводит значения в формате name=value. Имена экранируются так же, как строки в формате TabSeparated и, дополнительно, экранируется также символ =.
 
-```
+```text
 SearchPhrase=   count()=8267016
 SearchPhrase=интерьер ванной комнаты    count()=2166
 SearchPhrase=яндекс     count()=1655
@@ -272,7 +272,7 @@ SearchPhrase=баку       count()=1000
 SELECT * FROM t_null FORMAT TSKV
 ```
 
-```
+```text
 x=1	y=\N
 ```
 
@@ -288,8 +288,8 @@ x=1	y=\N
 
 При форматировании, строки выводятся в двойных кавычках. Двойная кавычка внутри строки выводится как две двойные кавычки подряд. Других правил экранирования нет. Даты и даты-с-временем выводятся в двойных кавычках. Числа выводятся без кавычек. Значения разделяются символом-разделителем, по умолчанию  — `,`. Символ-разделитель определяется настройкой [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Строки разделяются unix переводом строки (LF). Массивы сериализуются в CSV следующим образом: сначала массив сериализуется в строку, как в формате TabSeparated, а затем полученная строка выводится в CSV в двойных кавычках. Кортежи в формате CSV сериализуются, как отдельные столбцы (то есть, теряется их вложенность в кортеж).
 
-```
-clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
+```bash
+$ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
 &ast;По умолчанию — `,`. См. настройку [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) для дополнительной информации.
@@ -479,7 +479,7 @@ ClickHouse заменяет опущенные значения значения
 
 Рассмотрим следующую таблицу:
 
-```
+```sql
 CREATE TABLE IF NOT EXISTS example_table
 (
     x UInt32,
@@ -497,7 +497,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 Рассмотрим в качестве примера таблицу `UserActivity`:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -506,7 +506,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 Запрос `SELECT * FROM UserActivity FORMAT JSONEachRow` возвращает:
 
-```
+```text
 {"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
@@ -597,7 +597,7 @@ SELECT * FROM json_each_row_nested
 ```sql
 SELECT * FROM t_null
 ```
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
@@ -609,7 +609,7 @@ SELECT * FROM t_null
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-```
+```text
 ┌─Escaping_test────────────────────────┐
 │ String with 'quotes' and 	 character │
 └──────────────────────────────────────┘
@@ -624,7 +624,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```
+```text
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -663,7 +663,7 @@ Extremes:
 Пример:
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 Для отображения в браузере, вы можете использовать HTTP интерфейс.
@@ -722,7 +722,7 @@ Array представлены как длина в формате varint (unsig
 ```sql
 SELECT * FROM t_null FORMAT Vertical
 ```
-```
+```text
 Row 1:
 ──────
 x: 1
@@ -735,7 +735,7 @@ y: ᴺᵁᴸᴸ
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 test: string with 'quotes' and 	 with some special
@@ -825,12 +825,12 @@ Cap'n Proto - формат бинарных сообщений, похож на 
 Сообщения Cap'n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется между запросами.
 
 ```bash
-cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Где `schema.capnp` выглядит следующим образом:
 
-```
+```capnp
 struct Message {
   SearchPhrase @0 :Text;
   c @1 :Uint64;
@@ -857,12 +857,12 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 или
 
 ```bash
-cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
+$ cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
 Где файл `schemafile.proto` может выглядеть так:
 
-```
+```capnp
 syntax = "proto3";
 
 message MessageType {
@@ -879,7 +879,7 @@ message MessageType {
 
 Вложенные сообщения поддерживаются, например, для поля `z` в таком сообщении
 
-```
+```capnp
 message MessageType {
   message XType {
     message YType {
@@ -896,7 +896,7 @@ ClickHouse попытается найти столбец с именем `x.y.z
 
 Значения по умолчанию, определённые в схеме `proto2`, например,
 
-```
+```capnp
 syntax = "proto2";
 
 message MessageType {
@@ -945,14 +945,14 @@ ClickHouse поддерживает настраиваемую точность 
 
 Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
 
-```
-cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+```bash
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
-```
-clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
 Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../operations/table_engines/hdfs.md) и `URL`.
