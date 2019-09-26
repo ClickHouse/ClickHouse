@@ -87,8 +87,8 @@ namespace detail
     class ReadWriteBufferFromHTTPBase : public ReadBuffer
     {
     public:
-        using HttpHeaderEntry = std::tuple<std::string, std::string>;
-        using HttpHeaderEntries = std::vector<HttpHeaderEntry>;
+        using HTTPHeaderEntry = std::tuple<std::string, std::string>;
+        using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>;
 
     protected:
         Poco::URI uri;
@@ -100,7 +100,7 @@ namespace detail
         std::function<void(std::ostream &)> out_stream_callback;
         const Poco::Net::HTTPBasicCredentials & credentials;
         std::vector<Poco::Net::HTTPCookie> cookies;
-        HttpHeaderEntries http_header_entries;
+        HTTPHeaderEntries http_header_entries;
 
         std::istream * call(const Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -157,7 +157,7 @@ namespace detail
             OutStreamCallback out_stream_callback_ = {},
             const Poco::Net::HTTPBasicCredentials & credentials_ = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-            HttpHeaderEntries http_header_entries_ = {})
+            HTTPHeaderEntries http_header_entries_ = {})
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -243,7 +243,7 @@ public:
         const DB::SettingUInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        const HttpHeaderEntries & http_header_entries_ = {})
+        const HTTPHeaderEntries & http_header_entries_ = {})
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects), uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_)
     {
     }

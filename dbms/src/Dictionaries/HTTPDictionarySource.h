@@ -59,7 +59,7 @@ private:
     const DictionaryStructure dict_struct;
     const std::string url;
     Poco::Net::HTTPBasicCredentials credentials;
-    ReadWriteBufferFromHTTP::HttpHeaderEntries header_entries;
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
     std::string update_field;
     const std::string format;
     Block sample_block;

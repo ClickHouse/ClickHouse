@@ -38,23 +38,23 @@ HTTPDictionarySource::HTTPDictionarySource(
 
     if (config.has(credentials_prefix))
     {
-        this->credentials.setUsername(config.getString(credentials_prefix + ".user", ""));
-        this->credentials.setPassword(config.getString(credentials_prefix + ".password", ""));
+        credentials.setUsername(config.getString(credentials_prefix + ".user", ""));
+        credentials.setPassword(config.getString(credentials_prefix + ".password", ""));
     }
 
-    const auto & http_headers_prefix = config_prefix + ".http-headers";
+    const auto & headers_prefix = config_prefix + ".headers";
 
-    if (config.has(http_headers_prefix))
+    if (config.has(headers_prefix))
     {
         Poco::Util::AbstractConfiguration::Keys config_keys;
-        config.keys(http_headers_prefix, config_keys);
+        config.keys(headers_prefix, config_keys);
 
-        this->header_entries.reserve(config_keys.size());
+        header_entries.reserve(config_keys.size());
         for (const auto & key : config_keys)
         {
-            const auto header_key = config.getString(http_headers_prefix + "." + key + ".name", "");
-            const auto header_value = config.getString(http_headers_prefix + "." + key + ".value", "");
-            this->header_entries.emplace_back(std::make_tuple(header_key, header_value));
+            const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
+            const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
+            header_entries.emplace_back(std::make_tuple(header_key, header_value));
         }
     }
 }
@@ -71,8 +71,8 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     , context(other.context)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
-    this->credentials.setUsername(other.credentials.getUsername());
-    this->credentials.setPassword(other.credentials.getPassword());
+    credentials.setUsername(other.credentials.getUsername());
+    credentials.setPassword(other.credentials.getPassword());
 }
 
 void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
@@ -101,7 +101,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadAll()
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
-        0, this->credentials, DBMS_DEFAULT_BUFFER_SIZE, this->header_entries);
+        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
     auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
 }
@@ -113,7 +113,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
     LOG_TRACE(log, "loadUpdatedAll " + uri.toString());
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
-        0, this->credentials, DBMS_DEFAULT_BUFFER_SIZE, this->header_entries);
+        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
     auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
 }
@@ -132,7 +132,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, timeouts,
-        0, this->credentials, DBMS_DEFAULT_BUFFER_SIZE, this->header_entries);
+        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
     auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
 }
@@ -151,7 +151,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, 
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, timeouts,
-        0, this->credentials, DBMS_DEFAULT_BUFFER_SIZE, this->header_entries);
+        0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
     auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
 }
