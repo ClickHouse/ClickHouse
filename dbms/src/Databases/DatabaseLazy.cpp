@@ -89,6 +89,10 @@ void DatabaseLazy::loadTables(
     Context & /* context */,
     bool /* has_force_restore_data_flag */)
 {
+    iterateTableFiles([this](const Poco::DirectoryIterator & dir_it) {
+        const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - 4);
+        attachTable(table_name, nullptr);
+    });
 }
 
 
@@ -274,7 +278,7 @@ time_t DatabaseLazy::getTableMetadataModificationTime(
     if (it != tables_cache.end())
         return it->second.metadata_modification_time;
     else
-        return static_cast<time_t>(0);
+        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 ASTPtr DatabaseLazy::getCreateTableQueryImpl(const Context & context,
@@ -369,17 +373,12 @@ StoragePtr DatabaseLazy::tryGetTable(
 DatabaseIteratorPtr DatabaseLazy::getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(tables_mutex);
-    // TODO: rewrite
     Strings filtered_tables;
-    iterateTableFiles([&filtered_tables, &filter_by_table_name](const auto & dir_it) {
-        /// ends with .sql
-        std::string cur_table = dir_it.name().substr(0, dir_it.name().size() - 4);
-        if (filter_by_table_name(cur_table))
-        {
-            filtered_tables.push_back(cur_table);
-        }
-        return true;
-    });
+    for (const auto & [table_name, cached_table] : tables_cache)
+    {
+        if (filter_by_table_name(table_name))
+            filtered_tables.push_back(table_name);
+    }
     std::sort(filtered_tables.begin(), filtered_tables.end());
     return std::make_unique<DatabaseLazyIterator>(*this, context, std::move(filtered_tables));
 }
@@ -505,8 +504,7 @@ void DatabaseLazy::iterateTableFiles(const IteratingFunction & iterating_functio
         /// The required files have names like `table_name.sql`
         if (endsWith(dir_it.name(), ".sql"))
         {
-            if (!iterating_function(dir_it))
-                return;
+            iterating_function(dir_it);
         }
         else
             throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + metadata_path,
@@ -547,7 +545,10 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
         {
             std::lock_guard lock(tables_mutex);
-            return tables_cache[table_name].table = table;
+            auto it = tables_cache.find(table_name);
+            if (it != tables_cache.end())
+                return it->second.table = table;
+            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         }
     }
     catch (const Exception & e)
@@ -576,7 +577,8 @@ DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, const Conte
 void DatabaseLazyIterator::next()
 {
     current_storage.reset();
-    ++iterator;
+    while (isValid() && !database.isTableExist(context, *iterator))
+        ++iterator;
 }
 
 bool DatabaseLazyIterator::isValid() const
