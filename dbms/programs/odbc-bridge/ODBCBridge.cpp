@@ -127,6 +127,8 @@ void ODBCBridge::initialize(Application & self)
 
     buildLoggers(config(), logger());
 
+    BaseDaemon::logRevision();
+
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
@@ -139,7 +141,11 @@ void ODBCBridge::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
 
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+    // It doesn't make much sense to build this bridge without ODBC, but we
+    // still do this.
     Poco::Data::ODBC::Connector::registerConnector();
+#endif
 
     ServerApplication::initialize(self);
 }
