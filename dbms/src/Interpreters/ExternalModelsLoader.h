@@ -19,7 +19,7 @@ public:
 
     /// Models will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     ExternalModelsLoader(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+        std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
         Context & context_);
 
     ModelPtr getModel(const std::string & name) const

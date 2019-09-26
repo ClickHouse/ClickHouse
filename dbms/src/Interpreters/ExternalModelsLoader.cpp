@@ -11,7 +11,7 @@ namespace ErrorCodes
 
 
 ExternalModelsLoader::ExternalModelsLoader(
-    std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+    std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
     Context & context_)
         : ExternalLoader(context_.getConfigRef(),
                          "external model",
