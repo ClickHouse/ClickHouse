@@ -9,8 +9,20 @@
 namespace DB
 {
 
-class DatabaseLazyIterator;
+struct CachedTable
+{
+    StoragePtr table;
+    time_t last_touched;
+    time_t metadata_modification_time;
 
+    CachedTable() {}
+    CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
+        : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
+};
+
+using TablesCache = std::unordered_map<String, CachedTable>;
+
+class DatabaseLazyIterator;
 
 /** Lazy engine of databases.
   * Works like DatabaseOrdinary, but stores in memory only cache.
@@ -19,8 +31,6 @@ class DatabaseLazyIterator;
 class DatabaseLazy : public IDatabase
 {
 public:
-    using Times = std::unordered_map<String, time_t>;
-
     DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context);
 
     String getEngineName() const override { return "Lazy"; }
@@ -99,11 +109,11 @@ private:
     String name;
     const String metadata_path;
     const String data_path;
+
     const time_t expiration_time;
 
     mutable std::mutex tables_mutex;
-    mutable Tables tables_cache;
-    mutable Times last_metadata_modification;
+    mutable TablesCache tables_cache;
 
     Poco::Logger * log;
 
@@ -111,6 +121,8 @@ private:
     
     using IteratingFunction = std::function<bool(const Poco::DirectoryIterator &)>;
     void iterateTableFiles(const IteratingFunction & iterating_function) const;
+    
+    StoragePtr loadTable(const Context & context, const String & table_name) const;
 
     void clearExpiredTables() const;
 
