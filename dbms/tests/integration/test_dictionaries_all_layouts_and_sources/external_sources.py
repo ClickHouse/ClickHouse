@@ -331,6 +331,16 @@ class SourceHTTPBase(ExternalSource):
             <http>
                 <url>{url}</url>
                 <format>TabSeparated</format>
+                <credentials>
+                    <user>foo</user>
+                    <password>bar</password>
+                </credentials>
+                <headers>
+                    <header>
+                        <name>api-key</name>
+                        <value>secret</value>
+                    </header>
+                </headers>
             </http>
         '''.format(url=url)
 
