@@ -224,18 +224,13 @@ public:
     /// Called after loading/reloading an object to calculate the time of the next update.
     using CalculateNextUpdateTimeFunction = std::function<TimePoint(const LoadablePtr & /* loaded_object */, size_t /* error_count */)>;
 
-    /// Called on the time of each update to decide if we should reload an object.
-    using IsObjectModifiedFunction = std::function<bool(const LoadablePtr &)>;
-
     LoadingDispatcher(
         const CreateObjectFunction & create_object_function_,
         const CalculateNextUpdateTimeFunction & calculate_next_update_time_function_,
-        const IsObjectModifiedFunction & is_object_modified_function_,
         const String & type_name_,
         Logger * log_)
         : create_object(create_object_function_)
         , calculate_next_update_time(calculate_next_update_time_function_)
-        , is_object_modified(is_object_modified_function_)
         , type_name(type_name_)
         , log(log_)
     {
@@ -556,7 +551,7 @@ public:
         {
             try
             {
-                is_modified_flag = is_object_modified(object);
+                is_modified_flag = object->isModified();
             }
             catch (...)
             {
@@ -914,7 +909,6 @@ private:
 
     const CreateObjectFunction create_object;
     const CalculateNextUpdateTimeFunction calculate_next_update_time;
-    const IsObjectModifiedFunction is_object_modified;
     const String type_name;
     Logger * log;
 
@@ -1020,7 +1014,6 @@ ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & main_co
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
           std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4),
           std::bind(&ExternalLoader::calculateNextUpdateTime, this, std::placeholders::_1, std::placeholders::_2),
-          std::bind(&IExternalLoadable::isModified, std::placeholders::_1),
           type_name_,
           log))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
