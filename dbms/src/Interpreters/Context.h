@@ -46,7 +46,7 @@ class Context;
 class RuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
-class ExternalDictionaries;
+class ExternalDictionariesLoader;
 class ExternalModelsLoader;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
@@ -321,10 +321,10 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes);
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
-    const ExternalDictionaries & getExternalDictionaries() const;
+    const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     const ExternalModelsLoader & getExternalModelsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
-    ExternalDictionaries & getExternalDictionaries();
+    ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalModelsLoader & getExternalModelsLoader();
     void tryCreateEmbeddedDictionaries() const;
 

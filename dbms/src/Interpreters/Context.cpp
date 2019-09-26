@@ -29,7 +29,7 @@
 #include <Interpreters/IUsersManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
@@ -124,7 +124,7 @@ struct ContextShared
 
     Databases databases;                                    /// List of databases and tables in them.
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
-    mutable std::optional<ExternalDictionaries> external_dictionaries;
+    mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -282,7 +282,7 @@ struct ContextShared
 
         system_logs.reset();
         embedded_dictionaries.reset();
-        external_dictionaries.reset();
+        external_dictionaries_loader.reset();
         external_models_loader.reset();
         background_pool.reset();
         schedule_pool.reset();
@@ -1312,30 +1312,30 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 }
 
 
-const ExternalDictionaries & Context::getExternalDictionaries() const
+const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() const
 {
     {
         std::lock_guard lock(shared->external_dictionaries_mutex);
-        if (shared->external_dictionaries)
-            return *shared->external_dictionaries;
+        if (shared->external_dictionaries_loader)
+            return *shared->external_dictionaries_loader;
     }
 
     const auto & config = getConfigRef();
     std::lock_guard lock(shared->external_dictionaries_mutex);
-    if (!shared->external_dictionaries)
+    if (!shared->external_dictionaries_loader)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
         auto config_repository = shared->runtime_components_factory->createExternalDictionariesConfigRepository();
-        shared->external_dictionaries.emplace(std::move(config_repository), config, *this->global_context);
+        shared->external_dictionaries_loader.emplace(std::move(config_repository), config, *this->global_context);
     }
-    return *shared->external_dictionaries;
+    return *shared->external_dictionaries_loader;
 }
 
-ExternalDictionaries & Context::getExternalDictionaries()
+ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 {
-    return const_cast<ExternalDictionaries &>(const_cast<const Context *>(this)->getExternalDictionaries());
+    return const_cast<ExternalDictionariesLoader &>(const_cast<const Context *>(this)->getExternalDictionariesLoader());
 }
 
 
