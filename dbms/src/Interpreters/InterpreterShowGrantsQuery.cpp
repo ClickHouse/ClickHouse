@@ -3,6 +3,7 @@
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/formatAST.h>
 #include <ACL/AccessControlManager.h>
+#include <ACL/Role.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
@@ -24,7 +25,7 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
     MutableColumnPtr column = ColumnString::create();
 
     const auto & query = query_ptr->as<ASTShowGrantsQuery &>();
-    auto grant_queries = context.getAccessControlManager().getRole(query.role).getGrantQueries();
+    auto grant_queries = context.getAccessControlManager().get<ConstRole>(query.role).getGrantQueries();
     for (const auto & grant_query : grant_queries)
     {
         std::stringstream stream;

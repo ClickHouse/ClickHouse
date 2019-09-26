@@ -672,13 +672,13 @@ BlockIO InterpreterCreateQuery::execute()
     else if (create.role_attributes)
     {
         /// CREATE ROLE
-        context.getAccessControlManager().createRole(*create.role_attributes, create.if_not_exists);
+        context.getAccessControlManager().create<Role>(*create.role_attributes, create.if_not_exists);
         return {};
     }
     else if (create.user_attributes)
     {
         /// CREATE USER
-        context.getAccessControlManager().createUser(*create.user_attributes, create.if_not_exists);
+        context.getAccessControlManager().create<User2>(*create.user_attributes, create.if_not_exists);
         return {};
     }
 

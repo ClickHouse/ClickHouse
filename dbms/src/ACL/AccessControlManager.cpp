@@ -1,6 +1,8 @@
 #include <ACL/AccessControlManager.h>
 #include <ACL/MultipleAttributesStorage.h>
 #include <ACL/MemoryAttributesStorage.h>
+#include <ACL/User2.h>
+#include <ACL/Role.h>
 
 
 namespace DB
@@ -22,114 +24,111 @@ AccessControlManager::~AccessControlManager()
 }
 
 
-Role AccessControlManager::createRole(const Role::Attributes & attrs, bool if_not_exists)
+template <typename ACLType>
+ACLType AccessControlManager::create(const typename ACLType::Attributes & attrs, bool if_not_exists)
 {
-    UUID id = if_not_exists ? storage->tryInsert(attrs).first : storage->insert(attrs);
-    return Role(id, *storage);
-}
-
-Role AccessControlManager::getRole(const String & name)
-{
-    return Role(storage->getID(name, Role::TYPE), *storage);
+    if (if_not_exists)
+        return {storage->tryInsert(attrs).first, *storage};
+    return {storage->insert(attrs), *storage};
 }
 
 
-void AccessControlManager::dropRole(const String & name, bool if_not_exists)
+template <typename ACLType>
+void AccessControlManager::update(const String & name, const UpdateFunction<ACLType> & update_function)
+{
+    storage->update(storage->getID(name, ACLType::TYPE), update_function);
+}
+
+
+template <typename ACLType>
+void AccessControlManager::update(const UpdateFunctions<ACLType> & update_functions)
+{
+    for (const auto & [name, update_function] : update_functions)
+        update<ACLType>(name, update_function);
+}
+
+
+template <typename ACLType>
+bool AccessControlManager::drop(const String & name, bool if_not_exists)
 {
     if (if_not_exists)
     {
-        auto role = findRole(name);
-        if (role)
-            role->drop(true);
+        auto id = storage->find(name, ACLType::TYPE);
+        if (id)
+            return storage->tryRemove(*id);
+        return false;
     }
-    else
-        getRole(name).drop(false);
+    storage->remove(storage->getID(name, ACLType::TYPE), ACLType::TYPE);
+    return true;
 }
 
 
-void AccessControlManager::dropRoles(const Strings & names, bool if_not_exists)
+template <typename ACLType>
+void AccessControlManager::drop(const Strings & names, bool if_not_exists)
 {
     for (const String & name : names)
-        dropRole(name, if_not_exists);
+        drop<ACLType>(name, if_not_exists);
 }
 
 
-std::optional<Role> AccessControlManager::findRole(const String & name)
+template <typename ACLType>
+ACLType AccessControlManager::get(const String & name)
 {
-    auto id = storage->find(name, Role::TYPE);
+    return ACLType(storage->getID(name, ACLType::TYPE), *storage);
+}
+
+
+template <typename ACLType>
+ACLType AccessControlManager::get(const String & name) const
+{
+    return ACLType(storage->getID(name, ACLType::TYPE), *storage);
+}
+
+
+template <typename ACLType>
+std::optional<ACLType> AccessControlManager::find(const String & name)
+{
+    auto id = storage->find(name, ACLType::TYPE);
     if (id)
-        return Role(*id, *storage);
+        return ACLType(*id, *storage);
     return {};
 }
 
 
-ConstRole AccessControlManager::getRole(const String & name) const
+template <typename ACLType>
+std::optional<ACLType> AccessControlManager::find(const String & name) const
 {
-    return ConstRole(storage->getID(name, Role::TYPE), *storage);
-}
-
-
-std::optional<ConstRole> AccessControlManager::findRole(const String & name) const
-{
-    auto id = storage->find(name, Role::TYPE);
+    auto id = storage->find(name, ACLType::TYPE);
     if (id)
-        return ConstRole(*id, *storage);
+        return ACLType(*id, *storage);
     return {};
 }
 
 
-User2 AccessControlManager::createUser(const User2::Attributes & attrs, bool if_not_exists)
-{
-    UUID id = if_not_exists ? storage->tryInsert(attrs).first : storage->insert(attrs);
-    return User2(id, *storage);
-}
+template Role AccessControlManager::create<Role>(const Role::Attributes &, bool);
+template User2 AccessControlManager::create<User2>(const User2::Attributes &, bool);
 
-User2 AccessControlManager::getUser(const String & name)
-{
-    return User2(storage->getID(name, Role::TYPE), *storage);
-}
+template void AccessControlManager::update<Role>(const String &, const UpdateFunction<Role> &);
+template void AccessControlManager::update<User2>(const String &, const UpdateFunction<User2> &);
 
+template void AccessControlManager::update<Role>(const UpdateFunctions<Role> &);
+template void AccessControlManager::update<User2>(const UpdateFunctions<User2> &);
 
-void AccessControlManager::dropUser(const String & name, bool if_not_exists)
-{
-    if (if_not_exists)
-    {
-        auto role = findUser(name);
-        if (role)
-            role->drop(true);
-    }
-    else
-        getUser(name).drop(false);
-}
+template bool AccessControlManager::drop<Role>(const String &, bool);
+template bool AccessControlManager::drop<User2>(const String &, bool);
 
+template void AccessControlManager::drop<Role>(const Strings &, bool);
+template void AccessControlManager::drop<User2>(const Strings &, bool);
 
-void AccessControlManager::dropUsers(const Strings & names, bool if_not_exists)
-{
-    for (const String & name : names)
-        dropUser(name, if_not_exists);
-}
+template Role AccessControlManager::get<Role>(const String &);
+template User2 AccessControlManager::get<User2>(const String &);
 
+template ConstRole AccessControlManager::get<ConstRole>(const String &) const;
+template ConstUser AccessControlManager::get<ConstUser>(const String &) const;
 
-std::optional<User2> AccessControlManager::findUser(const String & name)
-{
-    auto id = storage->find(name, Role::TYPE);
-    if (id)
-        return User2(*id, *storage);
-    return {};
-}
+template std::optional<Role> AccessControlManager::find<Role>(const String &);
+template std::optional<User2> AccessControlManager::find<User2>(const String &);
 
-
-ConstUser AccessControlManager::getUser(const String & name) const
-{
-    return ConstUser(storage->getID(name, Role::TYPE), *storage);
-}
-
-
-std::optional<ConstUser> AccessControlManager::findUser(const String & name) const
-{
-    auto id = storage->find(name, Role::TYPE);
-    if (id)
-        return ConstUser(*id, *storage);
-    return {};
-}
+template std::optional<ConstRole> AccessControlManager::find<ConstRole>(const String &) const;
+template std::optional<ConstUser> AccessControlManager::find<ConstUser>(const String &) const;
 }

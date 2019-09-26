@@ -5,6 +5,8 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <ACL/AccessControlManager.h>
+#include <ACL/Role.h>
+#include <ACL/User2.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
@@ -45,12 +47,12 @@ BlockIO InterpreterDropQuery::execute()
         return executeToDatabase(drop.database, drop.kind, drop.if_exists);
     else if (!drop.roles.empty())
     {
-        context.getAccessControlManager().dropRoles(drop.roles, drop.if_exists);
+        context.getAccessControlManager().drop<Role>(drop.roles, drop.if_exists);
         return {};
     }
     else if (!drop.users.empty())
     {
-        context.getAccessControlManager().dropUsers(drop.users, drop.if_exists);
+        context.getAccessControlManager().drop<User2>(drop.users, drop.if_exists);
         return {};
     }
     else

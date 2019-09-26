@@ -148,11 +148,12 @@ void Role::update(const std::function<void(Attributes &)> & update_func)
 }
 
 
-void Role::drop(bool if_exists)
+bool Role::drop(bool if_exists)
 {
     if (if_exists)
-         getStorage().tryRemove(id);
-    else
-         getStorage().remove(id, TYPE);
+         return getStorage().tryRemove(id);
+
+    getStorage().remove(id, TYPE);
+    return true;
 }
 }
