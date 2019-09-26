@@ -39,9 +39,9 @@ class AnalyzedJoin
 
     const SizeLimits size_limits;
     const bool join_use_nulls;
-    const bool partial_merge_join;
-    const bool partial_merge_join_optimisations;
-    const size_t partial_merge_join_rows_in_right_blocks;
+    const bool partial_merge_join = false;
+    const bool partial_merge_join_optimizations = false;
+    const size_t partial_merge_join_rows_in_right_blocks = 0;
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
@@ -67,9 +67,6 @@ public:
                  const Names & key_names_right_)
         : size_limits(limits)
         , join_use_nulls(use_nulls)
-        , partial_merge_join(false)
-        , partial_merge_join_optimisations(false)
-        , partial_merge_join_rows_in_right_blocks(0)
         , key_names_right(key_names_right_)
     {
         table_join.kind = kind;
@@ -83,7 +80,7 @@ public:
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
-    bool enablePartialMergeJoinOptimisations() const { return partial_merge_join_optimisations; }
+    bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
