@@ -97,7 +97,7 @@ struct ContextShared
 {
     Logger * log = &Logger::get("Context");
 
-    std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory;
+    std::unique_ptr<RuntimeComponentsFactory> runtime_components_factory;
 
     /// For access of most of shared objects. Recursive mutex.
     mutable std::recursive_mutex mutex;
@@ -210,7 +210,7 @@ struct ContextShared
 
     Context::ConfigReloadCallback config_reload_callback;
 
-    ContextShared(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
+    ContextShared(std::unique_ptr<RuntimeComponentsFactory> runtime_components_factory_)
         : runtime_components_factory(std::move(runtime_components_factory_)), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
@@ -318,7 +318,7 @@ Context::Context(const Context &) = default;
 Context & Context::operator=(const Context &) = default;
 
 
-Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory)
+Context Context::createGlobal(std::unique_ptr<RuntimeComponentsFactory> runtime_components_factory)
 {
     Context res;
     res.shared = std::make_shared<ContextShared>(std::move(runtime_components_factory));

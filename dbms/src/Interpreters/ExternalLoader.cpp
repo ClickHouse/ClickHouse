@@ -985,7 +985,7 @@ public:
             return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
         }
 
-        return std::chrono::system_clock::now() + std::chrono::seconds(ExternalLoadableBackoff{}.calculateDuration(rnd_engine, error_count));
+        return std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
     }
 
 private:
