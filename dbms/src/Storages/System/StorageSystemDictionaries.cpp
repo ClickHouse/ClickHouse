@@ -7,7 +7,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 
 #include <ext/map.h>
@@ -41,7 +41,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const auto & external_dictionaries = context.getExternalDictionaries();
+    const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & [dict_name, load_result] : external_dictionaries.getCurrentLoadResults())
     {
         size_t i = 0;
