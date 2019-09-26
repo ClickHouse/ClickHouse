@@ -36,7 +36,7 @@ public:
     Buffer & lastPeeked() { return sub_buf.buffer(); }
 
     /// Sets checkpoint at current position
-    inline void setCheckpoint()
+    ALWAYS_INLINE inline void setCheckpoint()
     {
 #ifndef NDEBUG
         if (checkpoint)
@@ -52,7 +52,7 @@ public:
     }
 
     /// Forget checkpoint and all data between checkpoint and position
-    inline void dropCheckpoint()
+    ALWAYS_INLINE inline void dropCheckpoint()
     {
 #ifndef NDEBUG
         if (!checkpoint)
