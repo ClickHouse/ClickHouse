@@ -9,19 +9,6 @@
 namespace DB
 {
 
-struct CachedTable
-{
-    StoragePtr table;
-    time_t last_touched;
-    time_t metadata_modification_time;
-
-    CachedTable() {}
-    CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
-        : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
-};
-
-using TablesCache = std::unordered_map<String, CachedTable>;
-
 class DatabaseLazyIterator;
 
 /** Lazy engine of databases.
@@ -106,6 +93,19 @@ public:
     ~DatabaseLazy() override;
 
 private:
+    struct CachedTable
+    {
+        StoragePtr table;
+        time_t last_touched;
+        time_t metadata_modification_time;
+
+        CachedTable() {}
+        CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
+            : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
+    };
+
+    using TablesCache = std::unordered_map<String, CachedTable>;
+
     String name;
     const String metadata_path;
     const String data_path;
