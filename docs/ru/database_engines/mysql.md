@@ -51,8 +51,7 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 ## Примеры использования
 
 Таблица в MySQL:
-
-```
+```text
 mysql> USE test;
 Database changed
 
@@ -73,7 +72,6 @@ mysql> select * from mysql_table;
 +--------+-------+
 1 row in set (0,00 sec)
 ```
-
 База данных в ClickHouse, позволяющая обмениваться данными с сервером MySQL:
 
 ```sql

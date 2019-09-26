@@ -486,6 +486,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             aggregate_data = emplace_result.getMapped();
 
         places[i] = aggregate_data;
+        assert(places[i] != nullptr);
     }
 
     /// Add values to the aggregate functions.

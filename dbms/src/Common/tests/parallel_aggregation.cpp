@@ -76,20 +76,20 @@ void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator 
 
 void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
-    Map::iterator found;
+    Map::LookupResult found = nullptr;
     auto prev_it = end;
     for (auto it = begin; it != end; ++it)
     {
-        if (*it == *prev_it)
+        if (prev_it != end && *it == *prev_it)
         {
-            ++found->getSecond();
+            ++*lookupResultGetMapped(found);
             continue;
         }
         prev_it = it;
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        ++found->getSecond();
+        ++*lookupResultGetMapped(found);
     }
 }
 
@@ -101,20 +101,20 @@ void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_i
 
 void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
-    MapTwoLevel::iterator found;
+    MapTwoLevel::LookupResult found = nullptr;
     auto prev_it = end;
     for (auto it = begin; it != end; ++it)
     {
         if (*it == *prev_it)
         {
-            ++found->getSecond();
+            ++*lookupResultGetMapped(found);
             continue;
         }
         prev_it = it;
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        ++found->getSecond();
+        ++*lookupResultGetMapped(found);
     }
 }
 
@@ -135,10 +135,10 @@ void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_
 
     for (auto it = begin; it != end; ++it)
     {
-        Map::iterator found = local_map.find(*it);
+        auto found = local_map.find(*it);
 
-        if (found != local_map.end())
-            ++found->getSecond();
+        if (found)
+            ++*lookupResultGetMapped(found);
         else if (local_map.size() < threshold)
             ++local_map[*it];    /// TODO You could do one lookup, not two.
         else
@@ -160,10 +160,10 @@ void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const
 
     for (auto it = begin; it != end; ++it)
     {
-        Map::iterator found;
+        Map::LookupResult found;
         bool inserted;
         local_map.emplace(*it, found, inserted);
-        ++found->getSecond();
+        ++*lookupResultGetMapped(found);
 
         if (inserted && local_map.size() == threshold)
         {
@@ -195,10 +195,10 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Sour
         {
             for (; it != block_end; ++it)
             {
-                Map::iterator found = local_map.find(*it);
+                auto found = local_map.find(*it);
 
-                if (found != local_map.end())
-                    ++found->getSecond();
+                if (found)
+                    ++*lookupResultGetMapped(found);
                 else
                 {
                     size_t hash_value = global_map.hash(*it);

@@ -3,7 +3,7 @@
 #include <time.h>
 #include <errno.h>
 
-#if defined(__APPLE__)
+#if defined(OS_DARWIN)
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 #endif
@@ -19,7 +19,7 @@
   */
 void sleepForNanoseconds(uint64_t nanoseconds)
 {
-# if defined(__APPLE__)
+#if defined(OS_DARWIN)
     //https://developer.apple.com/library/archive/technotes/tn2169/_index.html
     //https://dshil.github.io/blog/missed-os-x-clock-guide/
     static mach_timebase_info_data_t timebase_info = {0};

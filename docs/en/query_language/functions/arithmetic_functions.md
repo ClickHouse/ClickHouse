@@ -4,11 +4,11 @@ For all arithmetic functions, the result type is calculated as the smallest numb
 
 Example:
 
-``` sql
+```sql
 SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
 ```
 
-```
+```text
 ┌─toTypeName(0)─┬─toTypeName(plus(0, 0))─┬─toTypeName(plus(plus(0, 0), 0))─┬─toTypeName(plus(plus(plus(0, 0), 0), 0))─┐
 │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
 └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘

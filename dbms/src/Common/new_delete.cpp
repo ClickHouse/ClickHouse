@@ -1,7 +1,7 @@
-#if defined(__MACH__)
-#include <stdlib.h>
-#else
+#if defined(OS_LINUX)
 #include <malloc.h>
+#elif defined(OS_DARWIN)
+#include <malloc/malloc.h>
 #endif
 #include <new>
 

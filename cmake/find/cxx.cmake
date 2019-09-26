@@ -1,25 +1,11 @@
-if (OS_LINUX AND COMPILER_CLANG)
+if (COMPILER_CLANG)
     option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ON)
     option (USE_INTERNAL_LIBCXX_LIBRARY "Set to FALSE to use system libcxx and libcxxabi libraries instead of bundled" ${NOT_UNBUNDLED})
 endif()
 
 if (USE_LIBCXX)
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
-endif ()
 
-# FIXME: make better check for submodule presence
-if (USE_INTERNAL_LIBCXX_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxx/include/vector")
-    message (WARNING "submodule contrib/libcxx is missing. to fix try run: \n git submodule update --init --recursive")
-    set (USE_INTERNAL_LIBCXX_LIBRARY 0)
-endif ()
-
-# FIXME: make better check for submodule presence
-if (USE_INTERNAL_LIBCXX_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxxabi/src")
-    message (WARNING "submodule contrib/libcxxabi is missing. to fix try run: \n git submodule update --init --recursive")
-    set (USE_INTERNAL_LIBCXX_LIBRARY 0)
-endif ()
-
-if (USE_LIBCXX)
     if (NOT USE_INTERNAL_LIBCXX_LIBRARY)
         find_library (LIBCXX_LIBRARY c++)
         find_library (LIBCXXFS_LIBRARY c++fs)

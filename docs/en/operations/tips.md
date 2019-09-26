@@ -5,7 +5,7 @@
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+$ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations
@@ -20,8 +20,8 @@ For large amounts of data and when processing interactive (online) queries, you 
 Even for data volumes of ~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
 
 Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
-```
-echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```bash
+$ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
 ## Huge Pages
@@ -29,7 +29,7 @@ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
 
 ```bash
-echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+$ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 Use `perf top` to watch the time spent in the kernel for memory management.
@@ -54,7 +54,7 @@ If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAI
 When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
 
 ```bash
-echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
+$ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
@@ -163,7 +163,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 
 Java version:
 
-```
+```text
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
@@ -211,7 +211,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 
 Salt init:
 
-```
+```text
 description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
 start on runlevel [2345]
