@@ -320,6 +320,7 @@ Context Context::createGlobal()
 {
     Context res;
     res.quota = std::make_shared<QuotaForIntervals>();
+    res.shared = std::make_shared<ContextShared>();
     return res;
 }
 
