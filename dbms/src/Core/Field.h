@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <vector>
 #include <algorithm>
 #include <type_traits>
@@ -455,9 +456,16 @@ private:
     template <typename T>
     void createConcrete(T && x)
     {
-        using JustT = std::decay_t<T>;
-        new (&storage) JustT(std::forward<T>(x));
-        which = TypeToEnum<JustT>::value;
+        using UnqualifiedType = std::decay_t<T>;
+        which = TypeToEnum<UnqualifiedType>::value;
+
+        // In both Field and PODArray, small types may be stored as wider types,
+        // e.g. char is stored as UInt64. Field can return this extended value
+        // with get<StorageType>(). To avoid uninitialized results from get(),
+        // we must initialize the entire wide stored type, and not just the
+        // nominal type.
+        using StorageType = NearestFieldType<UnqualifiedType>;
+        new (&storage) StorageType(std::forward<T>(x));
     }
 
     /// Assuming same types.
@@ -465,6 +473,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
+        assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
