@@ -1,6 +1,6 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
-#include <Dictionaries/Embedded/IGeoDictionariesLoader.h>
+#include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Common/setThreadName.h>
@@ -121,7 +121,7 @@ void EmbeddedDictionaries::reloadPeriodically()
 
 
 EmbeddedDictionaries::EmbeddedDictionaries(
-    std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader_,
+    std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader_,
     Context & context_,
     const bool throw_on_error)
     : log(&Logger::get("EmbeddedDictionaries"))

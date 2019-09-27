@@ -12,14 +12,14 @@ namespace DB
 class Context;
 
 /// Manages user-defined models.
-class ExternalModels : public ExternalLoader
+class ExternalModelsLoader : public ExternalLoader
 {
 public:
     using ModelPtr = std::shared_ptr<const IModel>;
 
     /// Models will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalModels(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+    ExternalModelsLoader(
+        std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
         Context & context_);
 
     ModelPtr getModel(const std::string & name) const
