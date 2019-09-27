@@ -27,7 +27,7 @@ AnalyzedJoin::AnalyzedJoin(const Settings & settings)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , join_use_nulls(settings.join_use_nulls)
     , partial_merge_join(settings.partial_merge_join)
-    , partial_merge_join_optimisations(settings.partial_merge_join_optimisations)
+    , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
 {}
 
