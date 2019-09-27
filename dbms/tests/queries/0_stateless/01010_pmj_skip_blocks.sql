@@ -7,7 +7,7 @@ CREATE TABLE t1 (x UInt32, y UInt64) engine = MergeTree ORDER BY (x,y);
 CREATE TABLE t2 (x UInt32, y UInt64) engine = MergeTree ORDER BY (x,y);
 
 SET partial_merge_join = 1;
-SET partial_merge_join_optimisations = 1;
+SET partial_merge_join_optimizations = 1;
 SET partial_merge_join_rows_in_right_blocks = 2;
 SET any_join_distinct_right_table_keys = 1;
 
