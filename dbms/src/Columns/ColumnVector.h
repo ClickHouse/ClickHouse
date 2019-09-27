@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
+#include <Core/Field.h>
 
 
 namespace DB
