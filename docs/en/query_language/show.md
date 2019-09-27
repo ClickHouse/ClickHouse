@@ -1,4 +1,4 @@
-# SHOW statement
+# SHOW Queries
 
 ## SHOW CREATE TABLE
 
