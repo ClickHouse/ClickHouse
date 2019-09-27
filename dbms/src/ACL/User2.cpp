@@ -1,5 +1,4 @@
 #include <ACL/User2.h>
-#include <ACL/IAttributesStorage.h>
 
 
 namespace DB
@@ -17,59 +16,30 @@ namespace AccessControlNames
 }
 
 
-const ConstUser::Type ConstUser::Attributes::TYPE{"User",
-                                                  AccessControlNames::ROLE_NAMESPACE_IDX,
-                                                  &Role::TYPE,
-                                                  ErrorCodes::USER_NOT_FOUND,
-                                                  ErrorCodes::USER_ALREADY_EXISTS};
-
-const ConstUser::Type & ConstUser::TYPE = ConstUser::Attributes::TYPE;
+const User2::Type User2::TYPE{"User",
+                              AccessControlNames::ROLE_NAMESPACE_IDX,
+                              &Role::TYPE,
+                              ErrorCodes::USER_NOT_FOUND,
+                              ErrorCodes::USER_ALREADY_EXISTS};
 
 
-bool ConstUser::Attributes::equal(const IAttributes & other) const
+bool User2::equal(const IAttributes & other) const
 {
-    if (!ConstRole::Attributes::equal(other))
+    if (!Role::equal(other))
         return false;
-    //const auto & o = *other.cast<Attributes>();
+    //const auto & other_user = *other.cast<User2>();
     return true;
 }
 
 
-bool ConstUser::Attributes::hasReferences(const UUID & id) const
+bool User2::hasReferences(const UUID & id) const
 {
-    return ConstRole::Attributes::hasReferences(id);
+    return Role::hasReferences(id);
 }
 
 
-void ConstUser::Attributes::removeReferences(const UUID & id)
+void User2::removeReferences(const UUID & id)
 {
-    ConstRole::Attributes::removeReferences(id);
-}
-
-
-ConstUser::AttributesPtr ConstUser::getAttributes() const
-{
-    return storage.read<Attributes>(id);
-}
-
-
-ConstUser::AttributesPtr ConstUser::tryGetAttributes() const
-{
-    return storage.tryRead<Attributes>(id);
-}
-
-
-void User2::update(const std::function<void(Attributes &)> & update_func)
-{
-    getStorage().update(id, update_func);
-}
-
-
-void User2::drop(bool if_exists)
-{
-    if (if_exists)
-         getStorage().tryRemove(id);
-    else
-         getStorage().remove(id, TYPE);
+    Role::removeReferences(id);
 }
 }

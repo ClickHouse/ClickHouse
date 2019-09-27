@@ -17,7 +17,7 @@ class IControlAttributesDriven
 {
 public:
     using Attributes = IAttributes;
-    using AttributesPtr = ControlAttributesPtr;
+    using AttributesPtr = AttributesPtr;
     using Type = Attributes::Type;
     using Storage = IAttributesStorage;
     using Manager = IAttributesStorageManager;
@@ -117,7 +117,7 @@ public:
     Changes(Changes && src) { then(src); }
     Changes & operator =(Changes && src);
 
-    Changes(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists = false);
+    Changes(InsertTag, Storage & storage, const AttributesPtr & new_attrs, bool if_not_exists = false);
     Changes(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IAttributes &)> & update_func, bool if_exists = false);
 
     template <typename UpdateFunc>
@@ -132,7 +132,7 @@ public:
     Changes & then(const Changes & other);
     Changes & then(Changes && other);
 
-    Changes & then(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists = false);
+    Changes & then(InsertTag, Storage & storage, const AttributesPtr & new_attrs, bool if_not_exists = false);
 
     Changes & then(UpdateTag, Storage & storage, const UUID & id, const Type & type, const std::function<void(IAttributes &)> & update_func, bool if_exists = false);
 

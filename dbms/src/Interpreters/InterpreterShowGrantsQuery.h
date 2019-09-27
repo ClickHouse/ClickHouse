@@ -24,6 +24,7 @@ private:
     const Context & context;
 
     BlockInputStreamPtr executeImpl();
+    std::vector<ASTPtr> enumerateGrantQueries() const;
 };
 
 

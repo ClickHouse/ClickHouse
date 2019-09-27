@@ -12,85 +12,293 @@ String backQuoteIfNeed(const String & x);
 UUID IAttributesStorage::getID(const String & name, const Type & type) const
 {
     auto id = find(name, type);
-    if (!id)
-        throwNotFound(name, type);
-    return *id;
+    if (id)
+        return *id;
+    throwNotFound(name, type);
 }
 
 
-UUID IAttributesStorage::insert(const Attributes & attrs)
+AttributesPtr IAttributesStorage::tryReadHelper(const UUID & id) const
 {
-    AttributesPtr caused_name_collision;
-    auto [id, inserted] = tryInsertImpl(attrs, caused_name_collision);
-    if (inserted)
-        return id;
-    throw Exception(
-        String(attrs.getType().name) + " " + backQuoteIfNeed(attrs.name) + ": couldn't create because "
-            + caused_name_collision->getType().name + " " + backQuoteIfNeed(caused_name_collision->name) + " already exists",
-        caused_name_collision->getType().error_code_already_exists);
+    try
+    {
+        return readImpl(id);
+    }
+    catch (...)
+    {
+        return nullptr;
+    }
 }
 
 
-std::pair<UUID, bool> IAttributesStorage::tryInsert(const Attributes & attrs)
+UUID IAttributesStorage::insert(const IAttributes & attrs)
 {
-    AttributesPtr caused_name_collision;
-    return tryInsertImpl(attrs, caused_name_collision);
+    return insertImpl(attrs);
 }
 
 
-std::pair<UUID, bool> IAttributesStorage::tryInsert(const Attributes & attrs, AttributesPtr & caused_name_collision)
+std::pair<UUID, bool> IAttributesStorage::tryInsert(const IAttributes & attrs)
 {
-    return tryInsertImpl(attrs, caused_name_collision);
+    try
+    {
+        return {insertImpl(attrs), true};
+    }
+    catch (...)
+    {
+        return {UUID(UInt128(0)), false};
+    }
 }
 
 
-void IAttributesStorage::remove(const UUID & id, const Type & type)
+void IAttributesStorage::remove(const std::vector<UUID> & ids)
 {
-    if (!tryRemoveImpl(id))
-        throwNotFound(id, type);
+    std::vector<UUID> failed_to_remove;
+    String exception_message;
+    int exception_code;
+    for (const UUID & id : ids)
+    {
+        try
+        {
+            removeImpl(id);
+        }
+        catch (...)
+        {
+            failed_to_remove.emplace_back(id);
+            exception_message = getCurrentExceptionMessage(false);
+            exception_code = getCurrentExceptionCode();
+        }
+    }
+
+    if (!failed_to_remove.empty())
+    {
+        String msg = "Couldn't remove ";
+        for (size_t i = 0; i != failed_to_remove.size(); ++i)
+            msg += String(i ? ", " : "") + "{" + toString(failed_to_remove[i]) + "}";
+        msg += ": " + exception_message;
+        throw Exception(msg, exception_code);
+    }
+}
+
+
+void IAttributesStorage::remove(const Strings & names, const Type & type)
+{
+    Strings failed_to_remove;
+    String exception_message;
+    int exception_code;
+    for (const String & name : names)
+    {
+        try
+        {
+            removeImpl(getID(name, type));
+        }
+        catch (...)
+        {
+            failed_to_remove.emplace_back(name);
+            exception_message = getCurrentExceptionMessage(false);
+            exception_code = getCurrentExceptionCode();
+        }
+    }
+
+    if (!failed_to_remove.empty())
+    {
+        String msg = "Couldn't remove ";
+        for (size_t i = 0; i != failed_to_remove.size(); ++i)
+            msg += String(i ? ", " : "") + "{" + failed_to_remove[i] + "}";
+        msg += ": " + exception_message;
+        throw Exception(msg, exception_code);
+    }
 }
 
 
 bool IAttributesStorage::tryRemove(const UUID & id)
 {
-    return tryRemoveImpl(id);
+    try
+    {
+        removeImpl(id);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 
-ControlAttributesPtr IAttributesStorage::read(const UUID & id, const Type & type) const
+bool IAttributesStorage::tryRemove(const String & name, const Type & type)
 {
-    auto attrs = tryReadImpl(id);
-    if (!attrs)
-        throwNotFound(id, type);
-    attrs->checkIsDerived(type);
-    return attrs;
+    try
+    {
+        removeImpl(getID(name, type));
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 
-ControlAttributesPtr IAttributesStorage::tryRead(const UUID & id) const
+void IAttributesStorage::tryRemove(const std::vector<UUID> & ids, std::vector<UUID> * failed_to_remove)
 {
-    return tryReadImpl(id);
+    if (failed_to_remove)
+        failed_to_remove->clear();
+    for (const UUID & id : ids)
+    {
+        try
+        {
+            removeImpl(id);
+        }
+        catch (...)
+        {
+            if (failed_to_remove)
+                failed_to_remove->emplace_back(id);
+        }
+    }
 }
 
 
-ControlAttributesPtr IAttributesStorage::tryRead(const UUID & id, const Type & type) const
+void IAttributesStorage::tryRemove(const Strings & names, const Type & type, Strings * failed_to_remove)
 {
-    auto attrs = tryReadImpl(id);
-    if (!attrs || !attrs->isDerived(type))
-        return nullptr;
-    return attrs;
+    if (failed_to_remove)
+        failed_to_remove->clear();
+    for (const String & name : names)
+    {
+        try
+        {
+            removeImpl(getID(name, type));
+        }
+        catch (...)
+        {
+            if (failed_to_remove)
+                failed_to_remove->emplace_back(name);
+        }
+    }
 }
 
 
-void IAttributesStorage::update(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+void IAttributesStorage::updateHelper(const std::vector<UUID> & ids, const UpdateFunc & update_func)
 {
-    updateImpl(id, type, update_func);
+    std::vector<UUID> failed_to_update;
+    String exception_message;
+    int exception_code;
+    for (const UUID & id : ids)
+    {
+        try
+        {
+            updateImpl(id, update_func);
+        }
+        catch (...)
+        {
+            failed_to_update.emplace_back(id);
+            exception_message = getCurrentExceptionMessage(false);
+            exception_code = getCurrentExceptionCode();
+        }
+    }
+
+    if (!failed_to_update.empty())
+    {
+        String msg = "Couldn't update ";
+        for (size_t i = 0; i != failed_to_update.size(); ++i)
+            msg += String(i ? ", " : "") + "{" + toString(failed_to_update[i]) + "}";
+        msg += ": " + exception_message;
+        throw Exception(msg, exception_code);
+    }
 }
 
 
-IAttributesStorage::SubscriptionPtr IAttributesStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & on_changed) const
+void IAttributesStorage::updateHelper(const Strings & names, const Type & type, const UpdateFunc & update_func)
 {
-    return subscribeForChangesImpl(id, on_changed);
+    Strings failed_to_update;
+    String exception_message;
+    int exception_code;
+    for (const String & name : names)
+    {
+        try
+        {
+            updateImpl(getID(name, type), update_func);
+        }
+        catch (...)
+        {
+            failed_to_update.emplace_back(name);
+            exception_message = getCurrentExceptionMessage(false);
+            exception_code = getCurrentExceptionCode();
+        }
+    }
+
+    if (!failed_to_update.empty())
+    {
+        String msg = "Couldn't update ";
+        for (size_t i = 0; i != failed_to_update.size(); ++i)
+            msg += String(i ? ", " : "") + "{" + failed_to_update[i] + "}";
+        msg += ": " + exception_message;
+        throw Exception(msg, exception_code);
+    }
+}
+
+
+bool IAttributesStorage::tryUpdateHelper(const UUID & id, const UpdateFunc & update_func)
+{
+    try
+    {
+        updateImpl(id, update_func);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+
+bool IAttributesStorage::tryUpdateHelper(const String & name, const Type & type, const UpdateFunc & update_func)
+{
+    try
+    {
+        updateImpl(getID(name, type), update_func);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+
+void IAttributesStorage::tryUpdateHelper(const std::vector<UUID> & ids, const UpdateFunc & update_func, std::vector<UUID> * failed_to_update)
+{
+    if (failed_to_update)
+        failed_to_update->clear();
+    for (const UUID & id : ids)
+    {
+        try
+        {
+            updateImpl(id, update_func);
+        }
+        catch (...)
+        {
+            if (failed_to_update)
+                failed_to_update->emplace_back(id);
+        }
+    }
+}
+
+
+void IAttributesStorage::tryUpdateHelper(const Strings & names, const Type & type, const UpdateFunc & update_func, Strings * failed_to_update)
+{
+    if (failed_to_update)
+        failed_to_update->clear();
+    for (const String & name : names)
+    {
+        try
+        {
+            updateImpl(getID(name, type), update_func);
+        }
+        catch (...)
+        {
+            if (failed_to_update)
+                failed_to_update->emplace_back(name);
+        }
+    }
 }
 
 
@@ -102,7 +310,8 @@ UUID IAttributesStorage::generateRandomID()
     return id;
 }
 
-void IAttributesStorage::throwNotFound(const UUID & id, const Type & type)
+
+void IAttributesStorage::throwNotFound(const UUID & id)
 {
     throw Exception(String(type.name) + " {" + toString(id) + "} not found", type.error_code_not_found);
 }
@@ -114,11 +323,20 @@ void IAttributesStorage::throwNotFound(const String & name, const Type & type)
 }
 
 
-void IAttributesStorage::throwCannotRenameNewNameIsUsed(const String & name, const Type & type, const String & existing_name, const Type & existing_type)
+void IAttributesStorage::throwNameCollisionCannotInsert(const String & name, const Type & type, const Type & type_of_existing)
 {
     throw Exception(
-        String(type.name) + " " + backQuoteIfNeed(name) + ": cannot rename to " + backQuoteIfNeed(existing_name) + " because " + existing_type.name
-            + " " + backQuoteIfNeed(existing_name) + " already exists",
-        existing_type.error_code_already_exists);
+        String(type.name) + " " + backQuoteIfNeed(name) + ": cannot insert because " + type_of_existing + " " + backQuoteIfNeed(name)
+            + " already exists",
+        type.error_code_already_exists);
+}
+
+
+void IAttributesStorage::throwNameCollisionCannotRename(const String & old_name, const String & new_name, const Type & type, const Type & type_of_existing)
+{
+    throw Exception(
+        String(type.name) + " " + backQuoteIfNeed(old_name) + ": cannot rename to " + backQuoteIfNeed(new_name) + " because "
+            + type_of_existing + " " + backQuoteIfNeed(new_name) + " already exists",
+        type.error_code_already_exists);
 }
 }

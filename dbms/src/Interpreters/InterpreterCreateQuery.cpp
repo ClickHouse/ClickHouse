@@ -669,16 +669,22 @@ BlockIO InterpreterCreateQuery::execute()
         /// CREATE|ATTACH TABLE
         return createTable(create);
     }
-    else if (create.role_attributes)
+    else if (create.role)
     {
         /// CREATE ROLE
-        context.getAccessControlManager().create<Role>(*create.role_attributes, create.if_not_exists);
+        if (create.if_not_exists)
+            context.getAccessControlManager().tryInsert(*create.role);
+        else
+            context.getAccessControlManager().insert(*create.role);
         return {};
     }
-    else if (create.user_attributes)
+    else if (create.user)
     {
         /// CREATE USER
-        context.getAccessControlManager().create<User2>(*create.user_attributes, create.if_not_exists);
+        if (create.if_not_exists)
+            context.getAccessControlManager().tryInsert(*create.user);
+        else
+            context.getAccessControlManager().insert(*create.user);
         return {};
     }
 

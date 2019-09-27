@@ -164,8 +164,8 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
 
 String ASTCreateQuery::getID(char delim) const
 {
-    if (role_attributes)
-        return "CreateQuery" + delim + role_attributes->name;
+    if (role)
+        return "CreateQuery" + delim + role->name;
     return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table;
 }
 
@@ -273,26 +273,26 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
 bool ASTCreateQuery::formatCreateRoleQuery(const FormatSettings & settings) const
 {
-    if (!role_attributes)
+    if (!role)
         return false;
     settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "CREATE ROLE "
                   << (if_not_exists ? "IF NOT EXISTS " : "")
                   << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(role_attributes->name);
+                  << backQuoteIfNeed(role->name);
     return true;
 }
 
 
 bool ASTCreateQuery::formatCreateUserQuery(const FormatSettings & settings) const
 {
-    if (!user_attributes)
+    if (!user)
         return false;
     settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "CREATE USER "
                   << (if_not_exists ? "IF NOT EXISTS " : "")
                   << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(user_attributes->name);
+                  << backQuoteIfNeed(user->name);
     return true;
 }
 }

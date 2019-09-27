@@ -107,7 +107,7 @@ IAttributesStorage * IControlAttributesDriven::tryGetStorage() const
 }
 
 
-ControlAttributesPtr IControlAttributesDriven::getAttributes() const
+AttributesPtr IControlAttributesDriven::getAttributes() const
 {
     auto attrs = tryGetAttributes();
     if (!attrs)
@@ -116,7 +116,7 @@ ControlAttributesPtr IControlAttributesDriven::getAttributes() const
 }
 
 
-ControlAttributesPtr IControlAttributesDriven::tryGetAttributes() const
+AttributesPtr IControlAttributesDriven::tryGetAttributes() const
 {
     tryGetStorage();
     tryGetID();
@@ -236,7 +236,7 @@ void IControlAttributesDriven::throwNotFound()
 }
 
 
-IControlAttributesDriven::Changes::Changes(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists)
+IControlAttributesDriven::Changes::Changes(InsertTag, Storage & storage, const AttributesPtr & new_attrs, bool if_not_exists)
 {
     then(InsertTag{}, storage, new_attrs, if_not_exists);
 }
@@ -305,7 +305,7 @@ IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(Chan
 }
 
 
-IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(InsertTag, Storage & storage, const ControlAttributesPtr & new_attrs, bool if_not_exists)
+IControlAttributesDriven::Changes & IControlAttributesDriven::Changes::then(InsertTag, Storage & storage, const AttributesPtr & new_attrs, bool if_not_exists)
 {
     auto & change = addChange(storage);
     change.change_type = Storage::ChangeType::INSERT;

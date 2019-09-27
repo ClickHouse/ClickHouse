@@ -60,7 +60,7 @@ protected:
     virtual bool equal(const IAttributes & other) const;
 };
 
-using ControlAttributesPtr = std::shared_ptr<const IAttributes>;
+using AttributesPtr = std::shared_ptr<const IAttributes>;
 
 
 template <typename AttributesT>

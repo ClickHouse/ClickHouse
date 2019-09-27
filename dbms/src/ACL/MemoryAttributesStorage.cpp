@@ -15,7 +15,7 @@ const String & MemoryAttributesStorage::getStorageName() const
 }
 
 
-std::vector<UUID> MemoryAttributesStorage::findPrefixed(const String & prefix, const Type & type) const
+std::vector<UUID> MemoryAttributesStorage::findPrefixedImpl(const String & prefix, const Type & type) const
 {
     std::lock_guard lock{mutex};
     size_t namespace_idx = type.namespace_idx;
@@ -47,7 +47,7 @@ std::vector<UUID> MemoryAttributesStorage::findPrefixed(const String & prefix, c
 }
 
 
-std::optional<UUID> MemoryAttributesStorage::find(const String & name, const Type & type) const
+std::optional<UUID> MemoryAttributesStorage::findImpl(const String & name, const Type & type) const
 {
     std::lock_guard lock{mutex};
     size_t namespace_idx = type.namespace_idx;
@@ -63,17 +63,27 @@ std::optional<UUID> MemoryAttributesStorage::find(const String & name, const Typ
 }
 
 
-bool MemoryAttributesStorage::exists(const UUID & id) const
+bool MemoryAttributesStorage::existsImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     return entries.count(id);
 }
 
 
-std::pair<UUID, bool> MemoryAttributesStorage::tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision)
+AttributesPtr MemoryAttributesStorage::readImpl(const UUID & id) const
+{
+    std::lock_guard lock{mutex};
+    auto it = entries.find(id);
+    if (it == entries.end())
+        throwNotFound(id);
+    const Entry & entry = it->second;
+    return entry.attrs;
+}
+
+
+UUID MemoryAttributesStorage::insertImpl(const IAttributes & attrs)
 {
     std::unique_lock lock{mutex};
-    caused_name_collision = nullptr;
     size_t namespace_idx = attrs.getType().namespace_idx;
     if (namespace_idx >= all_names.size())
         all_names.resize(namespace_idx + 1);
@@ -83,8 +93,8 @@ std::pair<UUID, bool> MemoryAttributesStorage::tryInsertImpl(const Attributes & 
     auto it = names.find(attrs.name);
     if (it != names.end())
     {
-        caused_name_collision = entries.at(it->second).attrs;
-        return {it->second, false};
+        auto existing = entries.at(it->second).attrs;
+        throwNameCollisionCannotInsert(attrs.name, attrs.getType(), existing->getType());
     }
 
     /// Generate a new ID.
@@ -116,16 +126,16 @@ std::pair<UUID, bool> MemoryAttributesStorage::tryInsertImpl(const Attributes & 
     lock.unlock();
     for (const auto & fn : notify_list)
         fn(id);
-    return {id, true};
+    return id;
 }
 
 
-bool MemoryAttributesStorage::tryRemoveImpl(const UUID & id)
+void MemoryAttributesStorage::removeImpl(const UUID & id)
 {
     std::unique_lock lock{mutex};
     auto it = entries.find(id);
     if (it == entries.end())
-        return false;
+        throwNotFound(id);
 
     Entry & entry = it->second;
     size_t namespace_idx = entry.attrs->getType().namespace_idx;
@@ -158,31 +168,18 @@ bool MemoryAttributesStorage::tryRemoveImpl(const UUID & id)
     lock.unlock();
     for (const auto & [fn, param] : notify_list)
         fn(param);
-    return true;
 }
 
 
-ControlAttributesPtr MemoryAttributesStorage::tryReadImpl(const UUID & id) const
-{
-    std::lock_guard lock{mutex};
-    auto it = entries.find(id);
-    if (it == entries.end())
-        return nullptr;
-    const Entry & entry = it->second;
-    return entry.attrs;
-}
-
-
-void MemoryAttributesStorage::updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+void MemoryAttributesStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
 {
     std::unique_lock lock{mutex};
 
     auto it = entries.find(id);
     if (it == entries.end())
-        throwNotFound(id, type);
+        throwNotFound(id);
 
     Entry & entry = it->second;
-    entry.attrs->checkIsDerived(type);
     size_t namespace_idx = entry.attrs->getType().namespace_idx;
     auto & names = all_names[namespace_idx];
 
@@ -197,8 +194,10 @@ void MemoryAttributesStorage::updateImpl(const UUID & id, const Type & type, con
     if (new_attrs->name != old_attrs->name)
     {
         if (names.count(new_attrs->name))
-            throwCannotRenameNewNameIsUsed(
-                old_attrs->name, old_attrs->getType(), new_attrs->name, entries.at(names.at(new_attrs->name)).attrs->getType());
+        {
+            auto existing = entries.at(names.at(new_attrs->name)).attrs;
+            throwNameCollisionCannotRename(old_attrs->name, new_attrs->name, old_attrs->getType(), existing->getType());
+        }
 
         names.erase(old_attrs->name);
         names.emplace(new_attrs->name, id);

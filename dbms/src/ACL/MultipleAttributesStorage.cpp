@@ -36,7 +36,7 @@ const String & MultipleAttributesStorage::getStorageName() const
 }
 
 
-std::vector<UUID> MultipleAttributesStorage::findPrefixed(const String & prefix, const Type & type) const
+std::vector<UUID> MultipleAttributesStorage::findPrefixedImpl(const String & prefix, const Type & type) const
 {
     std::vector<UUID> all_ids;
     for (const auto & nested_storage : nested_storages)
@@ -48,7 +48,7 @@ std::vector<UUID> MultipleAttributesStorage::findPrefixed(const String & prefix,
 }
 
 
-std::optional<UUID> MultipleAttributesStorage::find(const String & name, const Type & type) const
+std::optional<UUID> MultipleAttributesStorage::findImpl(const String & name, const Type & type) const
 {
     std::unique_lock lock{mutex};
     auto from_cache = names_and_types_cache.get({name, &type});
@@ -56,8 +56,8 @@ std::optional<UUID> MultipleAttributesStorage::find(const String & name, const T
     {
         const auto [id, storage] = *from_cache;
         lock.unlock();
-        if (storage->exists(*id))
-            return *id;
+        if (id == storage->find(name, type))
+            return id;
     }
     else
         lock.unlock();
@@ -78,7 +78,7 @@ std::optional<UUID> MultipleAttributesStorage::find(const String & name, const T
 }
 
 
-bool MultipleAttributesStorage::exists(const UUID & id) const
+bool MultipleAttributesStorage::existsImpl(const UUID & id) const
 {
     return findStorageByID(id) != nullptr;
 }
@@ -112,78 +112,41 @@ IAttributesStorage * MultipleAttributesStorage::findStorageByID(const UUID & id)
 }
 
 
-std::pair<UUID, bool> MultipleAttributesStorage::tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision)
-{
-    auto [id, inserted] = nested_storage_for_insertion->tryInsert(attrs, caused_name_collision);
-    if (inserted)
-    {
-        std::lock_guard lock{mutex};
-        names_and_types_cache.set({attrs.name, &attrs.getType()}, std::make_shared<IDAndStorage>(id, nested_storage_for_insertion));
-        ids_cache.set(id, std::make_shared<Storage *>(nested_storage_for_insertion));
-    }
-    return {id, inserted};
-}
-
-
-bool MultipleAttributesStorage::tryRemoveImpl(const UUID & id)
-{
-    std::unique_lock lock{mutex};
-    auto from_cache = ids_cache.get(id);
-    if (from_cache)
-    {
-        auto * storage = *from_cache;
-        lock.unlock();
-        if (storage->tryRemove(id))
-            return true;
-    }
-    else
-        lock.unlock();
-
-    for (const auto & nested_storage : nested_storages)
-    {
-        if (nested_storage->tryRemove(id))
-            return true;
-    }
-
-    return false;
-}
-
-
-ControlAttributesPtr MultipleAttributesStorage::tryReadImpl(const UUID & id) const
-{
-    std::unique_lock lock{mutex};
-    auto from_cache = ids_cache.get(id);
-    if (from_cache)
-    {
-        auto * storage = *from_cache;
-        lock.unlock();
-        auto attrs = storage->tryRead(id);
-        if (attrs)
-            return attrs;
-    }
-    else
-        lock.unlock();
-
-    for (const auto & nested_storage : nested_storages)
-    {
-        auto attrs = nested_storage->tryRead(id);
-        if (attrs)
-        {
-            lock.lock();
-            ids_cache.set(id, std::make_shared<Storage *>(nested_storage.get()));
-            return attrs;
-        }
-    }
-
-    return nullptr;
-}
-
-void MultipleAttributesStorage::updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func)
+IAttributesStorage & MultipleAttributesStorage::getStorageByID(const UUID & id) const
 {
     auto * storage = findStorageByID(id);
-    if (!storage)
-        throwNotFound(id, type);
-    storage->update(id, type, update_func);
+    if (storage)
+        return *storage;
+    throwNotFound(id);
+}
+
+AttributesPtr MultipleAttributesStorage::readImpl(const UUID & id) const
+{
+    return getStorageByID(id).read(id);
+}
+
+
+UUID MultipleAttributesStorage::insertImpl(const IAttributes & attrs)
+{
+    auto id = nested_storage_for_insertion->insert(attrs);
+
+    std::lock_guard lock{mutex};
+    names_and_types_cache.set({attrs.name, &attrs.getType()}, std::make_shared<IDAndStorage>(id, nested_storage_for_insertion));
+    ids_cache.set(id, std::make_shared<Storage *>(nested_storage_for_insertion));
+
+    return id;
+}
+
+
+void MultipleAttributesStorage::removeImpl(const UUID & id)
+{
+    getStorageByID(id).remove(id);
+}
+
+
+void MultipleAttributesStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
+{
+    getStorageByID(id).update(id, update_func);
 }
 
 

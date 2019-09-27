@@ -67,8 +67,8 @@ public:
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
-    Role::AttributesPtr role_attributes;
-    User2::AttributesPtr user_attributes;
+    RolePtr role;
+    User2Ptr user;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override;

@@ -47,12 +47,18 @@ BlockIO InterpreterDropQuery::execute()
         return executeToDatabase(drop.database, drop.kind, drop.if_exists);
     else if (!drop.roles.empty())
     {
-        context.getAccessControlManager().drop<Role>(drop.roles, drop.if_exists);
+        if (drop.if_exists)
+            context.getAccessControlManager().tryRemove<Role>(drop.roles);
+        else
+            context.getAccessControlManager().remove<Role>(drop.roles);
         return {};
     }
     else if (!drop.users.empty())
     {
-        context.getAccessControlManager().drop<User2>(drop.users, drop.if_exists);
+        if (drop.if_exists)
+            context.getAccessControlManager().tryRemove<User2>(drop.users);
+        else
+            context.getAccessControlManager().remove<User2>(drop.users);
         return {};
     }
     else

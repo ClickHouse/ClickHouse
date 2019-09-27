@@ -15,22 +15,22 @@ public:
 
     MultipleAttributesStorage(std::vector<std::unique_ptr<Storage>> nested_storages_, size_t index_of_nested_storage_for_insertion_ = 0);
     ~MultipleAttributesStorage() override;
-
     const String & getStorageName() const override;
-    std::vector<UUID> findPrefixed(const String & prefix, const Type & type) const override;
-    std::optional<UUID> find(const String & name, const Type & type) const override;
-    bool exists(const UUID & id) const override;
 
 protected:
-    std::pair<UUID, bool> tryInsertImpl(const Attributes & attrs, AttributesPtr & caused_name_collision) override;
-    bool tryRemoveImpl(const UUID & id) override;
-    AttributesPtr tryReadImpl(const UUID & id) const override;
-    void updateImpl(const UUID & id, const Type & type, const std::function<void(Attributes &)> & update_func) override;
-    SubscriptionPtr subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const override;
+    std::vector<UUID> findPrefixedImpl(const String & prefix, const Type & type) const override;
+    std::optional<UUID> findImpl(const String & name, const Type & type) const override;
+    bool existsImpl(const UUID & id) const override;
+    AttributesPtr readImpl(const UUID & id) const override;
+    UUID insertImpl(const IAttributes & attrs) override;
+    void removeImpl(const UUID & id) override;
+    void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     SubscriptionPtr subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const override;
+    SubscriptionPtr subscribeForChangesImpl(const UUID & id, const OnChangedHandler & on_changed) const override;
 
 private:
     Storage * findStorageByID(const UUID & id) const;
+    Storage & getStorageByID(const UUID & id) const;
 
     class SubscriptionForNew;
 
@@ -38,7 +38,7 @@ private:
     IAttributesStorage * nested_storage_for_insertion;
 
     using NameAndType = std::pair<String, const Type *>;
-    using IDAndStorage = std::pair<std::optional<UUID>, Storage *>;
+    using IDAndStorage = std::pair<UUID, Storage *>;
 
     struct NameAndTypeHash
     {
