@@ -329,8 +329,8 @@ SELECT * FROM system.metrics LIMIT 10
 - `engine` (`String`) – имя движка таблицы, без параметров.
 - `path` (`String`) – абсолютный путь к папке с файлами кусков данных..
 - `hash_of_all_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) для сжатых файлов.
-- `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) для распакованных данных.
-- `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) для файла с засечками.
+- `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
+- `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
 - `bytes` (`UInt64`) – алиас для `bytes_on_disk`.
 - `marks_size` (`UInt64`) – алиас для `marks_bytes`.
 

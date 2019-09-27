@@ -337,8 +337,8 @@ Columns:
 - `engine` (`String`) – Name of the table engine without parameters.
 - `path` (`String`) – Absolute path to the folder with data part files.
 - `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
-- `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed data.
-- `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of the file with marks.
+- `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
+- `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
 - `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
 - `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
