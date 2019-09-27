@@ -54,10 +54,10 @@ Features:
 
 Features:
 
-- Connect with multiple sources (include ClickHouse).
-- Autocompletion.
-- Write queries in their natural syntax and explore schemas.
-- Data plotting
+- Connect with multiple sources (including ClickHouse).
+- Autocompletion query editor.
+- Schema/Database explorer.
+- Data plotting.
 - Create snippets for elements you frequently use.
 - Use query results as data sources to join different databases.
 
