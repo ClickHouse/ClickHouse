@@ -689,7 +689,7 @@ InterpreterSelectQuery::analyzeExpressions(
 }
 
 
-BlockInputStreamPtr InterpreterSelectQuery::createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, ExpressionActionsPtr expression)
+BlockInputStreamPtr InterpreterSelectQuery::createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const
 {
     for (const auto & action : expression->getActions())
     {

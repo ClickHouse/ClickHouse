@@ -615,7 +615,7 @@ std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
     return {};
 }
 
-void collectCanShortCircuitSet(ASTPtr & ast, NameSet & need_check_empty_sets)
+void collectCanShortCircuitSet(const ASTPtr & ast, NameSet & need_check_empty_sets)
 {
     if (const auto * function = ast->as<ASTFunction>())
     {
