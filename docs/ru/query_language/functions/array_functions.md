@@ -647,18 +647,18 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 └─────────┘
 ```
 
-## arrayUniq(arr, ...)
+## arrayUniq(arr, ...) {#array_functions-arrayuniq}
 
 Если передан один аргумент, считает количество разных элементов в массиве.
 Если передано несколько аргументов, считает количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
 
 Если необходимо получить список уникальных элементов массива, можно воспользоваться arrayReduce('groupUniqArray', arr).
 
-## arrayJoin(arr)
+## arrayJoin(arr) {#array_functions-arrayjoin}
 
 Особенная функция. Смотрите раздел ["Функция arrayJoin"](array_join.md#functions_arrayjoin).
 
-## arrayDifference(arr)
+## arrayDifference(arr) {#array_functions-arraydifference}
 
 Принимает массив, возвращает массив разностей между соседними элементами. Первым элементом будет 0, вторым разность между вторым и первым элементами исходного массива, и т.д.
 Результирующий массив имеет тип Array(Int64) для целых чисел и Array(Float64) для чисел с плавающей точкой. Другие типы, в том числе Decimal, не поддерживаются.
@@ -687,7 +687,7 @@ SELECT arrayDifference([0, 10000000000000000000])
 └────────────────────────────────────────────┘
 ```
 
-## arrayDistinct(arr)
+## arrayDistinct(arr) {#array_functions-arraydistinct}
 
 Принимает массив, возвращает массив, содержащий уникальные элементы. 
 
@@ -703,7 +703,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1])
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr)
+## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
 Возвращает массив того же размера, что и исходный массив, с индексами исходного массива, указывающими, где каждый элемент впервые появляется в исходном массиве.
 
@@ -719,7 +719,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 └───────────────────────────────────────┘
 ```
 
-## arrayIntersect(arr)
+## arrayIntersect(arr) {#array_functions-arrayintersect}
 
 Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах. Элементы на выходе следуют в порядке следования в первом массиве.
 
@@ -737,7 +737,7 @@ SELECT
 └──────────────┴───────────┘
 ```
 
-## arrayReduce(agg_func, arr1, ...)
+## arrayReduce(agg_func, arr1, ...) {#array_functions-arrayreduce}
 
 Применяет агрегатную функцию к элементам массива и возвращает ее результат. Имя агрегирующей функции передается как строка в одинарных кавычках `'max'`, `'sum'`. При использовании параметрических агрегатных функций, параметр указывается после имени функции в круглых скобках `'uniqUpTo(6)'`.
 
@@ -779,7 +779,7 @@ SELECT arrayReduce('uniqUpTo(6)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr)
+## arrayReverse(arr) {#array_functions-arrayreverse}
 
 Возвращает массив того же размера, что и исходный массив, содержащий элементы в обратном порядке.
 
@@ -794,9 +794,9 @@ SELECT arrayReverse([1, 2, 3])
 └─────────────────────────┘
 ```
 
-# reverse(arr)
+# reverse(arr) {#array_functions-reverse}
 
-Синоним для ["arrayReverse"](array_functions.md#arrayReverse)
+Синоним для ["arrayReverse"](#array_functions-arrayreverse)
 
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_functions/) <!--hide-->
