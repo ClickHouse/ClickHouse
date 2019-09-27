@@ -619,7 +619,7 @@ void collectCanShortCircuitSet(ASTPtr & ast, NameSet & need_check_empty_sets)
 {
     if (const auto * function = ast->as<ASTFunction>())
     {
-        if (function->name == "in")
+        if (function->name == "in" || function->name == "globalIn")
         {
             for (size_t i = 0; i < function->arguments->children.size(); ++i)
             {
