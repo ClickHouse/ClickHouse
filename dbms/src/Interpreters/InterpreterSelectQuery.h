@@ -254,7 +254,7 @@ private:
     void initSettings();
 
     /// Whether you need to check if the set is empty before ExpressionActions is executed. Create a CheckNonEmptySetBlockInputStream if needed.
-    BlockInputStreamPtr createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, ExpressionActionsPtr expression);
+    BlockInputStreamPtr createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const;
 
     const SelectQueryOptions options;
     ASTPtr query_ptr;
