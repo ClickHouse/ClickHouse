@@ -1,5 +1,11 @@
 # Type Conversion Functions
 
+## Common Issues of Numeric Conversions {#numeric-conversion-issues}
+
+When you convert a value from one to another data type, you should remember that in common case, it is an unsafe operation that can lead to a data loss. A data loss can occur if you try to fit value from a larger data type to a smaller data type, or if you convert values between different data types.
+
+ClickHouse has the [same behavior as C++ programs](https://www.learncpp.com/cpp-tutorial/44-implicit-type-conversion-coercion/)
+
 ## toInt(8|16|32|64)
 
 Converts an input value to the [Int](../../data_types/int_uint.md) data type. This function family includes:
@@ -19,7 +25,7 @@ Integer value in the `Int8`, `Int16`, `Int32`, or `Int64` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behavior of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
+The behavior of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -55,7 +61,7 @@ Integer value in the `UInt8`, `UInt16`, `UInt32`, or `UInt64` data type.
 
 Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behavior of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception.
+The behavior of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
