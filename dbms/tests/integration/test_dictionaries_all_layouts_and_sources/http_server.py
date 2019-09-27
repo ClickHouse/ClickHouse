@@ -9,9 +9,9 @@ import csv
 # Decorator used to see if authentification works for external dictionary who use a HTTP source.
 def check_auth(fn):
     def wrapper(req):
-        auth_header = self.headers.get('Authorization', None)
-        api_key = self.headers.get('api-key', None)
-        if not auth_header or auth_header != 'Zm9vOmJhcg==' or not api_key or api_key != 'secret':
+        auth_header = req.headers.get('authorization', None)
+        api_key = req.headers.get('api-key', None)
+        if not auth_header or auth_header != 'Basic Zm9vOmJhcg==' or not api_key or api_key != 'secret':
             req.send_response(401)
         else:
             fn(req)
