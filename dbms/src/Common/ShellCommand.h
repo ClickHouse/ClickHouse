@@ -33,6 +33,8 @@ private:
     ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_);
 
     static Poco::Logger * getLogger();
+    
+    /// Print command name and the list of arguments to log. NOTE: No escaping of arguments is performed.
     static void logCommand(const char * filename, char * const argv[]);
 
     static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor);
