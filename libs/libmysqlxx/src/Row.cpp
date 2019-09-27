@@ -1,5 +1,5 @@
-#if __has_include(<mariadb/mysql.h>)
-#include <mariadb/mysql.h>
+#if __has_include(<mysql.h>)
+#include <mysql.h>
 #else
 #include <mysql/mysql.h>
 #endif
