@@ -770,7 +770,7 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 Пример с параметрической агрегатной функцией:
 
 ```sql
-SELECT arrayReduce('uniqUpTo(6)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ```
 
 ```text
