@@ -4,7 +4,7 @@
 
 When you convert a value from one to another data type, you should remember that in common case, it is an unsafe operation that can lead to a data loss. A data loss can occur if you try to fit value from a larger data type to a smaller data type, or if you convert values between different data types.
 
-ClickHouse has the [same behavior as C++ programs](https://www.learncpp.com/cpp-tutorial/44-implicit-type-conversion-coercion/)
+ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
 ## toInt(8|16|32|64)
 
