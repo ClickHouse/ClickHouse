@@ -4,8 +4,8 @@
 #include <Core/Names.h>
 
 
-namespace DB {
-
+namespace DB
+{
 
 class CheckNonEmptySetBlockInputStream : public IBlockInputStream
 {
