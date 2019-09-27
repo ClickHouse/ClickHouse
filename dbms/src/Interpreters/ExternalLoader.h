@@ -121,47 +121,28 @@ public:
 
     static constexpr Duration NO_TIMEOUT = Duration::max();
 
-    /// Starts loading of a specified object.
-    void load(const String & name) const;
-
     /// Tries to finish loading of a specified object during the timeout.
     /// Returns nullptr if the loading is unsuccessful or if there is no such object.
     void load(const String & name, LoadablePtr & loaded_object, Duration timeout = NO_TIMEOUT) const;
-    void load(const String & name, LoadResult & load_result, Duration timeout = NO_TIMEOUT) const;
     LoadablePtr loadAndGet(const String & name, Duration timeout = NO_TIMEOUT) const { LoadablePtr object; load(name, object, timeout); return object; }
     LoadablePtr tryGetLoadable(const String & name) const { return loadAndGet(name); }
 
     /// Tries to finish loading of a specified object during the timeout.
     /// Throws an exception if the loading is unsuccessful or if there is no such object.
     void loadStrict(const String & name, LoadablePtr & loaded_object) const;
-    void loadStrict(const String & name, LoadResult & load_result) const;
-    LoadablePtr loadAndGetStrict(const String & name) const { LoadablePtr object; loadStrict(name, object); return object; }
-    LoadablePtr getLoadable(const String & name) const { return loadAndGetStrict(name); }
-
-    /// Tries to start loading of the objects for which the specified function returns true.
-    void load(const FilterByNameFunction & filter_by_name) const;
+    LoadablePtr getLoadable(const String & name) const { LoadablePtr object; loadStrict(name, object); return object; }
 
     /// Tries to finish loading of the objects for which the specified function returns true.
     void load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
-    void load(const FilterByNameFunction & filter_by_name, LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
     Loadables loadAndGet(const FilterByNameFunction & filter_by_name, Duration timeout = NO_TIMEOUT) const { Loadables loaded_objects; load(filter_by_name, loaded_objects, timeout); return loaded_objects; }
-
-    /// Starts loading of all the objects.
-    void load() const;
 
     /// Tries to finish loading of all the objects during the timeout.
     void load(Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
-    void load(LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
 
     /// Starts reloading of a specified object.
     /// `load_never_loading` specifies what to do if the object has never been loading before.
     /// The function can either skip it (false) or load for the first time (true).
     void reload(const String & name, bool load_never_loading = false);
-
-    /// Starts reloading of the objects for which the specified function returns true.
-    /// `load_never_loading` specifies what to do with the objects which have never been loading before.
-    /// The function can either skip them (false) or load for the first time (true).
-    void reload(const FilterByNameFunction & filter_by_name, bool load_never_loading = false);
 
     /// Starts reloading of all the objects.
     /// `load_never_loading` specifies what to do with the objects which have never been loading before.
@@ -175,7 +156,6 @@ private:
     struct ObjectConfig;
 
     LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
-    TimePoint calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const;
 
     class ConfigFilesReader;
     std::unique_ptr<ConfigFilesReader> config_files_reader;
