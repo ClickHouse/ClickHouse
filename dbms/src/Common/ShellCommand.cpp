@@ -63,12 +63,14 @@ void ShellCommand::logCommand(const char * filename, char * const argv[])
 {
     std::stringstream log_message;
     log_message << "Will start shell command '" << filename << "' with arguments ";
-    for (int i = 0; argv != nullptr && argv[i] != nullptr; i++)
+    for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
     {
         if (i > 0)
         {
             log_message << ", ";
         }
+        
+        /// NOTE: No escaping is performed.
         log_message << "'" << argv[i] << "'";
     }
     LOG_TRACE(ShellCommand::getLogger(), log_message.str());
