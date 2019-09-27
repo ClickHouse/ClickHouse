@@ -26,6 +26,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+template <typename T>
+struct NearestFieldTypeImpl;
+
+template <typename T>
+using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
+
 class Field;
 using Array = std::vector<Field>;
 using TupleBackend = std::vector<Field>;
@@ -623,7 +629,6 @@ template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; 
 template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
 
 
-template <typename T> struct NearestFieldTypeImpl;
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
@@ -667,10 +672,7 @@ template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
 template <typename T>
-using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
-
-template <typename T>
-decltype(auto) nearestFieldType(T && x)
+decltype(auto) castToNearestFieldType(T && x)
 {
     using U = NearestFieldType<std::decay_t<T>>;
     if constexpr (std::is_same_v<std::decay_t<T>, U>)
@@ -689,7 +691,7 @@ decltype(auto) nearestFieldType(T && x)
 template <typename T>
 Field::Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *>)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
@@ -697,7 +699,7 @@ template <typename T>
 std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
 Field::operator= (T && rhs)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     using U = decltype(val);
     if (which != TypeToEnum<std::decay_t<U>>::value)
     {
