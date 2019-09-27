@@ -1,4 +1,3 @@
-project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
 
 foreach(policy
@@ -13,6 +12,7 @@ foreach(policy
     endif()
 endforeach()
 
+project(ClickHouse)
 include (cmake/target.cmake)
 
 # Ignore export() since we don't use it,
@@ -348,7 +348,7 @@ include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
-# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
+# When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
@@ -367,7 +367,7 @@ elseif (USE_TCMALLOC)
     endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
-else ()
+elseif (OS_LINUX)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
@@ -376,8 +376,29 @@ include (cmake/print_flags.cmake)
 install (EXPORT global DESTINATION cmake)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+macro (add_executable target)
+    # invoke built-in add_executable
+    _add_executable (${ARGV})
+    get_target_property (type ${target} TYPE)
+    if (${type} STREQUAL EXECUTABLE)
+        set_property (GLOBAL APPEND PROPERTY CLICKHOUSE_EXECUTABLES ${target})
+    endif()
+endmacro()
+
+set_property (GLOBAL PROPERTY CLICKHOUSE_EXECUTABLES "")
 add_subdirectory (libs)
 add_subdirectory (utils)
+get_property (executables GLOBAL PROPERTY CLICKHOUSE_EXECUTABLES)
+foreach (executable ${executables})
+    target_link_libraries (${executable} PRIVATE ${MALLOC_LIBRARIES})
+endforeach ()
+
+set_property (GLOBAL PROPERTY CLICKHOUSE_EXECUTABLES "")
 add_subdirectory (dbms)
+get_property (executables GLOBAL PROPERTY CLICKHOUSE_EXECUTABLES)
+foreach (executable ${executables})
+    target_link_libraries (${executable} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+endforeach ()
 
 include (cmake/print_include_directories.cmake)
