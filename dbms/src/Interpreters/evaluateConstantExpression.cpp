@@ -50,7 +50,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
 
-    /// Expressions like rand() or now() is not constant
+    /// Expressions like rand() or now() are not constant
     if (!isColumnConst(result_column))
         throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column is not const): " + name, ErrorCodes::BAD_ARGUMENTS);
 
