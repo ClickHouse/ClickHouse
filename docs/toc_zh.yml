@@ -109,6 +109,7 @@ nav:
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
   - 'SYSTEM': 'query_language/system.md'
+  - 'SHOW': 'query_language/show.md'
   - '其他类型的查询': 'query_language/misc.md'
   - '函数':
     - '介绍': 'query_language/functions/index.md'
