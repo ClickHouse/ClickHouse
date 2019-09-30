@@ -181,6 +181,12 @@ public:
     Context & operator=(const Context &);
     ~Context();
 
+    /// allowed URL from config.xml
+    std::unordered_set<std::string> & getAllowedPrimaryUrlHosts() const;
+    void setAllowedPrimaryUrlHosts(const std::unordered_set<std::string> & url_set);
+    std::vector<std::string> & getAllowedRegexpUrlHosts() const;
+    void setAllowedRegexpUrlHosts(const std::vector<std::string> & url_vec);
+
     String getPath() const;
     String getTemporaryPath() const;
     String getFlagsPath() const;
