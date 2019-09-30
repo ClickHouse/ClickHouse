@@ -3,6 +3,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <memory>
 #include <string>
 #include <set>
 
