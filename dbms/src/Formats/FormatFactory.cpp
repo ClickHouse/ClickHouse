@@ -48,9 +48,9 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
-    format_settings.template_settings.format = settings.format_schema;
-    format_settings.template_settings.row_format = settings.format_schema_rows;
-    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
+    format_settings.template_settings.resultset_format = settings.format_template_resultset;
+    format_settings.template_settings.row_format = settings.format_template_row;
+    format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
 
     return format_settings;
 }
@@ -67,9 +67,9 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
-    format_settings.template_settings.format = settings.format_schema;
-    format_settings.template_settings.row_format = settings.format_schema_rows;
-    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
+    format_settings.template_settings.resultset_format = settings.format_template_resultset;
+    format_settings.template_settings.row_format = settings.format_template_row;
+    format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
 
