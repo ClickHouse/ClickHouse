@@ -48,15 +48,15 @@ public:
         repositories.emplace_back(std::move(repository), std::move(settings));
     }
 
-    using ObjectConfigs = std::shared_ptr<const std::unordered_map<String /* object's name */, ObjectConfig>>;
+    using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, ObjectConfig>>;
 
     /// Reads configuration files.
-    ObjectConfigs read(bool ignore_last_modification_time = false)
+    ObjectConfigsPtr read()
     {
         std::lock_guard lock{mutex};
 
         // Check last modification times of files and read those files which are new or changed.
-        if (!readFileInfos(ignore_last_modification_time))
+        if (!readFileInfos())
             return configs; // Nothing changed, so we can return the previous result.
 
         // Generate new result.
@@ -86,13 +86,13 @@ public:
 private:
     struct FileInfo
     {
-        Poco::Timestamp last_modification_time;
+        Poco::Timestamp last_modification_time = 0;
         std::vector<std::pair<String, ObjectConfig>> configs; // Parsed file's contents.
         bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
     };
 
     /// Read files and store them to the map `file_infos`.
-    bool readFileInfos(bool ignore_last_modification_time)
+    bool readFileInfos()
     {
         bool changed = false;
 
@@ -111,13 +111,13 @@ private:
                 if (it != file_infos.end())
                 {
                     FileInfo & file_info = it->second;
-                    if (readFileInfo(*repository, path, settings, ignore_last_modification_time, file_info))
+                    if (readFileInfo(*repository, path, settings, file_info))
                         changed = true;
                 }
                 else
                 {
                     FileInfo file_info;
-                    if (readFileInfo(*repository, path, settings, true, file_info))
+                    if (readFileInfo(*repository, path, settings, file_info))
                     {
                         file_infos.emplace(path, std::move(file_info));
                         changed = true;
@@ -143,7 +143,6 @@ private:
         ExternalLoaderConfigRepository & repository,
         const String & path,
         const ExternalLoaderConfigSettings & settings,
-        bool ignore_last_modification_time,
         FileInfo & file_info) const
     {
         try
@@ -155,7 +154,7 @@ private:
             }
 
             Poco::Timestamp last_modification_time = repository.getLastModificationTime(path);
-            if (!ignore_last_modification_time && (last_modification_time <= file_info.last_modification_time))
+            if (last_modification_time <= file_info.last_modification_time)
             {
                 file_info.in_use = true;
                 return false;
@@ -206,7 +205,7 @@ private:
 
     std::mutex mutex;
     std::vector<std::pair<std::unique_ptr<ExternalLoaderConfigRepository>, ExternalLoaderConfigSettings>> repositories;
-    ObjectConfigs configs;
+    ObjectConfigsPtr configs;
     std::unordered_map<String /* config path */, FileInfo> file_infos;
 };
 
@@ -249,10 +248,10 @@ public:
         }
     }
 
-    using ObjectConfigs = ConfigFilesReader::ObjectConfigs;
+    using ObjectConfigsPtr = ConfigFilesReader::ObjectConfigsPtr;
 
     /// Sets new configurations for all the objects.
-    void setConfiguration(const ObjectConfigs & new_configs)
+    void setConfiguration(const ObjectConfigsPtr & new_configs)
     {
         std::lock_guard lock{mutex};
         if (configs == new_configs)
@@ -869,7 +868,7 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable event;
-    ObjectConfigs configs;
+    ObjectConfigsPtr configs;
     std::unordered_map<String, Info> infos;
     bool always_load_everything = false;
     bool enable_async_loading = false;
