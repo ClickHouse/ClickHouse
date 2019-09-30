@@ -56,7 +56,7 @@ private:
 
     bool shouldDeduceNewTemplate(size_t column_idx);
 
-    void readSuffix() { buf.assertCanBeDestructed(); }
+    void readSuffix();
 
     bool skipToNextRow(size_t min_chunk_size = 0, int balance = 0);
 

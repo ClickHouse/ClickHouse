@@ -3,6 +3,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
 PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/,
                                                               size_t unread_limit_ /* = default_limit*/)
         : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_), unread_limit(unread_limit_)
@@ -179,15 +185,15 @@ void PeekableReadBuffer::checkStateCorrect() const
 #endif
 }
 
-size_t PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
+void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
 {
     checkStateCorrect();
-    bool needUpdateCheckpoint = checkpointInOwnMemory();
-    bool needUpdatePos = currentlyReadFromOwnMemory();
+    bool need_update_checkpoint = checkpointInOwnMemory();
+    bool need_update_pos = currentlyReadFromOwnMemory();
     size_t offset = 0;
-    if (needUpdateCheckpoint)
+    if (need_update_checkpoint)
         offset = checkpoint - memory.data();
-    else if (needUpdatePos)
+    else if (need_update_pos)
         offset = this->offset();
 
     size_t new_size = peeked_size + bytes_to_append;
@@ -200,13 +206,10 @@ size_t PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
             memmove(memory.data(), memory.data() + offset, peeked_size);
             bytes += offset;
 
-            if (needUpdateCheckpoint)
+            if (need_update_checkpoint)
                 checkpoint -= offset;
-            if (needUpdatePos)
+            if (need_update_pos)
                 pos -= offset;
-
-            checkStateCorrect();
-            return 0;
         }
         else
         {
@@ -222,17 +225,15 @@ size_t PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
                 new_size_amortized = unread_limit;
             memory.resize(new_size_amortized);
 
-            if (needUpdateCheckpoint)
+            if (need_update_checkpoint)
                 checkpoint = memory.data() + offset;
-            if (needUpdatePos)
+            if (need_update_pos)
             {
                 BufferBase::set(memory.data(), peeked_size, pos_offset);
             }
         }
     }
-
     checkStateCorrect();
-    return offset;
 }
 
 void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
@@ -258,29 +259,9 @@ PeekableReadBuffer::~PeekableReadBuffer()
         sub_buf.position() = pos;
 }
 
-std::shared_ptr<BufferWithOwnMemory<ReadBuffer>> PeekableReadBuffer::takeUnreadData()
+bool PeekableReadBuffer::hasUnreadData() const
 {
-    checkStateCorrect();
-    if (!currentlyReadFromOwnMemory())
-        return std::make_shared<BufferWithOwnMemory<ReadBuffer>>(0);
-    size_t unread_size = memory.data() + peeked_size - pos;
-    auto unread = std::make_shared<BufferWithOwnMemory<ReadBuffer>>(unread_size);
-    memcpy(unread->buffer().begin(), pos, unread_size);
-    unread->BufferBase::set(unread->buffer().begin(), unread_size, 0);
-    peeked_size = 0;
-    checkpoint = nullptr;
-    checkpoint_in_own_memory = false;
-    BufferBase::set(sub_buf.buffer().begin(), sub_buf.buffer().size(), sub_buf.offset());
-    checkStateCorrect();
-    return unread;
-}
-
-void PeekableReadBuffer::assertCanBeDestructed() const
-{
-    if (peeked_size && pos != memory.data() + peeked_size)
-        throw DB::Exception("There are data, which were extracted from sub-buffer, but not from peekable buffer. "
-                            "Cannot destruct peekable buffer correctly because tha data will be lost. "
-                            "Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+    return peeked_size && pos != memory.data() + peeked_size;
 }
 
 }

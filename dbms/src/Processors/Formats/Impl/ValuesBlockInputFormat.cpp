@@ -374,6 +374,12 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
     return false;
 }
 
+void ValuesBlockInputFormat::readSuffix()
+{
+    if (buf.hasUnreadData())
+        throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+}
+
 
 void registerInputFormatProcessorValues(FormatFactory & factory)
 {
