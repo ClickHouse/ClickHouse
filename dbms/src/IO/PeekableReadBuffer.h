@@ -5,16 +5,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int LOGICAL_ERROR;
-}
-
-/// Allows to peek next part of data from sub-buffer without extracting it.
-/// Also allows to set checkpoint at some position in stream and come back to this position later,
-/// even if next() was called.
-/// Sub-buffer should not be accessed directly during the lifelime of peekable buffer.
+/// Also allows to set checkpoint at some position in stream and come back to this position later.
+/// When next() is called, saves data between checkpoint and current position to own memory and loads next data to sub-buffer
+/// Sub-buffer should not be accessed directly during the lifetime of peekable buffer.
 /// If position() of peekable buffer is explicitly set to some position before checkpoint
 /// (e.g. by istr.position() = prev_pos), behavior is undefined.
 class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
@@ -24,16 +17,7 @@ public:
     explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE,
                                                        size_t unread_limit_ = 16 * DBMS_DEFAULT_BUFFER_SIZE);
 
-    /// Use takeUnreadData() to extract unread data before destruct object
     ~PeekableReadBuffer() override;
-
-    /// Saves unread data to own memory, so it will be possible to read it later. Loads next data to sub-buffer.
-    /// Doesn't change checkpoint and position in stream,
-    /// but all pointers (such as this->buffer().end() and this->position()) may be invalidated
-    /// @returns false in case of EOF in sub-buffer, otherwise returns true
-    bool peekNext();
-
-    Buffer & lastPeeked() { return sub_buf.buffer(); }
 
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
@@ -71,17 +55,18 @@ public:
     /// All pointers (such as this->buffer().end()) may be invalidated
     void rollbackToCheckpoint();
 
+    /// If checkpoint and current position are in different buffers, appends data from sub-buffer to own memory,
+    /// so data between checkpoint and position will be in continuous memory.
     void makeContinuousMemoryFromCheckpointToPos();
 
-    /// If position is in own memory, returns buffer with data, which were extracted from sub-buffer,
-    /// but not from this buffer, so the data will not be lost after destruction of this buffer.
-    /// If position is in sub-buffer, returns empty buffer.
-    std::shared_ptr<BufferWithOwnMemory<ReadBuffer>> takeUnreadData();
-    void assertCanBeDestructed() const;
+    /// Returns true if there unread data extracted from sub-buffer in own memory.
+    /// This data will be lost after destruction of peekable buffer.
+    bool hasUnreadData() const;
 
 private:
-
     bool nextImpl() override;
+
+    bool peekNext();
 
     inline bool useSubbufferOnly() const { return !peeked_size; }
     inline bool currentlyReadFromOwnMemory() const { return working_buffer.begin() != sub_buf.buffer().begin(); }
@@ -91,8 +76,7 @@ private:
 
     /// Makes possible to append `bytes_to_append` bytes to data in own memory.
     /// Updates all invalidated pointers and sizes.
-    /// @returns new offset of unread data in own memory
-    size_t resizeOwnMemoryIfNecessary(size_t bytes_to_append);
+    void resizeOwnMemoryIfNecessary(size_t bytes_to_append);
 
 
     ReadBuffer & sub_buf;
