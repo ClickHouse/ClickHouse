@@ -1,12 +1,14 @@
-#include <Common/config.h>
-#if USE_POCO_NETSSL
+#include "MySQLProtocol.h"
+
+#if USE_SSL
+
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <common/logger_useful.h>
+
 #include <random>
 #include <sstream>
-#include "MySQLProtocol.h"
 
 
 namespace DB::MySQLProtocol
@@ -102,4 +104,5 @@ size_t getLengthEncodedStringSize(const String & s)
 }
 
 }
-#endif
+
+#endif // USE_SSL

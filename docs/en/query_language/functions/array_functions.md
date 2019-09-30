@@ -49,7 +49,7 @@ Returns an 'Array(T)' type result, where 'T' is the smallest common type out of 
 
 Combines arrays passed as arguments.
 
-```
+```sql
 arrayConcat(arrays)
 ```
 
@@ -82,9 +82,10 @@ Returns 0 if the the element is not in the array, or 1 if it is.
 
 `NULL` is processed as a value.
 
-```
+```sql
 SELECT has([1, 2, NULL], NULL)
-
+```
+```text
 ┌─has([1, 2, NULL], NULL)─┐
 │                       1 │
 └─────────────────────────┘
@@ -94,7 +95,7 @@ SELECT has([1, 2, NULL], NULL)
 
 Checks whether one array is a subset of another.
 
-```
+```sql
 hasAll(set, subset)
 ```
 
@@ -132,7 +133,7 @@ hasAll(set, subset)
 
 Checks whether two arrays have intersection by some elements.
 
-```
+```sql
 hasAny(array1, array2)
 ```
 
@@ -169,10 +170,10 @@ Returns the index of the first 'x' element (starting from 1) if it is in the arr
 
 Example:
 
-```
-:) SELECT indexOf([1,3,NULL,NULL],NULL)
-
+```sql
 SELECT indexOf([1, 3, NULL, NULL], NULL)
+```
+```text
 
 ┌─indexOf([1, 3, NULL, NULL], NULL)─┐
 │                                 3 │
@@ -189,9 +190,10 @@ Returns the number of elements in the array equal to x. Equivalent to arrayCount
 
 Example:
 
-```
+```sql
 SELECT countEqual([1, 2, NULL, NULL], NULL)
-
+```
+```text
 ┌─countEqual([1, 2, NULL, NULL], NULL)─┐
 │                                    2 │
 └──────────────────────────────────────┘
@@ -293,7 +295,7 @@ This is necessary when using ARRAY JOIN with a nested data structure and further
 
 Removes the last item from the array.
 
-```
+```sql
 arrayPopBack(array)
 ```
 
@@ -316,7 +318,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res
 
 Removes the first item from the array.
 
-```
+```sql
 arrayPopFront(array)
 ```
 
@@ -339,7 +341,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res
 
 Adds one item to the end of the array.
 
-```
+```sql
 arrayPushBack(array, single_value)
 ```
 
@@ -363,7 +365,7 @@ SELECT arrayPushBack(['a'], 'b') AS res
 
 Adds one element to the beginning of the array.
 
-```
+```sql
 arrayPushFront(array, single_value)
 ```
 
@@ -387,7 +389,7 @@ SELECT arrayPushBack(['b'], 'a') AS res
 
 Changes the length of the array.
 
-```
+```sql
 arrayResize(array, size[, extender])
 ```
 
@@ -405,17 +407,19 @@ An array of length `size`.
 
 **Examples of calls**
 
-```
+```sql
 SELECT arrayResize([1], 3)
-
+```
+```text
 ┌─arrayResize([1], 3)─┐
 │ [1,0,0]             │
 └─────────────────────┘
 ```
 
-```
+```sql
 SELECT arrayResize([1], 3, NULL)
-
+```
+```text
 ┌─arrayResize([1], 3, NULL)─┐
 │ [1,NULL,NULL]             │
 └───────────────────────────┘
@@ -425,7 +429,7 @@ SELECT arrayResize([1], 3, NULL)
 
 Returns a slice of the array.
 
-```
+```sql
 arraySlice(array, offset[, length])
 ```
 
@@ -653,7 +657,7 @@ Takes an array, returns an array with the difference between all pairs of neighb
 SELECT arrayDifference([1, 2, 3, 4])
 ```
 
-```
+```text
 ┌─arrayDifference([1, 2, 3, 4])─┐
 │ [0,1,1,1]                     │
 └───────────────────────────────┘
@@ -661,13 +665,13 @@ SELECT arrayDifference([1, 2, 3, 4])
 
 ## arrayDistinct(arr)
 
-Takes an array, returns an array containing the different elements in all the arrays. For example:
+Takes an array, returns an array containing the distinct elements. For example:
 
 ```sql
 SELECT arrayDistinct([1, 2, 2, 3, 1])
 ```
 
-```
+```text
 ┌─arrayDistinct([1, 2, 2, 3, 1])─┐
 │ [1,2,3]                        │
 └────────────────────────────────┘
@@ -687,7 +691,7 @@ SELECT
     arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
 ```
 
-```
+```text
 ┌─no_intersect─┬─intersect─┐
 │ []           │ [1]       │
 └──────────────┴───────────┘

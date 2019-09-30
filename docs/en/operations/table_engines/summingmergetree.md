@@ -7,7 +7,7 @@ We recommend to use the engine together with `MergeTree`. Store complete data in
 
 ## Creating a Table
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -38,7 +38,7 @@ When creating a `SummingMergeTree` table the same [clauses](mergetree.md) are re
 !!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -68,8 +68,8 @@ ORDER BY key
 
 Insert data to it:
 
-```
-:) INSERT INTO summtt Values(1,1),(1,2),(2,1)
+```sql
+INSERT INTO summtt Values(1,1),(1,2),(2,1)
 ```
 
 ClickHouse may sum all the rows not completely ([see below](#data-processing)), so we use an aggregate function `sum` and `GROUP BY` clause in the query.
@@ -78,7 +78,7 @@ ClickHouse may sum all the rows not completely ([see below](#data-processing)), 
 SELECT key, sum(value) FROM summtt GROUP BY key
 ```
 
-```
+```text
 ┌─key─┬─sum(value)─┐
 │   2 │          1 │
 │   1 │          3 │
@@ -119,7 +119,7 @@ then this nested table is interpreted as a mapping of `key => (values...)`, and 
 
 Examples:
 
-```
+```text
 [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
 [(1, 100)] + [(1, 150)] -> [(1, 250)]
 [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]

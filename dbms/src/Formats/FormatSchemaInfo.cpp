@@ -26,28 +26,33 @@ namespace
 }
 
 
-FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & format)
+FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & format_schema, const String & format, bool require_message)
 {
-    String format_schema = context.getSettingsRef().format_schema.toString();
     if (format_schema.empty())
         throw Exception(
-            "The format " + format + " requires a schema. The 'format_schema' setting should be set", ErrorCodes::BAD_ARGUMENTS);
+            "The format " + format + " requires a schema. The corresponding setting should be set", ErrorCodes::BAD_ARGUMENTS);
 
     String default_file_extension = getFormatSchemaDefaultFileExtension(format);
 
-    size_t colon_pos = format_schema.find(':');
     Poco::Path path;
-    if ((colon_pos == String::npos) || (colon_pos == 0) || (colon_pos == format_schema.length() - 1)
-        || path.assign(format_schema.substr(0, colon_pos)).makeFile().getFileName().empty())
+    if (require_message)
     {
-        throw Exception(
-            "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
-                + (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'") + ". Got '" + format_schema
-                + "'",
-            ErrorCodes::BAD_ARGUMENTS);
-    }
+        size_t colon_pos = format_schema.find(':');
+        if ((colon_pos == String::npos) || (colon_pos == 0) || (colon_pos == format_schema.length() - 1)
+            || path.assign(format_schema.substr(0, colon_pos)).makeFile().getFileName().empty())
+        {
+            throw Exception(
+                    "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
+                    + (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'") +
+                    ". Got '" + format_schema
+                    + "'",
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
 
-    message_name = format_schema.substr(colon_pos + 1);
+        message_name = format_schema.substr(colon_pos + 1);
+    }
+    else
+        path.assign(format_schema).makeFile().getFileName();
 
     auto default_schema_directory = [&context]()
     {

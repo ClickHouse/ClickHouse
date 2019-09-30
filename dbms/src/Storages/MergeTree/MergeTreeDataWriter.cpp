@@ -47,7 +47,7 @@ void buildScatterSelector(
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = hash128(i, columns.size(), columns);
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         bool inserted;
         partitions_map.emplace(key, it, inserted);
 
@@ -57,7 +57,7 @@ void buildScatterSelector(
                 throw Exception("Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).", ErrorCodes::TOO_MANY_PARTS);
 
             partition_num_to_first_row.push_back(i);
-            it->getSecond() = partitions_count;
+            *lookupResultGetMapped(it) = partitions_count;
 
             ++partitions_count;
 
@@ -70,7 +70,7 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->getSecond();
+            selector[i] = *lookupResultGetMapped(it);
     }
 }
 

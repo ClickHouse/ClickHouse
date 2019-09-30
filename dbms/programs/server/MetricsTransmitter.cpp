@@ -21,6 +21,7 @@ MetricsTransmitter::MetricsTransmitter(
 {
     interval_seconds = config.getInt(config_name + ".interval", 60);
     send_events = config.getBool(config_name + ".events", true);
+    send_events_cumulative = config.getBool(config_name + ".events_cumulative", false);
     send_metrics = config.getBool(config_name + ".metrics", true);
     send_asynchronous_metrics = config.getBool(config_name + ".asynchronous_metrics", true);
 }
@@ -92,6 +93,16 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 
             std::string key{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
             key_vals.emplace_back(profile_events_path_prefix + key, counter_increment);
+        }
+    }
+
+    if (send_events_cumulative)
+    {
+        for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+        {
+            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+            std::string key{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
+            key_vals.emplace_back(profile_events_cumulative_path_prefix + key, counter);
         }
     }
 

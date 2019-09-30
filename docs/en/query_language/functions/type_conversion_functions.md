@@ -1,26 +1,31 @@
-
 # Type Conversion Functions
+
+## Common Issues of Numeric Conversions {#numeric-conversion-issues}
+
+When you convert a value from one to another data type, you should remember that in common case, it is an unsafe operation that can lead to a data loss. A data loss can occur if you try to fit value from a larger data type to a smaller data type, or if you convert values between different data types.
+
+ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
 ## toInt(8|16|32|64)
 
-Converts an input value to the [Int](../../data_types/int_uint.md) data type. This functions family includes:
+Converts an input value to the [Int](../../data_types/int_uint.md) data type. This function family includes:
 
-* `toInt8(expr)` — Results in `Int8` data type.
-* `toInt16(expr)` — Results in `Int16` data type.
-* `toInt32(expr)` — Results in `Int32` data type.
-* `toInt64(expr)` — Results in `Int64` data type.
+* `toInt8(expr)` — Results in the `Int8` data type.
+* `toInt16(expr)` — Results in the `Int16` data type.
+* `toInt32(expr)` — Results in the `Int32` data type.
+* `toInt64(expr)` — Results in the `Int64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
-Integer value in `Int8`, `Int16`, `Int32` or `Int64` data type.
+Integer value in the `Int8`, `Int16`, `Int32`, or `Int64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behaviour of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined.
+The behavior of functions for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -39,24 +44,24 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toUInt(8|16|32|64)
 
-Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This functions family includes:
+Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This function family includes:
 
-* `toUInt8(expr)` — Results in `UInt8` data type.
-* `toUInt16(expr)` — Results in `UInt16` data type.
-* `toUInt32(expr)` — Results in `UInt32` data type.
-* `toUInt64(expr)` — Results in `UInt64` data type.
+* `toUInt8(expr)` — Results in the `UInt8` data type.
+* `toUInt16(expr)` — Results in the `UInt16` data type.
+* `toUInt32(expr)` — Results in the `UInt32` data type.
+* `toUInt64(expr)` — Results in the `UInt64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
-Integer value in `UInt8`, `UInt16`, `UInt32` or `UInt64` data type.
+Integer value in the `UInt8`, `UInt16`, `UInt32`, or `UInt64` data type.
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), they truncate fraction digits of numbers.
+Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning they truncate fractional digits of numbers.
 
-The behaviour of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass the string with negative number, for example `'-32'`, ClickHouse rises an exception.
+The behavior of functions for negative agruments and for the [NaN and Inf](../../data_types/float.md#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric convertions issues](#numeric-conversion-issues), when using the functions.
 
 **Example**
 
@@ -194,7 +199,7 @@ When converting dates with times to numbers or vice versa, the date with time co
 
 The date and date-with-time formats for the toDate/toDateTime functions are defined as follows:
 
-```
+```text
 YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
@@ -207,13 +212,13 @@ Conversion between numeric types uses the same rules as assignments between diff
 
 Additionally, the toString function of the DateTime argument can take a second String argument containing the name of the time zone. Example: `Asia/Yekaterinburg` In this case, the time is formatted according to the specified time zone.
 
-``` sql
+```sql
 SELECT
     now() AS now_local,
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
 ```
 
-```
+```text
 ┌───────────now_local─┬─now_yekat───────────┐
 │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
 └─────────────────────┴─────────────────────┘
@@ -232,21 +237,21 @@ Accepts a String or FixedString argument. Returns the String with the content tr
 
 Example:
 
-``` sql
+```sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```
+```text
 ┌─s─────────────┬─s_cut─┐
 │ foo\0\0\0\0\0 │ foo   │
 └───────────────┴───────┘
 ```
 
-``` sql
+```sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```
+```text
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
@@ -278,7 +283,7 @@ Converts 'x' to the 't' data type. The syntax CAST(x AS t) is also supported.
 
 Example:
 
-``` sql
+```sql
 SELECT
     '2016-06-15 23:00:00' AS timestamp,
     CAST(timestamp AS DateTime) AS datetime,
@@ -287,7 +292,7 @@ SELECT
     CAST(timestamp, 'FixedString(22)') AS fixed_string
 ```
 
-```
+```text
 ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
@@ -297,16 +302,19 @@ Conversion to FixedString(N) only works for arguments of type String or FixedStr
 
 Type conversion to [Nullable](../../data_types/nullable.md) and back is supported. Example:
 
-```
+```sql
 SELECT toTypeName(x) FROM t_null
-
+```
+```text
 ┌─toTypeName(x)─┐
 │ Int8          │
 │ Int8          │
 └───────────────┘
-
+```
+```sql
 SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
-
+```
+```text
 ┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
 │ Nullable(UInt16)                        │
 │ Nullable(UInt16)                        │
@@ -328,7 +336,7 @@ SELECT
     date + interval_to_week
 ```
 
-```
+```text
 ┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
 │                2019-01-08 │                   2019-01-08 │
 └───────────────────────────┴──────────────────────────────┘
