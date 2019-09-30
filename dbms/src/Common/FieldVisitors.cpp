@@ -72,9 +72,8 @@ String FieldVisitorDump::operator() (const Array & x) const
     return wb.str();
 }
 
-String FieldVisitorDump::operator() (const Tuple & x_def) const
+String FieldVisitorDump::operator() (const Tuple & x) const
 {
-    auto & x = x_def.toUnderType();
     WriteBufferFromOwnString wb;
 
     wb << "Tuple_(";
@@ -149,9 +148,8 @@ String FieldVisitorToString::operator() (const Array & x) const
     return wb.str();
 }
 
-String FieldVisitorToString::operator() (const Tuple & x_def) const
+String FieldVisitorToString::operator() (const Tuple & x) const
 {
-    auto & x = x_def.toUnderType();
     WriteBufferFromOwnString wb;
 
     wb << '(';
@@ -209,6 +207,16 @@ void FieldVisitorHash::operator() (const String & x) const
     hash.update(type);
     hash.update(x.size());
     hash.update(x.data(), x.size());
+}
+
+void FieldVisitorHash::operator() (const Tuple & x) const
+{
+    UInt8 type = Field::Types::Tuple;
+    hash.update(type);
+    hash.update(x.size());
+
+    for (const auto & elem : x)
+        applyVisitor(*this, elem);
 }
 
 void FieldVisitorHash::operator() (const Array & x) const

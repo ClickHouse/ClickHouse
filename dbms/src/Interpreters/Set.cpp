@@ -246,7 +246,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
         else if (const auto * func = elem->as<ASTFunction>())
         {
             Field function_result;
-            const TupleBackend * tuple = nullptr;
+            const Tuple * tuple = nullptr;
             if (func->name != "tuple")
             {
                 if (!tuple_type)
@@ -257,7 +257,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
                     throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
                                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-                tuple = &function_result.get<Tuple>().toUnderType();
+                tuple = &function_result.get<Tuple>();
             }
 
             size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();

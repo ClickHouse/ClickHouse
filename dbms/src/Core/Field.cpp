@@ -152,9 +152,8 @@ namespace DB
         buf.write(res.data(), res.size());
     }
 
-    void readBinary(Tuple & x_def, ReadBuffer & buf)
+    void readBinary(Tuple & x, ReadBuffer & buf)
     {
-        auto & x = x_def.toUnderType();
         size_t size;
         DB::readBinary(size, buf);
 
@@ -231,9 +230,8 @@ namespace DB
         }
     }
 
-    void writeBinary(const Tuple & x_def, WriteBuffer & buf)
+    void writeBinary(const Tuple & x, WriteBuffer & buf)
     {
-        auto & x = x_def.toUnderType();
         const size_t size = x.size();
         DB::writeBinary(size, buf);
 
@@ -292,7 +290,12 @@ namespace DB
 
     void writeText(const Tuple & x, WriteBuffer & buf)
     {
-        DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
+        writeFieldText(DB::Field(x), buf);
+    }
+
+    void writeFieldText(const Field & x, WriteBuffer & buf)
+    {
+        DB::String res = applyVisitor(DB::FieldVisitorToString(), x);
         buf.write(res.data(), res.size());
     }
 
