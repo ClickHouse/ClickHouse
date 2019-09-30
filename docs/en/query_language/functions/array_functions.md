@@ -651,7 +651,7 @@ A special function. See the section ["ArrayJoin function"](array_join.md#functio
 
 ## arrayDifference(arr) {#array_functions-arraydifference}
 
-Takes an array, returns an array of differences between adjacent elements. The first element will be 0, the second is the difference between the second and first elements of the original array, etc. The type of elements in the resulting array is determined by the rules for type inference by subtraction (e.g. UInt8 - UInt8 = Int16). UInt * / Int * / Float * types are supported (Decimal type is not supported).
+Takes an array, returns an array of differences between adjacent elements. The first element will be 0, the second is the difference between the second and first elements of the original array, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. UInt8 - UInt8 = Int16). UInt*/Int*/Float* types are supported (type Decimal is not supported).
 
 Example:
 
@@ -679,7 +679,9 @@ SELECT arrayDifference([0, 10000000000000000000])
 
 ## arrayDistinct(arr) {#array_functions-arraydistinct}
 
-Takes an array, returns an array containing the distinct elements. For example:
+Takes an array, returns an array containing the distinct elements. 
+
+Example:
 
 ```sql
 SELECT arrayDistinct([1, 2, 2, 3, 1])
@@ -709,7 +711,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 ## arrayIntersect(arr) {#array_functions-arrayintersect}
 
-Takes multiple arrays, returns an array with elements present in all source arrays. Elements at the output follow in the order in the first array.
+Takes multiple arrays, returns an array with elements that are present in all source arrays. Elements order in the resulting array is the same as in the first array.
 
 Example:
 
@@ -741,7 +743,7 @@ SELECT arrayReduce('max', [1, 2, 3])
 └───────────────────────────────┘
 ```
 
-If aggregate function has multiple arguments, then this function can be applied to multiple arrays of the same size.
+If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
 Example:
 
