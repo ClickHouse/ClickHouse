@@ -20,10 +20,13 @@ public:
     {
     }
 
+    /// Return set of .xml files from path in main_config (config_key)
     std::set<std::string> getAllLoadablesDefinitionNames() const override;
 
+    /// Checks that file with name exists on filesystem
     bool exists(const std::string & definition_entity_name) const override;
 
+    /// Checks that file was updated since last check
     bool isUpdated(const std::string & definition_entity_name) override;
 
     /// May contain definition about several entities (several dictionaries in one .xml file)
