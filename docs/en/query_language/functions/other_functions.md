@@ -653,14 +653,14 @@ The response to the request shows that ClickHouse applied the index in the same 
 
 Because the index is sparse in ClickHouse, "extra" data ends up in the response when reading a range (in this case, the adjacent dates). Use the `indexHint` function to see it.
 
-## replicate
+## replicate {#other_functions-replicate}
 
 Creates an array with a single value.
 
 Used for internal implementation of [arrayJoin](array_join.md#functions_arrayjoin).
 
 ```sql
-replicate(x, arr)
+SELECT replicate(x, arr);
 ```
 
 **Parameters:**
@@ -668,15 +668,22 @@ replicate(x, arr)
 - `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
 - `x` — The value that the resulting array will be filled with.
 
-**Output value**
+**Returned value**
 
-- An array filled with the value `x`.
+An array filled with the value `x`.
+
+Type: `Array`.
 
 **Example**
+
+Query:
 
 ```sql
 SELECT replicate(1, ['a', 'b', 'c'])
 ```
+
+Result:
+
 ```text
 ┌─replicate(1, ['a', 'b', 'c'])─┐
 │ [1,1,1]                       │
