@@ -66,6 +66,8 @@ private:
         size_t max_block_size) const;
 
     virtual Block getHeaderBlock(const Names & column_names) const = 0;
+
+    bool checkHostWhitelist(const std::string & host); ///return true if host allowed
 };
 
 

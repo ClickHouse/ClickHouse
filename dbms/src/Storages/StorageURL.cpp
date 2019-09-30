@@ -15,6 +15,9 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/NumberFormatter.h>
+
+#include <../../contrib/re2/re2/re2.h>
 
 
 namespace DB
@@ -22,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNACCEPTABLE_URL;
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -34,6 +38,9 @@ IStorageURLBase::IStorageURLBase(
     const ConstraintsDescription & constraints_)
     : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
+    if (!checkHostWhitelist(uri.getHost()) &&
+        !checkHostWhitelist(uri.getHost() + ":" + Poco::NumberFormatter::format(uri.getPort())))
+        throw Exception("Unacceptable URL.", ErrorCodes::UNACCEPTABLE_URL);
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -220,5 +227,23 @@ void registerStorageURL(StorageFactory & factory)
 
         return StorageURL::create(uri, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
     });
+}
+
+bool IStorageURLBase::checkHostWhitelist(const std::string & host) {
+    const std::unordered_set<std::string> primary_hosts = context_global.getAllowedPrimaryUrlHosts();
+    const std::vector<std::string> regexp_hosts = context_global.getAllowedRegexpUrlHosts();
+    if (!(primary_hosts.empty() && regexp_hosts.empty()))
+    {
+        if (primary_hosts.find(host) == primary_hosts.end())
+        {
+            bool flag = false;
+            for (size_t i = 0; i < regexp_hosts.size() && !flag; ++i)
+                if (re2::RE2::FullMatch(host, regexp_hosts[i]))
+                    flag = true;
+            return flag;
+        }
+        return true;
+    }
+    return true;
 }
 }

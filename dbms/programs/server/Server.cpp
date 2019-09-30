@@ -507,6 +507,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     global_context->setMarkCache(mark_cache_size);
 
+    if (config().has("remote_url_allow_hosts"))
+    {
+        std::vector<std::string> keys;
+        config().keys("remote_url_allow_hosts", keys);
+        std::unordered_set<std::string> primary_hosts;
+        std::vector<std::string> regexp_hosts;
+        for (auto key : keys)
+        {
+            if (startsWith(key, "host_regexp"))
+                regexp_hosts.push_back(config().getString("remote_url_allow_hosts." + key));
+            else if (startsWith(key, "host"))
+                primary_hosts.insert(config().getString("remote_url_allow_hosts." + key));
+        }
+        global_context->setAllowedPrimaryUrlHosts(primary_hosts);
+        global_context->setAllowedRegexpUrlHosts(regexp_hosts);
+    }
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     if (compiled_expression_cache_size)
