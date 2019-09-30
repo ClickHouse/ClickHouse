@@ -5,40 +5,72 @@
 
 
 namespace DB
-{
 
+{
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class FunctionNow : public IFunction
+
+class PreparedFunctionNow : public PreparedFunctionImpl
 {
 public:
-    static constexpr auto name = "now";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNow>(); }
+    explicit PreparedFunctionNow(time_t time_) : time_value(time_) {}
 
-    String getName() const override
+    String getName() const override { return "now"; }
+
+protected:
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        return name;
+        block.getByPosition(result).column = DataTypeDateTime().createColumnConst(
+                input_rows_count,
+                static_cast<UInt64>(time_value));
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
+private:
+    time_t time_value;
+};
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+class FunctionBaseNow : public IFunctionBase
+{
+    explicit FunctionBaseNow(time_t time_) : time_value(time_), return_type(std::make_shared<DataTypeDateTime>()) {}
+
+    String getName() const override { return "now"; }
+
+    const DataTypes & getArgumentTypes() const override
     {
-        return std::make_shared<DataTypeDateTime>();
+        static const DataTypes argument_types;
+        return argument_types;
+    }
+
+    const DataTypePtr & getReturnType() const override
+    {
+        return return_type;
+    }
+
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    {
+        return std::make_shared<PreparedFunctionNow>(time_value);
     }
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+private:
+    time_t time_value;
+    DataTypePtr return_type;
+};
+
+class FunctionBuilderNow : public FunctionBuilderImpl
+{
+protected:
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        block.getByPosition(result).column = DataTypeDateTime().createColumnConst(
-            input_rows_count,
-            static_cast<UInt64>(time(nullptr)));
+        return std::make_shared<FunctionBaseNow>(time(nullptr));
     }
 };
 
 void registerFunctionNow(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionNow>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionBuilderNow>(FunctionFactory::CaseInsensitive);
 }
 
 }
