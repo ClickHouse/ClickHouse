@@ -294,7 +294,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     if (from_value.isNull())
+    {
+        if (!to_type.isNullable() && to_type.getTypeId() != TypeIndex::Nothing)
+        {
+            throw Exception("Cannot convert a NULL value to a non-nullable type '" + to_type.getName() + "'.",
+                            ErrorCodes::TYPE_MISMATCH);
+        }
         return from_value;
+    }
 
     if (from_type_hint && from_type_hint->equals(to_type))
         return from_value;
