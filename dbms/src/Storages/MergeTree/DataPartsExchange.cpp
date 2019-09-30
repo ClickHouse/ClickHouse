@@ -219,6 +219,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         timeouts,
         creds,
         DBMS_DEFAULT_BUFFER_SIZE,
+        0, /* no redirects */
         data_settings->replicated_max_parallel_fetches_for_host
     };
 

@@ -588,15 +588,15 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
     using Map = HashMapWithSavedHash<Key, Value, DefaultHash<Key>>;
 
     Map map;
-    typename Map::iterator it;
+    typename Map::LookupResult it;
     bool inserted;
 
     for (size_t i = 0, size = data.size(); i < size; ++i)
     {
         map.emplace(static_cast<const Key &>(data[i]), it, inserted);
         if (inserted)
-            it->getSecond() = 0;
-        ++it->getSecond();
+            *lookupResultGetMapped(it) = 0;
+        ++*lookupResultGetMapped(it);
     }
 
     watch.stop();

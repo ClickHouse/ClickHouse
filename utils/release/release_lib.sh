@@ -210,6 +210,7 @@ function make_rpm {
             | grep -vF '%dir "/etc/cron.d/"' \
             | grep -vF '%dir "/etc/systemd/system/"' \
             | grep -vF '%dir "/etc/systemd/"' \
+            | sed -e 's|%config |%config(noreplace) |' \
             > ${PACKAGE}-$VERSION_FULL-2.spec
     }
 
@@ -231,6 +232,8 @@ function make_rpm {
     echo "Requires: clickhouse-common-static = $VERSION_FULL-2" >> ${PACKAGE}-$VERSION_FULL-2.spec
     echo "Requires: tzdata" >> ${PACKAGE}-$VERSION_FULL-2.spec
     echo "Requires: initscripts" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Obsoletes: clickhouse-server-common < $VERSION_FULL" >> ${PACKAGE}-$VERSION_FULL-2.spec
+
     cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
     rpm_pack
 

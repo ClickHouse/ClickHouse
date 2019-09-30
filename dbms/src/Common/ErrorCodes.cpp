@@ -457,6 +457,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOCOL = 480;
     extern const int PATH_ACCESS_DENIED = 481;
     extern const int DICTIONARY_ACCESS_DENIED = 482;
+    extern const int TOO_MANY_REDIRECTS = 483;
+    extern const int INTERNAL_REDIS_ERROR = 484;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

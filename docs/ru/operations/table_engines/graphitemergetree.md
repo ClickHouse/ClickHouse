@@ -76,7 +76,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Структура конфигурации rollup:
 
-```
+```text
 required-columns
 patterns
 ```
@@ -92,7 +92,7 @@ patterns
 
 Структура раздела `patterns`:
 
-```
+```text
 pattern
     regexp
     function

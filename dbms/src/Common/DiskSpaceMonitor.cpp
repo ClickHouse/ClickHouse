@@ -1,9 +1,11 @@
 #include <Common/DiskSpaceMonitor.h>
+#include <Common/escapeForFileName.h>
+#include <IO/WriteHelpers.h>
 
 #include <set>
 
-#include <Common/escapeForFileName.h>
 #include <Poco/File.h>
+
 
 namespace DB
 {
@@ -45,7 +47,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
     return absolute_path;
 }
 
-    /// Returns name of filesystem mounted to mount_point
+/// Returns name of filesystem mounted to mount_point
 #if !defined(__linux__)
 [[noreturn]]
 #endif
@@ -65,7 +67,7 @@ std::string getFilesystemName([[maybe_unused]] const std::string & mount_point)
         throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
     return fs_info.mnt_fsname;
 #else
-    throw DB::Exception("Supported on linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception("The function getFilesystemName is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
 
@@ -82,7 +84,7 @@ bool Disk::tryReserve(UInt64 bytes) const
     std::lock_guard lock(mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving 0 bytes on disk " << name);
+        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving 0 bytes on disk " << backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -93,7 +95,8 @@ bool Disk::tryReserve(UInt64 bytes) const
     {
         LOG_DEBUG(
             &Logger::get("DiskSpaceMonitor"),
-            "Reserving " << bytes << " bytes on disk " << name << " having unreserved " << unreserved_space << " bytes.");
+            "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name)
+                << ", having unreserved " << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
@@ -283,14 +286,14 @@ Volume::Volume(
         max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
         for (size_t i = 0; i < disks.size(); ++i)
             if (sizes[i] < max_data_part_size)
-                LOG_WARNING(logger, "Disk " << disks[i]->getName() << " on volume " << config_prefix <<
-                                    " have not enough space (" << sizes[i] <<
+                LOG_WARNING(logger, "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) <<
+                                    " have not enough space (" << formatReadableSizeWithBinarySuffix(sizes[i]) <<
                                     ") for containing part the size of max_data_part_size (" <<
-                                    max_data_part_size << ")");
+                                    formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
     }
     constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(logger, "Volume '" << name << "' max_data_part_size is too low ("
+        LOG_WARNING(logger, "Volume " << backQuote(name) << " max_data_part_size is too low ("
             << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < "
             << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
@@ -505,7 +508,7 @@ StoragePolicySelector::StoragePolicySelector(
                 ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy " << name << " loaded");
+        LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy " << backQuote(name) << " loaded");
     }
 
     constexpr auto default_storage_policy_name = "default";

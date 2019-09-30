@@ -331,7 +331,7 @@ void CacheDictionary::update(
         {
             ++error_count;
             last_exception = std::current_exception();
-            backoff_end_time = now + std::chrono::seconds(ExternalLoadableBackoff{}.calculateDuration(rnd_engine, error_count));
+            backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
 
             tryLogException(last_exception, log, "Could not update cache dictionary '" + getName() +
                             "', next update is scheduled at " + DateLUT::instance().timeToString(std::chrono::system_clock::to_time_t(backoff_end_time)));

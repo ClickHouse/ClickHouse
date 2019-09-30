@@ -12,7 +12,7 @@
 
 Если аккаунта нет - зарегистрируйтесь на https://github.com/. Создайте ssh ключи, если их нет, и загрузите публичные ключи на GitHub. Это потребуется для отправки изменений. Для работы с GitHub можно использовать такие же ssh ключи, как и для работы с другими ssh серверами - скорее всего, они уже у вас есть.
 
-Создайте fork репозитория ClickHouse. Для этого, на странице https://github.com/yandex/ClickHouse нажмите на кнопку "fork" в правом верхнем углу. Вы получите полную копию репозитория ClickHouse на своём аккаунте, которая называется "форк". Процесс разработки состоит в том, чтобы внести нужные изменения в свой форк репозитория, а затем создать "pull request" для принятия изменений в основной репозиторий.
+Создайте fork репозитория ClickHouse. Для этого, на странице https://github.com/ClickHouse/ClickHouse нажмите на кнопку "fork" в правом верхнем углу. Вы получите полную копию репозитория ClickHouse на своём аккаунте, которая называется "форк". Процесс разработки состоит в том, чтобы внести нужные изменения в свой форк репозитория, а затем создать "pull request" для принятия изменений в основной репозиторий.
 
 Для работы с git репозиториями, установите `git`.
 
@@ -61,7 +61,7 @@ and the repository exists.
 
 Вы также можете клонировать репозиторий по протоколу https:
 ```
-git clone https://github.com/yandex/ClickHouse.git
+git clone https://github.com/ClickHouse/ClickHouse.git
 ```
 Этот вариант не подходит для отправки изменений на сервер. Вы можете временно его использовать, а затем добавить ssh ключи и заменить адрес репозитория с помощью команды `git remote`.
 
@@ -228,7 +228,7 @@ sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-fil
 
 Разработка тестов: https://clickhouse.yandex/docs/ru/development/tests/
 
-Список задач: https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_ru.md
+Список задач: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_ru.md
 
 
 # Тестовые данные
