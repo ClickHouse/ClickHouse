@@ -1,4 +1,3 @@
-project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
 
 foreach(policy
@@ -13,6 +12,7 @@ foreach(policy
     endif()
 endforeach()
 
+project(ClickHouse)
 include (cmake/target.cmake)
 
 # Ignore export() since we don't use it,
@@ -348,7 +348,7 @@ include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 
-# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
+# When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
@@ -367,7 +367,7 @@ elseif (USE_TCMALLOC)
     endif ()
 elseif (SANITIZE)
     message (STATUS "Will use ${SANITIZE} sanitizer.")
-else ()
+elseif (OS_LINUX)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
@@ -376,6 +376,22 @@ include (cmake/print_flags.cmake)
 install (EXPORT global DESTINATION cmake)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+macro (add_executable target)
+    # invoke built-in add_executable
+    _add_executable (${ARGV})
+    get_target_property (type ${target} TYPE)
+    if (${type} STREQUAL EXECUTABLE)
+        file (RELATIVE_PATH dir ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+        if (${dir} MATCHES "^dbms")
+            # Only interpose operator::new/delete for dbms executables (MemoryTracker stuff)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+        else ()
+            target_link_libraries (${target} PRIVATE ${MALLOC_LIBRARIES})
+        endif ()
+    endif()
+endmacro()
+
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
