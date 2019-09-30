@@ -141,7 +141,7 @@ endif ()
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
-target_link_libraries (clickhouse_new_delete clickhouse_common_io)
+target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
