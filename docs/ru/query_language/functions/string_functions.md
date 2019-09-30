@@ -129,7 +129,7 @@ SELECT format('{} {}', 'Hello', 'World')
 Возвращает 1, если строка начинается указанным префиксом, в противном случае 0.
 
 ```sql
-SELECT startsWith('string', 'str');
+SELECT startsWith('Spider-Man', 'Spi');
 ```
 
 **Возвращаемые значения**

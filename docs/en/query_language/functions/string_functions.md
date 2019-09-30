@@ -157,13 +157,13 @@ Returns whether to end with the specified suffix. Returns 1 if the string ends w
 Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
 
 ```sql
-SELECT startsWith('string', 'str');
+SELECT startsWith('Spider-Man', 'Spi');
 ```
 
 **Returned values**
 
 - 1, if the string starts with the specified prefix.
-- 0, if the string isn't start with the specified prefix.
+- 0, if the string doesn't start with the specified prefix.
 
 **Example**
 
