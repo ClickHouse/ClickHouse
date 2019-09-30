@@ -59,6 +59,12 @@ private:
 
 class FunctionBuilderNow : public FunctionBuilderImpl
 {
+public:
+    static constexpr auto name = "now";
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 0; }
+
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }
 
