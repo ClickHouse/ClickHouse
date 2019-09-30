@@ -2,6 +2,9 @@
 #include <Formats/verbosePrintString.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -11,10 +14,13 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-ParsedTemplateFormatString::ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idx_by_name)
+ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
 {
     try
     {
+        ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
+        String format_string;
+        readStringUntilEOF(format_string, schema_file);
         parse(format_string, idx_by_name);
     }
     catch (DB::Exception & e)
@@ -41,6 +47,8 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
     const char * token_begin = pos;
     ParserState state = Delimiter;
     delimiters.emplace_back();
+    char * col_idx_end;
+    std::optional<size_t> column_idx;
     for (; *pos; ++pos)
     {
         switch (state)
@@ -60,8 +68,9 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                         token_begin = pos;
                     }
                     else
-                        throwInvalidFormat("at pos " + std::to_string(pos - format_string.c_str()) +
-                                           ": expected '{' or '$' after '$'", columnsCount());
+                        throwInvalidFormat("At pos " + std::to_string(pos - format_string.c_str()) +
+                                           ": Expected '{' or '$' after '$'" +
+                                           ", got \"" + std::string(pos, std::min(end - pos, 16l)) + "\"", columnsCount());
                 }
                 break;
 
@@ -78,10 +87,21 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     state = Delimiter;
                 }
                 else
-                    throwInvalidFormat("Expected ':' or '}' after column name: \"" + column_names.back() + "\"", columnsCount());
+                    throwInvalidFormat("At pos " + std::to_string(pos - format_string.c_str()) +
+                                       ": Expected ':' or '}' after column name \"" + column_names.back() + "\"" +
+                                       ", got \"" + std::string(pos, std::min(end - pos, 16l)) + "\"", columnsCount());
 
                 token_begin = pos + 1;
-                format_idx_to_column_idx.emplace_back(idx_by_name(column_names.back()));
+                column_idx.reset();
+                if (!column_names.back().empty())
+                {
+                    col_idx_end = nullptr;
+                    errno = 0;
+                    column_idx = strtoull(column_names.back().c_str(), &col_idx_end, 10);
+                    if (col_idx_end != column_names.back().c_str() + column_names.back().size() || errno)
+                        column_idx = idx_by_name(column_names.back());
+                }
+                format_idx_to_column_idx.emplace_back(column_idx);
                 break;
 
             case Format:
@@ -100,7 +120,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
 }
 
 
-ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format) const
+ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format)
 {
     if (col_format.empty())
         return ColumnFormat::None;
@@ -119,7 +139,7 @@ ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFor
     else if (col_format == "Raw")
         return ColumnFormat::Raw;
     else
-        throwInvalidFormat("Unknown field format " + col_format, columnsCount());
+        throw Exception("Unknown field format \"" + col_format + "\"", ErrorCodes::BAD_ARGUMENTS);
 }
 
 size_t ParsedTemplateFormatString::columnsCount() const
@@ -212,6 +232,40 @@ void ParsedTemplateFormatString::throwInvalidFormat(const String & message, size
     throw Exception("Invalid format string for Template: " + message + " (near column " + std::to_string(column) +
                     ")" + ". Parsed format string:\n" + dump() + "\n",
                     ErrorCodes::INVALID_TEMPLATE_FORMAT);
+}
+
+ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(const Context & context)
+{
+    const Settings & settings = context.getSettingsRef();
+
+    /// Set resultset format to "result_before_delimiter ${data} result_after_delimiter"
+    ParsedTemplateFormatString resultset_format;
+    resultset_format.delimiters.emplace_back(settings.format_custom_result_before_delimiter);
+    resultset_format.delimiters.emplace_back(settings.format_custom_result_after_delimiter);
+    resultset_format.formats.emplace_back(ParsedTemplateFormatString::ColumnFormat::None);
+    resultset_format.format_idx_to_column_idx.emplace_back(0);
+    resultset_format.column_names.emplace_back("data");
+    return resultset_format;
+}
+
+ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedRowFormat(const Context & context, const Block & sample)
+{
+    const Settings & settings = context.getSettingsRef();
+
+    /// Set row format to
+    /// "row_before_delimiter ${Col0:escaping} field_delimiter ${Col1:escaping} field_delimiter ... ${ColN:escaping} row_after_delimiter"
+    ParsedTemplateFormatString::ColumnFormat escaping = ParsedTemplateFormatString::stringToFormat(settings.format_custom_escaping_rule);
+    ParsedTemplateFormatString row_format;
+    row_format.delimiters.emplace_back(settings.format_custom_row_before_delimiter);
+    for (size_t i = 0; i < sample.columns(); ++i)
+    {
+        row_format.formats.emplace_back(escaping);
+        row_format.format_idx_to_column_idx.emplace_back(i);
+        row_format.column_names.emplace_back(sample.getByPosition(i).name);
+        bool last_column = i == sample.columns() - 1;
+        row_format.delimiters.emplace_back(last_column ? settings.format_custom_row_after_delimiter : settings.format_custom_field_delimiter);
+    }
+    return row_format;
 }
 
 }
