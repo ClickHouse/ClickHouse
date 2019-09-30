@@ -1,0 +1,78 @@
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/getMultipleKeysFromConfig.h>
+
+#include <Poco/Glob.h>
+#include <Poco/File.h>
+#include <Poco/Path.h>
+
+
+namespace DB
+{
+
+bool ExternalLoaderXMLConfigRepository::isUpdated(const std::string & definition_entity_name)
+{
+    Poco::Timestamp last_modified = Poco::File(definition_entity_name).getLastModified();
+
+    auto itr = update_time_mapping.find(definition_entity_name);
+    if (itr == update_time_mapping.end() || last_modified > itr->second)
+    {
+        update_time_mapping[definition_entity_name] = last_modified;
+        return true;
+    }
+
+    return false;
+}
+
+std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefinitionNames() const
+{
+    std::set<std::string> files;
+
+    auto patterns = getMultipleValuesFromConfig(main_config, "", config_key);
+
+    for (auto & pattern : patterns)
+    {
+        if (pattern.empty())
+            continue;
+
+        if (pattern[0] != '/')
+        {
+            const auto app_config_path = main_config.getString("config-file", "config.xml");
+            const auto config_dir = Poco::Path{app_config_path}.parent().toString();
+            const auto absolute_path = config_dir + pattern;
+            Poco::Glob::glob(absolute_path, files, 0);
+            if (!files.empty())
+                continue;
+        }
+
+        Poco::Glob::glob(pattern, files, 0);
+    }
+
+    for (std::set<std::string>::iterator it = files.begin(); it != files.end();)
+    {
+        if (ConfigProcessor::isPreprocessedFile(*it))
+            files.erase(it++);
+        else
+            ++it;
+    }
+
+    return files;
+}
+
+bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_entity_name) const
+{
+    return Poco::File(definition_entity_name).exists();
+}
+
+Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
+    const std::string & config_file) const
+{
+    ConfigProcessor config_processor{config_file};
+    ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
+    config_processor.savePreprocessedConfig(preprocessed, main_config.getString("path", DBMS_DEFAULT_PATH));
+    return preprocessed.configuration;
+}
+
+}

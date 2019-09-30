@@ -715,8 +715,8 @@ template <typename T>
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute & attribute) const
 {
     if (!sparse)
-        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<Key>>(attribute.maps));
-    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<Key>>(attribute.sparse_maps));
+        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<T>>(attribute.maps));
+    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps));
 }
 
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
