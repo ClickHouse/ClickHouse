@@ -12,14 +12,14 @@ namespace DB
 class Context;
 
 /// Manages user-defined dictionaries.
-class ExternalDictionaries : public ExternalLoader
+class ExternalDictionariesLoader : public ExternalLoader
 {
 public:
     using DictPtr = std::shared_ptr<const IDictionaryBase>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalDictionaries(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+    ExternalDictionariesLoader(
+        std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
         const Poco::Util::AbstractConfiguration & config,
         Context & context_);
 

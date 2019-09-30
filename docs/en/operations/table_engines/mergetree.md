@@ -78,11 +78,14 @@ For a description of parameters, see the [CREATE query description](../../query_
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
-    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. For the list of available parameters, see [MergeTreeSettings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
+    - `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
+    - `index_granularity_bytes` — Maximum size of data granule in bytes. Default value: 10Mb. To restrict the size of granule only by number of rows set 0 (not recommended). See [Data Storage](#mergetree-data-storage).
+    - `enable_mixed_granularity_parts` — Enables or disables transition to controlling the granule size with the `index_granularity_bytes` setting. Before the version 19.11 there was the only `index_granularity` setting for the granule size restriction. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from the tables with big rows (tens and hundreds of megabytes). So if you have tables with big rows, you can turn the setting on for the tables to get better efficiency of your `SELECT` queries.
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in "Server configuration parameters".
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
+    - `write_final_mark` — Enables or disables writing the final index mark at the end of data part. Default value: 1. Don't turn it off.
 
 **Example of Sections Setting**
 
@@ -126,7 +129,7 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 The `MergeTree` engine is configured in the same way as in the example above for the main engine configuration method.
 </details>
 
-## Data Storage
+## Data Storage {#mergetree-data-storage}
 
 A table consists of data parts sorted by primary key.
 
@@ -134,9 +137,9 @@ When data is inserted in a table, separate data parts are created and each of th
 
 Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged. The merge mechanism does not guarantee that all rows with the same primary key will be in the same data part.
 
-For each data part, ClickHouse creates an index file that contains the primary key value for each index row ("mark"). Index row numbers are defined as `n * index_granularity`. The maximum value `n` is equal to the integer part of dividing the total number of rows by the `index_granularity`. For each column, the "marks" are also written for the same index rows as the primary key. These "marks" allow you to find the data directly in the columns.
+Each data part is logically divided by granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse doesn't split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for this row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it is in the primary key or not, ClickHouse also stores the same marks. These marks allow finding the data directly in the columns.
 
-You can use a single large table and continually add data to it in small chunks – this is what the `MergeTree` engine is intended for.
+The size of a granule is restricted by the `index_granularity` and `index_granularity_bytes` settings of the table engine. The number of rows in granule lays in the `[1, index_granularity]` range, depending on the size of rows. The size of a granule can exceed `index_granularity_bytes` if the size of the single row is greater than the value of the setting. In this case, the size of the granule equals the size of the row.
 
 ## Primary Keys and Indexes in Queries {#primary-keys-and-indexes-in-queries}
 
@@ -159,9 +162,9 @@ If the data query specifies:
 
 The examples above show that it is always more effective to use an index than a full scan.
 
-A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read. In most cases, ClickHouse performance does not degrade when `index_granularity = 8192`.
+A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read.
 
-Sparse indexes allow you to work with a very large number of table rows, because such indexes are always stored in the computer's RAM.
+Sparse indexes allow you to work with a very large number of table rows, because such indexes fit the computer's RAM in the very most cases.
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 

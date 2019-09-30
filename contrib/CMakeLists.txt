@@ -65,7 +65,7 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     endif ()
 
     add_subdirectory (${INTERNAL_ZLIB_NAME})
-    # todo: make pull to Dead2/zlib-ng and remove:
+    # TODO: make pull to Dead2/zlib-ng and remove:
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
     target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
@@ -125,11 +125,18 @@ if (USE_INTERNAL_SSL_LIBRARY)
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
-    add_subdirectory (mariadb-connector-c-cmake)
-    target_include_directories(mysqlclient BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
-    if(OPENSSL_INCLUDE_DIR)
-        target_include_directories(mysqlclient BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
+    set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_REMOTE_IO OFF)
+    set(CLIENT_PLUGIN_DIALOG OFF)
+    set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF)
+    set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
+    set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
+    set(SKIP_TESTS 1)
+    if (GLIBC_COMPATIBILITY)
+        set(LIBM glibc-compatibility)
     endif()
+    add_subdirectory (mariadb-connector-c)
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)

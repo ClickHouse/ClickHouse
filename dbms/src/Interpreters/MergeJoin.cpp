@@ -15,6 +15,8 @@ namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -58,6 +60,26 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     /// !left_nullable && !right_nullable
     return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+}
+
+Block extractMinMax(const Block & block, const Block & keys)
+{
+    if (block.rows() == 0)
+        throw Exception("Unexpected empty block", ErrorCodes::LOGICAL_ERROR);
+
+    Block min_max = keys.cloneEmpty();
+    MutableColumns columns = min_max.mutateColumns();
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        auto & src_column = block.getByName(keys.getByPosition(i).name);
+
+        columns[i]->insertFrom(*src_column.column, 0);
+        columns[i]->insertFrom(*src_column.column, block.rows() - 1);
+    }
+
+    min_max.setColumns(std::move(columns));
+    return min_max;
 }
 
 }
@@ -109,6 +131,35 @@ public:
         if (has_nullable_columns)
             return getNextEqualRangeImpl<true>(rhs);
         return getNextEqualRangeImpl<false>(rhs);
+    }
+
+    int intersect(const Block & right_block, const Block & right_table_keys, const Names & key_names)
+    {
+        const Block min_max = extractMinMax(right_block, right_table_keys);
+        if (end() == 0 || min_max.rows() != 2)
+            throw Exception("Unexpected block size", ErrorCodes::LOGICAL_ERROR);
+
+        size_t last_position = end() - 1;
+        int first_vs_max = 0;
+        int last_vs_min = 0;
+
+        for (size_t i = 0; i < impl.sort_columns.size(); ++i)
+        {
+            auto & left_column = *impl.sort_columns[i];
+            auto & right_column = *min_max.getByName(key_names[i]).column; /// cannot get by position cause of possible duplicates
+
+            if (!first_vs_max)
+                first_vs_max = nullableCompareAt<true>(left_column, right_column, position(), 1);
+
+            if (!last_vs_min)
+                last_vs_min = nullableCompareAt<true>(left_column, right_column, last_position, 0);
+        }
+
+        if (first_vs_max > 0)
+            return 1;
+        if (last_vs_min < 0)
+            return -1;
+        return 0;
     }
 
 private:
@@ -279,6 +330,7 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     , is_all(table_join->strictness() == ASTTableJoin::Strictness::All)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
+    , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
         throw Exception("Partial merge supported for LEFT and INNER JOINs only", ErrorCodes::NOT_IMPLEMENTED);
@@ -313,8 +365,6 @@ void MergeJoin::joinTotals(Block & block) const
 
 void MergeJoin::mergeRightBlocks()
 {
-    const size_t max_merged_block_size = 128 * 1024 * 1024;
-
     if (right_blocks.empty())
         return;
 
@@ -323,12 +373,16 @@ void MergeJoin::mergeRightBlocks()
     for (const auto & block : right_blocks)
         unsorted_blocks.push_back(block);
 
+    size_t max_rows_in_block = table_join->maxRowsInRightBlock();
+    if (!max_rows_in_block)
+        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
     /// TODO: there should be no splitted keys by blocks for RIGHT|FULL JOIN
-    MergeSortingBlocksBlockInputStream stream(unsorted_blocks, right_sort_description, max_merged_block_size);
+    MergeSortingBlocksBlockInputStream stream(unsorted_blocks, right_sort_description, max_rows_in_block);
 
     right_blocks.clear();
     while (Block block = stream.read())
-        right_blocks.push_back(block);
+        right_blocks.emplace_back(std::move(block));
 }
 
 bool MergeJoin::addJoinedBlock(const Block & src_block)
@@ -369,6 +423,16 @@ void MergeJoin::joinBlock(Block & block)
         {
             if (left_cursor.atEnd())
                 break;
+
+            if (skip_not_intersected)
+            {
+                int intersection = left_cursor.intersect(*it, right_table_keys, table_join->keyNamesRight());
+                if (intersection < 0)
+                    break; /// (left) ... (right)
+                if (intersection > 0)
+                    continue; /// (right) ... (left)
+            }
+
             leftJoin(left_cursor, block, *it, left_columns, right_columns, left_key_tail);
         }
 
@@ -385,6 +449,16 @@ void MergeJoin::joinBlock(Block & block)
         {
             if (left_cursor.atEnd())
                 break;
+
+            if (skip_not_intersected)
+            {
+                int intersection = left_cursor.intersect(*it, right_table_keys, table_join->keyNamesRight());
+                if (intersection < 0)
+                    break; /// (left) ... (right)
+                if (intersection > 0)
+                    continue; /// (right) ... (left)
+            }
+
             innerJoin(left_cursor, block, *it, left_columns, right_columns, left_key_tail);
         }
 
@@ -402,10 +476,14 @@ void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
-        size_t left_position = left_cursor.position(); /// save inequal position
+        /// Not zero left_key_tail means there were equality for the last left key in previous leftJoin() call.
+        /// Do not join it twice: join only if it's equal with a first right key of current leftJoin() call and skip otherwise.
+        size_t left_unequal_position = left_cursor.position() + left_key_tail;
+        left_key_tail = 0;
+
         Range range = left_cursor.getNextEqualRange(right_cursor);
 
-        joinInequalsLeft(left_block, left_columns, right_columns, left_position, range.left_start, is_all);
+        joinInequalsLeft(left_block, left_columns, right_columns, left_unequal_position, range.left_start, is_all);
 
         if (range.empty())
             break;

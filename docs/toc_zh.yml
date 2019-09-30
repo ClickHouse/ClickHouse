@@ -109,6 +109,7 @@ nav:
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
   - 'SYSTEM': 'query_language/system.md'
+  - 'SHOW': 'query_language/show.md'
   - '其他类型的查询': 'query_language/misc.md'
   - '函数':
     - '介绍': 'query_language/functions/index.md'
@@ -209,6 +210,7 @@ nav:
   - 'ClickHouse架构概述': 'development/architecture.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
+  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
   - '使用的第三方库': 'development/contrib.md'

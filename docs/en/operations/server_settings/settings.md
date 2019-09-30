@@ -61,7 +61,7 @@ ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `c
 
 The default database.
 
-To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#show-databases) query.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/show.md#show-databases) query.
 
 **Example**
 
@@ -258,6 +258,25 @@ Useful for breaking away from a specific network interface.
 
 ```xml
 <interserver_http_host>example.yandex.ru</interserver_http_host>
+```
+
+## interserver_http_credentials {#server-settings-interserver_http_credentials}
+
+The username and password used to authenticate during [replication](../table_engines/replication.md) with the Replicated* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
+By default, the authentication is not used.
+
+This section contains the following parameters:
+
+- `user` — username.
+- `password` — password.
+
+**Example**
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+</interserver_http_credentials>
 ```
 
 

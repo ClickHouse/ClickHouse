@@ -665,7 +665,7 @@ SELECT arrayDifference([1, 2, 3, 4])
 
 ## arrayDistinct(arr)
 
-Takes an array, returns an array containing the different elements in all the arrays. For example:
+Takes an array, returns an array containing the distinct elements. For example:
 
 ```sql
 SELECT arrayDistinct([1, 2, 2, 3, 1])
