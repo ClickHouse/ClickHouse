@@ -30,6 +30,7 @@ private:
 
 class FunctionBaseNow : public IFunctionBase
 {
+public:
     explicit FunctionBaseNow(time_t time_) : time_value(time_), return_type(std::make_shared<DataTypeDateTime>()) {}
 
     String getName() const override { return "now"; }
@@ -64,6 +65,8 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderNow>(); }
 
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDateTime>(); }
