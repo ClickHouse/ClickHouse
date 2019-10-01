@@ -1,6 +1,7 @@
 #include <ACL/EncodedPassword.h>
 #include <Common/Exception.h>
 #include <Core/Defines.h>
+#include <boost/algorithm/hex.hpp>
 #include "config_core.h"
 #if USE_SSL
 #   include <openssl/sha.h>
@@ -63,6 +64,17 @@ void EncodedPassword::setEncodedPassword(const String & encoded_password_, Encod
     encoding = encoding_;
 }
 
+
+void EncodedPassword::setEncodedPasswordHex(const String & encoded_password_hex_, Encoding encoding_)
+{
+    setEncodedPassword(boost::algorithm::unhex(encoded_password_hex_), encoding_);
+}
+
+
+String EncodedPassword::getEncodedPasswordHex() const
+{
+    return boost::algorithm::hex(getEncodedPassword());
+}
 
 bool EncodedPassword::isCorrect(const String & password) const
 {

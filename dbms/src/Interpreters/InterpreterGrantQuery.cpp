@@ -19,8 +19,8 @@ BlockIO InterpreterGrantQuery::execute()
     for (const auto & role_name : query.roles)
         role_ids.emplace_back(manager.getID(role_name, Role::TYPE));
 
-    manager.update(
-        query.to_roles, Role::TYPE,
+    manager.update<Role>(
+        query.to_roles,
         [&](Role & role)
         {
             auto grant_or_revoke_access = [&](auto && ... params)

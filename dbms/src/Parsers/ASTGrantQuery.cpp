@@ -37,6 +37,92 @@ const std::vector<std::pair<ASTGrantQuery::AccessTypes, String>> & ASTGrantQuery
 }
 
 
+String ASTGrantQuery::accessTypeToString(AccessType access_)
+{
+    String str;
+    for (const auto & [access_type, access_name] : getAccessTypeNames())
+    {
+        if (access_ & access_type)
+        {
+            str += (str.empty() ? "" : ", ") + access_name;
+            access_ &= ~access_type;
+        }
+    }
+    if (access_)
+        str += (str.empty() ? "" : ", ") + std::to_string(access_);
+    if (str.empty())
+        str = "USAGE";
+    return str;
+}
+
+
+String ASTGrantQuery::accessToString(AccessType access_)
+{
+    return accessTypeToString(access_) + " ON *.*";
+}
+
+
+String ASTGrantQuery::accessToString(AccessType access_, const String & database_)
+{
+    return accessTypeToString(access_) + " ON " + backQuoteIfNeed(database_) + ".*";
+}
+
+
+String ASTGrantQuery::accessToString(AccessType access_, const String & database_, const String & table)
+{
+    return accessTypeToString(access_) + " ON " + backQuoteIfNeed(database_) + "." + backQuoteIfNeed(table);
+}
+
+
+String ASTGrantQuery::accessToString(AccessType access_, const String & database_, const String & table_, const String & column_)
+{
+    String str;
+    for (const auto & [access_type, access_name] : getAccessTypeNames())
+    {
+        if (access_ & access_type)
+        {
+            if (!str.empty())
+                str += ",";
+            str += access_name + "(" + backQuoteIfNeed(column_) + ")";
+            access_ &= ~access_type;
+        }
+    }
+    if (access_)
+        str += (str.empty() ? "" : ", ") + std::to_string(access_) + "(" + backQuoteIfNeed(column_) + ")";
+    if (str.empty())
+        str = "USAGE";
+    return str + " ON " + backQuoteIfNeed(database_) + "." + backQuoteIfNeed(table_);
+}
+
+
+String ASTGrantQuery::accessToString(AccessType access_, const String & database_, const String & table_, const Strings & columns_)
+{
+    String columns_as_str;
+    for (size_t i = 0; i != columns_.size(); ++i)
+    {
+        if (i)
+            columns_as_str += ",";
+        columns_as_str += backQuoteIfNeed(columns_[i]);
+    }
+    String str;
+    for (const auto & [access_type, access_name] : getAccessTypeNames())
+    {
+        if (access_ & access_type)
+        {
+            if (!str.empty())
+                str += ",";
+            str += access_name + "(" + columns_as_str + ")";
+            access_ &= ~access_type;
+        }
+    }
+    if (access_)
+        str += (str.empty() ? "" : ", ") + std::to_string(access_) + "(" + columns_as_str + ")";
+    if (str.empty())
+        str = "USAGE";
+    return str + " ON " + backQuoteIfNeed(database_) + "." + backQuoteIfNeed(table_);
+}
+
+
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")

@@ -1,6 +1,6 @@
 #include <ACL/AccessControlManager.h>
 #include <ACL/MultipleAttributesStorage.h>
-//#include <ACL/MemoryAttributesStorage.h>
+#include <ACL/MemoryAttributesStorage.h>
 
 
 namespace DB
@@ -11,8 +11,19 @@ namespace AccessControlNames
 }
 
 
+namespace
+{
+    std::vector<std::unique_ptr<IAttributesStorage>> createStorages()
+    {
+        std::vector<std::unique_ptr<IAttributesStorage>> list;
+        list.emplace_back(std::make_unique<MemoryAttributesStorage>());
+        return list;
+    }
+}
+
+
 AccessControlManager::AccessControlManager()
-    : MultipleAttributesStorage(std::vector<std::unique_ptr<Storage>>{})
+    : MultipleAttributesStorage(createStorages())
 {
 }
 

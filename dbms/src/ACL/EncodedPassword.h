@@ -22,8 +22,10 @@ public:
     void setPassword(const String & password, Encoding encoding_);
     void setNoPassword();
     void setEncodedPassword(const String & encoded_password_, Encoding encoding_);
+    void setEncodedPasswordHex(const String & encoded_password_hex_, Encoding encoding_);
     Encoding getEncoding() const { return encoding; }
     const String & getEncodedPassword() const { return encoded_password; }
+    String getEncodedPasswordHex() const;
 
     /// Checks if the provided password is correct. Returns false if not.
     bool isCorrect(const String & password) const;

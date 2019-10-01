@@ -22,11 +22,8 @@ public:
     static const AccessType CREATE; /// User can create databases and tables and attach tables.
     static const AccessType DROP;   /// User can drop tables / databases and detach tables.
 
-    static const AccessType COLUMN_LEVEL;   /// Access types which can be granted on columns.
-    static const AccessType TABLE_LEVEL;    /// Access types which can be granted on tables.
-    static const AccessType DATABASE_LEVEL; /// Access types which can be granted on databases.
-
     /// Outputs a grant to string in readable format, for example "SELECT(column), INSERT ON mydatabase.*".
+    static String accessTypeToString(AccessType access);
     static String accessToString(AccessType access);
     static String accessToString(AccessType access, const String & database);
     static String accessToString(AccessType access, const String & database, const String & table);

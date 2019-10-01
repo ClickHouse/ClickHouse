@@ -81,7 +81,14 @@ AttributesPtr MemoryAttributesStorage::readImpl(const UUID & id) const
 }
 
 
-UUID MemoryAttributesStorage::insertImpl(const IAttributes & attrs)
+std::pair<String, const IAttributes::Type *> MemoryAttributesStorage::readNameAndTypeImpl(const UUID &id) const
+{
+    auto attrs = readImpl(id);
+    return {attrs->name, &attrs->getType()};
+}
+
+
+UUID MemoryAttributesStorage::insertImpl(const IAttributes & attrs, bool replace_if_exists)
 {
     std::unique_lock lock{mutex};
     size_t namespace_idx = attrs.getType().namespace_idx;
@@ -91,10 +98,21 @@ UUID MemoryAttributesStorage::insertImpl(const IAttributes & attrs)
     /// Check the name is unique.
     auto & names = all_names[namespace_idx];
     auto it = names.find(attrs.name);
+    OnChangeNotifications on_change_notifications;
     if (it != names.end())
     {
-        auto existing = entries.at(it->second).attrs;
-        throwNameCollisionCannotInsert(attrs.name, attrs.getType(), existing->getType());
+        if (replace_if_exists)
+        {
+            for (const auto & handler : entries[it->second].on_changed_handlers)
+                on_change_notifications.emplace_back(handler, nullptr);
+            entries.erase(it->second);
+            names.erase(it);
+        }
+        else
+        {
+            auto existing = entries.at(it->second).attrs;
+            throwNameCollisionCannotInsert(attrs.name, attrs.getType(), existing->getType());
+        }
     }
 
     /// Generate a new ID.
@@ -110,7 +128,7 @@ UUID MemoryAttributesStorage::insertImpl(const IAttributes & attrs)
     entries[id].attrs = attrs.clone();
 
     /// Prepare list of notifications.
-    std::vector<OnNewHandler> notify_list;
+    OnNewNotifications on_new_notifications;
     if (namespace_idx < on_new_handlers.size())
     {
         for (auto handler_it = on_new_handlers[namespace_idx].lower_bound(attrs.name); handler_it != on_new_handlers[namespace_idx].end(); ++handler_it)
@@ -118,14 +136,14 @@ UUID MemoryAttributesStorage::insertImpl(const IAttributes & attrs)
             const String & prefix = handler_it->first;
             if (!startsWith(attrs.name, prefix))
                 break;
-            notify_list.push_back(handler_it->second);
+            on_new_notifications.emplace_back(handler_it->second, id);
         }
     }
 
     /// Notify the subscribers with the `mutex` unlocked.
     lock.unlock();
-    for (const auto & fn : notify_list)
-        fn(id);
+    notify(on_change_notifications);
+    notify(on_new_notifications);
     return id;
 }
 
@@ -142,9 +160,9 @@ void MemoryAttributesStorage::removeImpl(const UUID & id)
     auto & names = all_names[namespace_idx];
 
     /// Prepare list of notifications.
-    std::vector<std::pair<OnChangedHandler, AttributesPtr>> notify_list;
+    OnChangeNotifications on_change_notifications;
     for (auto handler : entry.on_changed_handlers)
-        notify_list.emplace_back(handler, nullptr);
+        on_change_notifications.emplace_back(handler, nullptr);
 
     /// Do removing.
     names.erase(entry.attrs->name);
@@ -160,14 +178,13 @@ void MemoryAttributesStorage::removeImpl(const UUID & id)
             other_entry.attrs = other_attrs;
             other_attrs->removeReferences(id);
             for (auto handler : other_entry.on_changed_handlers)
-                notify_list.emplace_back(handler, other_attrs);
+                on_change_notifications.emplace_back(handler, other_attrs);
         }
     }
 
     /// Notify the subscribers with the `mutex` unlocked.
     lock.unlock();
-    for (const auto & [fn, param] : notify_list)
-        fn(param);
+    notify(on_change_notifications);
 }
 
 
@@ -190,7 +207,7 @@ void MemoryAttributesStorage::updateImpl(const UUID & id, const UpdateFunc & upd
     if (*new_attrs == *old_attrs)
         return;
 
-    std::vector<OnNewHandler> new_notify_list;
+    OnNewNotifications on_new_notifications;
     if (new_attrs->name != old_attrs->name)
     {
         if (names.count(new_attrs->name))
@@ -210,20 +227,20 @@ void MemoryAttributesStorage::updateImpl(const UUID & id, const UpdateFunc & upd
                 if (!startsWith(new_attrs->name, prefix))
                     break;
                 if (!startsWith(old_attrs->name, prefix))
-                    new_notify_list.push_back(handler_it->second);
+                    on_new_notifications.emplace_back(handler_it->second, id);
             }
         }
     }
 
     entry.attrs = new_attrs;
-    std::vector<OnChangedHandler> changed_notify_list{entry.on_changed_handlers.begin(), entry.on_changed_handlers.end()};
+    OnChangeNotifications on_change_notifications;
+    for (const auto & handler : entry.on_changed_handlers)
+        on_change_notifications.emplace_back(handler, new_attrs);
 
     /// Notify the subscribers with the `mutex` unlocked.
     lock.unlock();
-    for (const auto & fn : changed_notify_list)
-        fn(new_attrs);
-    for (const auto & fn : new_notify_list)
-        fn(id);
+    notify(on_change_notifications);
+    notify(on_new_notifications);
 }
 
 

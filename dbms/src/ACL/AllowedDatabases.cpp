@@ -7,7 +7,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int INVALID_GRANT;
     extern const int NOT_ENOUGH_PRIVILEGES;
 }
 
@@ -20,9 +19,35 @@ const AllowedDatabases::AccessType AllowedDatabases::ALTER = ASTGrantQuery::ALTE
 const AllowedDatabases::AccessType AllowedDatabases::CREATE = ASTGrantQuery::CREATE;
 const AllowedDatabases::AccessType AllowedDatabases::DROP = ASTGrantQuery::DROP;
 
-const AllowedDatabases::AccessType AllowedDatabases::COLUMN_LEVEL = SELECT;
-const AllowedDatabases::AccessType AllowedDatabases::TABLE_LEVEL = COLUMN_LEVEL | INSERT | DELETE | ALTER | DROP;
-const AllowedDatabases::AccessType AllowedDatabases::DATABASE_LEVEL = TABLE_LEVEL | CREATE;
+String AllowedDatabases::accessTypeToString(AccessType access)
+{
+    return ASTGrantQuery::accessTypeToString(access);
+}
+
+String AllowedDatabases::accessToString(AccessType access)
+{
+    return ASTGrantQuery::accessToString(access);
+}
+
+String AllowedDatabases::accessToString(AccessType access, const String & database)
+{
+    return ASTGrantQuery::accessToString(access, database);
+}
+
+String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table)
+{
+    return ASTGrantQuery::accessToString(access, database, table);
+}
+
+String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table, const String & column)
+{
+    return ASTGrantQuery::accessToString(access, database, table, column);
+}
+
+String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table, const Strings & columns)
+{
+    return ASTGrantQuery::accessToString(access, database, table, columns);
+}
 
 
 AllowedDatabases::Node::Node(Node && src) { *this = src; }
@@ -416,97 +441,7 @@ bool AllowedDatabases::Node::operator ==(const AllowedDatabases::Node & other) c
 }
 
 
-String AllowedDatabases::accessToString(AccessType access)
-{
-    struct AccessDesc { AccessType access; const char * text; };
-    static constexpr AccessDesc descs[] =
-    {
-        { SELECT, "SELECT" },
-        { INSERT, "INSERT" },
-        { DELETE, "DELETE" },
-        { ALTER, "ALTER" },
-        { CREATE, "CREATE" },
-        { DROP, "DROP" },
-    };
-
-    String str;
-    for (size_t i = 0; i != std::size(descs) && access; ++i)
-    {
-        const auto & desc = descs[i];
-        if (access & desc.access)
-        {
-            str += (str.empty() ? "" : ",") + String(desc.text);
-            access &= ~desc.access;
-        }
-    }
-    if (access)
-        str += (str.empty() ? "" : ",") + std::to_string(access);
-    if (str.empty())
-        str += "USAGE";
-    return str;
-}
-
-
-String AllowedDatabases::accessToString(AccessType access, const String & database)
-{
-    return accessToString(access) + " ON " + backQuoteIfNeed(database) + ".*";
-}
-
-
-String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table)
-{
-    return accessToString(access) + " ON " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
-}
-
-
-String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table, const String & column)
-{
-    String str;
-    for (AccessType flag = 0x01; access; flag <<= 1)
-    {
-        if (access & flag)
-        {
-            if (!str.empty())
-                str += ",";
-            str += accessToString(access & flag) + "(" + backQuoteIfNeed(column) + ")";
-            access &= ~flag;
-        }
-    }
-    return str + " ON " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
-}
-
-
-String AllowedDatabases::accessToString(AccessType access, const String & database, const String & table, const Strings & columns)
-{
-    String str;
-    for (AccessType flag = 0x01; access; flag <<= 1)
-    {
-        if (access & flag)
-        {
-            if (!str.empty())
-                str += ",";
-            str += accessToString(access & flag) + "(";
-            for (size_t i = 0; i != columns.size(); ++i)
-            {
-                if (i)
-                    str += ",";
-                str += backQuoteIfNeed(columns[i]);
-            }
-            str += ")";
-            access &= ~flag;
-        }
-    }
-    return str + " ON " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
-}
-
-
-AllowedDatabases::AllowedDatabases()
-{
-    static_assert(!(COLUMN_LEVEL & ~TABLE_LEVEL));
-    static_assert(!(TABLE_LEVEL & ~DATABASE_LEVEL));
-}
-
-
+AllowedDatabases::AllowedDatabases() = default;
 AllowedDatabases::~AllowedDatabases() = default;
 AllowedDatabases::AllowedDatabases(const AllowedDatabases & src) = default;
 AllowedDatabases & AllowedDatabases::operator =(const AllowedDatabases & src) = default;
@@ -528,40 +463,35 @@ void AllowedDatabases::clear()
 
 bool AllowedDatabases::grant(AccessType access)
 {
-    if (access & ~DATABASE_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~DATABASE_LEVEL) + " cannot be granted on databases", ErrorCodes::INVALID_GRANT);
+    access &= ASTGrantQuery::ALL_DATABASE_LEVEL;
     return root.grant(access);
 }
 
 
 bool AllowedDatabases::grant(AccessType access, const String & database)
 {
-    if (access & ~DATABASE_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~DATABASE_LEVEL) + " cannot be granted on databases", ErrorCodes::INVALID_GRANT);
+    access &= ASTGrantQuery::ALL_DATABASE_LEVEL;
     return root.grant(access, database);
 }
 
 
 bool AllowedDatabases::grant(AccessType access, const String & database, const String & table)
 {
-    if (access & ~TABLE_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~TABLE_LEVEL) + " cannot be granted on tables", ErrorCodes::INVALID_GRANT);
+    access &= ASTGrantQuery::ALL_TABLE_LEVEL;
     return root.grant(access, database, table);
 }
 
 
 bool AllowedDatabases::grant(AccessType access, const String & database, const String & table, const String & column)
 {
-    if (access & ~COLUMN_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~COLUMN_LEVEL) + " cannot be granted on columns", ErrorCodes::INVALID_GRANT);
+    access &= ASTGrantQuery::ALL_COLUMN_LEVEL;
     return root.grant(access, database, table, column);
 }
 
 
 bool AllowedDatabases::grant(AccessType access, const String & database, const String & table, const Strings & columns)
 {
-    if (access & ~COLUMN_LEVEL)
-        throw Exception("The privilege " + accessToString(access & ~COLUMN_LEVEL) + " cannot be granted on columns", ErrorCodes::INVALID_GRANT);
+    access &= ASTGrantQuery::ALL_COLUMN_LEVEL;
     return root.grant(access, database, table, columns);
 }
 

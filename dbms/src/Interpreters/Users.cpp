@@ -42,12 +42,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         encoded_password.setPassword(config.getString(config_elem + ".password"), EncodedPassword::Encoding::PLAIN_TEXT);
 
     if (has_password_sha256_hex)
-    {
-        String password_sha256_hex = Poco::toLower(config.getString(config_elem + ".password_sha256_hex"));
-        if (password_sha256_hex.size() != 64)
-            throw Exception("password_sha256_hex for user " + name + " has length " + toString(password_sha256_hex.size()) + " but must be exactly 64 symbols.", ErrorCodes::BAD_ARGUMENTS);
-        encoded_password.setEncodedPassword(boost::algorithm::unhex(password_sha256_hex), EncodedPassword::Encoding::SHA256);
-    }
+        encoded_password.setEncodedPasswordHex(config.getString(config_elem + ".password_sha256_hex"), EncodedPassword::Encoding::SHA256);
 
     profile = config.getString(config_elem + ".profile");
     quota = config.getString(config_elem + ".quota");

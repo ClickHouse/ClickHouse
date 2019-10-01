@@ -6,6 +6,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ATTRIBUTES_NOT_FOUND;
+}
+
 String backQuoteIfNeed(const String & x);
 
 
@@ -31,22 +36,115 @@ AttributesPtr IAttributesStorage::tryReadHelper(const UUID & id) const
 }
 
 
-UUID IAttributesStorage::insert(const IAttributes & attrs)
+std::pair<String, const IAttributes::Type *> IAttributesStorage::readNameAndType(const UUID & id) const
 {
-    return insertImpl(attrs);
+    return readNameAndTypeImpl(id);
 }
 
 
-std::pair<UUID, bool> IAttributesStorage::tryInsert(const IAttributes & attrs)
+std::pair<String, const IAttributes::Type *> IAttributesStorage::tryReadNameAndType(const UUID & id) const
 {
     try
     {
-        return {insertImpl(attrs), true};
+        return readNameAndTypeImpl(id);
     }
     catch (...)
     {
-        return {UUID(UInt128(0)), false};
+        return {};
     }
+}
+
+
+UUID insert(const IAttributes & attrs, bool replace_if_exists = false);
+UUID insert(const AttributesPtr & attrs, bool replace_if_exists = false);
+std::vector<UUID> insert(const std::vector<AttributesPtr> & attrs, bool replace_if_exists = false);
+
+/// Inserts attributes to the storage.
+/// Returns `{id, true}` if successfully inserted or `{id, false}` if the specified name is already in use.
+std::pair<UUID, bool> tryInsert(const IAttributes & attrs);
+std::pair<UUID, bool> tryInsert(const AttributesPtr & attrs);
+std::vector<std::pair<UUID, bool>> tryInsert(const std::vector<AttributesPtr> & attrs);
+
+
+UUID IAttributesStorage::insert(const IAttributes & attrs, bool replace_if_exists)
+{
+    return insertImpl(attrs, replace_if_exists);
+}
+
+
+UUID IAttributesStorage::insert(const AttributesPtr & attrs, bool replace_if_exists)
+{
+    return insert(*attrs, replace_if_exists);
+}
+
+
+std::vector<UUID> IAttributesStorage::insert(const std::vector<AttributesPtr> & multiple_attrs, bool replace_if_exists)
+{
+    std::vector<UUID> ids;
+    Strings failed_to_insert;
+    String exception_message;
+    int exception_code;
+    for (const auto & attrs : multiple_attrs)
+    {
+        try
+        {
+            ids.emplace_back(insertImpl(*attrs, replace_if_exists));
+        }
+        catch (...)
+        {
+            failed_to_insert.emplace_back(attrs->name);
+            exception_message = getCurrentExceptionMessage(false);
+            exception_code = getCurrentExceptionCode();
+        }
+    }
+
+    if (!failed_to_insert.empty())
+    {
+        String msg = "Couldn't insert ";
+        for (size_t i = 0; i != failed_to_insert.size(); ++i)
+            msg += String(i ? ", " : "") + backQuoteIfNeed(failed_to_insert[i]);
+        msg += ": " + exception_message;
+        throw Exception(msg, exception_code);
+    }
+    return ids;
+}
+
+
+std::optional<UUID> IAttributesStorage::tryInsert(const IAttributes & attrs)
+{
+    try
+    {
+        return insertImpl(attrs, false);
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+
+std::optional<UUID> IAttributesStorage::tryInsert(const AttributesPtr & attrs)
+{
+    return tryInsert(*attrs);
+}
+
+
+std::vector<std::optional<UUID>> IAttributesStorage::tryInsert(const std::vector<AttributesPtr> & multiple_attrs)
+{
+    std::vector<std::optional<UUID>> ids;
+    for (const auto & attrs : multiple_attrs)
+    {
+        std::optional<UUID> id;
+        try
+        {
+            id = insertImpl(*attrs, false);
+        }
+        catch (...)
+        {
+        }
+        ids.emplace_back(id);
+    }
+    return ids;
 }
 
 
@@ -103,7 +201,7 @@ void IAttributesStorage::remove(const Strings & names, const Type & type)
     {
         String msg = "Couldn't remove ";
         for (size_t i = 0; i != failed_to_remove.size(); ++i)
-            msg += String(i ? ", " : "") + "{" + failed_to_remove[i] + "}";
+            msg += String(i ? ", " : "") + backQuoteIfNeed(failed_to_remove[i]);
         msg += ": " + exception_message;
         throw Exception(msg, exception_code);
     }
@@ -313,7 +411,7 @@ UUID IAttributesStorage::generateRandomID()
 
 void IAttributesStorage::throwNotFound(const UUID & id)
 {
-    throw Exception(String(type.name) + " {" + toString(id) + "} not found", type.error_code_not_found);
+    throw Exception("ID {" + toString(id) + "} not found", ErrorCodes::ATTRIBUTES_NOT_FOUND);
 }
 
 
@@ -326,7 +424,7 @@ void IAttributesStorage::throwNotFound(const String & name, const Type & type)
 void IAttributesStorage::throwNameCollisionCannotInsert(const String & name, const Type & type, const Type & type_of_existing)
 {
     throw Exception(
-        String(type.name) + " " + backQuoteIfNeed(name) + ": cannot insert because " + type_of_existing + " " + backQuoteIfNeed(name)
+        String(type.name) + " " + backQuoteIfNeed(name) + ": cannot insert because " + type_of_existing.name + " " + backQuoteIfNeed(name)
             + " already exists",
         type.error_code_already_exists);
 }
@@ -336,7 +434,21 @@ void IAttributesStorage::throwNameCollisionCannotRename(const String & old_name,
 {
     throw Exception(
         String(type.name) + " " + backQuoteIfNeed(old_name) + ": cannot rename to " + backQuoteIfNeed(new_name) + " because "
-            + type_of_existing + " " + backQuoteIfNeed(new_name) + " already exists",
+            + type_of_existing.name + " " + backQuoteIfNeed(new_name) + " already exists",
         type.error_code_already_exists);
+}
+
+
+void IAttributesStorage::notify(const OnChangeNotifications & notifications)
+{
+    for (const auto & [fn, attrs] : notifications)
+        fn(attrs);
+}
+
+
+void IAttributesStorage::notify(const OnNewNotifications & notifications)
+{
+    for (const auto & [fn, id] : notifications)
+        fn(id);
 }
 }

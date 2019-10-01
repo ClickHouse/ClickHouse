@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -10,6 +11,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -606,14 +608,146 @@ bool ParserCreateQuery::parseCreateUserQuery(Pos & pos, ASTPtr & node, Expected 
     if (!name_p.parse(pos, name, expected))
         return false;
 
+    EncodedPassword password;
+    bool password_found = false;
+    AllowedHosts hosts;
+
+    while (true)
+    {
+        if (!password_found && parseCreateUserPassword(pos, password, expected))
+        {
+            password_found = true;
+            continue;
+        }
+
+        if (parseCreateUserHosts(pos, hosts, expected))
+            continue;
+
+        break;
+    }
+
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
 
     auto user = std::make_shared<User2>();
     user->name = getIdentifierName(name);
+    user->password = std::move(password);
+    user->allowed_hosts = std::move(hosts);
     query->user = user;
     query->if_not_exists = if_not_exists;
+
     return true;
+}
+
+
+bool ParserCreateQuery::parseCreateUserPassword(Pos & pos, EncodedPassword & password, Expected & expected)
+{
+    if (!ParserKeyword{"PASSWORD"}.ignore(pos, expected))
+        return false;
+
+    if (ParserKeyword{"NONE"}.ignore(pos, expected))
+    {
+        password.setNoPassword();
+        return true;
+    }
+
+    ASTPtr password_ast;
+    if (!ParserStringLiteral{}.parse(pos, password_ast, expected))
+        return false;
+    String password_text = password_ast->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (ParserKeyword{"PLAINTEXT"}.ignore(pos, expected))
+    {
+        password.setPassword(password_text, EncodedPassword::Encoding::PLAIN_TEXT);
+        return true;
+    }
+
+    if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
+    {
+        password.setEncodedPasswordHex(password_text, EncodedPassword::Encoding::SHA256);
+        return true;
+    }
+
+    ParserKeyword{"SHA256"}.ignore(pos, expected);
+    password.setPassword(password_text, EncodedPassword::Encoding::SHA256);
+    return true;
+}
+
+
+bool ParserCreateQuery::parseCreateUserHosts(Pos & pos, AllowedHosts & hosts, Expected & expected)
+{
+    if (!ParserKeyword{"HOST"}.ignore(pos, expected))
+        return false;
+
+    ParserToken comma{TokenType::Comma};
+    while (true)
+    {
+        ASTPtr hostname;
+        if (ParserStringLiteral{}.parse(pos, hostname, expected))
+        {
+            bool first_hostname = true;
+            do
+            {
+                if (!first_hostname)
+                {
+                    if (!ParserStringLiteral{}.parse(pos, hostname, expected))
+                        return false;
+                }
+                hosts.addHost(hostname->as<ASTLiteral &>().value.safeGet<String>());
+                first_hostname = false;
+            }
+            while (comma.ignore(pos, expected));
+            continue;
+        }
+
+        if (ParserKeyword{"REGEXP"}.ignore(pos, expected))
+        {
+            do
+            {
+                ASTPtr hostname_re;
+                if (!ParserStringLiteral{}.parse(pos, hostname_re, expected))
+                    return false;
+                hosts.addHostRegexp(hostname_re->as<ASTLiteral &>().value.safeGet<String>());
+            }
+            while (comma.ignore(pos, expected));
+            continue;
+        }
+
+        if (ParserKeyword{"IP"}.ignore(pos, expected))
+        {
+            do
+            {
+                ASTPtr ipaddress_ast;
+                if (!ParserStringLiteral{}.parse(pos, ipaddress_ast, expected))
+                    return false;
+                String ipaddress = ipaddress_ast->as<ASTLiteral &>().value.safeGet<String>();
+                size_t slash = ipaddress.find('/');
+                if (slash == String::npos)
+                {
+                    hosts.addIPAddress(Poco::Net::IPAddress(ipaddress));
+                }
+                else
+                {
+                    String prefix(ipaddress, 0, slash);
+                    String mask(ipaddress, slash + 1, ipaddress.length() - slash - 1);
+                    if (std::all_of(mask.begin(), mask.end(), isNumericASCII))
+                        hosts.addIPSubnet(Poco::Net::IPAddress(prefix), ::DB::parse<UInt8>(mask));
+                    else
+                        hosts.addIPSubnet(Poco::Net::IPAddress(prefix), Poco::Net::IPAddress(mask));
+                }
+            }
+            while (comma.ignore(pos, expected));
+            continue;
+        }
+
+        if (ParserKeyword{"ANY"}.ignore(pos, expected))
+        {
+            hosts.addIPSubnet(Poco::Net::IPAddress(), 0);
+            continue;
+        }
+
+        return true;
+    }
 }
 
 }

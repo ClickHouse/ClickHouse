@@ -3,6 +3,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -293,6 +294,33 @@ bool ASTCreateQuery::formatCreateUserQuery(const FormatSettings & settings) cons
                   << (if_not_exists ? "IF NOT EXISTS " : "")
                   << (settings.hilite ? hilite_none : "")
                   << backQuoteIfNeed(user->name);
+
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " PASSWORD " << (settings.hilite ? hilite_none : "");
+    String password;
+    String password_mode;
+    switch (user->password.getEncoding())
+    {
+        case EncodedPassword::Encoding::PLAIN_TEXT:
+            password = user->password.getEncodedPassword();
+            password_mode = "PLAINTEXT";
+            break;
+        case EncodedPassword::Encoding::SHA256:
+            password = user->password.getEncodedPasswordHex();
+            password_mode = "SHA256_HASH";
+            break;
+        default:
+            __builtin_unreachable();
+    }
+    if (password.empty() && (password_mode == "PLAINTEXT"))
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "NONE" << (settings.hilite ? hilite_none : "");
+    else
+    {
+        WriteBufferFromOwnString password_wb;
+        writeQuoted(password, password_wb);
+        settings.ostr << password_wb.str() << " " << (settings.hilite ? hilite_keyword : "") << password_mode
+                      << (settings.hilite ? hilite_none : "");
+    }
+
     return true;
 }
 }

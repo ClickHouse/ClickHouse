@@ -13,6 +13,8 @@
 
 namespace DB
 {
+class EncodedPassword;
+class AllowedHosts;
 
 /** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
   */
@@ -311,6 +313,8 @@ protected:
 private:
     bool parseCreateRoleQuery(Pos & pos, ASTPtr & node, Expected & expected);
     bool parseCreateUserQuery(Pos & pos, ASTPtr & node, Expected & expected);
+    bool parseCreateUserPassword(Pos & pos, EncodedPassword & password, Expected & expected);
+    bool parseCreateUserHosts(Pos & pos, AllowedHosts & hosts, Expected & expected);
 };
 
 }

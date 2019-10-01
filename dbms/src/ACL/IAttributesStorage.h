@@ -62,12 +62,20 @@ public:
     template <typename AttributesT = IAttributes>
     std::shared_ptr<const AttributesT> tryRead(const String & name) const;
 
-    /// Inserts attributes to the storage. Throws an exception if the specified name is already in use.
-    UUID insert(const IAttributes & attrs);
+    /// Reads only name and type of the attributes.
+    std::pair<String, const Type *> readNameAndType(const UUID & id) const;
+    std::pair<String, const Type *> tryReadNameAndType(const UUID & id) const;
+
+    /// Inserts attributes to the storage. If the specified name is already in use and `replace_if_exists == false` throws an exception.
+    UUID insert(const IAttributes & attrs, bool replace_if_exists = false);
+    UUID insert(const AttributesPtr & attrs, bool replace_if_exists = false);
+    std::vector<UUID> insert(const std::vector<AttributesPtr> & multiple_attrs, bool replace_if_exists = false);
 
     /// Inserts attributes to the storage.
-    /// Returns `{id, true}` if successfully inserted or `{id, false}` if the specified name is already in use.
-    std::pair<UUID, bool> tryInsert(const IAttributes & attrs);
+    /// Returns ID if successfully inserted or `nullopt` if the specified name is already in use.
+    std::optional<UUID> tryInsert(const IAttributes & attrs);
+    std::optional<UUID> tryInsert(const AttributesPtr & attrs);
+    std::vector<std::optional<UUID>> tryInsert(const std::vector<AttributesPtr> & multiple_attrs);
 
     /// Removes the attributes from the storage. Throws an exception if not found.
     void remove(const UUID & id) { removeImpl(id); }
@@ -154,23 +162,13 @@ public:
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
     /// `on_changed` should have signature `void(const std::shared_ptr<const AttributesT> & attrs)` where `AttributesT` is any class derived from IAttributes.
     template <typename OnChangedHandlerT>
-    SubscriptionPtr subscribeForChanges(const UUID & id, const OnChangedHandlerT & on_changed) const
-    {
-        return subscribeForChangesImpl(id, castOnChangedHandler(on_changed));
-    }
+    SubscriptionPtr subscribeForChanges(const UUID & id, const OnChangedHandlerT & on_changed) const { return subscribeForChangesImpl(id, castOnChangedHandler(on_changed)); }
 
     template <typename AttributesT, typename OnChangedHandlerT>
-    SubscriptionPtr subscribeForChanges(const String & name, const OnChangedHandlerT & on_changed) const
-    {
-        return subscribeForChanges(name, AttributesT::TYPE, on_changed);
-    }
+    SubscriptionPtr subscribeForChanges(const String & name, const OnChangedHandlerT & on_changed) const { return subscribeForChanges(name, AttributesT::TYPE, on_changed); }
 
     template <typename OnChangedHandlerT>
-    SubscriptionPtr subscribeForChanges(const String & name, const Type & type, const OnChangedHandlerT & on_changed) const
-    {
-        auto id = find(name, type);
-        return id ? subscribeForChanges(*id, on_changed) : nullptr;
-    }
+    SubscriptionPtr subscribeForChanges(const String & name, const Type & type, const OnChangedHandlerT & on_changed) const;
 
 protected:
     using UpdateFunc = std::function<void(IAttributes &)>;
@@ -180,7 +178,8 @@ protected:
     virtual std::optional<UUID> findImpl(const String & name, const Type & type) const = 0;
     virtual bool existsImpl(const UUID & id) const = 0;
     virtual AttributesPtr readImpl(const UUID & id) const = 0;
-    virtual UUID insertImpl(const IAttributes & attrs) = 0;
+    virtual std::pair<String, const Type *> readNameAndTypeImpl(const UUID & id) const = 0;
+    virtual UUID insertImpl(const IAttributes & attrs, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
     virtual SubscriptionPtr subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const = 0;
@@ -191,6 +190,13 @@ protected:
     [[noreturn]] static void throwNotFound(const String & name, const Type & type);
     [[noreturn]] static void throwNameCollisionCannotInsert(const String & name, const Type & type, const Type & type_of_existing);
     [[noreturn]] static void throwNameCollisionCannotRename(const String & old_name, const String & new_name, const Type & type, const Type & type_of_existing);
+
+    using OnChangeNotification = std::pair<OnChangedHandler, AttributesPtr>;
+    using OnChangeNotifications = std::vector<OnChangeNotification>;
+    using OnNewNotification = std::pair<OnNewHandler, UUID>;
+    using OnNewNotifications = std::vector<OnNewNotification>;
+    static void notify(const OnChangeNotifications & notifications);
+    static void notify(const OnNewNotifications & notifications);
 
 private:
     AttributesPtr tryReadHelper(const UUID & id) const;
@@ -267,36 +273,27 @@ IAttributesStorage::UpdateFunc IAttributesStorage::castUpdateFunc(const UpdateFu
 }
 
 
-#if 0
 template <typename OnChangedHandlerT>
 IAttributesStorage::OnChangedHandler IAttributesStorage::castOnChangedHandler(const OnChangedHandlerT & on_changed)
 {
-    using ParamTypes = typename boost::function_types::parameter_types<decltype(&UpdateFunc::operator())>::type;
+    using ParamTypes = typename boost::function_types::parameter_types<decltype(&OnChangedHandlerT::operator())>::type;
     using ArgType = typename boost::mpl::at<ParamTypes, boost::mpl::int_<1> >::type;
-    using AttributesT = std::remove_reference_t<ArgType>;
+    using AttributesT = typename std::remove_const_t<typename std::remove_const_t<std::remove_reference_t<ArgType>>::element_type>;
 
-    return [update_func](IAttributes & attrs)
+    return [on_changed](const AttributesPtr & attrs)
     {
         if constexpr (std::is_same_v<AttributesT, IAttributes>)
-            update_func(*attrs);
+            on_changed(attrs);
         else
-            update_func(*attrs.cast<AttributesT>());
+            on_changed(attrs ? attrs->cast<AttributesT>() : nullptr);
     };
 }
 
 
-template <typename Func>
-IAttributesStorage::SubscriptionPtr IAttributesStorage::subscribeForChanges(const UUID & id, const Func & on_changed) const
+template <typename OnChangedHandlerT>
+IAttributesStorage::SubscriptionPtr IAttributesStorage::subscribeForChanges(const String & name, const Type & type, const OnChangedHandlerT & on_changed) const
 {
-    using ParamTypes = typename boost::function_types::parameter_types<decltype(&Func::operator())>::type;
-    using ArgType = typename boost::mpl::at<ParamTypes, boost::mpl::int_<1> >::type;
-    using AttributesT = typename std::remove_const_t<std::remove_reference_t<ArgType>>::element_type;
-
-    return subscribeForChangesImpl(id, [on_changed](const AttributesPtr & attrs)
-    {
-        auto casted_attrs = attrs ? attrs->tryCast<const AttributesT>() : nullptr;
-        on_changed(casted_attrs);
-    });
+    auto id = find(name, type);
+    return id ? subscribeForChanges(*id, on_changed) : nullptr;
 }
-#endif
 }

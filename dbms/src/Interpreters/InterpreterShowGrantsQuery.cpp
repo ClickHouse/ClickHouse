@@ -47,6 +47,7 @@ std::vector<ASTPtr> InterpreterShowGrantsQuery::enumerateGrantQueries() const
 {
     const auto & query = query_ptr->as<ASTShowGrantsQuery &>();
     auto & manager = context.getAccessControlManager();
+    const String & current_database = context.getCurrentDatabase();
 
     auto attrs = manager.read<Role>(query.role);
     std::vector<ASTPtr> result;
@@ -71,7 +72,10 @@ std::vector<ASTPtr> InterpreterShowGrantsQuery::enumerateGrantQueries() const
                 {
                     auto new_grant_query = std::make_shared<ASTGrantQuery>();
                     new_grant_query->to_roles.emplace_back(attrs->name);
-                    new_grant_query->database = info.database;
+                    if (info.database == current_database)
+                        new_grant_query->use_current_database = true;
+                    else
+                        new_grant_query->database = info.database;
                     new_grant_query->table = info.table;
                     new_grant_query->kind = kind;
                     new_grant_query->grant_option = grant_option;
@@ -110,6 +114,7 @@ std::vector<ASTPtr> InterpreterShowGrantsQuery::enumerateGrantQueries() const
 
         if (!granted_roles.empty())
         {
+            std::sort(granted_roles.begin(), granted_roles.end());
             auto new_query = std::make_shared<ASTGrantQuery>();
             new_query->to_roles.emplace_back(attrs->name);
             new_query->kind = Kind::GRANT;

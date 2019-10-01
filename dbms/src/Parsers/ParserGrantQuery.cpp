@@ -7,6 +7,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int INVALID_GRANT;
+}
+
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -42,6 +47,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     using AccessType = ASTGrantQuery::AccessType;
     AccessType access = 0;
+    bool all_privileges = false;
     std::unordered_map<String, AccessType> columns_access;
     bool access_specifiers_found = false;
     if (!should_be_access_specifiers || *should_be_access_specifiers)
@@ -62,20 +68,32 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     ParserToken close(TokenType::ClosingRoundBracket);
                     if (open.ignore(pos, expected))
                     {
+                        AccessType add_column_access = access_type;
+                        if (add_column_access == ASTGrantQuery::ALL)
+                            add_column_access = ASTGrantQuery::ALL_COLUMN_LEVEL;
+                        else if (add_column_access & ~ASTGrantQuery::ALL_COLUMN_LEVEL)
+                            throw Exception("Privilege " + access_name + " cannot be granted on a column", ErrorCodes::INVALID_GRANT);
+
                         do
                         {
                             ParserIdentifier column_name_p;
                             ASTPtr column_name;
                             if (!column_name_p.parse(pos, column_name, expected))
                                 return false;
-                            columns_access[getIdentifierName(column_name)] |= access_type;
+                            columns_access[getIdentifierName(column_name)] |= add_column_access;
                         }
                         while (comma.ignore(pos, expected));
+
                         if (!close.ignore(pos, expected))
                             return false;
                     }
                     else
-                        access |= access_type;
+                    {
+                        if (access_type == ASTGrantQuery::ALL)
+                            all_privileges = true;
+                        else
+                            access |= access_type;
+                    }
                 }
             }
         }
@@ -111,6 +129,32 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             table = database;
             database = nullptr;
             use_current_database = true;
+        }
+
+        if (table)
+        {
+            if (access & ~ASTGrantQuery::ALL_TABLE_LEVEL)
+                throw Exception(
+                    "Privileges " + ASTGrantQuery::accessToString(access & ~ASTGrantQuery::ALL_TABLE_LEVEL)
+                        + " cannot be granted on a table",
+                    ErrorCodes::INVALID_GRANT);
+            if (all_privileges)
+                access = ASTGrantQuery::ALL_TABLE_LEVEL;
+        }
+        else if (database || use_current_database)
+        {
+            if (access & ~ASTGrantQuery::ALL_DATABASE_LEVEL)
+                throw Exception(
+                    "Privileges " + ASTGrantQuery::accessToString(access & ~ASTGrantQuery::ALL_TABLE_LEVEL)
+                        + " cannot be granted on a database",
+                    ErrorCodes::INVALID_GRANT);
+            if (all_privileges)
+                access = ASTGrantQuery::ALL_DATABASE_LEVEL;
+        }
+        else
+        {
+            if (all_privileges)
+                access = ASTGrantQuery::ALL;
         }
     }
     else

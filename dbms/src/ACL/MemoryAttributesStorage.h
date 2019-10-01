@@ -22,7 +22,8 @@ protected:
     std::optional<UUID> findImpl(const String & name, const Type & type) const override;
     bool existsImpl(const UUID & id) const override;
     AttributesPtr readImpl(const UUID & id) const override;
-    UUID insertImpl(const IAttributes & attrs) override;
+    std::pair<String, const Type *> readNameAndTypeImpl(const UUID &id) const;
+    UUID insertImpl(const IAttributes & attrs, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     SubscriptionPtr subscribeForNewImpl(const String & prefix, const Type & type, const OnNewHandler & on_new) const override;

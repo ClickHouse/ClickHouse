@@ -9,14 +9,15 @@
 namespace DB
 {
 /// Attributes are a set of data which have a name and a type. Attributes control something.
-/// Attributes can be stored and loaded to a file or another storage, see IAttributesStorage.
+/// Attributes can be stored to a file or another storage, see IAttributesStorage.
 struct IAttributes : public std::enable_shared_from_this<IAttributes>
 {
+    /// Type of the attributes.
     struct Type : private boost::noncopyable
     {
-        const char * name;
-        const size_t namespace_idx;
-        const Type * const base_type;
+        const char * name; /// Name of the attributes, used to write error messages.
+        const size_t namespace_idx; /// Index of the namespace used by this type of the attributes. Sometimes attributes of different types share the same namespace, for example, users and roles.
+        const Type * const base_type; /// Base type of this type. For most cases it's nullptr.
         const int error_code_not_found;
         const int error_code_already_exists;
 
@@ -54,20 +55,14 @@ struct IAttributes : public std::enable_shared_from_this<IAttributes>
     friend bool operator !=(const IAttributes & lhs, const IAttributes & rhs) { return !(lhs == rhs); }
 
 protected:
+    /// Helper function to define clone() in the derived classes.
     template <typename AttributesT>
-    std::shared_ptr<IAttributes> cloneImpl() const;
+    std::shared_ptr<IAttributes> cloneImpl() const { return std::make_shared<AttributesT>(*cast<AttributesT>()); }
 
     virtual bool equal(const IAttributes & other) const;
 };
 
 using AttributesPtr = std::shared_ptr<const IAttributes>;
-
-
-template <typename AttributesT>
-std::shared_ptr<IAttributes> IAttributes::cloneImpl() const
-{
-    return std::make_shared<AttributesT>(*cast<AttributesT>());
-}
 
 
 template <typename AttributesT>

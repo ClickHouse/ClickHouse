@@ -79,7 +79,7 @@ bool ASTDropQuery::formatDropACLQuery(const FormatSettings & settings) const
                   << (settings.hilite ? hilite_none : "");
 
     for (size_t i = 0; i != names.size(); ++i)
-        settings.ostr << (i ? " " : ", ") << backQuoteIfNeed(names[i]);
+        settings.ostr << (i ? ", " : " ") << backQuoteIfNeed(names[i]);
     return true;
 }
 }
