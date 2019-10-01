@@ -387,7 +387,7 @@ DatabaseIteratorPtr DatabaseLazy::getIterator(const Context & context, const Fil
     Strings filtered_tables;
     for (const auto & [table_name, cached_table] : tables_cache)
     {
-        if (filter_by_table_name(table_name))
+        if (!filter_by_table_name || filter_by_table_name(table_name))
             filtered_tables.push_back(table_name);
     }
     std::sort(filtered_tables.begin(), filtered_tables.end());
@@ -615,6 +615,7 @@ DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, const Conte
 void DatabaseLazyIterator::next()
 {
     current_storage.reset();
+    ++iterator;
     while (isValid() && !database.isTableExist(context, *iterator))
         ++iterator;
 }
