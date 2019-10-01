@@ -46,7 +46,7 @@ public:
 
     PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
-        return std::make_shared<PreparedFunctionRandomConstant>(value);
+        return std::make_shared<PreparedFunctionRandomConstant<ToType, Name>>(value);
     }
 
     bool isDeterministic() const override { return false; }
@@ -76,7 +76,7 @@ public:
 
     static FunctionBuilderPtr create(const Context &)
     {
-        return std::make_shared<FunctionBaseRandomConstant<ToType, Name>>();
+        return std::make_shared<FunctionBuilderRandomConstant<ToType, Name>>();
     }
 
 protected:
@@ -93,7 +93,7 @@ protected:
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
         ToType value = vec_to[0];
 
-        return std::make_shared<FunctionBaseRandomConstant>(value, argument_types);
+        return std::make_shared<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types);
     }
 };
 
