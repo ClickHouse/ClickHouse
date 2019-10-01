@@ -1,0 +1,11 @@
+testlazy	log	Log	0	['/var/lib/clickhouse/data/testlazy/log/']	/var/lib/clickhouse/metadata/testlazy/log.sql	0000-00-00 00:00:00	[]	[]	CREATE TABLE testlazy.log (`a` UInt64, `b` UInt64) ENGINE = Log	Log					
+testlazy	slog	StripeLog	0	['/var/lib/clickhouse/data/testlazy/slog/']	/var/lib/clickhouse/metadata/testlazy/slog.sql	0000-00-00 00:00:00	[]	[]	CREATE TABLE testlazy.slog (`a` UInt64, `b` UInt64) ENGINE = StripeLog	StripeLog					
+testlazy	tlog	TinyLog	0	['/var/lib/clickhouse/data/testlazy/tlog/']	/var/lib/clickhouse/metadata/testlazy/tlog.sql	0000-00-00 00:00:00	[]	[]	CREATE TABLE testlazy.tlog (`a` UInt64, `b` UInt64) ENGINE = TinyLog	TinyLog					
+testlazy	log	0000-00-00 00:00:00
+testlazy	slog	0000-00-00 00:00:00
+testlazy	tlog	0000-00-00 00:00:00
+1	1
+2	2
+3	3
+2	2
+3	3
