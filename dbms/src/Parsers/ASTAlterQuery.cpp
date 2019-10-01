@@ -58,7 +58,6 @@ ASTPtr ASTAlterCommand::clone() const
     }
 
     return res;
-    ////
 }
 
 void ASTAlterCommand::formatImpl(
