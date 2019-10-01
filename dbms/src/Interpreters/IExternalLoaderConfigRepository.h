@@ -2,6 +2,7 @@
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Timestamp.h>
 
 #include <memory>
 #include <string>
@@ -28,9 +29,8 @@ public:
     /// Checks that source of loadables configuration exist.
     virtual bool exists(const std::string & loadable_definition_name) const = 0;
 
-    /// Checks that entity was updated since last call of this method.
-    /// Assumes usage of some state and probably some mutex.
-    virtual bool isUpdated(const std::string & loadable_definition_name) = 0;
+    /// Returns entity last update time
+    virtual Poco::Timestamp getUpdateTime(const std::string & loadable_definition_name) = 0;
 
     /// Load configuration from some concrete source to AbstractConfiguration
     virtual LoadablesConfigurationPtr load(const std::string & loadable_definition_name) const = 0;

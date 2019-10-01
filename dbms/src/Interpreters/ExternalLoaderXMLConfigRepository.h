@@ -26,18 +26,13 @@ public:
     /// Checks that file with name exists on filesystem
     bool exists(const std::string & definition_entity_name) const override;
 
-    /// Checks that file was updated since last check
-    bool isUpdated(const std::string & definition_entity_name) override;
+    /// Return xml-file modification time via stat call
+    Poco::Timestamp getUpdateTime(const std::string & definition_entity_name) override;
 
     /// May contain definition about several entities (several dictionaries in one .xml file)
     LoadablesConfigurationPtr load(const std::string & definition_entity_name) const override;
 
 private:
-
-    /// Simple map with last modification time with path -> timestamp,
-    /// modification time received by stat.
-    std::unordered_map<std::string, Poco::Timestamp> update_time_mapping;
-
     /// Main server config (config.xml).
     const Poco::Util::AbstractConfiguration & main_config;
 

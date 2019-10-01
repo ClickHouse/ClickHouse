@@ -12,18 +12,9 @@
 namespace DB
 {
 
-bool ExternalLoaderXMLConfigRepository::isUpdated(const std::string & definition_entity_name)
+Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
-    Poco::Timestamp last_modified = Poco::File(definition_entity_name).getLastModified();
-
-    auto itr = update_time_mapping.find(definition_entity_name);
-    if (itr == update_time_mapping.end() || last_modified > itr->second)
-    {
-        update_time_mapping[definition_entity_name] = last_modified;
-        return true;
-    }
-
-    return false;
+    return Poco::File(definition_entity_name).getLastModified();
 }
 
 std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefinitionNames() const
