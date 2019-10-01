@@ -4,7 +4,7 @@ set -ex
 
 init_server()
 {
-    sudo -u clickhouse clickhouse-server --config-file /etc/clickhouse-server/config.xml -- --tcp_port $1 --http_port $2 --interserver_http_port $3
+    sudo -u clickhouse clickhouse-server --config-file /etc/clickhouse-server/config.xml -- --tcp_port $1 --http_port $2 --interserver_http_port $3 2>/var/log/clickhouse-server/stderr.log
 }
 
 first_run() # This run is made to create all the directories and create databases
@@ -23,6 +23,7 @@ second_run() # This run is made to rename a table xD
     init_server $1 $2 $3 &
     sleep 5
 
+    clickhouse-client --port $1 --query "DROP TABLE IF EXISTS test.hits"
     clickhouse-client --port $1 --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 
     pkill -9 -f clickhouse-server

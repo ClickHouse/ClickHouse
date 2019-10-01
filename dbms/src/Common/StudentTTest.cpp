@@ -165,7 +165,7 @@ bool StudentTTest::distributionsDiffer(size_t confidence_level_index, double com
 
     updateResults(confidence_level_index);
 
-    /// Difference must be more than 0.0001, to take into account connection latency.
+    /// Difference must be more than comparison_precision, to take into account connection latency.
     return mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > comparison_precision);
 }
 

@@ -12,8 +12,8 @@ install_packages()
 
 run()
 {
-    while ! clickhouse-client --port $PORT_PREV --query "SELECT 1"  &>/dev/null; do echo Waiting for port $PORT_PREV ...; sleep 1; done;
-    while ! clickhouse-client --port $PORT_CUR --query "SELECT 1" &>/dev/null; do echo Waiting for port $PORT_CUR ...; sleep 1; done;
+    while ! clickhouse-client --port $PORT_PREV --query "SELECT 1"  &>/dev/null; do echo Waiting for port $PORT_PREV ...; sleep 5; done;
+    while ! clickhouse-client --port $PORT_CUR --query "SELECT 1" &>/dev/null; do echo Waiting for port $PORT_CUR ...; sleep 5; done;
 
     clickhouse-performance-test --port $PORT_PREV $PORT_CUR $TESTS_TO_RUN | tee test_output/test_result.json
 }
