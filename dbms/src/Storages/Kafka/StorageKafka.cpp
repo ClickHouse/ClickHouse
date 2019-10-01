@@ -120,7 +120,7 @@ BlockInputStreams StorageKafka::read(
     const SelectQueryInfo & /* query_info */,
     const Context & context,
     QueryProcessingStage::Enum /* processed_stage */,
-    size_t max_block_size,
+    size_t max_block_size_,
     unsigned /* num_streams */)
 {
     if (num_created_consumers == 0)
@@ -130,9 +130,11 @@ BlockInputStreams StorageKafka::read(
     BlockInputStreams streams;
     streams.reserve(num_created_consumers);
 
+    size_t block_size = max_block_size ? max_block_size : max_block_size_;
+
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
-        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, max_block_size));
+        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, block_size));
 
     LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
     return streams;
@@ -397,7 +399,7 @@ bool StorageKafka::streamToViews()
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
     for (auto & stream : streams)
-        stream->commit();
+        stream->as<KafkaBlockInputStream>()->commit();
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;
