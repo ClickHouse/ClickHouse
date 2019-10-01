@@ -1222,13 +1222,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         {
             Transaction transaction(*dest_table_storage);
 
-            auto data_parts_lock = lockParts();
+            auto src_data_parts_lock = lockParts();
+            auto dest_data_parts_lock = dest_table_storage->lockParts();
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
+                dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, dest_data_parts_lock);
 
-            transaction.commit(&data_parts_lock);
-            removePartsFromWorkingSet(src_parts, true, data_parts_lock);
+            transaction.commit(&src_data_parts_lock);
+            removePartsFromWorkingSet(src_parts, true, src_data_parts_lock);
         }
 
         clearOldMutations(true);
