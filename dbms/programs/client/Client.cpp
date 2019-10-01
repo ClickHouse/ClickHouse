@@ -1058,7 +1058,11 @@ private:
             /// Check if server send Exception packet
             auto packet_type = connection->checkPacket();
             if (packet_type && *packet_type == Protocol::Server::Exception)
+            {
+                async_block_input->cancel(false);
                 return;
+            }
+
 
             connection->sendData(block);
             processed_rows += block.rows();

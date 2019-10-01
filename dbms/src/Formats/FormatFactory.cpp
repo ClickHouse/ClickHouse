@@ -3,8 +3,11 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
+#include <IO/SharedReadBuffer.h>
+#include <DataStreams/UnionBlockInputStream.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
@@ -90,7 +93,7 @@ BlockInputStreamPtr FormatFactory::getInput(
 
     if (!getCreators(name).input_processor_creator)
     {
-        const auto & input_getter = getCreators(name).inout_creator;
+        const auto & input_getter = getCreators(name).input_creator;
         if (!input_getter)
             throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
@@ -98,6 +101,34 @@ BlockInputStreamPtr FormatFactory::getInput(
         FormatSettings format_settings = getInputFormatSetting(settings);
 
         return input_getter(buf, sample, context, max_block_size, callback ? callback : ReadCallback(), format_settings);
+    }
+
+    const Settings & settings = context.getSettingsRef();
+    const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
+
+    if (name != "Values" && settings.input_format_parallel_parsing && file_segmentation_engine)
+    {
+        const auto & input_getter = getCreators(name).input_processor_creator;
+        if (!input_getter)
+            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
+
+        FormatSettings format_settings = getInputFormatSetting(settings);
+
+        RowInputFormatParams row_input_format_params;
+        row_input_format_params.max_block_size = max_block_size;
+        row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
+        row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+        row_input_format_params.callback = std::move(callback);
+        row_input_format_params.max_execution_time = settings.max_execution_time;
+        row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+        size_t max_threads_to_use = settings.max_threads_for_parallel_reading;
+        if (!max_threads_to_use)
+            max_threads_to_use = settings.max_threads;
+
+        auto params = ParallelParsingBlockInputStream::InputCreatorParams{sample, context, row_input_format_params, format_settings};
+        auto builder = ParallelParsingBlockInputStream::Builder{buf, input_getter, params, file_segmentation_engine, max_threads_to_use, settings.min_chunk_size_for_parallel_reading};
+        return std::make_shared<ParallelParsingBlockInputStream>(builder);
     }
 
     auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));
@@ -188,7 +219,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
-    auto & target = dict[name].inout_creator;
+    auto & target = dict[name].input_creator;
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
@@ -218,6 +249,13 @@ void FormatFactory::registerOutputFormatProcessor(const String & name, OutputPro
     target = std::move(output_creator);
 }
 
+void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
+{
+    auto & target = dict[name].file_segmentation_engine;
+    if (target)
+        throw Exception("FormatFactory: File segmentation engine " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = file_segmentation_engine;
+}
 
 /// Formats for both input/output.
 
@@ -245,6 +283,14 @@ void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
 void registerInputFormatProcessorTemplate(FormatFactory & factory);
 void registerOutputFormatProcessorTemplate(FormatFactory &factory);
+
+/// File Segmentation Engines for parallel reading
+
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
+void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
+void registerFileSegmentationEngineValues(FormatFactory & factory);
+void registerFileSegmentationEngineCSV(FormatFactory & factory);
+void registerFileSegmentationEngineTSKV(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -298,6 +344,11 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
 
+    registerFileSegmentationEngineJSONEachRow(*this);
+    registerFileSegmentationEngineTabSeparated(*this);
+    registerFileSegmentationEngineValues(*this);
+    registerFileSegmentationEngineCSV(*this);
+    registerFileSegmentationEngineTSKV(*this);
 
     registerOutputFormatNull(*this);
 

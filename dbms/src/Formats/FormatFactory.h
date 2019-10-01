@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
+#include <IO/BufferWithOwnMemory.h>
 
 #include <functional>
 #include <memory>
@@ -41,6 +42,16 @@ public:
     /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
     using ReadCallback = std::function<void()>;
 
+    /** Fast reading data from buffer and save result to memory.
+      * Reads at least min_chunk_size bytes and some more until the end of the chunk, depends on the format.
+      * Used in SharedReadBuffer.
+      */
+    using FileSegmentationEngine = std::function<bool(
+        ReadBuffer & buf,
+        DB::Memory<> & memory,
+        size_t & used_size,
+        size_t min_chunk_size)>;
+
     /// This callback allows to perform some additional actions after writing a single row.
     /// It's initial purpose was to flush Kafka message for each row.
     using WriteCallback = std::function<void()>;
@@ -77,10 +88,11 @@ private:
 
     struct Creators
     {
-        InputCreator inout_creator;
+        InputCreator input_creator;
         OutputCreator output_creator;
         InputProcessorCreator input_processor_creator;
         OutputProcessorCreator output_processor_creator;
+        FileSegmentationEngine file_segmentation_engine;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -114,6 +126,7 @@ public:
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
+    void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
 
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);

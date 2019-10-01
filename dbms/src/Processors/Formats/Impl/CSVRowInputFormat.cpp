@@ -433,4 +433,67 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
     }
 }
 
+void registerFileSegmentationEngineCSV(FormatFactory & factory)
+{
+    factory.registerFileSegmentationEngine("CSV", [](
+            ReadBuffer & in,
+            DB::Memory<> & memory,
+            size_t & used_size,
+            size_t min_chunk_size)
+    {
+        skipWhitespacesAndTabs(in);
+        char * begin_pos = in.position();
+        bool quotes = false;
+        bool need_more_data = true;
+        memory.resize(min_chunk_size);
+        while (!eofWithSavingBufferState(in, memory, used_size, begin_pos) && need_more_data)
+        {
+            if (quotes)
+            {
+                in.position() = find_first_symbols<'"'>(in.position(), in.buffer().end());
+                if (in.position() == in.buffer().end())
+                    continue;
+                if (*in.position() == '"')
+                {
+                    ++in.position();
+                    if (!eofWithSavingBufferState(in, memory, used_size, begin_pos) && *in.position() == '"')
+                        ++in.position();
+                    else
+                        quotes = false;
+                }
+            }
+            else
+            {
+                in.position() = find_first_symbols<'"','\r', '\n'>(in.position(), in.buffer().end());
+                if (in.position() == in.buffer().end())
+                    continue;
+                if (*in.position() == '"')
+                {
+                    quotes = true;
+                    ++in.position();
+                }
+                else if (*in.position() == '\n')
+                {
+                    if (used_size + static_cast<size_t>(in.position() - begin_pos) >= min_chunk_size)
+                        need_more_data = false;
+                    ++in.position();
+                    if (!eofWithSavingBufferState(in, memory, used_size, begin_pos) && *in.position() == '\r')
+                        ++in.position();
+                }
+                else if (*in.position() == '\r')
+                {
+                    if (used_size + static_cast<size_t>(in.position() - begin_pos) >= min_chunk_size)
+                        need_more_data = false;
+                    ++in.position();
+                    if (!eofWithSavingBufferState(in, memory, used_size, begin_pos) && *in.position() == '\n')
+                        ++in.position();
+                }
+            }
+        }
+        eofWithSavingBufferState(in, memory, used_size, begin_pos, true);
+        return true;
+    });
+}
+
+
 }
