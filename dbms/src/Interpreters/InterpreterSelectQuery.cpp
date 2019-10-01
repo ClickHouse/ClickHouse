@@ -1122,7 +1122,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     {
                         if (size_t rows_in_block = settings.partial_merge_join_rows_in_left_blocks)
                             for (auto & stream : pipeline.streams)
-                                stream = std::make_shared<SquashingBlockInputStream>(stream, rows_in_block, 0);
+                                stream = std::make_shared<SquashingBlockInputStream>(stream, rows_in_block, 0, true);
                     }
                 }
 
