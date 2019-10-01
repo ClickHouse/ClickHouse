@@ -73,6 +73,10 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_READLINE OFF)
         set (ENABLE_ICU OFF)
         set (ENABLE_FASTOPS OFF)
+
+        message (STATUS "Cross-compiling for Darwin")
+    else ()
+        message (FATAL_ERROR "Trying to cross-compile to unsupported target: ${CMAKE_SYSTEM_NAME}!")
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation
