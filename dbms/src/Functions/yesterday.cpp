@@ -71,7 +71,8 @@ protected:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_shared<FunctionBaseYesterday>(DateLUT::instance().toDayNum(time(nullptr)) - 1);
+        auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
+        return std::make_shared<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
     }
 };
 
