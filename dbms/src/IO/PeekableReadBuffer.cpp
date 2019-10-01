@@ -3,12 +3,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/,
                                                               size_t unread_limit_ /* = default_limit*/)
         : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_), unread_limit(unread_limit_)

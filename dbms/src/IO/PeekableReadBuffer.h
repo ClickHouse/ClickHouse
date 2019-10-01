@@ -5,6 +5,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
 /// Also allows to set checkpoint at some position in stream and come back to this position later.
 /// When next() is called, saves data between checkpoint and current position to own memory and loads next data to sub-buffer
 /// Sub-buffer should not be accessed directly during the lifetime of peekable buffer.
