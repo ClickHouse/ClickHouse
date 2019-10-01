@@ -393,7 +393,7 @@ BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
     executeImpl(pipeline, input);
-    executeUnion(pipeline, getSampleBlock());
+    executeUnion(pipeline, getSampleBlock(), true);
 
     BlockIO res;
     res.in = pipeline.firstStream();
@@ -404,7 +404,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
     executeImpl(pipeline, input);
-    unifyStreams(pipeline, getSampleBlock());
+    unifyStreams(pipeline, getSampleBlock(), true);
     return pipeline.streams;
 }
 
@@ -1249,7 +1249,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if constexpr (pipeline_with_processors)
                     pipeline.resize(1);
                 else
-                    executeUnion(pipeline, {});
+                    executeUnion(pipeline, {}, false);
             }
 
             /** If there was more than one stream,
@@ -1871,7 +1871,7 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
     if (!settings.distributed_aggregation_memory_efficient)
     {
         /// We union several sources into one, parallelizing the work.
-        executeUnion(pipeline, {});
+        executeUnion(pipeline, {}, false);
 
         /// Now merge the aggregated blocks
         pipeline.firstStream() = std::make_shared<MergingAggregatedBlockInputStream>(pipeline.firstStream(), params, final, settings.max_threads);
@@ -1973,7 +1973,7 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 
 void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
-    executeUnion(pipeline, {});
+    executeUnion(pipeline, {}, false);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -2002,7 +2002,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(QueryPipeline & pipeline, bo
 
 void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificator modificator)
 {
-    executeUnion(pipeline, {});
+    executeUnion(pipeline, {}, false);
 
     Names key_names;
     AggregateDescriptions aggregates;
@@ -2145,7 +2145,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
         });
 
         /// If there are several streams, we merge them into one
-        executeUnion(pipeline, {});
+        executeUnion(pipeline, {}, false);
 
         /// Merge the sorted blocks.
         pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
@@ -2247,7 +2247,7 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        unifyStreams(pipeline, pipeline.firstStream()->getHeader());
+        unifyStreams(pipeline, pipeline.firstStream()->getHeader(), false);
 
         /** MergingSortedBlockInputStream reads the sources sequentially.
           * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
@@ -2351,7 +2351,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
 }
 
 
-void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, Block header)
+void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, Block header, bool allow_different_constant_values)
 {
     /// If there are still several streams, then we combine them into one
     if (pipeline.hasMoreThanOneStream())
@@ -2359,7 +2359,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, Block header)
         if (!header)
             header = pipeline.firstStream()->getHeader();
 
-        unifyStreams(pipeline, std::move(header));
+        unifyStreams(pipeline, std::move(header), allow_different_constant_values);
 
         pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
@@ -2640,7 +2640,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
-    executeUnion(pipeline, {});
+    executeUnion(pipeline, {}, false);
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets, context);
 }
@@ -2658,7 +2658,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
 }
 
 
-void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
+void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header, bool allow_different_constant_values)
 {
     /// Unify streams in case they have different headers.
 
@@ -2673,7 +2673,7 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
         auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 
         if (!blocksHaveEqualStructure(header, stream_header))
-            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header, mode);
+            stream = std::make_shared<ConvertingBlockInputStream>(context, stream, header, mode, allow_different_constant_values);
     }
 }
 
