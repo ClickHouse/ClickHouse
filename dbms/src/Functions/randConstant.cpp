@@ -62,6 +62,7 @@ class FunctionBuilderRandomConstant : public FunctionBuilderImpl
 {
 public:
     static constexpr auto name = Name::name;
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
