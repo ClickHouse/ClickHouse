@@ -1,5 +1,5 @@
 #pragma once
-#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 
 
 namespace DB
@@ -11,10 +11,10 @@ class MergeTreeReadPool;
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
   */
-class MergeTreeThreadSelectBlockInputStream : public MergeTreeBaseSelectBlockInputProcessor
+class MergeTreeThreadSelectBlockInputProcessor : public MergeTreeBaseSelectProcessor
 {
 public:
-    MergeTreeThreadSelectBlockInputStream(
+    MergeTreeThreadSelectBlockInputProcessor(
         const size_t thread_,
         const std::shared_ptr<MergeTreeReadPool> & pool_,
         const size_t min_marks_to_read_,
@@ -29,7 +29,7 @@ public:
 
     String getName() const override { return "MergeTreeThread"; }
 
-    ~MergeTreeThreadSelectBlockInputStream() override;
+    ~MergeTreeThreadSelectBlockInputProcessor() override;
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one

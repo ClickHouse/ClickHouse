@@ -1,6 +1,6 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -13,10 +13,10 @@ namespace DB
 /// Used to read data from single part with select query
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeReverseSelectBlockInputStream : public MergeTreeBaseSelectBlockInputStream
+class MergeTreeReverseSelectProcessor : public MergeTreeBaseSelectProcessor
 {
 public:
-    MergeTreeReverseSelectBlockInputStream(
+    MergeTreeReverseSelectProcessor(
         const MergeTreeData & storage,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
@@ -34,11 +34,9 @@ public:
         size_t part_index_in_query = 0,
         bool quiet = false);
 
-    ~MergeTreeReverseSelectBlockInputStream() override;
+    ~MergeTreeReverseSelectProcessor() override;
 
     String getName() const override { return "MergeTreeReverse"; }
-
-    Block getHeader() const override;
 
     /// Closes readers and unlock part locks
     void finish();
@@ -46,7 +44,7 @@ public:
 protected:
 
     bool getNewTask() override;
-    Block readFromPart() override;
+    Chunk readFromPart() override;
 
 private:
     Block header;
@@ -73,9 +71,9 @@ private:
 
     String path;
 
-    Blocks blocks;
+    Chunks chunks;
 
-    Logger * log = &Logger::get("MergeTreeReverseSelectBlockInputStream");
+    Logger * log = &Logger::get("MergeTreeReverseSelectProcessor");
 };
 
 }

@@ -1,13 +1,13 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 
 
 namespace DB
 {
 
 
-MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
+MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcessor(
     const size_t thread_,
     const MergeTreeReadPoolPtr & pool_,
     const size_t min_marks_to_read_,
@@ -20,11 +20,11 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     const Settings & settings,
     const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectBlockInputProcessor{pool->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
-        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, settings.min_bytes_to_use_direct_io,
-        settings.max_read_buffer_size, use_uncompressed_cache_, true, virt_column_names_},
-    thread{thread_},
-    pool{pool_}
+        MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
+                                     preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, settings.min_bytes_to_use_direct_io,
+                                     settings.max_read_buffer_size, use_uncompressed_cache_, true, virt_column_names_},
+        thread{thread_},
+        pool{pool_}
 {
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
@@ -42,7 +42,7 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectBlockInputStream::getNewTask()
+bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
 
@@ -105,6 +105,6 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
 }
 
 
-MergeTreeThreadSelectBlockInputStream::~MergeTreeThreadSelectBlockInputStream() = default;
+MergeTreeThreadSelectBlockInputProcessor::~MergeTreeThreadSelectBlockInputProcessor() = default;
 
 }
