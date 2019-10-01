@@ -84,6 +84,7 @@ public:
 private:
     struct  LoadablesInfos
     {
+        Poco::Timestamp last_update_time = 0;
         std::vector<std::pair<String, ObjectConfig>> configs; // Parsed file's contents.
         bool in_use = true; // Whether the ` LoadablesInfos` should be destroyed because the correspondent file is deleted.
     };
@@ -150,7 +151,10 @@ private:
                 return false;
             }
 
-            if (!repository.isUpdated(path))
+            auto update_time_from_repository = repository.getUpdateTime(path);
+
+            /// Actually it can't be less, but for sure we check less or equal
+            if (update_time_from_repository <= loadable_info.last_update_time)
             {
                 loadable_info.in_use = true;
                 return false;
@@ -184,6 +188,7 @@ private:
             }
 
             loadable_info.configs = std::move(configs_from_file);
+            loadable_info.last_update_time = update_time_from_repository;
             loadable_info.in_use = true;
             return true;
         }
