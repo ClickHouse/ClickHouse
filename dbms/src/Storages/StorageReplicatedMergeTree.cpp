@@ -2952,7 +2952,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 }
 
 
-BlockInputStreams StorageReplicatedMergeTree::read(
+Pipes StorageReplicatedMergeTree::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

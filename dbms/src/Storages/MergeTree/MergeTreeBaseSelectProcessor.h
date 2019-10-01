@@ -16,10 +16,10 @@ class MarkCache;
 
 
 /// Base class for MergeTreeThreadSelectBlockInputStream and MergeTreeSelectBlockInputStream
-class MergeTreeBaseSelectBlockInputProcessor : public ISource
+class MergeTreeBaseSelectProcessor : public ISource
 {
 public:
-    MergeTreeBaseSelectBlockInputProcessor(
+    MergeTreeBaseSelectProcessor(
         Block header,
         const MergeTreeData & storage_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -32,7 +32,7 @@ public:
         bool save_marks_in_cache_ = true,
         const Names & virt_column_names_ = {});
 
-    ~MergeTreeBaseSelectBlockInputProcessor() override;
+    ~MergeTreeBaseSelectProcessor() override;
 
     static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
 

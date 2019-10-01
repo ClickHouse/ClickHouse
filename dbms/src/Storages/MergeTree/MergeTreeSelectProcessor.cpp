@@ -1,5 +1,5 @@
-#include <Storages/MergeTree/MergeTreeSelectBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Core/Defines.h>
 
@@ -12,8 +12,27 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
+static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
+{
+    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
+    /// NOTE: We may use similar code to implement non blocking ALTERs.
+    for (const auto & name_type : data_part->columns)
+    {
+        if (header.has(name_type.name))
+        {
+            auto & elem = header.getByName(name_type.name);
+            if (!elem.type->equals(*name_type.type))
+            {
+                elem.type = name_type.type;
+                elem.column = elem.type->createColumn();
+            }
+        }
+    }
 
-MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
+    return std::move(header);
+}
+
+MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
     UInt64 max_block_size_rows_,
@@ -31,10 +50,12 @@ MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     size_t part_index_in_query_,
     bool quiet)
     :
-    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
+    MergeTreeBaseSelectProcessor{
+        replaceTypes(storage_.getSampleBlockForColumns(required_columns), owned_data_part_),
+        storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
-    required_columns{required_columns_},
+    required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
     all_mark_ranges(mark_ranges_),
@@ -56,39 +77,16 @@ MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
         : "")
         << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
-    addTotalRowsApprox(total_rows);
+    /// TODO
+    /// addTotalRowsApprox(total_rows);
 
-    header = storage.getSampleBlockForColumns(required_columns);
-
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->columns)
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    executePrewhereActions(header, prewhere_info);
-    injectVirtualColumns(header);
-
-    ordered_names = getHeader().getNames();
+    ordered_names = getPort().getHeader().getNames();
+    /// Remove virtual columns.
+    ordered_names.resize(ordered_names.size() - virt_column_names.size());
 }
 
 
-Block MergeTreeSelectBlockInputStream::getHeader() const
-{
-    return header;
-}
-
-
-bool MergeTreeSelectBlockInputStream::getNewTask()
+bool MergeTreeSelectProcessor::getNewTask()
 try
 {
     /// Produce no more than one task
@@ -149,7 +147,7 @@ catch (...)
 }
 
 
-void MergeTreeSelectBlockInputStream::finish()
+void MergeTreeSelectProcessor::finish()
 {
     /** Close the files (before destroying the object).
     * When many sources are created, but simultaneously reading only a few of them,
@@ -162,7 +160,7 @@ void MergeTreeSelectBlockInputStream::finish()
 }
 
 
-MergeTreeSelectBlockInputStream::~MergeTreeSelectBlockInputStream() = default;
+MergeTreeSelectProcessor::~MergeTreeSelectProcessor() = default;
 
 
 }

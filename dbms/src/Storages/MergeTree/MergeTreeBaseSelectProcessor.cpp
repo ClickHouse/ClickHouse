@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-MergeTreeBaseSelectBlockInputProcessor::MergeTreeBaseSelectBlockInputProcessor(
+MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     Block header,
     const MergeTreeData & storage_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -47,7 +47,7 @@ MergeTreeBaseSelectBlockInputProcessor::MergeTreeBaseSelectBlockInputProcessor(
 }
 
 
-Chunk MergeTreeBaseSelectBlockInputProcessor::generate()
+Chunk MergeTreeBaseSelectProcessor::generate()
 {
     while (!isCancelled())
     {
@@ -67,7 +67,7 @@ Chunk MergeTreeBaseSelectBlockInputProcessor::generate()
 }
 
 
-void MergeTreeBaseSelectBlockInputProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
+void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
     if (prewhere_info)
     {
@@ -76,8 +76,8 @@ void MergeTreeBaseSelectBlockInputProcessor::initializeRangeReaders(MergeTreeRea
             current_task.range_reader = MergeTreeRangeReader(
                 pre_reader.get(), nullptr,
                 prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                &prewhere_info->prewhere_column_name, &current_task.ordered_names,
-                current_task.should_reorder, current_task.remove_prewhere_column, true);
+                &prewhere_info->prewhere_column_name,
+                current_task.remove_prewhere_column, true);
         }
         else
         {
@@ -87,26 +87,26 @@ void MergeTreeBaseSelectBlockInputProcessor::initializeRangeReaders(MergeTreeRea
                 current_task.pre_range_reader = MergeTreeRangeReader(
                     pre_reader.get(), nullptr,
                     prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                    &prewhere_info->prewhere_column_name, &current_task.ordered_names,
-                    current_task.should_reorder, current_task.remove_prewhere_column, false);
+                    &prewhere_info->prewhere_column_name,
+                    current_task.remove_prewhere_column, false);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
             current_task.range_reader = MergeTreeRangeReader(
                 reader.get(), pre_reader_ptr, nullptr, nullptr,
-                nullptr, &current_task.ordered_names, true, false, true);
+                nullptr, false, true);
         }
     }
     else
     {
         current_task.range_reader = MergeTreeRangeReader(
             reader.get(), nullptr, nullptr, nullptr,
-            nullptr, &current_task.ordered_names, current_task.should_reorder, false, true);
+            nullptr, false, true);
     }
 }
 
 
-Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
+Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 {
     if (task->size_predictor)
         task->size_predictor->startBlock();
@@ -171,8 +171,7 @@ Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
 
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
 
-    /// TODO
-    /// progressImpl({ read_result.numReadRows(), read_result.numBytesRead() });
+    /// TODO: progressImpl({ read_result.numReadRows(), read_result.numBytesRead() });
 
     if (task->size_predictor)
     {
@@ -182,11 +181,26 @@ Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPartImpl()
             task->size_predictor->update(sample_block, read_result.columns, read_result.num_rows);
     }
 
-    return Chunk(std::move(read_result.columns), read_result.num_rows);
+    if (read_result.num_rows == 0)
+        return {};
+
+    auto & header = getPort().getHeader();
+    Columns ordered_columns;
+    size_t num_virtual_columns = virt_column_names.size();
+    ordered_columns.reserve(header.columns() - num_virtual_columns);
+
+    /// Reorder columns. TODO: maybe skip for default case.
+    for (size_t ps = 0; ps + num_virtual_columns < header.columns(); ++ps)
+    {
+        auto pos_in_sample_block = sample_block.getPositionByName(header.getByPosition(ps).name);
+        ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
+    }
+
+    return Chunk(std::move(ordered_columns), read_result.num_rows);
 }
 
 
-Chunk MergeTreeBaseSelectBlockInputProcessor::readFromPart()
+Chunk MergeTreeBaseSelectProcessor::readFromPart()
 {
     if (!task->range_reader.isInitialized())
         initializeRangeReaders(*task);
@@ -267,13 +281,13 @@ namespace
     };
 }
 
-void MergeTreeBaseSelectBlockInputProcessor::injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns)
+void MergeTreeBaseSelectProcessor::injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns)
 {
     InsertIntoBlockCallback callback { block };
     injectVirtualColumnsImpl(block.rows(), callback, task, virtual_columns);
 }
 
-void MergeTreeBaseSelectBlockInputProcessor::injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns)
+void MergeTreeBaseSelectProcessor::injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns)
 {
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -284,7 +298,7 @@ void MergeTreeBaseSelectBlockInputProcessor::injectVirtualColumns(Chunk & chunk,
     chunk.setColumns(columns, num_rows);
 }
 
-void MergeTreeBaseSelectBlockInputProcessor::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
+void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
 {
     if (prewhere_info)
     {
@@ -300,7 +314,7 @@ void MergeTreeBaseSelectBlockInputProcessor::executePrewhereActions(Block & bloc
     }
 }
 
-Block MergeTreeBaseSelectBlockInputProcessor::getHeader(
+Block MergeTreeBaseSelectProcessor::getHeader(
     Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
 {
     executePrewhereActions(block, prewhere_info);
@@ -309,6 +323,6 @@ Block MergeTreeBaseSelectBlockInputProcessor::getHeader(
 }
 
 
-MergeTreeBaseSelectBlockInputProcessor::~MergeTreeBaseSelectBlockInputProcessor() = default;
+MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;
 
 }
