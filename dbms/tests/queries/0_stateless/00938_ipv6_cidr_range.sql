@@ -1,3 +1,5 @@
+USE test;
+
 DROP TABLE IF EXISTS ipv6_range;
 CREATE TABLE ipv6_range(ip IPv6, cidr UInt8) ENGINE = Memory;
 

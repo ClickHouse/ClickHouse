@@ -5,6 +5,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ParallelInputsProcessor.h>
+#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -41,6 +42,7 @@ private:
     };
 
 public:
+    std::vector<std::unique_ptr<ReadBuffer>> buffers;
     using ExceptionCallback = std::function<void()>;
 
     UnionBlockInputStream(

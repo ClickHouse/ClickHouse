@@ -1053,4 +1053,23 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
+bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, size_t & used_size, char * & begin_pos, bool save_buffer_state)
+{
+    if (save_buffer_state || !buf.hasPendingData())
+    {
+        const size_t capacity = memory.size();
+        const size_t block_size = static_cast<size_t>(buf.position() - begin_pos);
+        if (capacity <= block_size + used_size)
+        {
+            memory.resize(used_size + block_size);
+        }
+        memcpy(memory.data() + used_size, begin_pos, buf.position() - begin_pos);
+        used_size += block_size;
+        bool res = buf.eof();
+        begin_pos = buf.position();
+        return res;
+    }
+    return false;
+}
+
 }
