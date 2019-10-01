@@ -11,37 +11,27 @@ set(CLICKHOUSE_ODBC_BRIDGE_SOURCES
 )
 
 set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE dbms clickhouse_parsers PUBLIC daemon)
+set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 if (USE_POCO_SQLODBC)
     set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_SQLODBC_LIBRARY})
+    set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR})
 endif ()
 if (Poco_SQL_FOUND)
     set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_SQL_LIBRARY})
+    set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
 endif ()
 
 if (USE_POCO_DATAODBC)
     set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_DataODBC_LIBRARY})
+    set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
 endif()
 if (Poco_Data_FOUND)
     set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_Data_LIBRARY})
+    set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
 endif ()
 
 clickhouse_program_add_library(odbc-bridge)
-target_include_directories(clickhouse-odbc-bridge-lib PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
-
-if (USE_POCO_SQLODBC)
-    target_include_directories(clickhouse-odbc-bridge-lib SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR})
-endif ()
-if (Poco_SQL_FOUND)
-    target_include_directories(clickhouse-odbc-bridge-lib SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-endif ()
-
-if (USE_POCO_DATAODBC)
-    target_include_directories(clickhouse-odbc-bridge-lib SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
-endif()
-if (Poco_Data_FOUND)
-    target_include_directories(clickhouse-odbc-bridge-lib SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-endif ()
 
 if (OS_LINUX)
     # clickhouse-odbc-bridge is always a separate binary.

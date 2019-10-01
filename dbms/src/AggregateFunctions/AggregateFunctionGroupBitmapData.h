@@ -585,7 +585,7 @@ private:
     /// To read and write the DB Buffer directly, migrate code from CRoaring
     void db_roaring_bitmap_add_many(DB::ReadBuffer & dbBuf, roaring_bitmap_t * r, size_t n_args)
     {
-        void * container = NULL; // hold value of last container touched
+        void * container = nullptr; // hold value of last container touched
         uint8_t typecode = 0; // typecode of last container touched
         uint32_t prev = 0; // previous valued inserted
         size_t i = 0; // index of value

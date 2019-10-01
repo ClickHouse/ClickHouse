@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/config.h>
+#include "config_core.h"
+
 namespace DB
 {
 class StorageFactory;

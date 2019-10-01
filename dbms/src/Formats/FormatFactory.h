@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config_core.h"
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
 

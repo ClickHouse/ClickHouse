@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config_tools.h"
+#include "config_core.h"
+
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
 int mainEntryClickHouseServer(int argc, char ** argv);

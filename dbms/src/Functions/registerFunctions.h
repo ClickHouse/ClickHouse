@@ -1,4 +1,6 @@
 #pragma once
+#include "config_core.h"
+#include "config_functions.h"
 
 namespace DB
 {
@@ -41,8 +43,6 @@ void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 
 
-class FunctionFactory;
-
 void registerFunctionPlus(FunctionFactory & factory);
 void registerFunctionMinus(FunctionFactory & factory);
 void registerFunctionMultiply(FunctionFactory & factory);
@@ -79,8 +79,6 @@ void registerFunctionBitWrapperFunc(FunctionFactory & factory);
 void registerFunctionBitSwapLastTwo(FunctionFactory & factory);
 
 
-class FunctionFactory;
-
 void registerFunctionEquals(FunctionFactory & factory);
 void registerFunctionNotEquals(FunctionFactory & factory);
 void registerFunctionLess(FunctionFactory & factory);
@@ -89,21 +87,15 @@ void registerFunctionLessOrEquals(FunctionFactory & factory);
 void registerFunctionGreaterOrEquals(FunctionFactory & factory);
 
 
-class FunctionFactory;
-
 void registerFunctionIf(FunctionFactory & factory);
 void registerFunctionMultiIf(FunctionFactory & factory);
 void registerFunctionCaseWithExpression(FunctionFactory & factory);
 
 
-class FunctionFactory;
-
 void registerFunctionYandexConsistentHash(FunctionFactory & factory);
 void registerFunctionJumpConsistentHash(FunctionFactory & factory);
 void registerFunctionSumburConsistentHash(FunctionFactory & factory);
 
-
-class FunctionFactory;
 
 void registerFunctionToYear(FunctionFactory &);
 void registerFunctionToQuarter(FunctionFactory &);
@@ -167,8 +159,6 @@ void registerFunctionToTimeZone(FunctionFactory &);
 void registerFunctionFormatDateTime(FunctionFactory &);
 
 
-class FunctionFactory;
-
 void registerFunctionGreatCircleDistance(FunctionFactory & factory);
 void registerFunctionPointInEllipses(FunctionFactory & factory);
 void registerFunctionPointInPolygon(FunctionFactory & factory);
@@ -181,8 +171,6 @@ void registerFunctionGeoToH3(FunctionFactory &);
 #endif
 
 
-class FunctionFactory;
-
 #if defined(OS_LINUX)
 void registerFunctionAddressToSymbol(FunctionFactory & factory);
 void registerFunctionAddressToLine(FunctionFactory & factory);
@@ -190,8 +178,6 @@ void registerFunctionAddressToLine(FunctionFactory & factory);
 void registerFunctionDemangle(FunctionFactory & factory);
 void registerFunctionTrap(FunctionFactory & factory);
 
-
-class FunctionFactory;
 
 void registerFunctionE(FunctionFactory & factory);
 void registerFunctionPi(FunctionFactory & factory);
@@ -217,7 +203,6 @@ void registerFunctionSigmoid(FunctionFactory & factory);
 void registerFunctionTanh(FunctionFactory & factory);
 void registerFunctionPow(FunctionFactory & factory);
 
-class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
@@ -268,7 +253,6 @@ void registerFunctionTransform(FunctionFactory &);
 void registerFunctionConvertCharset(FunctionFactory &);
 #endif
 
-class FunctionFactory;
 
 void registerFunctionIsNull(FunctionFactory & factory);
 void registerFunctionIsNotNull(FunctionFactory & factory);
@@ -279,14 +263,11 @@ void registerFunctionAssumeNotNull(FunctionFactory & factory);
 void registerFunctionToNullable(FunctionFactory & factory);
 
 
-class FunctionFactory;
-
 void registerFunctionRand(FunctionFactory & factory);
 void registerFunctionRand64(FunctionFactory & factory);
 void registerFunctionRandConstant(FunctionFactory & factory);
 void registerFunctionGenerateUUIDv4(FunctionFactory & factory);
 
-class FunctionFactory;
 
 void registerFunctionRepeat(FunctionFactory &);
 void registerFunctionEmpty(FunctionFactory &);
@@ -317,12 +298,10 @@ void registerFunctionBase64Decode(FunctionFactory &);
 void registerFunctionTryBase64Decode(FunctionFactory &);
 #endif
 
-class FunctionFactory;
 
 void registerFunctionTuple(FunctionFactory &);
 void registerFunctionTupleElement(FunctionFactory &);
 
-class FunctionFactory;
 
 void registerFunctionVisitParamHas(FunctionFactory & factory);
 void registerFunctionVisitParamExtractUInt(FunctionFactory & factory);

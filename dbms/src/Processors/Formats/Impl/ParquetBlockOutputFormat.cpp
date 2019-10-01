@@ -242,7 +242,7 @@ class OstreamOutputStream : public parquet::OutputStream
 {
 public:
     explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
-    virtual ~OstreamOutputStream() {}
+    virtual ~OstreamOutputStream() override = default;
     virtual void Close() override {}
     virtual int64_t Tell() override { return total_length; }
     virtual void Write(const uint8_t * data, int64_t length) override

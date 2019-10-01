@@ -12,7 +12,7 @@ endif ()
 
 include(CheckSymbolExists)
 check_symbol_exists(readpassphrase readpassphrase.h HAVE_READPASSPHRASE)
-configure_file(config_client.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/config_client.h)
+configure_file(config_client.h.in ${ConfigIncludePath}/config_client.h)
 
 if(NOT HAVE_READPASSPHRASE)
     add_subdirectory(readpassphrase)
