@@ -66,6 +66,9 @@ BlockInputStreams StorageSystemReplicas::read(
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
     {
+        /// Lazy database can not contain replicated tables
+        if (db.second->getEngineName() == "Lazy")
+            continue;
         if (context.hasDatabaseAccessRights(db.first))
         {
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())

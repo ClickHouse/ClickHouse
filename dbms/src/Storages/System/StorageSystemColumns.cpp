@@ -264,7 +264,7 @@ BlockInputStreams StorageSystemColumns::read(
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            if (context.hasDatabaseAccessRights(database.first))
+            if (context.hasDatabaseAccessRights(database.first) && database.second->getEngineName() != "Lazy")
                 database_column_mut->insert(database.first);
         }
 
