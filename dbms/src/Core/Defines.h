@@ -153,8 +153,8 @@
 #define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
 
 #if !__has_include(<sanitizer/asan_interface.h>)
-#   define ASAN_UNPOISON_MEMORY_REGION(a, b)
-#   define ASAN_POISON_MEMORY_REGION(a, b)
+#   define ASAN_UNPOISON_MEMORY_REGION(a, b) ((void)(addr), (void)(size))
+#   define ASAN_POISON_MEMORY_REGION(a, b) ((void)(addr), (void)(size))
 #endif
 
 /// A macro for suppressing warnings about unused variables or function results.
