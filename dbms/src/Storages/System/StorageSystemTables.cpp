@@ -175,17 +175,23 @@ protected:
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getIterator(context);
+            bool is_lazy_database = database->getEngineName() == "Lazy";
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                const StoragePtr & table = tables_it->table();
+                StoragePtr table = nullptr;
 
                 TableStructureReadLockHolder lock;
 
                 try
                 {
-                    lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                    if (!is_lazy_database) // Lazy database do not support alters
+                    {
+                        if (!table)
+                            table = tables_it->table();
+                        lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                    }
                 }
                 catch (const Exception & e)
                 {
@@ -206,13 +212,20 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
+                {
+                    if (!table)
+                        table = tables_it->table();
                     res_columns[res_index++]->insert(table->getName());
+                }
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(0u);  // is_temporary
 
                 if (columns_mask[src_index++])
                 {
+                    if (!table)
+                        table = tables_it->table();
+                
                     Array table_paths_array;
                     auto paths = table->getDataPaths();
                     table_paths_array.reserve(paths.size());
@@ -283,6 +296,8 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
+                    if (!table)
+                        table = tables_it->table();
                     if ((expression_ptr = table->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -291,6 +306,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    if (!table)
+                        table = tables_it->table();
                     if ((expression_ptr = table->getSortingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -299,6 +316,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    if (!table)
+                        table = tables_it->table();
                     if ((expression_ptr = table->getPrimaryKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -307,6 +326,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    if (!table)
+                        table = tables_it->table();
                     if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -315,6 +336,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    if (!table)
+                        table = tables_it->table();
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
