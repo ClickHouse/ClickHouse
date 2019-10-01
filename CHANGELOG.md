@@ -1,3 +1,11 @@
+## ClickHouse release 19.15.2.2, 2019-10-01
+
+### Bug Fix
+* Fix exception `Cannot convert column ... because it is constant but values of constants are different in source and result` that could happen while using functions `now()`, `today()`, `yesterday()`, `randConstant()`. [#7156](https://github.com/ClickHouse/ClickHouse/pull/7156) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+
+### Improvement
+* Optimisation for partial merge join. [#7070](https://github.com/ClickHouse/ClickHouse/pull/7070) ([Artem Zuikov](https://github.com/4ertus2))
+
 ## ClickHouse release 19.13.5.44, 2019-09-20
 
 ### Bug Fix
