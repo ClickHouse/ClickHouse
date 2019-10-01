@@ -98,6 +98,9 @@ void DatabaseLazy::createTable(
     clearExpiredTables();
     const auto & settings = context.getSettingsRef();
 
+    if (!endsWith(table->getName(), "Log"))
+        throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
+
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
 
@@ -362,7 +365,10 @@ StoragePtr DatabaseLazy::tryGetTable(
     {
         std::lock_guard lock(tables_mutex);
         auto it = tables_cache.find(table_name);
-        if (it != tables_cache.end() && it->second.table)
+        if (it == tables_cache.end())
+            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+
+        if (it->second.table)
         {
             cache_expiration_queue.erase({it->second.last_touched, table_name});
             it->second.last_touched = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -395,8 +401,10 @@ bool DatabaseLazy::empty(const Context & /* context */) const
 
 void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & table)
 {
+    LOG_DEBUG(log, "attach table" << table_name);
     std::lock_guard lock(tables_mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    LOG_DEBUG(log, "cache queue size " << cache_expiration_queue.size() <<  " cache size " << tables_cache.size());
     if (!tables_cache.emplace(std::piecewise_construct,
                               std::forward_as_tuple(table_name),
                               std::forward_as_tuple(table,
@@ -411,6 +419,7 @@ StoragePtr DatabaseLazy::detachTable(const String & table_name)
 {
     StoragePtr res;
     {
+        LOG_DEBUG(log, "detach table" << table_name);
         std::lock_guard lock(tables_mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
@@ -432,7 +441,8 @@ void DatabaseLazy::shutdown()
 
     for (const auto & kv : tables_snapshot)
     {
-        kv.second.table->shutdown();
+        if (kv.second.table)
+            kv.second.table->shutdown();
     }
 
     std::lock_guard lock(tables_mutex);
@@ -525,6 +535,8 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
 {
     clearExpiredTables();
 
+    LOG_DEBUG(log, "load table to cache : " << table_name);
+
     const String table_metadata_path = metadata_path + "/" + table_name + ".sql";
 
     String s;
@@ -552,7 +564,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
         Context context_copy(context); /// some tables can change context, but not LogTables
         std::tie(table_name_, table) = createTableFromDefinition(
             s, name, data_path, context_copy, false, "in file " + table_metadata_path);
-        if (table->getName().substr(table->getName().size() - 3, 3) != "Log")
+        if (!endsWith(table->getName(), "Log"))
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
         {
             std::lock_guard lock(tables_mutex);
@@ -582,9 +594,10 @@ void DatabaseLazy::clearExpiredTables() const
            (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) - cache_expiration_queue.begin()->last_touched) >= expiration_time)
     {
         auto it = tables_cache.find(cache_expiration_queue.begin()->table_name);
+        LOG_DEBUG(log, "drop from cache table: " << it->first);
         /// Table can be already removed by detachTable.
         if (it != tables_cache.end())
-            tables_cache.erase(it);
+            it->second.table.reset();
         cache_expiration_queue.erase(cache_expiration_queue.begin());
     }
 }

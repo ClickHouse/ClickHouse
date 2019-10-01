@@ -118,12 +118,12 @@ private:
 
         bool operator<(const CacheExpirationQueueElement & expiration_element) const
         {
-            return last_touched < expiration_element.last_touched;
+            return std::tie(last_touched, table_name) < std::tie(expiration_element.last_touched, expiration_element.table_name);
         }
 
         bool operator==(const CacheExpirationQueueElement & expiration_element) const
         {
-            return last_touched == expiration_element.last_touched && table_name == expiration_element.table_name;
+            return std::tie(last_touched, table_name) == std::tie(expiration_element.last_touched, expiration_element.table_name);
         }
     };
 
