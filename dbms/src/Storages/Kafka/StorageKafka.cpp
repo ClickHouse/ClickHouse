@@ -120,7 +120,7 @@ BlockInputStreams StorageKafka::read(
     const SelectQueryInfo & /* query_info */,
     const Context & context,
     QueryProcessingStage::Enum /* processed_stage */,
-    size_t /* max_block_size */,
+    size_t max_block_size,
     unsigned /* num_streams */)
 {
     if (num_created_consumers == 0)
@@ -132,12 +132,7 @@ BlockInputStreams StorageKafka::read(
 
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
-    {
-        /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
-        /// TODO: probably that leads to awful performance.
-        /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1));
-    }
+        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, max_block_size));
 
     LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
     return streams;
@@ -401,6 +396,8 @@ bool StorageKafka::streamToViews()
 
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
+    for (auto & stream : streams)
+        stream->commit();
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;

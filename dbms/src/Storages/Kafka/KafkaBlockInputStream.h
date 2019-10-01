@@ -23,6 +23,8 @@ public:
     Block readImpl() override;
     void readSuffixImpl() override;
 
+    void commit();
+
 private:
     StorageKafka & storage;
     Context context;

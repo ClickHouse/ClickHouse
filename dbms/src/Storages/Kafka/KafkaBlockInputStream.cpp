@@ -141,12 +141,15 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
+    broken = false;
+}
+
+void KafkaBlockInputStream::commit()
+{
     if (!buffer)
         return;
 
     buffer->commit();
-
-    broken = false;
 }
 
 }
