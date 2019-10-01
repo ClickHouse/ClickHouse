@@ -1,3 +1,4 @@
+#include "registerDictionaries.h"
 #include "ComplexKeyCacheDictionary.h"
 #include <Common/Arena.h>
 #include <Common/BitHelpers.h>
