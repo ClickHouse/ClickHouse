@@ -357,6 +357,9 @@ bool conditionsFulfilledOnEveryConnection(TestStopConditions & stop_conditions_b
 
 void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes, std::vector<TestStats> & statistics_by_run)
 {
+    pcg64 generator(randomSeed());
+    std::uniform_int_distribution<size_t> distribution(0, connections.size() - 1);
+
     for (const auto & [query, run_index] : queries_with_indexes)
     {
         LOG_INFO(log, "[" << run_index << "] Run query '" << query << "'");
@@ -365,8 +368,6 @@ void PerformanceTest::runQueries(const QueriesWithIndexes & queries_with_indexes
         TestStats & statistics_by_connections = statistics_by_run[run_index];
         t_test.clear();
 
-        pcg64 generator(randomSeed());
-        std::uniform_int_distribution<size_t> distribution(0, connections.size() - 1);
         size_t connection_index = distribution(generator);
 
         try
