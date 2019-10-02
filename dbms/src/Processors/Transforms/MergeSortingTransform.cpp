@@ -168,7 +168,7 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
     {
-        if (!checkFreeSpace(tmp_path, sum_bytes_in_blocks + min_free_disk_space))
+        if (!enoughSpaceInDirectory(tmp_path, sum_bytes_in_blocks + min_free_disk_space))
             throw Exception("Not enough space for external sort in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
 
         temporary_files.emplace_back(createTemporaryFile(tmp_path));

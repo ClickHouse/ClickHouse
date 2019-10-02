@@ -6,7 +6,7 @@
 namespace DB
 {
 
-bool checkFreeSpace(const std::string & path, size_t data_size)
+bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 {
 #if !UNBUNDLED
     auto free_space = Poco::File(path).freeSpace();
