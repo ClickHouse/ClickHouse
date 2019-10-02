@@ -17,7 +17,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/NumberFormatter.h>
 
-#include <../../contrib/re2/re2/re2.h>
+#include <re2/re2.h>
 
 
 namespace DB
@@ -40,7 +40,28 @@ IStorageURLBase::IStorageURLBase(
 {
     if (!checkHostWhitelist(uri.getHost()) &&
         !checkHostWhitelist(uri.getHost() + ":" + Poco::NumberFormatter::format(uri.getPort())))
-        throw Exception("Unacceptable URL.", ErrorCodes::UNACCEPTABLE_URL);
+    {
+        const std::unordered_set<std::string> primary_hosts = context_global.getAllowedPrimaryUrlHosts();
+        const std::vector<std::string> regexp_hosts = context_global.getAllowedRegexpUrlHosts();
+        std::string string_error = "\nUnacceptable URL. You can use ";
+        if (!primary_hosts.empty())
+        {
+            string_error += "URL like\n\n";
+            for (auto host : primary_hosts)
+                string_error += host + "\n";
+            string_error += '\n';
+            if (!regexp_hosts.empty())
+                string_error += "Or ";
+        }
+        if (!regexp_hosts.empty())
+        {
+            string_error += "URL that match the following regular expressions\n\n";
+            for (auto reg_host : regexp_hosts)
+                string_error += reg_host + "\n";
+        }
+        string_error += "\nIf you want to change this look at config.xml";
+        throw Exception(string_error, ErrorCodes::UNACCEPTABLE_URL);
+    }
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -232,7 +253,7 @@ void registerStorageURL(StorageFactory & factory)
 bool IStorageURLBase::checkHostWhitelist(const std::string & host) {
     const std::unordered_set<std::string> primary_hosts = context_global.getAllowedPrimaryUrlHosts();
     const std::vector<std::string> regexp_hosts = context_global.getAllowedRegexpUrlHosts();
-    if (!(primary_hosts.empty() && regexp_hosts.empty()))
+    if (!primary_hosts.empty() || !regexp_hosts.empty())
     {
         if (primary_hosts.find(host) == primary_hosts.end())
         {
