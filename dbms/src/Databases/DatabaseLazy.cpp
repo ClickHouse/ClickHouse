@@ -404,7 +404,6 @@ void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & tab
     LOG_DEBUG(log, "attach table" << table_name);
     std::lock_guard lock(tables_mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    LOG_DEBUG(log, "cache queue size " << cache_expiration_queue.size() <<  " cache size " << tables_cache.size());
     if (!tables_cache.emplace(std::piecewise_construct,
                               std::forward_as_tuple(table_name),
                               std::forward_as_tuple(table,
