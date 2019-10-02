@@ -70,6 +70,7 @@ protected:
     bool save_marks_in_cache;
 
     Names virt_column_names;
+    Block header_without_virtual_columns;
 
     std::unique_ptr<MergeTreeReadTask> task;
 

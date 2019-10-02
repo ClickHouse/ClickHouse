@@ -105,7 +105,7 @@ try
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_readed);
 
             if (should_evaluate_missing_defaults)
-                reader->evaluateMissingDefaults(columns);
+                reader->evaluateMissingDefaults({}, columns);
 
             /// Reorder columns and fill result block.
             size_t num_columns = sample.size();

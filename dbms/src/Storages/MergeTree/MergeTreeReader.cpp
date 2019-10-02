@@ -324,7 +324,7 @@ void MergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_ev
             if (res_columns[i] && arrayHasNoElementsRead(*res_columns[i]))
                 res_columns[i] = nullptr;
 
-            if (res_columns[i])
+            if (res_columns[i] == nullptr)
             {
                 if (storage.getColumns().hasDefault(name))
                 {
@@ -362,7 +362,7 @@ void MergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_ev
     }
 }
 
-void MergeTreeReader::evaluateMissingDefaults(Columns & res_columns)
+void MergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns)
 {
     try
     {
@@ -375,22 +375,21 @@ void MergeTreeReader::evaluateMissingDefaults(Columns & res_columns)
 
         /// Convert columns list to block.
         /// TODO: rewrite with columns interface. It wll be possible after changes in ExpressionActions.
-        Block block;
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
 
-            block.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+            additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
-        DB::evaluateMissingDefaults(block, columns, storage.getColumns().getDefaults(), storage.global_context);
+        DB::evaluateMissingDefaults(additional_columns, columns, storage.getColumns().getDefaults(), storage.global_context);
 
         /// Move columns from block.
         name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-            res_columns[pos] = std::move(block.getByName(name_and_type->name).column);
+            res_columns[pos] = std::move(additional_columns.getByName(name_and_type->name).column);
     }
     catch (Exception & e)
     {

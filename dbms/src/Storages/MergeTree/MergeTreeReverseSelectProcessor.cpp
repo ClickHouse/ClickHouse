@@ -51,7 +51,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        replaceTypes(storage_.getSampleBlockForColumns(required_columns), owned_data_part_),
+        replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
         storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
@@ -79,9 +79,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     /// TODO
     /// addTotalRowsApprox(total_rows);
 
-    ordered_names = getPort().getHeader().getNames();
-    /// Remove virtual columns.
-    ordered_names.resize(ordered_names.size() - virt_column_names.size());
+    ordered_names = header_without_virtual_columns.getNames();
 
     task_columns = getReadTaskColumns(storage, data_part, required_columns, prewhere_info, check_columns);
 

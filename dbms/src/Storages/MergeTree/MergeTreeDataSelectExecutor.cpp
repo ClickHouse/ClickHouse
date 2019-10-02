@@ -658,6 +658,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             auto & output = pipe.back()->getOutputs().front();
             pipe.emplace_back(std::make_shared<ExpressionTransform>(
                     output.getHeader(), query_info.prewhere_info->remove_columns_actions));
+            connect(output, pipe.back()->getInputs().front());
         }
     }
 

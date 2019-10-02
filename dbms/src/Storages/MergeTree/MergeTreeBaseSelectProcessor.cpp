@@ -44,6 +44,11 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     save_marks_in_cache(save_marks_in_cache_),
     virt_column_names(virt_column_names_)
 {
+    header_without_virtual_columns = getPort().getHeader();
+
+    for (auto it = virt_column_names.rbegin(); it != virt_column_names.rend(); ++it)
+        if (header_without_virtual_columns.has(*it))
+            header_without_virtual_columns.erase(*it);
 }
 
 
@@ -161,7 +166,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     if (read_result.num_rows == 0)
         read_result.columns.clear();
 
-    auto & sample_block = getPort().getHeader();
+    auto & sample_block = task->range_reader.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
         throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
                         "Have " + toString(sample_block.columns()) + " in sample block "
@@ -184,15 +189,13 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     if (read_result.num_rows == 0)
         return {};
 
-    auto & header = getPort().getHeader();
     Columns ordered_columns;
-    size_t num_virtual_columns = virt_column_names.size();
-    ordered_columns.reserve(header.columns() - num_virtual_columns);
+    ordered_columns.reserve(header_without_virtual_columns.columns());
 
     /// Reorder columns. TODO: maybe skip for default case.
-    for (size_t ps = 0; ps + num_virtual_columns < header.columns(); ++ps)
+    for (size_t ps = 0; ps < header_without_virtual_columns.columns(); ++ps)
     {
-        auto pos_in_sample_block = sample_block.getPositionByName(header.getByPosition(ps).name);
+        auto pos_in_sample_block = sample_block.getPositionByName(header_without_virtual_columns.getByPosition(ps).name);
         ordered_columns.emplace_back(std::move(read_result.columns[pos_in_sample_block]));
     }
 
