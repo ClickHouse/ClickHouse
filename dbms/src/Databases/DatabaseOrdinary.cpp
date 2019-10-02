@@ -113,7 +113,7 @@ DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, 
     , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
     , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
 {
-    Poco::File(data_path).createDirectories();
+    Poco::File(getDataPath()).createDirectories();
 }
 
 
@@ -125,7 +125,7 @@ void DatabaseOrdinary::loadTables(
     FileNames file_names;
 
     Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
+    for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
         /// For '.svn', '.gitignore' directory and similar.
         if (dir_it.name().at(0) == '.')
@@ -140,7 +140,7 @@ void DatabaseOrdinary::loadTables(
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
             const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(data_path + '/' + table_name).exists())
+            if (Poco::File(getDataPath() + '/' + table_name).exists())
             {
                 Poco::File(dir_it->path()).renameTo(table_name + ".sql");
                 LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
@@ -186,7 +186,7 @@ void DatabaseOrdinary::loadTables(
 
     auto loadOneTable = [&](const String & table)
     {
-        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
+        loadTable(context, getMetadataPath(), *this, getDatabaseName(), getDataPath(), table, has_force_restore_data_flag);
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
         if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
@@ -264,7 +264,7 @@ void DatabaseOrdinary::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
     if (isTableExist(context, table_name))
-        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + getDatabaseName() + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     String table_metadata_path = getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -386,13 +386,13 @@ void DatabaseOrdinary::renameTable(
     StoragePtr table = tryGetTable(context, table_name);
 
     if (!table)
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
-        table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
-            to_database_concrete->name,
+        table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->getDatabaseName()) + "/",
+            to_database_concrete->getDatabaseName(),
             to_table_name, lock);
     }
     catch (const Exception &)
@@ -405,7 +405,7 @@ void DatabaseOrdinary::renameTable(
         throw Exception{Exception::CreateFromPoco, e};
     }
 
-    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));
+    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(getMetadataPath(), table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
     ast->as<ASTCreateQuery &>().table = to_table_name;
@@ -438,8 +438,8 @@ ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
 {
     ASTPtr ast;
 
-    auto table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
-    ast = getCreateQueryFromMetadata(table_metadata_path, name, throw_on_error);
+    auto table_metadata_path = detail::getTableMetadataPath(getMetadataPath(), table_name);
+    ast = getCreateQueryFromMetadata(table_metadata_path, getDatabaseName(), throw_on_error);
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
@@ -469,12 +469,12 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
 {
     ASTPtr ast;
 
-    auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path);
-    ast = getCreateQueryFromMetadata(database_metadata_path, name, true);
+    auto database_metadata_path = detail::getDatabaseMetadataPath(getMetadataPath());
+    ast = getCreateQueryFromMetadata(database_metadata_path, getDatabaseName(), true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
-        String query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Ordinary";
+        String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
         ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
     }
@@ -493,8 +493,8 @@ void DatabaseOrdinary::alterTable(
     /// Read the definition of the table and replace the necessary parts with new ones.
 
     String table_name_escaped = escapeForFileName(table_name);
-    String table_metadata_tmp_path = metadata_path + "/" + table_name_escaped + ".sql.tmp";
-    String table_metadata_path = metadata_path + "/" + table_name_escaped + ".sql";
+    String table_metadata_tmp_path = getMetadataPath() + "/" + table_name_escaped + ".sql.tmp";
+    String table_metadata_path = getMetadataPath() + "/" + table_name_escaped + ".sql";
     String statement;
 
     {
@@ -553,8 +553,8 @@ void DatabaseOrdinary::alterTable(
 
 void DatabaseOrdinary::drop()
 {
-    Poco::File(data_path).remove(false);
-    Poco::File(metadata_path).remove(false);
+    Poco::File(getDataPath()).remove(false);
+    Poco::File(getMetadataPath()).remove(false);
 }
 
 
@@ -575,7 +575,7 @@ String DatabaseOrdinary::getDatabaseName() const
 
 String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const
 {
-    return detail::getTableMetadataPath(metadata_path, table_name);
+    return detail::getTableMetadataPath(getMetadataPath(), table_name);
 }
 
 }

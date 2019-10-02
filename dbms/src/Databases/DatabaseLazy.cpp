@@ -72,7 +72,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
     , expiration_time(expiration_time_)
     , log(&Logger::get("DatabaseLazy (" + name + ")"))
 {
-    Poco::File(data_path).createDirectories();
+    Poco::File(getDataPath()).createDirectories();
 }
 
 
@@ -112,7 +112,7 @@ void DatabaseLazy::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
     if (isTableExist(context, table_name))
-        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + getDatabaseName() + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     String table_metadata_path = getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -236,13 +236,13 @@ void DatabaseLazy::renameTable(
     StoragePtr table = tryGetTable(context, table_name);
 
     if (!table)
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
     {
-        table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
-            to_database_concrete->name,
+        table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->getDatabaseName()) + "/",
+            to_database_concrete->getDatabaseName(),
             to_table_name, lock);
     }
     catch (const Exception &)
@@ -255,7 +255,7 @@ void DatabaseLazy::renameTable(
         throw Exception{Exception::CreateFromPoco, e};
     }
 
-    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));
+    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(getMetadataPath(), table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
     ast->as<ASTCreateQuery &>().table = to_table_name;
@@ -275,7 +275,7 @@ time_t DatabaseLazy::getTableMetadataModificationTime(
     if (it != tables_cache.end())
         return it->second.metadata_modification_time;
     else
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 ASTPtr DatabaseLazy::getCreateTableQueryImpl(const Context & context,
@@ -283,8 +283,8 @@ ASTPtr DatabaseLazy::getCreateTableQueryImpl(const Context & context,
 {
     ASTPtr ast;
 
-    auto table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
-    ast = getCreateQueryFromMetadata(table_metadata_path, name, throw_on_error);
+    auto table_metadata_path = detail::getTableMetadataPath(getMetadataPath(), table_name);
+    ast = getCreateQueryFromMetadata(table_metadata_path, getDatabaseName(), throw_on_error);
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
@@ -314,12 +314,12 @@ ASTPtr DatabaseLazy::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     ASTPtr ast;
 
-    auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path);
-    ast = getCreateQueryFromMetadata(database_metadata_path, name, true);
+    auto database_metadata_path = detail::getDatabaseMetadataPath(getMetadataPath());
+    ast = getCreateQueryFromMetadata(database_metadata_path, getDatabaseName(), true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
-        String query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Lazy";
+        String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Lazy";
         ParserCreateQuery parser;
         ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
     }
@@ -342,8 +342,8 @@ void DatabaseLazy::alterTable(
 
 void DatabaseLazy::drop()
 {
-    Poco::File(data_path).remove(false);
-    Poco::File(metadata_path).remove(false);
+    Poco::File(getDataPath()).remove(false);
+    Poco::File(getMetadataPath()).remove(false);
 }
 
 bool DatabaseLazy::isTableExist(
@@ -364,7 +364,7 @@ StoragePtr DatabaseLazy::tryGetTable(
         std::lock_guard lock(tables_mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
-            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
         if (it->second.table)
         {
@@ -407,7 +407,7 @@ void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & tab
                               std::forward_as_tuple(table,
                                                     current_time,
                                                     getLastModifiedEpochTime(getTableMetadataPath(table_name)))).second)
-        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + getDatabaseName() + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     if (!cache_expiration_queue.emplace(current_time, table_name).second)
         throw Exception("Failed to insert element to expiration queue.", ErrorCodes::LOGICAL_ERROR);
 }
@@ -420,7 +420,7 @@ StoragePtr DatabaseLazy::detachTable(const String & table_name)
         std::lock_guard lock(tables_mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
-            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         res = it->second.table;
         cache_expiration_queue.erase({it->second.last_touched, table_name});
         tables_cache.erase(it);
@@ -475,13 +475,13 @@ String DatabaseLazy::getDatabaseName() const
 
 String DatabaseLazy::getTableMetadataPath(const String & table_name) const
 {
-    return detail::getTableMetadataPath(metadata_path, table_name);
+    return detail::getTableMetadataPath(getMetadataPath(), table_name);
 }
 
 void DatabaseLazy::iterateTableFiles(const IteratingFunction & iterating_function) const
 {
     Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
+    for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
         /// For '.svn', '.gitignore' directory and similar.
         if (dir_it.name().at(0) == '.')
@@ -496,7 +496,7 @@ void DatabaseLazy::iterateTableFiles(const IteratingFunction & iterating_functio
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
             const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(data_path + '/' + table_name).exists())
+            if (Poco::File(getDataPath() + '/' + table_name).exists())
             {
                 Poco::File(dir_it->path()).renameTo(table_name + ".sql");
                 LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
@@ -534,7 +534,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
 
     LOG_DEBUG(log, "Load table '" << table_name << "' to cache.");
 
-    const String table_metadata_path = metadata_path + "/" + table_name + ".sql";
+    const String table_metadata_path = getMetadataPath() + "/" + table_name + ".sql";
 
     String s;
     {
@@ -560,14 +560,14 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
         StoragePtr table;
         Context context_copy(context); /// some tables can change context, but not LogTables
         std::tie(table_name_, table) = createTableFromDefinition(
-            s, name, data_path, context_copy, false, "in file " + table_metadata_path);
+            s, name, getDataPath(), context_copy, false, "in file " + table_metadata_path);
         if (!endsWith(table->getName(), "Log"))
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
         {
             std::lock_guard lock(tables_mutex);
             auto it = tables_cache.find(table_name);
             if (it == tables_cache.end())
-                throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+                throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
             cache_expiration_queue.erase({it->second.last_touched, table_name});
             it->second.last_touched = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
