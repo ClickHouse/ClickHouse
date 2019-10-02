@@ -535,7 +535,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
 {
     clearExpiredTables();
 
-    LOG_DEBUG(log, "load table to cache : " << table_name);
+    LOG_DEBUG(log, "Load table '" << table_name << "' to cache.");
 
     const String table_metadata_path = metadata_path + "/" + table_name + ".sql";
 
@@ -594,7 +594,7 @@ void DatabaseLazy::clearExpiredTables() const
            (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) - cache_expiration_queue.begin()->last_touched) >= expiration_time)
     {
         auto it = tables_cache.find(cache_expiration_queue.begin()->table_name);
-        LOG_DEBUG(log, "drop from cache table: " << it->first);
+        LOG_DEBUG(log, "Drop table '" << it->first << "' from cache.");
         /// Table can be already removed by detachTable.
         if (it != tables_cache.end())
             it->second.table.reset();
