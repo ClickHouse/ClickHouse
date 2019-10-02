@@ -22,25 +22,16 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             if (is_exception_occured)
                 break;
 
-            if (original_buffer.eof())
-            {
-                std::unique_lock lock(mutex);
-                current_unit.is_last_unit = true;
-                current_unit.status = READY_TO_PARSE;
-                scheduleParserThreadForUnitWithNumber(current_unit_number);
-                break;
-            }
-
             // Segmentating the original input.
             current_unit.chunk.used_size = 0;
-            bool res = file_segmentation_engine(original_buffer, current_unit.chunk.memory, current_unit.chunk.used_size, min_chunk_size);
+            bool has_data = file_segmentation_engine(original_buffer, current_unit.chunk.memory, current_unit.chunk.used_size, min_chunk_size);
 
             // Creating buffer from the segment of data.
             auto new_buffer = BufferBase::Buffer(current_unit.chunk.memory.data(), current_unit.chunk.memory.data() + current_unit.chunk.used_size);
             current_unit.readbuffer.buffer().swap(new_buffer);
             current_unit.readbuffer.position() = current_unit.readbuffer.buffer().begin();
 
-            if (!res)
+            if (!has_data)
             {
                 std::unique_lock lock(mutex);
                 current_unit.is_last_unit = true;
