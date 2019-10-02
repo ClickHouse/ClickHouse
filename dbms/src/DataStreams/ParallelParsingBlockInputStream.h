@@ -70,23 +70,7 @@ public:
 
     ~ParallelParsingBlockInputStream() override
     {
-        {
-            std::unique_lock lock(mutex);
-            segmentator_condvar.notify_all();
-            reader_condvar.notify_all();
-        }
-
-        if (segmentator_thread.joinable())
-            segmentator_thread.join();
-
-        try
-        {
-            pool.wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        waitForAllThreads();
     }
 
     void cancel(bool kill) override
@@ -100,23 +84,7 @@ public:
         for (auto& unit: working_field)
             unit.reader->cancel(kill);
 
-        {
-            std::unique_lock lock(mutex);
-            segmentator_condvar.notify_all();
-            reader_condvar.notify_all();
-        }
-
-        segmentator_thread.join();
-
-        try
-        {
-            pool.wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
+        waitForAllThreads();
     }
 
     Block getHeader() const override
@@ -217,6 +185,27 @@ private:
     void scheduleParserThreadForUnitWithNumber(size_t unit_number)
     {
         pool.schedule(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, unit_number));
+    }
+
+    void waitForAllThreads()
+    {
+        {
+            std::unique_lock lock(mutex);
+            segmentator_condvar.notify_all();
+            reader_condvar.notify_all();
+        }
+
+        if (segmentator_thread.joinable())
+            segmentator_thread.join();
+
+        try
+        {
+            pool.wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     void segmentatorThreadFunction();
