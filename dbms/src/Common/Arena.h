@@ -7,7 +7,9 @@
 #include <common/likely.h>
 #include <Core/Defines.h>
 #if __has_include(<sanitizer/asan_interface.h>)
-#   include <sanitizer/asan_interface.h>
+#    undef __asan_poison_memory_region(p, size)
+#    undef __asan_unpoison_memory_region(p, size)
+#    include <sanitizer/asan_interface.h>
 #endif
 #include <Common/memcpySmall.h>
 #include <Common/ProfileEvents.h>
