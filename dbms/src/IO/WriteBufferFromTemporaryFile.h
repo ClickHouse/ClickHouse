@@ -1,7 +1,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/IReadableWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Poco/TemporaryFile.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace DB
@@ -20,13 +20,13 @@ public:
 
 protected:
 
-    WriteBufferFromTemporaryFile(std::unique_ptr<Poco::TemporaryFile> && tmp_file);
+    WriteBufferFromTemporaryFile(std::unique_ptr<TemporaryFile> && tmp_file);
 
     std::shared_ptr<ReadBuffer> getReadBufferImpl() override;
 
 protected:
 
-    std::unique_ptr<Poco::TemporaryFile> tmp_file;
+    std::unique_ptr<TemporaryFile> tmp_file;
 
     friend class ReadBufferFromTemporaryWriteBuffer;
 };

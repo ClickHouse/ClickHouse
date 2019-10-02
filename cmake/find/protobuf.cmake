@@ -1,6 +1,6 @@
 option (ENABLE_PROTOBUF "Enable protobuf" ON)
 
-if (ENABLE_PROTOBUF)
+if (ENABLE_PROTOBUF AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
 
 option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled" ${NOT_UNBUNDLED})
 

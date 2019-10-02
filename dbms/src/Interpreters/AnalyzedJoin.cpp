@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 AnalyzedJoin::AnalyzedJoin(const Settings & settings)
@@ -270,6 +271,13 @@ JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_s
     if (table_join->partial_merge_join && !is_asof && is_left_or_inner)
         return std::make_shared<MergeJoin>(table_join, right_sample_block);
     return std::make_shared<Join>(table_join, right_sample_block);
+}
+
+bool isMergeJoin(const JoinPtr & join)
+{
+    if (join)
+        return typeid_cast<const MergeJoin *>(join.get());
+    return false;
 }
 
 }

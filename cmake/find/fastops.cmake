@@ -2,7 +2,7 @@ if (NOT ARCH_ARM AND NOT OS_FREEBSD)
     option (ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${NOT_UNBUNDLED})
 endif ()
 
-if (ENABLE_FASTOPS)
+if (ENABLE_FASTOPS AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
     if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/fastops/fastops/fastops.h")
         message(FATAL_ERROR "submodule contrib/fastops is missing. to fix try run: \n git submodule update --init --recursive")
         set(USE_FASTOPS 0)
