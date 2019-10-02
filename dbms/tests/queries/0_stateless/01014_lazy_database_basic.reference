@@ -4,6 +4,12 @@ testlazy	tlog	TinyLog	0	['/var/lib/clickhouse/data/testlazy/tlog/']	/var/lib/cli
 testlazy	log	0000-00-00 00:00:00
 testlazy	slog	0000-00-00 00:00:00
 testlazy	tlog	0000-00-00 00:00:00
+testlazy	log2	0000-00-00 00:00:00
+testlazy	slog	0000-00-00 00:00:00
+testlazy	tlog	0000-00-00 00:00:00
+testlazy	log2	0000-00-00 00:00:00
+testlazy	slog	0000-00-00 00:00:00
+testlazy	tlog	0000-00-00 00:00:00
 1	1
 2	2
 3	3
