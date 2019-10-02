@@ -1,6 +1,6 @@
 option(ENABLE_ICU "Enable ICU" ON)
 
-if(ENABLE_ICU)
+if(ENABLE_ICU AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
     if (APPLE)
         set(ICU_ROOT "/usr/local/opt/icu4c" CACHE STRING "")
     endif()
