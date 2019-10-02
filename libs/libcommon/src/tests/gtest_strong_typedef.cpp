@@ -6,7 +6,9 @@
 #include <memory>
 #include <type_traits>
 
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 #include <gtest/gtest.h>
 
 

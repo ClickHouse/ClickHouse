@@ -7,7 +7,9 @@
 
 using namespace std::literals::string_literals;
 
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 #include <gtest/gtest.h>
 
 enum class ResultType

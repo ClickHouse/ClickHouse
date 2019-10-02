@@ -1,5 +1,7 @@
 #include <Common/ThreadPool.h>
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 #include <gtest/gtest.h>
 
 /** Reproduces bug in ThreadPool.

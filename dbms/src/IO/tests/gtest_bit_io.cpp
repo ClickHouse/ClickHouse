@@ -16,7 +16,9 @@
 #include <typeinfo>
 #include <iostream>
 
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 #include <gtest/gtest.h>

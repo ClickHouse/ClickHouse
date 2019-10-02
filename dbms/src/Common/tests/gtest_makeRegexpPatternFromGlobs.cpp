@@ -1,6 +1,8 @@
 #include <Common/parseGlobs.h>
 #include <re2/re2.h>
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 #include <gtest/gtest.h>
 
 
