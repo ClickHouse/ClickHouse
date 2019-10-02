@@ -6,12 +6,14 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/CommonParsers.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -67,6 +69,8 @@ public:
             return;
         if (auto function = ast->as<ASTFunction>())
             visit(*function, force_nullable);
+        else if (ast->as<ASTQueryParameter>())
+            return;
         else if (ast->as<ASTIdentifier>())
             throw DB::Exception("Identifier in constant expression", ErrorCodes::SYNTAX_ERROR);
         else
@@ -295,6 +299,8 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context);
     visitor.visit(expression, result_column_type->isNullable());
+    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
+    param_visitor.visit(expression);
 
     size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, salt);
     auto iter = cache.find(template_hash);
