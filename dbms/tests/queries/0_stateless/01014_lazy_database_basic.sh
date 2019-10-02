@@ -36,7 +36,8 @@ ${CLICKHOUSE_CLIENT} -n -q "
 
 sleep 2
 
-${CLICKHOUSE_CLIENT} -q "
+${CLICKHOUSE_CLIENT} -n -q "
+    SELECT * FROM testlazy.tlog LIMIT 0; -- drop testlazy.log from cache
     DROP TABLE testlazy.log;
 "
 
