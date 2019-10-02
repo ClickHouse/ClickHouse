@@ -94,6 +94,9 @@ public:
 
     ~DatabaseLazy() override;
 
+protected:
+    //const Poco::Logger * getLogger() const override { return log; }
+
 private:
     struct CachedTable
     {

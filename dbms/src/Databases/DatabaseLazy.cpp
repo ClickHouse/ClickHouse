@@ -49,7 +49,6 @@ namespace detail
 {
     extern String getTableMetadataPath(const String & base_path, const String & table_name);
     extern String getDatabaseMetadataPath(const String & base_path);
-
 }
 
 static size_t getLastModifiedEpochTime(const String & table_metadata_path) {

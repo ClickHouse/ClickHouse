@@ -48,16 +48,8 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace detail
 {
-    String getTableMetadataPath(const String & base_path, const String & table_name)
-    {
-        return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
-    }
-
-    String getDatabaseMetadataPath(const String & base_path)
-    {
-        return (endsWith(base_path, "/") ? base_path.substr(0, base_path.size() - 1) : base_path) + ".sql";
-    }
-
+    extern String getTableMetadataPath(const String & base_path, const String & table_name);
+    extern String getDatabaseMetadataPath(const String & base_path);
 }
 
 static void loadTable(
