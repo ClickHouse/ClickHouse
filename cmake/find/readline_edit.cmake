@@ -2,7 +2,7 @@ include (CMakePushCheckState)
 cmake_push_check_state ()
 
 option (ENABLE_READLINE "Enable readline" 1)
-if (ENABLE_READLINE)
+if (ENABLE_READLINE AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
 
 set (READLINE_PATHS "/usr/local/opt/readline/lib")
 # First try find custom lib for macos users (default lib without history support)
