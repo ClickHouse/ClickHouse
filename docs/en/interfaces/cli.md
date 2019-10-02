@@ -22,14 +22,14 @@ Similar to the HTTP interface, when using the 'query' parameter and sending data
 Example of using the client to insert data:
 
 ```bash
-echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 
-cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 3, 'some text', '2016-08-14 00:00:00'
 4, 'some more text', '2016-08-14 00:00:01'
 _EOF
 
-cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
@@ -70,14 +70,14 @@ The command-line client allows passing external data (external temporary tables)
 You can create a query with parameters and pass values to them from client application. This allows to avoid formatting query with specific dynamic values on client side. For example:
 
 ```bash
-clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+$ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
 #### Query Syntax {#cli-queries-with-parameters-syntax}
 
 Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
 
-```
+```sql
 {<name>:<data type>}
 ```
 
@@ -87,7 +87,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 #### Example
 
 ```bash
-clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
 ## Configuring {#interfaces_cli_configuration}

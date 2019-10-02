@@ -60,12 +60,6 @@ struct HashMethodOneNumber
 
     /// Is used for default implementation in HashMethodBase.
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
-
-    /// Get StringRef from value which can be inserted into column.
-    static StringRef getValueRef(const Value & value)
-    {
-        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
-    }
 };
 
 
@@ -101,8 +95,6 @@ struct HashMethodString
             return key;
         }
     }
-
-    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -141,8 +133,6 @@ struct HashMethodFixedString
             return key;
         }
     }
-
-    static StringRef getValueRef(const Value & value) { return value.first; }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -359,7 +349,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         auto key_holder = getKeyHolder(row_, pool);
 
         bool inserted = false;
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         if (saved_hash)
             data.emplace(key_holder, it, inserted, saved_hash[row]);
         else
@@ -369,12 +359,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if constexpr (has_mapped)
         {
+            auto & mapped = *lookupResultGetMapped(it);
             if (inserted)
             {
-                new (&it->getSecond()) Mapped();
+                new (&mapped) Mapped();
             }
-            mapped_cache[row] = it->getSecond();
-            return EmplaceResult(it->getSecond(), mapped_cache[row], inserted);
+            mapped_cache[row] = mapped;
+            return EmplaceResult(mapped, mapped_cache[row], inserted);
         }
         else
             return EmplaceResult(inserted);
@@ -559,11 +550,6 @@ struct HashMethodHashed
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
         return hash128(row, key_columns.size(), key_columns);
-    }
-
-    static ALWAYS_INLINE StringRef getValueRef(const Value & value)
-    {
-        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
 };
 

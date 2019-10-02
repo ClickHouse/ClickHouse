@@ -15,6 +15,7 @@ The supported formats are:
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
+| [CustomSeparated](#format-customseparated) | ✔ | ✔ |
 | [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
@@ -29,6 +30,7 @@ The supported formats are:
 | [Protobuf](#protobuf) | ✔ | ✔ |
 | [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
@@ -46,11 +48,11 @@ The `TabSeparated` format is convenient for processing data using custom program
 
 The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when 'extremes' is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
-``` sql
+```sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```
+```text
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -82,7 +84,7 @@ As an exception, parsing dates with times is also supported in Unix timestamp fo
 
 Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH` (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n` or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of a space can be parsed in any of the following variations:
 
-```
+```text
 Hello\nworld
 
 Hello\
@@ -125,14 +127,14 @@ This format is also available under the name `TSVWithNamesAndTypes`.
 
 This format allows to specify a custom format string with placeholders for values with specified escaping rule.
 
-It uses settings `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
+It uses settings `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
 
-Format string `format_schema_rows` specifies rows format with the following syntax:
+Setting `format_template_row` specifies path to file, which contains format string for rows with the following syntax:
 
  `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
   where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`), 
-  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped), 
+  `column_i` is a name or index of a column whose values are to be selected or inserted (if empty, then column will be skipped), 
   `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
   
   - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
@@ -151,14 +153,14 @@ Format string `format_schema_rows` specifies rows format with the following synt
 
   `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
   
- The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
+ The `format_template_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
-Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+Setting `format_template_resultset` specifies path to file, which contains format string for resultset. Format string for resultset has the same syntax as format string for row and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
- - `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
- - `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
- - `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
- - `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
+ - `data` is the rows with data in `format_template_row` format, separated by `format_template_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+ - `totals` is the row with total values in `format_template_row` format (when using WITH TOTALS)
+ - `min` is the row with minimum values in `format_template_row` format (when extremes is set to 1)
+ - `max` is the row with maximum values in `format_template_row` format (when extremes is set to 1)
  - `rows` is the total number of output rows
  - `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
  - `time` is the request execution time in seconds
@@ -166,14 +168,17 @@ Format string `format_schema` has the same syntax as `format_schema_rows` and al
  - `bytes_read` is the number of bytes (uncompressed) have been read
  
  The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
- If the `format_schema` setting is an empty string, `${data}` is used as default value.
+ If the `format_template_resultset` setting is an empty string, `${data}` is used as default value.
   For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
  
- `Select` example:
+ Select example:
 ```sql
-SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5
-FORMAT Template 
-SETTINGS format_schema = '<!DOCTYPE HTML>
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS 
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
+```
+`/some/path/resultset.format`:
+```text
+<!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
  <body>
   <table border="1"> <caption>Search phrases</caption>
@@ -185,10 +190,13 @@ SETTINGS format_schema = '<!DOCTYPE HTML>
   </table>
   <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
  </body>
-</html>',
-format_schema_rows = '<tr> <td>${SearchPhrase:XML}</td> <td>${с:XML}</td> </tr>',
-format_schema_rows_between_delimiter = '\n    '
+</html>
 ```
+`/some/path/row.format`:
+```text
+<tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
+```
+Result:
 ```html
 <!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
@@ -209,8 +217,8 @@ format_schema_rows_between_delimiter = '\n    '
 </html>
 ```
 
-`Insert` example:
-```
+Insert example:
+```text
 Some header
 Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
 Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
@@ -218,8 +226,15 @@ Total rows: 2
 ```
 ```sql
 INSERT INTO UserActivity FORMAT Template SETTINGS 
-format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
-format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
+```
+`/some/path/resultset.format`:
+```text
+Some header\n${data}\nTotal rows: ${:CSV}\n
+```
+`/some/path/row.format`:
+```text
+Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
 ```
 `PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
@@ -231,16 +246,22 @@ Similar to `Template`,  but skips whitespace characters between delimiters and v
 It's possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
 ```sql
 INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
-format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
-format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
-format_schema_rows_between_delimiter = ','
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = ','
+```
+`/some/path/resultset.format`:
+```text
+{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}
+```
+`/some/path/row.format`:
+```text
+{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
 ```
 
 ## TSKV {#tskv}
 
 Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
 
-```
+```text
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
 SearchPhrase=yandex     count()=1655
@@ -259,7 +280,7 @@ SearchPhrase=baku       count()=1000
 SELECT * FROM t_null FORMAT TSKV
 ```
 
-```
+```text
 x=1	y=\N
 ```
 
@@ -275,8 +296,8 @@ Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
 When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
-```
-clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
+```bash
+$ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
 &ast;By default, the delimiter is `,`. See the [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) setting for more information.
@@ -295,11 +316,16 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 Also prints the header row, similar to `TabSeparatedWithNames`.
 
+## CustomSeparated {#format-customseparated}
+
+Similar to [Template](#format-template), but it prints or reads all columns and uses escaping rule from setting `format_custom_escaping_rule` and delimiters from settings `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` and `format_custom_result_after_delimiter`, not from format strings.
+There is also `CustomSeparatedIgnoreSpaces` format, which is similar to `TemplateIgnoreSpaces`.
+
 ## JSON {#json}
 
 Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information: the total number of output rows, and the number of rows that could have been output if there weren't a LIMIT. Example:
 
-``` sql
+```sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
@@ -444,7 +470,7 @@ When inserting the data, you should provide a separate JSON object for each row.
 
 ### Inserting Data
 
-```
+```sql
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
 
@@ -463,7 +489,7 @@ If `DEFAULT expr` is specified, ClickHouse uses different substitution rules dep
 
 Consider the following table:
 
-```
+```sql
 CREATE TABLE IF NOT EXISTS example_table
 (
     x UInt32,
@@ -481,7 +507,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 Consider the `UserActivity` table as an example:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -490,7 +516,7 @@ Consider the `UserActivity` table as an example:
 
 The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 
-```
+```text
 {"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
@@ -575,11 +601,11 @@ Each result block is output as a separate table. This is necessary so that block
 
 Example (shown for the [PrettyCompact](#prettycompact) format):
 
-``` sql
+```sql
 SELECT * FROM t_null
 ```
 
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
@@ -587,11 +613,11 @@ SELECT * FROM t_null
 
 Rows are not escaped in Pretty* formats. Example is shown for the [PrettyCompact](#prettycompact) format:
 
-``` sql
+```sql
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-```
+```text
 ┌─Escaping_test────────────────────────┐
 │ String with 'quotes' and 	 character │
 └──────────────────────────────────────┘
@@ -602,11 +628,11 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the [PrettyCompact](#prettycompact) format):
 
-``` sql
+```sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```
+```text
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -645,7 +671,7 @@ Differs from Pretty in that ANSI-escape sequences aren't used. This is necessary
 Example:
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 You can use the HTTP interface for displaying in the browser.
@@ -680,9 +706,10 @@ For [NULL](../query_language/syntax.md#null-literal) support, an additional byte
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 Similar to [RowBinary](#rowbinary), but with added header:
-* [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
-* N `String`s specifying column names
-* N `String`s specifying column types
+
+ * [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+ * N `String`s specifying column names
+ * N `String`s specifying column types
 
 ## Values {#data-format-values}
 
@@ -700,11 +727,11 @@ Prints each value on a separate line with the column name specified. This format
 
 Example:
 
-``` sql
+```sql
 SELECT * FROM t_null FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 x: 1
@@ -712,11 +739,11 @@ y: ᴺᵁᴸᴸ
 ```
 Rows are not escaped in Vertical format:
 
-``` sql
+```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 test: string with 'quotes' and 	 with some special
@@ -805,12 +832,12 @@ Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, b
 Cap'n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
 
 ```bash
-cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Where `schema.capnp` looks like this:
 
-```
+```capnp
 struct Message {
   SearchPhrase @0 :Text;
   c @1 :Uint64;
@@ -840,7 +867,7 @@ cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FO
 
 where the file `schemafile.proto` looks like this:
 
-```
+```capnp
 syntax = "proto3";
 
 message MessageType {
@@ -857,7 +884,7 @@ If types of a column and a field of Protocol Buffers' message are different the 
 
 Nested messages are supported. For example, for the field `z` in the following message type
 
-```
+```capnp
 message MessageType {
   message XType {
     message YType {
@@ -874,7 +901,7 @@ Nested messages are suitable to input or output a [nested data structures](../da
 
 Default values defined in a protobuf schema like this
 
-```
+```capnp
 syntax = "proto2";
 
 message MessageType {
@@ -924,17 +951,17 @@ Data types of a ClickHouse table columns can differ from the corresponding field
 
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
-```
+```bash
 cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
-```
+```sql
 clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with the Hadoop, you can use [`HDFS` table engine](../../operations/table_engines/hdfs.md).
+To exchange data with the Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
 
 ## Format Schema {#formatschema}
 

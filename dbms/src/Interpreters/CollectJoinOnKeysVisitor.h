@@ -23,7 +23,7 @@ public:
         const NameSet & source_columns;
         const NameSet & joined_columns;
         const Aliases & aliases;
-        const bool is_asof;
+        const bool is_asof{false};
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
         bool has_some{false};

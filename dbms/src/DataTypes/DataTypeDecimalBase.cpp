@@ -30,67 +30,16 @@ bool decimalCheckComparisonOverflow(const Context & context) { return context.ge
 bool decimalCheckArithmeticOverflow(const Context & context) { return context.getSettingsRef().decimal_check_overflow; }
 
 template <typename T>
-bool DataTypeDecimalBase<T>::equals(const IDataType & rhs) const
+Field DataTypeDecimalBase<T>::getDefault() const
 {
-    if (auto * ptype = dynamic_cast<const DataTypeDecimalBase<T> *>(&rhs))
-        return scale == ptype->getScale();
-    return false;
+    return DecimalField(T(0), scale);
 }
 
 template <typename T>
-void DataTypeDecimalBase<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+MutableColumnPtr DataTypeDecimalBase<T>::createColumn() const
 {
-    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, scale, ostr);
+    return ColumnType::create(0, scale);
 }
-
-template <typename T>
-bool DataTypeDecimalBase<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
-{
-    UInt32 unread_scale = scale;
-    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
-    return done;
-}
-
-template <typename T>
-void DataTypeDecimalBase<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
-{
-    UInt32 unread_scale = scale;
-    if (csv)
-        readCSVDecimalText(istr, x, precision, unread_scale);
-    else
-        readDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
-}
-
-template <typename T>
-void DataTypeDecimalBase<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
-void DataTypeDecimalBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr, true);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
-T DataTypeDecimalBase<T>::parseFromString(const String & str) const
-{
-    ReadBufferFromMemory buf(str.data(), str.size());
-    T x;
-    UInt32 unread_scale = scale;
-    readDecimalText(buf, x, precision, unread_scale, true);
-    x *= getScaleMultiplier(unread_scale);
-    return x;
-}
-
 
 template <typename T>
 void DataTypeDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -102,7 +51,7 @@ void DataTypeDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & 
 template <typename T>
 void DataTypeDecimalBase<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    const FieldType & x = assert_cast<const ColumnType &>(column).getData()[row_num];
+    const FieldType & x = assert_cast<const ColumnType &>(column).getElement(row_num);
     writeBinary(x, ostr);
 }
 
@@ -119,13 +68,12 @@ void DataTypeDecimalBase<T>::serializeBinaryBulk(const IColumn & column, WriteBu
     ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(FieldType) * limit);
 }
 
-
 template <typename T>
 void DataTypeDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     typename FieldType::NativeType x;
     readBinary(x, istr);
-    field = DecimalField(T(x), scale);
+    field = DecimalField(T(x), this->scale);
 }
 
 template <typename T>
@@ -144,47 +92,6 @@ void DataTypeDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     x.resize(initial_size + limit);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
-}
-
-
-template <typename T>
-void DataTypeDecimalBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeDecimal(assert_cast<const ColumnType &>(column).getData()[row_num], scale));
-}
-
-
-template <typename T>
-void DataTypeDecimalBase<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    T decimal;
-    if (!protobuf.readDecimal(decimal, precision, scale))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(decimal);
-        row_added = true;
-    }
-    else
-        container.back() = decimal;
-}
-
-
-template <typename T>
-Field DataTypeDecimalBase<T>::getDefault() const
-{
-    return DecimalField(T(0), scale);
-}
-
-template <typename T>
-MutableColumnPtr DataTypeDecimalBase<T>::createColumn() const
-{
-    return ColumnType::create(0, scale);
 }
 
 template <>

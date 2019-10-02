@@ -55,7 +55,7 @@ public:
     size_t wipeSensitiveData(std::string & data) const;
 
     /// setInstance is not thread-safe and should be called once in single-thread mode.
-    /// https://github.com/yandex/ClickHouse/pull/6810#discussion_r321183367
+    /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
     static void setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_);
     static SensitiveDataMasker * getInstance();
 

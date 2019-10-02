@@ -13,7 +13,7 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -315,7 +315,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 }
 
                 const auto & dict_name = function->arguments->children[0]->as<ASTLiteral &>().value.safeGet<String>();
-                const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
                 const auto & attr_name = function->arguments->children[1]->as<ASTLiteral &>().value.safeGet<String>();
 
                 if (!dict_ptr->isInjective(attr_name))
@@ -805,8 +805,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     SyntaxAnalyzerResult result;
     result.storage = storage;
     result.source_columns = source_columns_;
-    result.analyzed_join = std::make_shared<AnalyzedJoin>(); /// TODO: move to select_query logic
-    result.analyzed_join->join_use_nulls = settings.join_use_nulls;
+    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings); /// TODO: move to select_query logic
 
     collectSourceColumns(select_query, result.storage, result.source_columns);
     NameSet source_columns_set = removeDuplicateColumns(result.source_columns);

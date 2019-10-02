@@ -52,7 +52,7 @@ struct FormatSettings
 
     struct Template
     {
-        String format;
+        String resultset_format;
         String row_format;
         String row_between_delimiter;
     };

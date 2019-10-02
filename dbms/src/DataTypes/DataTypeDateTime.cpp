@@ -210,7 +210,7 @@ bool DataTypeDateTime::equals(const IDataType & rhs) const
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt8 scale_, const std::string & time_zone_name)
-    : DataTypeDecimalBase<DateTime64>(maxDecimalPrecision<DateTime64>(), scale_),
+    : DataTypeDecimalBase<DateTime64>(maxDecimalPrecision<DateTime64>() - scale_, scale_),
       TimezoneMixin(time_zone_name)
 {
 }
@@ -224,6 +224,9 @@ void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, W
 {
     writeDateTimeText(assert_cast<const ColumnType &>(column).getData()[row_num], scale, ostr, time_zone);
 }
+
+void DataTypeDateTime64::deserializeText(IColumn & /*column*/, ReadBuffer & /*istr*/, const FormatSettings &) const
+{}
 
 void DataTypeDateTime64::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
@@ -335,6 +338,13 @@ void DataTypeDateTime64::deserializeProtobuf(IColumn & column, ProtobufReader & 
     }
     else
         container.back() = t;
+}
+
+bool DataTypeDateTime64::equals(const IDataType & rhs) const
+{
+    if (auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
+        return this->scale == ptype->getScale();
+    return false;
 }
 
 namespace ErrorCodes

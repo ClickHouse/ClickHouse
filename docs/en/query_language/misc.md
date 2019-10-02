@@ -10,7 +10,7 @@ After executing an ATTACH query, the server will know about the existence of the
 
 If the table was previously detached (``DETACH``), meaning that its structure is known, you can use shorthand without defining the structure.
 
-``` sql
+```sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -20,7 +20,7 @@ This query is used when starting the server. The server stores table metadata as
 
 Checks if the data in the table is corrupted.
 
-``` sql
+```sql
 CHECK TABLE [db.]name
 ```
 
@@ -56,7 +56,7 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 
 ## DESCRIBE TABLE {#misc-describe-table}
 
-``` sql
+```sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -74,7 +74,7 @@ Nested data structures are output in "expanded" format. Each column is shown sep
 
 Deletes information about the 'name' table from the server. The server stops knowing about the table's existence.
 
-``` sql
+```sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -87,14 +87,14 @@ There is no `DETACH DATABASE` query.
 
 This query has two types: `DROP DATABASE` and `DROP TABLE`.
 
-``` sql
+```sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
 If `IF EXISTS` is specified, it doesn't return an error if the database doesn't exist.
 
-``` sql
+```sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -103,7 +103,7 @@ If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exi
 
 ## EXISTS
 
-``` sql
+```sql
 EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -111,7 +111,7 @@ Returns a single `UInt8`-type column, which contains the single value `0` if the
 
 ## KILL QUERY
 
-``` sql
+```sql
 KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
@@ -123,7 +123,7 @@ The queries to terminate are selected from the system.processes table using the 
 
 Examples:
 
-``` sql
+```sql
 -- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
@@ -173,23 +173,26 @@ Changes already made by the mutation are not rolled back.
 
 ## OPTIMIZE {#misc_operations-optimize}
 
-``` sql
+```sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
-Asks the table engine to do something for optimization.
-Supported only by `*MergeTree` engines, in which this query initializes a non-scheduled merge of data parts.
-If you specify a `PARTITION`, only the specified partition will be optimized.
-If you specify `FINAL`, optimization will be performed even when all the data is already in one part.
+This query tries to initialize an unscheduled merge of data parts for tables with a table engine from the [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines aren't supported.
 
-!!! warning
-    OPTIMIZE can't fix the "Too many parts" error.
+When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
+
+- If `OPTIMIZE` doesn't perform a merge for any reason, it doesn't notify the client. To enable notifications, use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
+- If you specify a `PARTITION`, only the specified partition is optimized.
+- If you specify `FINAL`, optimization is performed even when all the data is already in one part.
+
+!!! warning "Warning"
+    `OPTIMIZE` can't fix the "Too many parts" error.
 
 ## RENAME {#misc_operations-rename}
 
 Renames one or more tables.
 
-``` sql
+```sql
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
@@ -211,75 +214,9 @@ SET profile = 'profile-name-from-the-settings-file'
 
 For more information, see [Settings](../operations/settings/settings.md).
 
-## SHOW CREATE TABLE
-
-``` sql
-SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
-```
-
-Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
-
-## SHOW DATABASES {#show-databases}
-
-``` sql
-SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
-```
-
-Prints a list of all databases.
-This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
-
-See also the section "Formats".
-
-## SHOW PROCESSLIST
-
-``` sql
-SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs a list of queries currently being processed, other than `SHOW PROCESSLIST` queries.
-
-Prints a table containing the columns:
-
-**user** – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the 'default' user. SHOW PROCESSLIST shows the username for a specific query, not for a query that this query initiated.
-
-**address** – The name of the host that the query was sent from. For distributed processing, on remote servers, this is the name of the query requestor host. To track where a distributed query was originally made from, look at SHOW PROCESSLIST on the query requestor server.
-
-**elapsed** – The execution time, in seconds. Queries are output in order of decreasing execution time.
-
-**rows_read**, **bytes_read** – How many rows and bytes of uncompressed data were read when processing the query. For distributed processing, data is totaled from all the remote servers. This is the data used for restrictions and quotas.
-
-**memory_usage** – Current RAM usage in bytes. See the setting 'max_memory_usage'.
-
-**query** – The query itself. In INSERT queries, the data for insertion is not output.
-
-**query_id** – The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
-
-This query is nearly identical to: `SELECT * FROM system.processes`. The difference is that the `SHOW PROCESSLIST` query does not show itself in a list, when the `SELECT .. FROM system.processes` query does.
-
-Tip (execute in the console):
-
-```bash
-watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
-```
-
-## SHOW TABLES
-
-``` sql
-SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
-```
-
-Displays a list of tables
-
-- Tables from the current database, or from the 'db' database if "FROM db" is specified.
-- All tables, or tables whose name matches the pattern, if "LIKE 'pattern'" is specified.
-
-This query is identical to: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`.
-
-See also the section "LIKE operator".
-
 ## TRUNCATE
 
-``` sql
+```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -289,7 +226,7 @@ The `TRUNCATE` query is not supported for [View](../operations/table_engines/vie
 
 ## USE
 
-``` sql
+```sql
 USE db
 ```
 

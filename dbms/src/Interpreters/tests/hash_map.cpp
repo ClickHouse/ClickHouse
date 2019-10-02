@@ -154,7 +154,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         HashMap<Key, Value> map;
-        HashMap<Key, Value>::iterator it;
+        HashMap<Key, Value>::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
@@ -162,8 +162,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->getSecond()) Value;
-                std::swap(it->getSecond(), value);
+                new(lookupResultGetMapped(it)) Value;
+                std::swap(*lookupResultGetMapped(it), value);
                 INIT
             }
         }
@@ -185,7 +185,7 @@ int main(int argc, char ** argv)
 
         using Map = HashMap<Key, Value, AlternativeHash>;
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
@@ -193,8 +193,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->getSecond()) Value;
-                std::swap(it->getSecond(), value);
+                new(lookupResultGetMapped(it)) Value;
+                std::swap(*lookupResultGetMapped(it), value);
                 INIT
             }
         }
@@ -217,7 +217,7 @@ int main(int argc, char ** argv)
 
         using Map = HashMap<Key, Value, CRC32Hash_>;
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
@@ -225,8 +225,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->getSecond()) Value;
-                std::swap(it->getSecond(), value);
+                new(lookupResultGetMapped(it)) Value;
+                std::swap(*lookupResultGetMapped(it), value);
                 INIT
             }
         }
@@ -267,8 +267,8 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        GOOGLE_NAMESPACE::dense_hash_map<Key, Value, DefaultHash<Key>> map;
-        GOOGLE_NAMESPACE::dense_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
+        ::google::dense_hash_map<Key, Value, DefaultHash<Key>> map;
+        ::google::dense_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
         map.set_empty_key(-1ULL);
         for (size_t i = 0; i < n; ++i)
         {
@@ -288,8 +288,8 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        GOOGLE_NAMESPACE::sparse_hash_map<Key, Value, DefaultHash<Key>> map;
-        GOOGLE_NAMESPACE::sparse_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
+        ::google::sparse_hash_map<Key, Value, DefaultHash<Key>> map;
+        ::google::sparse_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
             map.insert(std::make_pair(data[i], value));

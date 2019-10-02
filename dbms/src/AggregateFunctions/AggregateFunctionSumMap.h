@@ -111,7 +111,7 @@ public:
                 using IteratorType = typename MapType::iterator;
 
                 array_column.getData().get(values_vec_offset + i, value);
-                const auto & key = keys_vec.getData()[keys_vec_offset + i];
+                const auto & key = keys_vec.getElement(keys_vec_offset + i);
 
                 if (!keepKey(key))
                 {

@@ -8,7 +8,6 @@
 #include <vector>
 #include <algorithm>
 
-#include <ext/singleton.h>
 #include <common/readline_use.h>
 
 #include <Common/typeid_cast.h>
@@ -25,7 +24,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
-class Suggest : public ext::singleton<Suggest>
+class Suggest : private boost::noncopyable
 {
 private:
     /// The vector will be filled with completion words from the server and sorted.
@@ -161,6 +160,12 @@ private:
     }
 
 public:
+    static Suggest & instance()
+    {
+        static Suggest instance;
+        return instance;
+    }
+
     /// More old server versions cannot execute the query above.
     static constexpr int MIN_SERVER_REVISION = 54406;
 

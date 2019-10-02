@@ -38,6 +38,22 @@ public:
     TypeIndex getTypeId() const override { return TypeId<T>::value; }
     bool canBePromoted() const override { return true; }
     DataTypePtr promoteNumericType() const override;
+
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
+
+    bool equals(const IDataType & rhs) const override;
+
+public:
+    T parseFromString(const String & str) const;
+    void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, this->precision, this->scale, csv); }
+
+    static void readText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_, bool csv = false);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision_, UInt32 scale_);
 };
 
 template <typename T>

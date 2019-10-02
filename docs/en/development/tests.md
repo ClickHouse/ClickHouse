@@ -86,21 +86,21 @@ Note that all clickhouse tools (server, client, etc) are just symlinks to a sing
 Alternatively you can install ClickHouse package: either stable release from Yandex repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo service clickhouse-server start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
-```
-sudo service clickhouse-server stop
-sudo cp ./clickhouse /usr/bin/
-sudo service clickhouse-server start
+```bash
+$ sudo service clickhouse-server stop
+$ sudo cp ./clickhouse /usr/bin/
+$ sudo service clickhouse-server start
 ```
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
-```
-sudo service clickhouse-server stop
-sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```bash
+$ sudo service clickhouse-server stop
+$ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Example with gdb:
-```
-sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```bash
+$ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
 If the system clickhouse-server is already running and you don't want to stop it, you can change port numbers in your `config.xml` (or override them in a file in `config.d` directory), provide appropriate data path, and run it.
@@ -112,7 +112,7 @@ If the system clickhouse-server is already running and you don't want to stop it
 
 Before publishing release as stable we deploy it on testing environment. Testing environment is a cluster that process 1/39 part of [Yandex.Metrica](https://metrica.yandex.com/) data. We share our testing environment with Yandex.Metrica team. ClickHouse is upgraded without downtime on top of existing data. We look at first that data is processed successfully without lagging from realtime, the replication continue to work and there is no issues visible to Yandex.Metrica team. First check can be done in the following way:
 
-```
+```sql
 SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
 ```
 
@@ -126,16 +126,16 @@ After deploying to testing environment we run load testing with queries from pro
 Make sure you have enabled `query_log` on your production cluster.
 
 Collect query log for a day or more:
-```
-clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
+```bash
+$ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
 ```
 
 This is a way complicated example. `type = 2` will filter queries that are executed successfully. `query LIKE '%ym:%'` is to select relevant queries from Yandex.Metrica. `is_initial_query` is to select only queries that are initiated by client, not by ClickHouse itself (as parts of distributed query processing).
 
 `scp` this log to your testing cluster and run it as following:
 
-```
-clickhouse benchmark --concurrency 16 < queries.tsv
+```bash
+$ clickhouse benchmark --concurrency 16 < queries.tsv
 ```
 (probably you also want to specify a `--user`)
 
