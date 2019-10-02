@@ -236,11 +236,10 @@ bool IStorageURLBase::checkHostWhitelist(const std::string & host) {
     {
         if (primary_hosts.find(host) == primary_hosts.end())
         {
-            bool flag = false;
-            for (size_t i = 0; i < regexp_hosts.size() && !flag; ++i)
+            for (size_t i = 0; i < regexp_hosts.size(); ++i)
                 if (re2::RE2::FullMatch(host, regexp_hosts[i]))
-                    flag = true;
-            return flag;
+                    return true;
+            return false;
         }
         return true;
     }
