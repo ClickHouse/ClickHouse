@@ -16,6 +16,7 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Interpreters/convertFieldToType.h>
+#include <boost/functional/hash.hpp>
 
 
 namespace DB
@@ -66,10 +67,10 @@ public:
             return;
         if (auto function = ast->as<ASTFunction>())
             visit(*function, force_nullable);
-        else if (ast->as<ASTLiteral>())
+        else if (ast->as<ASTIdentifier>())
             throw DB::Exception("Identifier in constant expression", ErrorCodes::SYNTAX_ERROR);
         else
-            visitChildren(ast, {}, std::vector<char>(ast->children.size(), force_nullable));
+            throw DB::Exception("Syntax error in constant expression", ErrorCodes::SYNTAX_ERROR);
     }
 
 private:
@@ -85,26 +86,16 @@ private:
         if (function.name == "lambda")
             return;
 
-        /// Do not replace literals which must be constant
-        ColumnNumbers dont_visit_children;
         FunctionBuilderPtr builder = FunctionFactory::instance().get(function.name, context);
-
-        if (auto default_builder = dynamic_cast<DefaultFunctionBuilder*>(builder.get()))
-            dont_visit_children = default_builder->getArgumentsThatAreAlwaysConstant();
-        else if (dynamic_cast<FunctionBuilderCast*>(builder.get()))
-            dont_visit_children.push_back(1);
-        /// FIXME suppose there is no other functions, which require constant arguments (it's true, until the new one is added)
-
+        /// Do not replace literals which must be constant
+        ColumnNumbers dont_visit_children = builder->getArgumentsThatAreAlwaysConstant();
         /// Allow nullable arguments if function never returns NULL
-        bool return_not_null = function.name == "isNull" || function.name == "isNotNull" ||
-                               function.name == "ifNull"  || function.name == "assumeNotNull" ||
-                               function.name == "coalesce";
+        ColumnNumbers can_always_be_nullable = builder->getArgumentsThatDontImplyNullableReturnType(function.arguments->children.size());
 
-        std::vector<char> force_nullable_arguments(function.arguments->children.size(), force_nullable || return_not_null);
-
-        /// coalesce may return NULL if the last argument is NULL
-        if (!force_nullable && function.name == "coalesce")
-            force_nullable_arguments.back() = false;
+        std::vector<char> force_nullable_arguments(function.arguments->children.size(), force_nullable);
+        for (auto & idx : can_always_be_nullable)
+            if (idx < force_nullable_arguments.size())
+                force_nullable_arguments[idx] = true;
 
         visitChildren(function.arguments, dont_visit_children, force_nullable_arguments);
     }
@@ -281,9 +272,12 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    IAST::Hash res;
-    hash_state.get128(res.first, res.second);
-    return res.first ^ res.second;
+    IAST::Hash res128;
+    hash_state.get128(res128.first, res128.second);
+    size_t res = 0;
+    boost::hash_combine(res, res128.first);
+    boost::hash_combine(res, res128.second);
+    return res;
 }
 
 
@@ -322,18 +316,6 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     }
 
     return res;
-}
-
-ConstantExpressionTemplate::ConstantExpressionTemplate(const DataTypePtr & result_column_type,
-                                                       TokenIterator expression_begin, TokenIterator expression_end,
-                                                       const ASTPtr & expression_, const Context & context)
-{
-    ASTPtr expression = expression_->clone();
-    ReplaceLiteralsVisitor visitor(context);
-    visitor.visit(expression, result_column_type->isNullable());
-
-    structure = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
-    columns = structure->literals.cloneEmptyColumns();
 }
 
 bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const FormatSettings & settings)
@@ -451,7 +433,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
             istr.position() += 4;
         else
         {
-            /// ParserNumber::parse(...) is slow because of using ASTPtr, Expected and Tokens, which is't needed here
+            /// ParserNumber::parse(...) is about 20x slower than strtod(...)
+            /// because of using ASTPtr, Expected and Tokens, which are not needed here.
+            /// Parse numeric literal in the same way, as ParserNumber does, but use strtod and strtoull directly.
             bool negative = *istr.position() == '-';
             if (negative || *istr.position() == '+')
                 ++istr.position();

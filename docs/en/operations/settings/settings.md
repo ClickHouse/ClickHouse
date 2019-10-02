@@ -215,7 +215,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
  This feature is experimental, disabled by default.
 
 ## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
-This setting is used unly when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
+This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
 ```sql
 (..., abs(0), ...),             -- UInt64 literal
 (..., abs(3.141592654), ...),   -- Float64 literal
