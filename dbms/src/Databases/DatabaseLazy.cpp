@@ -1,8 +1,9 @@
 #include <iomanip>
 
 #include <Core/Settings.h>
-#include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseLazy.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -44,12 +45,6 @@ namespace ErrorCodes
 
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-
-namespace detail
-{
-    extern String getTableMetadataPath(const String & base_path, const String & table_name);
-    extern String getDatabaseMetadataPath(const String & base_path);
-}
 
 static size_t getLastModifiedEpochTime(const String & table_metadata_path) {
     Poco::File meta_file(table_metadata_path);
@@ -93,10 +88,10 @@ void DatabaseLazy::createTable(
     const ASTPtr & query)
 {
     clearExpiredTables();
-    const auto & settings = context.getSettingsRef();
-
     if (!endsWith(table->getName(), "Log"))
         throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
+
+    const auto & settings = context.getSettingsRef();
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -590,6 +585,9 @@ void DatabaseLazy::clearExpiredTables() const
            (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) - cache_expiration_queue.begin()->last_touched) >= expiration_time)
     {
         auto it = tables_cache.find(cache_expiration_queue.begin()->table_name);
+        if (!it->second.table.unique())
+            continue;
+
         LOG_DEBUG(log, "Drop table '" << it->first << "' from cache.");
         /// Table can be already removed by detachTable.
         if (it != tables_cache.end())

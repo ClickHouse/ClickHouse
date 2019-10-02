@@ -12,34 +12,33 @@ namespace detail
 }
 
 /* Class to provide basic operations with tables.
- */
 class DatabaseOnDisk : public IDatabase
 {
 public:
-    void createTable(
+    static void createTable(
         const Context & context,
         const String & table_name,
         const StoragePtr & table,
-        const ASTPtr & query) override;
+        const ASTPtr & query);
 
-    void removeTable(
+    static void removeTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name);
 
-    void renameTable(
+    static void renameTable(
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        TableStructureWriteLockHolder &) override;
+        TableStructureWriteLockHolder &);
 
-    ASTPtr getCreateTableQuery(
+    static ASTPtr getCreateTableQuery(
         const Context & context,
-        const String & table_name) const override;
+        const String & table_name) const;
 
-    ASTPtr tryGetCreateTableQuery(
+    static ASTPtr tryGetCreateTableQuery(
         const Context & context,
-        const String & table_name) const override;
+        const String & table_name) const;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
@@ -47,10 +46,7 @@ public:
 
     String getTableMetadataPath(const String & table_name) const override;
 
-protected:
-    virtual const Poco::Logger * getLogger() const = 0;
-
 private:
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
-};
+};*/
 }

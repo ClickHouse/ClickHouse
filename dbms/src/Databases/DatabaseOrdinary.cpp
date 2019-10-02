@@ -2,6 +2,7 @@
 
 #include <Core/Settings.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
 #include <IO/ReadBufferFromFile.h>

@@ -61,6 +61,18 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     return block.getByPosition(0).column;
 }
 
+static bool needLockStructure(const DatabasePtr& database, const Block& header) {
+    if (database->getEngineName() != "Lazy")
+        return true;
+
+    static std::set<std::string> columns_without_lock = { "database", "name", "metadata_modification_time" };
+    for (const auto& column : header.getColumnsWithTypeAndName()) {
+        if (columns_without_lock.find(column.name) != columns_without_lock.end()) {
+            return true;
+        }
+    }
+    return false;
+}
 
 class TablesBlockInputStream : public IBlockInputStream
 {
@@ -175,8 +187,9 @@ protected:
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getIterator(context);
-            bool is_lazy_database = database->getEngineName() == "Lazy";
-
+            
+            const bool need_lock_structure = needLockStructure(database, header);
+            
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
@@ -186,7 +199,7 @@ protected:
 
                 try
                 {
-                    if (!is_lazy_database) // Lazy database do not support alters
+                    if (need_lock_structure)
                     {
                         if (!table)
                             table = tables_it->table();
