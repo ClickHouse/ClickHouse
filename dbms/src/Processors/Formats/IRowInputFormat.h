@@ -27,8 +27,6 @@ struct RowInputFormatParams
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;
 
-    UInt64 rows_portion_size;
-
     using ReadCallback = std::function<void()>;
     ReadCallback callback;
 
@@ -85,4 +83,3 @@ private:
 };
 
 }
-

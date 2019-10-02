@@ -6,7 +6,7 @@ For information on connecting and configuring external dictionaries, see [Extern
 
 Retrieves a value from an external dictionary.
 
-```
+```sql
 dictGet('dict_name', 'attr_name', id_expr)
 dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```
@@ -95,7 +95,7 @@ LIMIT 3
 
 Checks whether a key is present in a dictionary.
 
-```
+```sql
 dictHas('dict_name', id_expr)
 ```
 
@@ -115,7 +115,7 @@ Type: `UInt8`.
 
 For the hierarchical dictionary, returns an array of dictionary keys starting from the passed `id_expr` and continuing along the chain of parent elements.
 
-```
+```sql
 dictGetHierarchy('dict_name', id_expr)
 ```
 
@@ -134,7 +134,7 @@ Type: Array(UInt64).
 
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 
-```
+```sql
 dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 ```
 
@@ -169,7 +169,7 @@ All these functions have the `OrDefault` modification. For example, `dictGetDate
 
 Syntax:
 
-```
+```sql
 dictGet[Type]('dict_name', 'attr_name', id_expr)
 dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 ```

@@ -5,6 +5,7 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
+#include <IO/WriteHelpers.h>    /// backQuote, backQuoteIfNeed
 
 #include <algorithm>
 #include <ostream>
@@ -222,10 +223,5 @@ private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
 
-
-/// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(const String & x);
-/// Quote the identifier with backquotes.
-String backQuote(const String & x);
 
 }

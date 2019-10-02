@@ -88,24 +88,8 @@ public:
 
     TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
-    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
-
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;
-    bool equals(const IDataType & rhs) const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
@@ -120,6 +104,14 @@ public:
     bool isSummable() const override { return true; }
     bool canBeUsedInBooleanContext() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
     /// Decimal specific
 
@@ -171,11 +163,6 @@ public:
         return getScaleMultiplier();
     }
 
-    T parseFromString(const String & str) const;
-
-    void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, precision, scale, csv); }
-    static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv = false);
-    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
     static T getScaleMultiplier(UInt32 scale);
 
 protected:

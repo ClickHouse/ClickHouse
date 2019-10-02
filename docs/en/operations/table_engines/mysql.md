@@ -45,7 +45,7 @@ The rest of the conditions and the `LIMIT` sampling constraint are executed in C
 
 Table in MySQL:
 
-```
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -66,7 +66,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Table in ClickHouse, retrieving data from the MySQL table:
+Table in ClickHouse, retrieving data from the MySQL table created above:
 
 ```sql
 CREATE TABLE mysql_table
@@ -77,7 +77,7 @@ CREATE TABLE mysql_table
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 ```sql
-SELECT * FROM mysql_table6
+SELECT * FROM mysql_table
 ```
 ```text
 ┌─float_nullable─┬─int_id─┐

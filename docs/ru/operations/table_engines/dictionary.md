@@ -38,9 +38,7 @@
 
 Запрос данных словаря:
 
-``` sql
-select name, type, key, attribute.names, attribute.types, bytes_allocated, element_count,source from system.dictionaries where name = 'products';                     
-
+```sql
 SELECT
     name,
     type,
@@ -53,7 +51,7 @@ SELECT
 FROM system.dictionaries
 WHERE name = 'products'
 ```
-```
+```text
 ┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
 │ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
@@ -65,45 +63,27 @@ WHERE name = 'products'
 
 Синтаксис:
 
-```
+```sql
 CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 ```
 
 
 Пример использования:
 
-``` sql
+```sql
 create table products (product_id UInt64, title String) Engine = Dictionary(products);
-
-CREATE TABLE products
-(
-    product_id UInt64,
-    title String,
-)
-ENGINE = Dictionary(products)
-```
-```
-Ok.
-
-0 rows in set. Elapsed: 0.004 sec.
 ```
 
 Проверим что у нас в таблице?
 
-``` sql
+```sql
 select * from products limit 1;
-
-SELECT *
-FROM products
-LIMIT 1
 ```
 
-```
+```text
 ┌────product_id─┬─title───────────┐
 │        152689 │ Some item       │
 └───────────────┴─────────────────┘
-
-1 rows in set. Elapsed: 0.006 sec.
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/dictionary/) <!--hide-->

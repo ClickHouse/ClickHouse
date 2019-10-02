@@ -32,35 +32,6 @@ nav:
     - 'Visual Interfaces': 'interfaces/third-party/gui.md'
     - 'Proxies': 'interfaces/third-party/proxy.md'
 
-- 'Data Types':
-  - 'Introduction': 'data_types/index.md'
-  - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
-  - 'Float32, Float64': 'data_types/float.md'
-  - 'Decimal': 'data_types/decimal.md'
-  - 'Boolean': 'data_types/boolean.md'
-  - 'String': 'data_types/string.md'
-  - 'FixedString(N)': 'data_types/fixedstring.md'
-  - 'UUID': 'data_types/uuid.md'
-  - 'Date': 'data_types/date.md'
-  - 'DateTime': 'data_types/datetime.md'
-  - 'Enum': 'data_types/enum.md'
-  - 'Array(T)': 'data_types/array.md'
-  - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
-  - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
-  - 'Nullable': 'data_types/nullable.md'
-  - 'Nested Data Structures':
-    - 'hidden': 'data_types/nested_data_structures/index.md'
-    - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
-  - 'Special Data Types':
-    - 'hidden': 'data_types/special_data_types/index.md'
-    - 'Expression': 'data_types/special_data_types/expression.md'
-    - 'Set': 'data_types/special_data_types/set.md'
-    - 'Nothing': 'data_types/special_data_types/nothing.md'
-  - 'Domains':
-    - 'Overview': 'data_types/domains/overview.md'
-    - 'IPv4': 'data_types/domains/ipv4.md'
-    - 'IPv6': 'data_types/domains/ipv6.md'
-
 - 'Database Engines':
     - 'Introduction': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
@@ -87,6 +58,7 @@ nav:
     - 'MySQL': 'operations/table_engines/mysql.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
     - 'ODBC': 'operations/table_engines/odbc.md'
+    - 'HDFS': 'operations/table_engines/hdfs.md'
   - 'Special':
     - 'Distributed': 'operations/table_engines/distributed.md'
     - 'External data': 'operations/table_engines/external_data.md'
@@ -104,12 +76,15 @@ nav:
 
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
-  - 'SELECT': 'query_language/select.md'
-  - 'INSERT INTO': 'query_language/insert_into.md'
-  - 'CREATE': 'query_language/create.md'
-  - 'ALTER': 'query_language/alter.md'
-  - 'SYSTEM': 'query_language/system.md'
-  - 'Other Kinds of Queries': 'query_language/misc.md'
+  - 'Syntax': 'query_language/syntax.md'
+  - 'Statements':
+    - 'SELECT': 'query_language/select.md'
+    - 'INSERT INTO': 'query_language/insert_into.md'
+    - 'CREATE': 'query_language/create.md'
+    - 'ALTER': 'query_language/alter.md'
+    - 'SYSTEM': 'query_language/system.md'
+    - 'SHOW': 'query_language/show.md'
+    - 'Other': 'query_language/misc.md'
   - 'Functions':
     - 'Introduction': 'query_language/functions/index.md'
     - 'Arithmetic': 'query_language/functions/arithmetic_functions.md'
@@ -158,6 +133,7 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
@@ -170,7 +146,34 @@ nav:
       - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
     - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
-  - 'General Syntax': 'query_language/syntax.md'
+  - 'Data Types':
+    - 'Introduction': 'data_types/index.md'
+    - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
+    - 'Float32, Float64': 'data_types/float.md'
+    - 'Decimal': 'data_types/decimal.md'
+    - 'Boolean': 'data_types/boolean.md'
+    - 'String': 'data_types/string.md'
+    - 'FixedString(N)': 'data_types/fixedstring.md'
+    - 'UUID': 'data_types/uuid.md'
+    - 'Date': 'data_types/date.md'
+    - 'DateTime': 'data_types/datetime.md'
+    - 'Enum': 'data_types/enum.md'
+    - 'Array(T)': 'data_types/array.md'
+    - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
+    - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+    - 'Nullable': 'data_types/nullable.md'
+    - 'Nested Data Structures':
+      - 'hidden': 'data_types/nested_data_structures/index.md'
+      - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
+    - 'Special Data Types':
+      - 'hidden': 'data_types/special_data_types/index.md'
+      - 'Expression': 'data_types/special_data_types/expression.md'
+      - 'Set': 'data_types/special_data_types/set.md'
+      - 'Nothing': 'data_types/special_data_types/nothing.md'
+    - 'Domains':
+      - 'Overview': 'data_types/domains/overview.md'
+      - 'IPv4': 'data_types/domains/ipv4.md'
+      - 'IPv6': 'data_types/domains/ipv6.md'
 
 - 'Operations':
   - 'Introduction': 'operations/index.md'
@@ -200,14 +203,12 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'F.A.Q.':
-  - 'General Questions': 'faq/general.md'
-
 - 'Development':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse Architecture': 'development/architecture.md'
   - 'How to Build ClickHouse on Linux': 'development/build.md'
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
+  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
@@ -216,3 +217,6 @@ nav:
   - 'Roadmap': 'roadmap.md'
   - 'Changelog': 'changelog.md'
   - 'Security Changelog': 'security_changelog.md'
+
+- 'F.A.Q.':
+  - 'General Questions': 'faq/general.md'

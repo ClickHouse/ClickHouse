@@ -79,22 +79,16 @@ ClickHouse - столбцовая система управления базам
 Например, для запроса "посчитать количество записей для каждой рекламной системы", требуется прочитать один столбец "идентификатор рекламной системы", который занимает 1 байт в несжатом виде. Если большинство переходов было не с рекламных систем, то можно рассчитывать хотя бы на десятикратное сжатие этого столбца. При использовании быстрого алгоритма сжатия, возможно разжатие данных со скоростью более нескольких гигабайт несжатых данных в секунду. То есть, такой запрос может выполняться со скоростью около нескольких миллиардов строк в секунду на одном сервере. На практике, такая скорость действительно достигается.
 
 <details markdown="1"><summary>Пример</summary>
-```
+```bash
 $ clickhouse-client
 ClickHouse client version 0.0.52053.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.52053.
-
-:) SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-
-SELECT
-    CounterID,
-    count()
-FROM hits
-GROUP BY CounterID
-ORDER BY count() DESC
-LIMIT 20
-
+```
+```sql
+SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
+```
+```text
 ┌─CounterID─┬──count()─┐
 │    114208 │ 56057344 │
 │    115080 │ 51619590 │
@@ -117,10 +111,6 @@ LIMIT 20
 │    115079 │  8837972 │
 │    337234 │  8205961 │
 └───────────┴──────────┘
-
-20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
-
-:)
 ```
 </details>
 

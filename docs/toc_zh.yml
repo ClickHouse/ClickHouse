@@ -86,6 +86,7 @@ nav:
     - 'MySQL': 'operations/table_engines/mysql.md'
     - 'JDBC': 'operations/table_engines/jdbc.md'
     - 'ODBC': 'operations/table_engines/odbc.md'
+    - 'HDFS': 'operations/table_engines/hdfs.md'
   - '其他表引擎':
     - 'Distributed': 'operations/table_engines/distributed.md'
     - 'External data': 'operations/table_engines/external_data.md'
@@ -108,6 +109,7 @@ nav:
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
   - 'SYSTEM': 'query_language/system.md'
+  - 'SHOW': 'query_language/show.md'
   - '其他类型的查询': 'query_language/misc.md'
   - '函数':
     - '介绍': 'query_language/functions/index.md'
@@ -157,6 +159,8 @@ nav:
     - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
+    - 'input': 'query_language/table_functions/input.md'
   - '字典':
     - '介绍': 'query_language/dicts/index.md'
     - '外部字典':
@@ -206,6 +210,7 @@ nav:
   - 'ClickHouse架构概述': 'development/architecture.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
+  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
   - '使用的第三方库': 'development/contrib.md'

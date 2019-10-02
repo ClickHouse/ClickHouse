@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MutationCommands.h>
 #include <atomic>
 #include <functional>
@@ -32,15 +31,17 @@ struct FutureMergedMutatedPart
     void assign(MergeTreeData::DataPartsVector parts_);
 };
 
-/** Can select the parts to merge and merge them.
-  */
+
+/** Can select parts for background processes and do them.
+ * Currently helps with merges, mutations and moves
+ */
 class MergeTreeDataMergerMutator
 {
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
 
 public:
-    MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
+    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -71,6 +72,7 @@ public:
         const AllowedMergingPredicate & can_merge,
         String * out_disable_reason = nullptr);
 
+
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
       */
@@ -95,18 +97,21 @@ public:
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
-        DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication, bool force_ttl);
+        DiskSpace::Reservation * disk_reservation, bool deduplication, bool force_ttl);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const std::vector<MutationCommand> & commands,
-        MergeListEntry & merge_entry, const Context & context, TableStructureReadLockHolder & table_lock_holder);
+        MergeListEntry & merge_entry, const Context & context,
+        DiskSpace::Reservation * disk_reservation,
+        TableStructureReadLockHolder & table_lock_holder);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
+
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
     static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
@@ -137,7 +142,7 @@ private:
 
 private:
     MergeTreeData & data;
-    const BackgroundProcessingPool & pool;
+    const size_t background_pool_size;
 
     Logger * log;
 

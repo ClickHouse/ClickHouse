@@ -55,7 +55,7 @@ All other MySQL data types are converted into [String](../data_types/string.md).
 
 Table in MySQL:
 
-```
+```text
 mysql> USE test;
 Database changed
 

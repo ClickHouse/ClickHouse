@@ -72,6 +72,10 @@
 - Поддержка постраничного просмотра для результирующих данных;
 - Дополнительные PostgreSQL-подобные команды.
 
+### clickhouse-flamegraph
+
+[clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) — специализированный инструмент для визуализации `system.trace_log` в виде [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
 ## Коммерческие
 
 ### DataGrip

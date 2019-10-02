@@ -1,8 +1,10 @@
+# CREATE Queries
+
 ## CREATE DATABASE {#query_language-create-database}
 
 Creates database.
 
-``` sql
+```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
 ```
 
@@ -46,19 +48,19 @@ The structure of the table is a list of column descriptions. If indexes are supp
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 Expressions can also be defined for default values (see below).
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
 ```
 
-Creates a table with the same structure and data as the value returned by table function.
+Creates a table with the structure and data returned by a [table function](table_functions/index.md).
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
 
@@ -105,11 +107,9 @@ It is not possible to set default values for elements in nested data structures.
 
 ### Constraints {#constraints}
 
-WARNING: This feature is experimental. Correct work is not guaranteed on non-MergeTree family engines.
-
 Along with columns descriptions constraints could be defined:
 
-``sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
@@ -123,15 +123,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
 
-### TTL expression
+### TTL Expression
 
 Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
 
-## Column Compression Codecs
+### Column Compression Codecs
 
-By default, ClickHouse applies to columns the compression method, defined in [server settings](../operations/server_settings/settings.md#compression). Also, you can define compression method for each individual column in the `CREATE TABLE` query.
+By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
-```
+```sql
 CREATE TABLE codec_example
 (
     dt Date CODEC(ZSTD),
@@ -144,23 +144,23 @@ ENGINE = <Engine>
 ...
 ```
 
-If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codecs combination for you project, pass benchmarks, similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
+If a codec is specified, the default codec doesn't apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
 
-!!!warning
-    You cannot decompress ClickHouse database files with external utilities, for example, `lz4`. Use the special utility, [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor).
+!!!warning "Warning"
+    You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/yandex/ClickHouse/tree/master/dbms/programs/compressor) utility.
 
-Compression is supported for the table engines:
+Compression is supported for the following table engines:
 
-- [*MergeTree](../operations/table_engines/mergetree.md) family
-- [*Log](../operations/table_engines/log_family.md) family
+- [MergeTree](../operations/table_engines/mergetree.md) family
+- [Log](../operations/table_engines/log_family.md) family
 - [Set](../operations/table_engines/set.md)
 - [Join](../operations/table_engines/join.md)
 
 ClickHouse supports common purpose codecs and specialized codecs.
 
-### Specialized codecs {#create-query-specialized-codecs}
+#### Specialized Codecs {#create-query-specialized-codecs}
 
-These codecs are designed to make compression more effective using specifities of the data. Some of this codecs don't compress data by itself, but they prepare data to be compressed better by common purpose codecs.
+These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don't compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
 
 Specialized codecs:
 
@@ -180,7 +180,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-### Common purpose codecs {#create-query-common-purpose-codecs}
+#### Common purpose codecs {#create-query-common-purpose-codecs}
 
 Codecs:
 
@@ -189,7 +189,7 @@ Codecs:
 - `LZ4HC[(level)]` — LZ4 HC (high compression) algorithm with configurable level. Default level: 9. Setting `level <= 0` applies the default level. Possible levels: [1, 12]. Recommended level range: [4, 9].
 - `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: [1, 22]. Default value: 1.
 
-High compression levels useful for asymmetric scenarios, like compress once, decompress a lot of times. Greater levels stands for better compression and higher CPU usage.
+High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
 ## Temporary Tables
 
@@ -219,7 +219,7 @@ In most cases, temporary tables are not created manually, but when using externa
 The `CREATE`, `DROP`, `ALTER`, and `RENAME` queries support distributed execution on a cluster.
 For example, the following query creates the `all_hits` `Distributed` table on each host in `cluster`:
 
-``` sql
+```sql
 CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
 
@@ -229,7 +229,7 @@ The local version of the query will eventually be implemented on each host in th
 
 ## CREATE VIEW
 
-``` sql
+```sql
 CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
@@ -239,19 +239,19 @@ Normal views don't store any data, but just perform a read from another table. I
 
 As an example, assume you've created a view:
 
-``` sql
+```sql
 CREATE VIEW view AS SELECT ...
 ```
 
 and written a query:
 
-``` sql
+```sql
 SELECT a, b, c FROM view
 ```
 
 This query is fully equivalent to using the subquery:
 
-``` sql
+```sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 

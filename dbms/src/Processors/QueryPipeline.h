@@ -58,7 +58,7 @@ public:
     /// Check if resize transform was used. (In that case another distinct transform will be added).
     bool hasMixedStreams() const { return has_resize || hasMoreThanOneStream(); }
 
-    void resize(size_t num_streams);
+    void resize(size_t num_streams, bool force = false);
 
     void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
 
@@ -80,6 +80,9 @@ public:
 
     /// Call after execution.
     void finalize();
+
+    void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
+    size_t getMaxThreads() const { return max_threads; }
 
 private:
 
@@ -105,6 +108,8 @@ private:
     TableStructureReadLocks table_locks;
 
     IOutputFormat * output_format = nullptr;
+
+    size_t max_threads = 0;
 
     void checkInitialized();
     void checkSource(const ProcessorPtr & source, bool can_have_totals);

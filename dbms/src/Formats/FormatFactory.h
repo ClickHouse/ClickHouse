@@ -2,11 +2,11 @@
 
 #include <Core/Types.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <ext/singleton.h>
 
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -34,7 +34,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
   */
-class FormatFactory final : public ext::singleton<FormatFactory>
+class FormatFactory final : private boost::noncopyable
 {
 public:
     /// This callback allows to perform some additional actions after reading a single row.
@@ -51,7 +51,6 @@ private:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        UInt64 rows_portion_size,
         ReadCallback callback,
         const FormatSettings & settings)>;
 
@@ -87,13 +86,15 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
+
+    static FormatFactory & instance();
+
     BlockInputStreamPtr getInput(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        UInt64 rows_portion_size = 0,
         ReadCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
@@ -105,7 +106,6 @@ public:
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
-        UInt64 rows_portion_size = 0,
         ReadCallback callback = {}) const;
 
     OutputFormatPtr getOutputFormat(
@@ -128,7 +128,6 @@ private:
     FormatsDictionary dict;
 
     FormatFactory();
-    friend class ext::singleton<FormatFactory>;
 
     const Creators & getCreators(const String & name) const;
 };

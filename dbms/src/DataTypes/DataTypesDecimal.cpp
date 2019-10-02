@@ -35,6 +35,16 @@ std::string DataTypeDecimal<T>::doGetName() const
     return ss.str();
 }
 
+
+
+template <typename T>
+bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
+{
+    if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))
+        return this->scale == ptype->getScale();
+    return false;
+}
+
 template <typename T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
@@ -42,11 +52,92 @@ DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
     return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
 }
 
+template <typename T>
+void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    writeText(value, this->scale, ostr);
+}
+
+template <typename T>
+bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+{
+    UInt32 unread_scale = scale;
+    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
+    x *= Base::getScaleMultiplier(unread_scale);
+    return done;
+}
+
+template <typename T>
+void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
+{
+    UInt32 unread_scale = scale;
+    if (csv)
+        readCSVDecimalText(istr, x, precision, unread_scale);
+    else
+        readDecimalText(istr, x, precision, unread_scale);
+    x *= Base::getScaleMultiplier(unread_scale);
+}
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    T x;
+    readText(x, istr);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+}
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    T x;
+    readText(x, istr, true);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+}
+
+template <typename T>
+T DataTypeDecimal<T>::parseFromString(const String & str) const
+{
+    ReadBufferFromMemory buf(str.data(), str.size());
+    T x;
+    UInt32 unread_scale = this->scale;
+    readDecimalText(buf, x, this->precision, unread_scale, true);
+    x *= Base::getScaleMultiplier(unread_scale);
+    return x;
+}
+
+template <typename T>
+void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDecimal(assert_cast<const ColumnType &>(column).getData()[row_num], this->scale));
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T decimal;
+    if (!protobuf.readDecimal(decimal, this->precision, this->scale))
+        return;
+
+    auto & container = assert_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(decimal);
+        row_added = true;
+    }
+    else
+        container.back() = decimal;
+}
+
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+        throw Exception("Decimal data type family must have exactly two arguments: this->precision and scale",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto * precision = arguments->children[0]->as<ASTLiteral>();
@@ -66,7 +157,7 @@ template <typename T>
 static DataTypePtr createExact(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+        throw Exception("Decimal data type family must have exactly two arguments: this->precision and scale",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();

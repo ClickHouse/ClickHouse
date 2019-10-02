@@ -23,7 +23,6 @@ struct FixedClearableHashMapCell
     bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
     static constexpr bool need_zero_value_storage = false;
-    void setMapped(const value_type & value) { mapped = value.getSecond(); }
 
     struct CellExt
     {
@@ -36,7 +35,6 @@ struct FixedClearableHashMapCell
         }
         Key key;
         FixedClearableHashMapCell * ptr;
-        Key & getFirstMutable() { return key; }
         const Key & getFirst() const { return key; }
         Mapped & getSecond() { return ptr->mapped; }
         const Mapped & getSecond() const { return *ptr->mapped; }

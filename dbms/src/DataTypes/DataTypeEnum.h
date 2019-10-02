@@ -78,10 +78,10 @@ public:
     FieldType getValue(StringRef field_name) const
     {
         const auto it = name_to_value_map.find(field_name);
-        if (it == std::end(name_to_value_map))
+        if (!it)
             throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
-        return it->getSecond();
+        return *lookupResultGetMapped(it);
     }
 
     Field castToName(const Field & value_or_name) const override;
@@ -124,6 +124,5 @@ public:
 
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;
-
 
 }
