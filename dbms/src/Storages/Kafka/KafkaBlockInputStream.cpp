@@ -9,8 +9,8 @@ namespace DB
 {
 
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_)
-    : storage(storage_), context(context_), column_names(columns), max_block_size(max_block_size_)
+    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    : storage(storage_), context(context_), column_names(columns), max_block_size(max_block_size_), commit_in_suffix(commit_in_suffix_)
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
     context.setSetting("input_format_allow_errors_ratio", 0.);
@@ -99,12 +99,18 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
+    broken = false;
+
+    if (commit_in_suffix)
+        commit();
+}
+
+void KafkaBlockInputStream::commit()
+{
     if (!buffer)
         return;
 
     buffer->commit();
-
-    broken = false;
 }
 
 }

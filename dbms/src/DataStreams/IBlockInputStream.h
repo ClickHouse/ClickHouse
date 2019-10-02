@@ -1,13 +1,14 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/SettingsCommon.h>
 #include <Core/SortDescription.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 #include <IO/Progress.h>
-#include <Core/SettingsCommon.h>
 #include <Storages/TableStructureLockHolder.h>
+#include <Common/TypePromotion.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -40,7 +41,7 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
   * Lets you get information for profiling: rows per second, blocks per second, megabytes per second, etc.
   * Allows you to stop reading data (in nested sources).
   */
-class IBlockInputStream
+class IBlockInputStream : public TypePromotion<IBlockInputStream>
 {
     friend struct BlockStreamProfileInfo;
 
