@@ -530,15 +530,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, num_rows);
         }
 
+        if (!columns.empty() && should_evaluate_missing_defaults)
+                merge_tree_reader->evaluateMissingDefaults(
+                        prev_reader->getSampleBlock().cloneWithColumns(read_result.columns), columns);
+
         read_result.columns.reserve(read_result.columns.size() + columns.size());
         for (auto & column : columns)
             read_result.columns.emplace_back(std::move(column));
-
-        if (!read_result.columns.empty())
-        {
-            if (should_evaluate_missing_defaults)
-                merge_tree_reader->evaluateMissingDefaults(read_result.columns);
-        }
     }
     else
     {
@@ -552,7 +550,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                                                   read_result.num_rows);
 
             if (should_evaluate_missing_defaults)
-                merge_tree_reader->evaluateMissingDefaults(read_result.columns);
+                merge_tree_reader->evaluateMissingDefaults({}, read_result.columns);
         }
         else
             read_result.columns.clear();
@@ -691,8 +689,18 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     {
         /// Restore block from columns list.
         Block block;
-        auto name_and_type = header.begin();
-        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        size_t pos = 0;
+
+        if (prev_reader)
+        {
+            for (auto & col : prev_reader->getSampleBlock())
+            {
+                block.insert({result.columns[pos], col.type, col.name});
+                ++pos;
+            }
+        }
+
+        for (auto name_and_type = header.begin(); pos < num_columns; ++pos, ++name_and_type)
             block.insert({result.columns[pos], name_and_type->type, name_and_type->name});
 
         if (alias_actions)
@@ -703,7 +711,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         prewhere_column_pos = block.getPositionByName(*prewhere_column_name);
 
         result.columns.clear();
-        result.columns.resize(block.columns());
+        result.columns.reserve(block.columns());
         for (auto & col : block)
             result.columns.emplace_back(std::move(col.column));
 
@@ -761,10 +769,21 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         {
             filterColumns(result.columns, *filter_description.data);
 
-            if (result.columns.empty())
+            /// Get num rows after filtration.
+            bool has_column = false;
+
+            for (auto & column : result.columns)
+            {
+                if (column)
+                {
+                    has_column = true;
+                    result.num_rows = column->size();
+                    break;
+                }
+            }
+
+            if (!has_column)
                 result.num_rows = getNumBytesInFilter();
-            else
-                result.num_rows = result.columns[0]->size();
         }
     }
 

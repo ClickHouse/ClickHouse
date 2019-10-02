@@ -83,11 +83,24 @@ void TreeExecutor::execute()
     std::stack<IProcessor *> stack;
     stack.push(root);
 
+    auto prepare_processor = [](IProcessor * processor)
+    {
+        try
+        {
+            return processor->prepare();
+        }
+        catch (Exception & exception)
+        {
+            exception.addMessage(" While executing processor " + processor->getName());
+            throw;
+        }
+    };
+
     while (!stack.empty())
     {
         IProcessor * node = stack.top();
 
-        auto status = node->prepare();
+        auto status = prepare_processor(node);
 
         switch (status)
         {
