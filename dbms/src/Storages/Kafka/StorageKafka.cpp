@@ -120,7 +120,7 @@ BlockInputStreams StorageKafka::read(
     const SelectQueryInfo & /* query_info */,
     const Context & context,
     QueryProcessingStage::Enum /* processed_stage */,
-    size_t max_block_size_,
+    size_t /* max_block_size */,
     unsigned /* num_streams */)
 {
     if (num_created_consumers == 0)
@@ -130,11 +130,14 @@ BlockInputStreams StorageKafka::read(
     BlockInputStreams streams;
     streams.reserve(num_created_consumers);
 
-    size_t block_size = max_block_size ? max_block_size : max_block_size_;
-
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < num_created_consumers; ++i)
-        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, block_size));
+    {
+        /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
+        /// TODO: probably that leads to awful performance.
+        /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
+        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1));
+    }
 
     LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
     return streams;
@@ -379,7 +382,8 @@ bool StorageKafka::streamToViews()
     streams.reserve(num_created_consumers);
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size);
+        auto stream
+            = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
