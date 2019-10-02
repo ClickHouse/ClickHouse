@@ -1,4 +1,4 @@
-if(NOT ARCH_ARM AND NOT OS_FREEBSD)
+if(NOT ARCH_ARM AND NOT OS_FREEBSD AND NOT OS_DARWIN)
     option(ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${ENABLE_LIBRARIES})
 endif()
 
