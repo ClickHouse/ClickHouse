@@ -639,13 +639,13 @@ struct ToYYYYMMDDhhmmssImpl
 template <typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-    static void vector(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to, const DateLUTImpl & time_zone)
+    static void vector(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = Transform::execute(vec_from[i], time_zone);
+            vec_to[i] = transform.execute(vec_from[i], time_zone);
     }
 };
 
@@ -653,7 +653,7 @@ struct Transformer
 template <typename FromType, typename ToType, typename Transform>
 struct DateTimeTransformImpl
 {
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/, const Transform & transform = {})
     {
         using Op = Transformer<typename FromType::FieldType, typename ToType::FieldType, Transform>;
 
@@ -663,7 +663,7 @@ struct DateTimeTransformImpl
         if (const auto * sources = checkAndGetColumn<typename FromType::ColumnType>(source_col.get()))
         {
             auto col_to = ColumnVector<typename ToType::FieldType>::create();
-            Op::vector(sources->getData(), col_to->getData(), time_zone);
+            Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
             block.getByPosition(result).column = std::move(col_to);
         }
         else

@@ -635,7 +635,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
     readDateTimeTextImpl<void>(datetime, buf, date_lut);
 }
 
-inline void readDateTimeText(DateTime64 & datetime64, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void readDateTimeText(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
     DB::DecimalComponents<DateTime64::NativeType> c;
     readDateTimeTextImpl<void>(c.whole, buf, date_lut);
@@ -649,13 +649,11 @@ inline void readDateTimeText(DateTime64 & datetime64, ReadBuffer & buf, const Da
         }
     }
 
-    auto remaining = buf.available();
+    auto remainder1 = buf.available();
     readIntText(c.fractional, buf);
+    auto fractional_length = remainder1 - buf.available();
 
-    // TODO: hardcoded precision, use something similar to DataTypeDecimal<T>::readText()
-    const int scale = common::exp10_i32(9);
-    c.fractional *= static_cast<UInt32>(std::pow(10, 9 - remaining));
-
+    c.fractional *= common::exp10_i64(scale - fractional_length);
     datetime64 = decimalFromComponents(c, scale);
 }
 

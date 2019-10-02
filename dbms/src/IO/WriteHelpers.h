@@ -745,8 +745,11 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 
 /// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
-inline void writeDateTimeText(DateTime64 datetime64, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
+    static constexpr UInt32 MaxScale = maxDecimalPrecision<DateTime64>();
+    scale = scale > MaxScale ? MaxScale : scale;
+
     if (unlikely(!datetime64))
     {
         static const char s[] =
@@ -755,13 +758,14 @@ inline void writeDateTimeText(DateTime64 datetime64, WriteBuffer & buf, const Da
                 between_date_time_delimiter,
                 '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
                 fractional_time_delimiter,
-                '0', '0', '0', '0', '0', '0', '0', '0', '0'
+                // Exactly MaxScale zeroes
+                '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
             };
-        buf.write(s, sizeof(s));
+        buf.write(s, sizeof(s) - (MaxScale - scale));
         return;
     }
 
-    auto c = decimalSplit(datetime64, 9);
+    auto c = decimalSplit(datetime64, scale);
     const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
@@ -769,8 +773,8 @@ inline void writeDateTimeText(DateTime64 datetime64, WriteBuffer & buf, const Da
 
     buf.write(fractional_time_delimiter);
 
-    char data[10];
-    int written = sprintf(data, "%09ld", c.fractional); // TODO(nemkov): can it be negative ? if yes, do abs() on it.
+    char data[MaxScale];
+    int written = sprintf(data, "%0*ld", scale, c.fractional); // TODO(nemkov): can it be negative ? if yes, do abs() on it.
     writeText(&data[0], static_cast<size_t>(written), buf);
 }
 
