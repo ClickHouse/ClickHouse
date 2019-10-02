@@ -14,27 +14,26 @@ sudo apt-get install clang-8
 
 # Install Cross-Compilation Toolset
 
+Let's remember the path where we install `cctools` as ${CCTOOLS}
+
 ```bash
-mkdir cctools
+mkdir ${CCTOOLS}
 
 git clone https://github.com/tpoechtrager/apple-libtapi.git
 cd apple-libtapi
-INSTALLPREFIX=../cctools ./build.sh
+INSTALLPREFIX=${CCTOOLS} ./build.sh
 ./install.sh
 cd ..
 
 git clone https://github.com/tpoechtrager/cctools-port.git
 cd cctools-port/cctools
-./configure --prefix=../cctools --with-libtapi=../cctools --target=x86_64-apple-darwin
+./configure --prefix=${CCTOOLS} --with-libtapi=${CCTOOLS} --target=x86_64-apple-darwin
 make install
-cd ..
 
-cd cctools
+cd ${CCTOOLS}
 wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
 tar xJf MacOSX10.14.sdk.tar.xz
 ```
-
-Let's remember the path where we created `cctools` directory as ${CCTOOLS_PARENT}
 
 # Build ClickHouse
 
@@ -42,11 +41,10 @@ Let's remember the path where we created `cctools` directory as ${CCTOOLS_PARENT
 cd ClickHouse
 mkdir build-osx
 CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_SYSTEM_NAME=Darwin \
-    -DCMAKE_AR:FILEPATH=${CCTOOLS_PARENT}/cctools/bin/x86_64-apple-darwin-ar \
-    -DCMAKE_RANLIB:FILEPATH=${CCTOOLS_PARENT}/cctools/bin/x86_64-apple-darwin-ranlib \
-    -DLINKER_NAME=${CCTOOLS_PARENT}/cctools/bin/x86_64-apple-darwin-ld \
-    -DSDK_PATH=${CCTOOLS_PARENT}/cctools/MacOSX10.14.sdk \
-    -DUSE_SNAPPY=OFF -DENABLE_SSL=OFF -DENABLE_PROTOBUF=OFF -DENABLE_PARQUET=OFF -DENABLE_READLINE=OFF -DENABLE_ICU=OFF -DENABLE_FASTOPS=OFF
+    -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar \
+    -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib \
+    -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld \
+    -DSDK_PATH=${CCTOOLS}/MacOSX10.14.sdk
 ninja -C build-osx
 ```
 
