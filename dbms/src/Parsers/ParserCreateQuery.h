@@ -7,15 +7,13 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Poco/String.h>
 
 
 namespace DB
 {
-class EncodedPassword;
-class AllowedHosts;
-
 /** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
   */
 class ParserNestedTable : public IParserBase
@@ -309,12 +307,5 @@ class ParserCreateQuery : public IParserBase
 protected:
     const char * getName() const { return "CREATE TABLE or ATTACH TABLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-
-private:
-    bool parseCreateRoleQuery(Pos & pos, ASTPtr & node, Expected & expected);
-    bool parseCreateUserQuery(Pos & pos, ASTPtr & node, Expected & expected);
-    bool parseCreateUserPassword(Pos & pos, EncodedPassword & password, Expected & expected);
-    bool parseCreateUserHosts(Pos & pos, AllowedHosts & hosts, Expected & expected);
 };
-
 }

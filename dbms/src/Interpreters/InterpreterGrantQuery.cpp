@@ -1,8 +1,8 @@
 #include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTGrantQuery.h>
-#include <ACL/AccessControlManager.h>
-#include <ACL/Role.h>
+#include <AccessControl/AccessControlManager.h>
+#include <AccessControl/Role.h>
 
 
 namespace DB

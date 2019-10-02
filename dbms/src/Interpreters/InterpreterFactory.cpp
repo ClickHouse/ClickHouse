@@ -1,6 +1,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateACQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -20,6 +21,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterCreateACQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -106,6 +108,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         /// readonly and allow_ddl are checked inside InterpreterCreateQuery
         return std::make_unique<InterpreterCreateQuery>(query, context);
+    }
+    else if (query->as<ASTCreateUserQuery>())
+    {
+        return std::make_unique<InterpreterCreateUserQuery>(query, context);
     }
     else if (query->as<ASTDropQuery>())
     {

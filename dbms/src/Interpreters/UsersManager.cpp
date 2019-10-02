@@ -45,7 +45,7 @@ UserPtr UsersManager::authorizeAndGetUser(
         throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
 
     it->second->allowed_hosts.checkContains(address, user_name);
-    it->second->encoded_password.checkIsCorrect(password, user_name);
+    it->second->password.checkIsCorrect(password, user_name);
     return it->second;
 }
 

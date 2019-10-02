@@ -4,9 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <ACL/AccessControlManager.h>
-#include <ACL/Role.h>
-#include <ACL/User2.h>
+#include <AccessControl/AccessControlManager.h>
+#include <AccessControl/Role.h>
+#include <AccessControl/User2.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>

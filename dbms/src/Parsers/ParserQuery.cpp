@@ -1,6 +1,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserCreateACQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserRenameQuery.h>
@@ -10,6 +10,7 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserGrantQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 
 
 namespace DB
@@ -24,13 +25,15 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSetQuery set_p;
     ParserSystemQuery system_p;
     ParserGrantQuery grant_p;
+    ParserCreateUserQuery create_user_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
         || use_p.parse(pos, node, expected)
         || set_p.parse(pos, node, expected)
         || system_p.parse(pos, node, expected)
-        || grant_p.parse(pos, node, expected);
+        || grant_p.parse(pos, node, expected)
+        || create_user_p.parse(pos, node, expected);
 
     return res;
 }

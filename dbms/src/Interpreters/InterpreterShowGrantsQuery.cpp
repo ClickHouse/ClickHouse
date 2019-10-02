@@ -3,8 +3,8 @@
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/formatAST.h>
-#include <ACL/AccessControlManager.h>
-#include <ACL/Role.h>
+#include <AccessControl/AccessControlManager.h>
+#include <AccessControl/Role.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>

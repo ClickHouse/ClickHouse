@@ -7,6 +7,7 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -30,7 +31,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <ACL/AccessControlManager.h>
+#include <AccessControl/AccessControlManager.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -668,24 +669,6 @@ BlockIO InterpreterCreateQuery::execute()
     {
         /// CREATE|ATTACH TABLE
         return createTable(create);
-    }
-    else if (create.role)
-    {
-        /// CREATE ROLE
-        if (create.if_not_exists)
-            context.getAccessControlManager().tryInsert(*create.role);
-        else
-            context.getAccessControlManager().insert(*create.role);
-        return {};
-    }
-    else if (create.user)
-    {
-        /// CREATE USER
-        if (create.if_not_exists)
-            context.getAccessControlManager().tryInsert(*create.user);
-        else
-            context.getAccessControlManager().insert(*create.user);
-        return {};
     }
 
     return {};

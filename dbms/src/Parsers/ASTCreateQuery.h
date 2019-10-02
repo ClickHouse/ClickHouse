@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <ACL/Role.h>
-#include <ACL/User2.h>
 
 
 namespace DB
@@ -67,8 +66,6 @@ public:
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
-    RolePtr role;
-    User2Ptr user;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override;
@@ -82,10 +79,5 @@ public:
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-private:
-    bool formatCreateRoleQuery(const FormatSettings & settings) const;
-    bool formatCreateUserQuery(const FormatSettings & settings) const;
 };
-
 }

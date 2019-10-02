@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <ACL/AllowedHosts.h>
-#include <ACL/EncodedPassword.h>
+#include <AccessControl/AllowedHosts.h>
+#include <AccessControl/EncryptedPassword.h>
 
 #include <memory>
 #include <unordered_map>
@@ -30,7 +30,7 @@ struct User
     String name;
 
     /// Required password. Could be stored in plaintext or in SHA256.
-    EncodedPassword encoded_password;
+    EncryptedPassword password;
 
     String profile;
     String quota;

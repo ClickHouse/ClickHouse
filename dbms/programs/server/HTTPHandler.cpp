@@ -33,7 +33,7 @@
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
-#include <ACL/Quota.h>
+#include <AccessControl/Quota.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
