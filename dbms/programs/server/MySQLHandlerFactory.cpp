@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "MySQLHandlerFactory.h"
 #if USE_POCO_NETSSL && USE_SSL
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/Net/SSLManager.h>
@@ -8,7 +8,6 @@
 #include <ext/scope_guard.h>
 #include "IServer.h"
 #include "MySQLHandler.h"
-#include "MySQLHandlerFactory.h"
 
 namespace DB
 {
