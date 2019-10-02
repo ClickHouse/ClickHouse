@@ -56,6 +56,8 @@ Chunk ValuesBlockInputFormat::generate()
             if (buf.eof() || *buf.position() == ';')
                 break;
             readRow(columns);
+            if (params.callback)
+                params.callback();
         }
         catch (Exception & e)
         {
@@ -119,8 +121,6 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns)
 
 void ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
-    if (!templates[column_idx])
-        throw Exception("bug", ErrorCodes::LOGICAL_ERROR);
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
     if (templates[column_idx]->parseExpression(buf, format_settings))
     {
@@ -158,7 +158,7 @@ void ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     }
     catch (const Exception & e)
     {
-        if (!isParseError(e.code()))
+        if (!isParseError(e.code()) && e.code() != ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
             throw;
         if (rollback_on_exception)
             column.popBack(1);
@@ -173,8 +173,6 @@ void ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 void
 ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
-    parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
-
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
 
@@ -202,7 +200,7 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
                         ErrorCodes::SYNTAX_ERROR);
     ++token_iterator;
 
-    if (dynamic_cast<const ASTLiteral *>(ast.get()))
+    if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
     {
         /// It's possible that streaming parsing has failed on some row (e.g. because of '+' sign before integer),
         /// but it still can parse the following rows
@@ -231,12 +229,15 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
             column.popBack(1);
     }
 
+    parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
+
     /// Try to deduce template of expression and use it to parse the following rows
     if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
             throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
                                 ErrorCodes::LOGICAL_ERROR);
+        std::exception_ptr exception;
         try
         {
             bool found_in_cache = false;
@@ -251,18 +252,30 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
                 ++attempts_to_deduce_template[column_idx];
 
             buf.rollbackToCheckpoint();
-            templates[column_idx]->parseExpression(buf, format_settings);
-            ++rows_parsed_using_template[column_idx];
-            parser_type_for_column[column_idx] = ParserType::BatchTemplate;
-            return;
+            if (templates[column_idx]->parseExpression(buf, format_settings))
+            {
+                ++rows_parsed_using_template[column_idx];
+                parser_type_for_column[column_idx] = ParserType::BatchTemplate;
+                return;
+            }
         }
         catch (...)
         {
-            if (!format_settings.values.interpret_expressions)
-                throw;
-            /// Continue parsing without template
-            templates[column_idx].reset();
+            exception = std::current_exception();
         }
+        if (!format_settings.values.interpret_expressions)
+        {
+            if (exception)
+                std::rethrow_exception(exception);
+            else
+            {
+                buf.rollbackToCheckpoint();
+                size_t len = const_cast<char *>(token_iterator->begin) - buf.position();
+                throw Exception("Cannot deduce template of expression: " + std::string(buf.position(), len), ErrorCodes::SYNTAX_ERROR);
+            }
+        }
+        /// Continue parsing without template
+        templates[column_idx].reset();
     }
 
     if (!format_settings.values.interpret_expressions)

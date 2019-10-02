@@ -258,6 +258,12 @@ public:
     /// You pass data types with empty DataTypeFunction for lambda arguments.
     /// This function will replace it with DataTypeFunction containing actual types.
     virtual void getLambdaArgumentTypes(DataTypes & arguments) const = 0;
+
+    /// Returns indexes of arguments, that must be ColumnConst
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const = 0;
+    /// Returns indexes if arguments, that can be Nullable without making result of function Nullable
+    /// (for functions like isNull(x))
+    virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const = 0;
 };
 
 using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
@@ -280,6 +286,9 @@ public:
         checkNumberOfArguments(arguments.size());
         getLambdaArgumentTypesImpl(arguments);
     }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {}; }
 
 protected:
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
@@ -501,7 +510,11 @@ public:
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return function->getArgumentsThatAreAlwaysConstant(); }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return function->getArgumentsThatAreAlwaysConstant(); }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    {
+        return function->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
+    }
 
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
