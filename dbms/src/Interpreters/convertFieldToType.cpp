@@ -146,12 +146,12 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
-DateTime64::NativeType stringToDateTime64(const String & s)
+DateTime64::NativeType stringToDateTime64(const String & s, UInt32 scale)
 {
     ReadBufferFromString in(s);
     DateTime64 datetime64 {0};
 
-    readDateTimeText(datetime64, in);
+    readDateTimeText(datetime64, scale, in);
     if (!in.eof())
         throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
@@ -211,8 +211,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             else if (which_type.isDateTime64())
             {
+                const auto date_time64 = typeid_cast<const DataTypeDateTime64 *>(&type);
                 /// Convert 'YYYY-MM-DD hh:mm:ss.NNNNNNNNN' Strings to DateTime
-                return stringToDateTime64(src.get<const String &>());
+                return stringToDateTime64(src.get<const String &>(), date_time64->getScale());
             }
             else if (which_type.isUUID())
             {

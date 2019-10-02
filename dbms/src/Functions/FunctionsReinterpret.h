@@ -148,19 +148,6 @@ public:
     }
 };
 
-template <typename T>
-struct ColumnType
-{
-    using Type = ColumnVector<T>;
-};
-
-template <typename T>
-struct ColumnType<Decimal<T>>
-{
-    using Type = ColumnDecimal<Decimal<T>>;
-};
-
-
 template <typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
 {
@@ -169,7 +156,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretStringAs>(); }
 
     using ToFieldType = typename ToDataType::FieldType;
-    using ColumnType = typename ColumnType<ToFieldType>::Type;
+    using ColumnType = typename ToDataType::ColumnType;
 
     String getName() const override
     {

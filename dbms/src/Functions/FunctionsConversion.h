@@ -817,11 +817,11 @@ public:
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<Name, NameToDecimal32>)
-                return createDecimal(9, scale);
+                return createDecimal<DataTypeDecimal>(9, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal64>)
-                return createDecimal(18, scale);
+                return createDecimal<DataTypeDecimal>(18, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal128>)
-                return createDecimal(38, scale);
+                return createDecimal<DataTypeDecimal>(38, scale);
 
             throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
         }
@@ -1043,11 +1043,11 @@ public:
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>>)
-                res = createDecimal(9, scale);
+                res = createDecimal<DataTypeDecimal>(9, scale);
             else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>>)
-                res = createDecimal(18, scale);
+                res = createDecimal<DataTypeDecimal>(18, scale);
             else if constexpr (std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
-                res = createDecimal(38, scale);
+                res = createDecimal<DataTypeDecimal>(38, scale);
 
             if (!res)
                 throw Exception("Someting wrong with toDecimalNNOrZero() or toDecimalNNOrNull()", ErrorCodes::LOGICAL_ERROR);

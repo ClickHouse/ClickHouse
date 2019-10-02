@@ -25,205 +25,23 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-
-bool decimalCheckComparisonOverflow(const Context & context) { return context.getSettingsRef().decimal_check_overflow; }
-bool decimalCheckArithmeticOverflow(const Context & context) { return context.getSettingsRef().decimal_check_overflow; }
-
-
 //
 
 template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
     std::stringstream ss;
-    ss << "Decimal(" << precision << ", " << scale << ")";
+    ss << "Decimal(" << this->precision << ", " << this->scale << ")";
     return ss.str();
 }
-
-template <typename T>
-bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
-{
-    if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))
-        return scale == ptype->getScale();
-    return false;
-}
-
-template <typename T>
-void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, scale, ostr);
-}
-
-template <typename T>
-bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
-{
-    UInt32 unread_scale = scale;
-    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
-    return done;
-}
-
-template <typename T>
-void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
-{
-    UInt32 unread_scale = scale;
-    if (csv)
-        readCSVDecimalText(istr, x, precision, unread_scale);
-    else
-        readDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    T x;
-    readText(x, istr, true);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
-}
-
-template <typename T>
-T DataTypeDecimal<T>::parseFromString(const String & str) const
-{
-    ReadBufferFromMemory buf(str.data(), str.size());
-    T x;
-    UInt32 unread_scale = scale;
-    readDecimalText(buf, x, precision, unread_scale, true);
-    x *= getScaleMultiplier(unread_scale);
-    return x;
-}
-
-
-template <typename T>
-void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
-{
-    FieldType x = get<DecimalField<T>>(field);
-    writeBinary(x, ostr);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    const FieldType & x = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeBinary(x, ostr);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
-{
-    const typename ColumnType::Container & x = typeid_cast<const ColumnType &>(column).getData();
-
-    size_t size = x.size();
-
-    if (limit == 0 || offset + limit > size)
-        limit = size - offset;
-
-    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(FieldType) * limit);
-}
-
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
-{
-    typename FieldType::NativeType x;
-    readBinary(x, istr);
-    field = DecimalField(T(x), scale);
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
-{
-    typename FieldType::NativeType x;
-    readBinary(x, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(FieldType(x));
-}
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
-{
-    typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
-    size_t initial_size = x.size();
-    x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
-    x.resize(initial_size + size / sizeof(FieldType));
-}
-
-
-template <typename T>
-void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
-{
-    if (value_index)
-        return;
-    value_index = static_cast<bool>(protobuf.writeDecimal(assert_cast<const ColumnType &>(column).getData()[row_num], scale));
-}
-
-
-template <typename T>
-void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
-{
-    row_added = false;
-    T decimal;
-    if (!protobuf.readDecimal(decimal, precision, scale))
-        return;
-
-    auto & container = assert_cast<ColumnType &>(column).getData();
-    if (allow_add_row)
-    {
-        container.emplace_back(decimal);
-        row_added = true;
-    }
-    else
-        container.back() = decimal;
-}
-
-
-template <typename T>
-Field DataTypeDecimal<T>::getDefault() const
-{
-    return DecimalField(T(0), scale);
-}
-
 
 template <typename T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     using PromotedType = DataTypeDecimal<Decimal128>;
-    return std::make_shared<PromotedType>(PromotedType::maxPrecision(), scale);
+    return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
 }
 
-
-template <typename T>
-MutableColumnPtr DataTypeDecimal<T>::createColumn() const
-{
-    return ColumnType::create(0, scale);
-}
-
-
-//
-
-DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
-{
-    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Decimal128>())
-        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-    if (static_cast<UInt64>(scale_value) > precision_value)
-        throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-    if (precision_value <= maxDecimalPrecision<Decimal32>())
-        return std::make_shared<DataTypeDecimal<Decimal32>>(precision_value, scale_value);
-    else if (precision_value <= maxDecimalPrecision<Decimal64>())
-        return std::make_shared<DataTypeDecimal<Decimal64>>(precision_value, scale_value);
-    return std::make_shared<DataTypeDecimal<Decimal128>>(precision_value, scale_value);
-}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -241,7 +59,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     UInt64 precision_value = precision->value.get<UInt64>();
     UInt64 scale_value = scale->value.get<UInt64>();
 
-    return createDecimal(precision_value, scale_value);
+    return createDecimal<DataTypeDecimal>(precision_value, scale_value);
 }
 
 template <typename T>
@@ -259,7 +77,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     UInt64 precision = maxDecimalPrecision<T>();
     UInt64 scale = scale_arg->value.get<UInt64>();
 
-    return createDecimal(precision, scale);
+    return createDecimal<DataTypeDecimal>(precision, scale);
 }
 
 void registerDataTypeDecimal(DataTypeFactory & factory)
@@ -271,26 +89,6 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
 }
-
-
-template <>
-Decimal32 DataTypeDecimal<Decimal32>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int32>(scale_);
-}
-
-template <>
-Decimal64 DataTypeDecimal<Decimal64>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int64>(scale_);
-}
-
-template <>
-Decimal128 DataTypeDecimal<Decimal128>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int128>(scale_);
-}
-
 
 /// Explicit template instantiations.
 template class DataTypeDecimal<Decimal32>;

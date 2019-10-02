@@ -1,25 +1,32 @@
 #pragma once
 
-#include <Core/DateTime64.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypeNumberBase.h>
-
+#include <DataTypes/DataTypeDecimalBase.h>
 
 class DateLUTImpl;
 
-template <class, template <class, class...> class>
-struct is_instance : public std::false_type {};
+//template <class, template <class, class...> class>
+//struct is_instance : public std::false_type {};
 
-template <class...Ts, template <class, class...> class U>
-struct is_instance<U<Ts...>, U> : public std::true_type {};
+//template <class...Ts, template <class, class...> class U>
+//struct is_instance<U<Ts...>, U> : public std::true_type {};
 
 namespace DB
 {
 
-template <typename T>
-class ColumnDecimal;
+class TimezoneMixin
+{
+public:
+    explicit TimezoneMixin(const std::string & time_zone_name = "");
 
-template <typename T>
-class ColumnVector;
+    const DateLUTImpl & getTimeZone() const { return time_zone; }
+
+protected:
+    bool has_explicit_time_zone;
+    const DateLUTImpl & time_zone;
+    const DateLUTImpl & utc_time_zone;
+};
 
 /** DateTime stores time as unix timestamp.
   * The value itself is independent of time zone.
@@ -28,7 +35,7 @@ class ColumnVector;
   * In text format it is serialized to and parsed from YYYY-MM-DD hh:mm:ss format.
   * The text format is dependent of time zone.
   *
-  * To constt from/to text format, time zone may be specified explicitly or implicit time zone may be used.
+  * To cast from/to text format, time zone may be specified explicitly or implicit time zone may be used.
   *
   * Time zone may be specified explicitly as type parameter, example: DateTime('Europe/Moscow').
   * As it does not affect the internal representation of values,
@@ -41,17 +48,13 @@ class ColumnVector;
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
   *  or system time zone at the moment of server startup.
   */
-template<typename DateTimeType>
-class DataTypeDateTimeBase : public IDataType
-{
+class DataTypeDateTime final : public DataTypeNumberBase<UInt32>, public TimezoneMixin {
 public:
-    using FieldType = DateTimeType;
+    explicit DataTypeDateTime(const std::string & time_zone_name = "");
 
-    DataTypeDateTimeBase(const std::string & time_zone_name = "");
-
-    const char * getFamilyName() const override;
+    const char * getFamilyName() const override { return "DateTime"; }
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override;
+    TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -66,46 +69,38 @@ public:
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
-    void serializeBinary(const Field&, WriteBuffer&) const override;
-    void deserializeBinary(Field&, ReadBuffer&) const override;
-    void serializeBinary(const IColumn&, size_t, WriteBuffer&) const override;
-    void deserializeBinary(IColumn&, ReadBuffer&) const override;
-    Field getDefault() const override;
-    bool canBePromoted() const override { return false; }
-    bool isParametric() const override { return true; }
-    bool haveSubtypes() const override { return false; }
+    bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
-
-
-    const DateLUTImpl & getTimeZone() const { return time_zone; }
-
-protected:
-    bool has_explicit_time_zone;
-    const DateLUTImpl & time_zone;
-    const DateLUTImpl & utc_time_zone;
 };
 
-struct DataTypeDateTime : DataTypeDateTimeBase<UInt32> {
-    using Base = DataTypeDateTimeBase<UInt32>;
-    using Base::Base;
-
-    using ColumnType = ColumnVector<UInt32>;
-
-    MutableColumnPtr createColumn() const override;
-};
-
-struct DataTypeDateTime64 : DataTypeDateTimeBase<DateTime64> {
-    using Base = DataTypeDateTimeBase<DateTime64>;
-    DataTypeDateTime64(UInt8 scale_, const std::string & time_zone_name = "");
-
-    using ColumnType = ColumnDecimal<DateTime64>;
-    MutableColumnPtr createColumn() const override;
-
+/** DateTime64 is same as DateTime, but it stores values as UInt64 and has configurable sub-second part.
+ *
+ * `scale` determines number of decimal places for sub-second part of the DateTime64.
+  */
+class DataTypeDateTime64 final : public DataTypeDecimalBase<DateTime64>, public TimezoneMixin {
+public:
     static constexpr UInt8 default_scale = 3;
-private:
-    const UInt8 scale;
+
+    explicit DataTypeDateTime64(UInt8 scale_, const std::string & time_zone_name = "");
+
+    const char * getFamilyName() const override { return "DateTime64"; }
+    std::string doGetName() const override;
+    TypeIndex getTypeId() const override { return TypeIndex::DateTime64; }
+
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 };
 
 }
