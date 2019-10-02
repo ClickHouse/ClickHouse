@@ -5,6 +5,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ParallelInputsProcessor.h>
+#include <DataStreams/TemporaryFileStream.h>
 
 
 namespace DB
@@ -57,16 +58,6 @@ private:
     bool no_more_keys = false;
 
     std::atomic<bool> executed {false};
-
-    /// To read the data stored into the temporary data file.
-    struct TemporaryFileStream
-    {
-        ReadBufferFromFile file_in;
-        CompressedReadBuffer compressed_in;
-        BlockInputStreamPtr block_in;
-
-        TemporaryFileStream(const std::string & path);
-    };
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 
     Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");

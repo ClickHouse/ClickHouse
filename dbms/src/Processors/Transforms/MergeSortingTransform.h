@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/Transforms/SortingTransform.h>
 #include <Core/SortDescription.h>
-#include <Poco/TemporaryFile.h>
+#include <Common/filesystemHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <DataStreams/IBlockInputStream.h>
@@ -52,7 +52,7 @@ private:
     bool remerge_is_useful = true;
 
     /// Everything below is for external sorting.
-    std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
+    std::vector<std::unique_ptr<TemporaryFile>> temporary_files;
 
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();

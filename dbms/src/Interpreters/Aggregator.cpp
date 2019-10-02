@@ -646,11 +646,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
         && worth_convert_to_two_level)
     {
-#if !UNBUNDLED
-        auto free_space = Poco::File(params.tmp_path).freeSpace();
-        if (current_memory_usage + params.min_free_disk_space > free_space)
+        if (!enoughSpaceInDirectory(params.tmp_path, current_memory_usage + params.min_free_disk_space))
             throw Exception("Not enough space for external aggregation in " + params.tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
-#endif
 
         writeToTemporaryFile(result);
     }
@@ -664,8 +661,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    Poco::File(params.tmp_path).createDirectories();
-    auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
+    auto file = createTemporaryFile(params.tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
