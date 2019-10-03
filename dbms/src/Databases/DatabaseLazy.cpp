@@ -343,14 +343,16 @@ void DatabaseLazy::clearExpiredTables() const
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table && it->second.table.unique())
+        if (!it->second.table || it->second.table.unique())
         {
             LOG_DEBUG(log, "Drop table '" << it->first << "' from cache.");
             it->second.table.reset();
+            expired_tables.erase(it->second.expiration_iterator);
             it->second.expiration_iterator = cache_expiration_queue.end();
         }
         else
         {
+            LOG_DEBUG(log, "Table '" << it->first << "' is busy.");
             busy_tables.splice(busy_tables.end(), expired_tables, it->second.expiration_iterator);
         }
     }
