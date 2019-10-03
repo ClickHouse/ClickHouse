@@ -2,29 +2,18 @@
 
 #include <Core/Settings.h>
 #include <Databases/DatabaseLazy.h>
-#include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Event.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -36,11 +25,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNSUPPORTED_METHOD;
     extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
-    extern const int INCORRECT_FILE_NAME;
-    extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int SYNTAX_ERROR;
 }
 
 
