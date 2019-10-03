@@ -61,24 +61,27 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 1; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{0}; }
 
+    // Return type depends on argument value.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        UInt64 scale = DataTypeDateTime64::default_scale;
+
         // Type check is similar to the validateArgumentType, trying to keep error codes and messages as close to the said function as possible.
-        if (arguments.size() <= 1)
-            throw Exception("Incorrect number of arguments of function " + getName(),
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (arguments.size() >= 1)
+        {
+            const auto & argument = arguments[0];
+            if (!isInteger(argument.type) || !isColumnConst(*argument.column))
+                throw Exception("Illegal type " + argument.type->getName() +
+                                " of 0" +
+                                " argument of function " + getName() +
+                                ". Expected const integer.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const auto & argument = arguments[0];
-        if (!isInteger(argument.type) || !isColumnConst(*argument.column))
-            throw Exception("Illegal type " + argument.type->getName() +
-                            " of 0" +
-                            " argument of function " + getName() +
-                            ". Expected const integer.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        const UInt64 scale = argument.column->get64(0);
+            scale = argument.column->get64(0);
+        }
 
         return std::make_shared<DataTypeDateTime64>(scale);
     }
@@ -87,13 +90,18 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const IColumn * scale_column = block.getByPosition(arguments[0]).column.get();
-        if (!isColumnConst(*scale_column))
-            throw Exception("Unsupported argument type: " + scale_column->getName() +
-                            + " for function " + getName() + ". Expected const integer.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+        UInt64 scale = DataTypeDateTime64::default_scale;
+        if (arguments.size() == 1)
+        {
+            const IColumn * scale_column = block.getByPosition(arguments[0]).column.get();
+            if (!isColumnConst(*scale_column))
+                throw Exception("Unsupported argument type: " + scale_column->getName() +
+                                + " for function " + getName() + ". Expected const integer.",
+                                ErrorCodes::ILLEGAL_COLUMN);
 
-        const UInt64 scale = scale_column->get64(0);
+            scale = scale_column->get64(0);
+        }
+
         block.getByPosition(result).column = DataTypeDateTime64(scale).createColumnConst(input_rows_count, nowSubsecond(scale));
     }
 };
