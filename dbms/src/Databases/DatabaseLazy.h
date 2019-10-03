@@ -141,8 +141,6 @@ private:
     mutable CacheExpirationQueue cache_expiration_queue;
 
     Poco::Logger * log;
-
-    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
     
     using IteratingFunction = std::function<void(const Poco::DirectoryIterator &)>;
     void iterateTableFiles(const IteratingFunction & iterating_function) const;
