@@ -264,6 +264,8 @@ private:
     AnalysisResult analysis_result;
     FilterInfoPtr filter_info;
 
+    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
+
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
 
