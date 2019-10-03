@@ -218,20 +218,10 @@ void DatabaseOrdinary::renameTable(
 
 
 time_t DatabaseOrdinary::getTableMetadataModificationTime(
-    const Context & /*context*/,
+    const Context & /* context */,
     const String & table_name)
 {
-    String table_metadata_path = getTableMetadataPath(table_name);
-    Poco::File meta_file(table_metadata_path);
-
-    if (meta_file.exists())
-    {
-        return meta_file.getLastModified().epochTime();
-    }
-    else
-    {
-        return static_cast<time_t>(0);
-    }
+    return DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name);
 }
 
 ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name) const
