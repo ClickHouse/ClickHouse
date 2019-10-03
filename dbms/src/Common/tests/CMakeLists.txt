@@ -36,7 +36,7 @@ target_include_directories (simple_cache PRIVATE ${DBMS_INCLUDE_DIR})
 target_link_libraries (simple_cache PRIVATE common)
 
 add_executable (compact_array compact_array.cpp)
-target_link_libraries (compact_array PRIVATE clickhouse_common_io stdc++fs)
+target_link_libraries (compact_array PRIVATE clickhouse_common_io)
 
 add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
@@ -61,7 +61,7 @@ add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
-target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms)
 
 add_executable (allocator allocator.cpp)

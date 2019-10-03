@@ -47,7 +47,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 Содержит информацию о доступных в конфигурационном файле кластерах и серверах, которые в них входят.
 Столбцы:
 
-```
+```text
 cluster String — имя кластера.
 shard_num UInt32 — номер шарда в кластере, начиная с 1.
 shard_weight UInt32 — относительный вес шарда при записи данных
@@ -80,6 +80,45 @@ user String — имя пользователя, которого использ
 - `is_in_sorting_key` (UInt8) — флаг, показываюший включение столбца в ключ сортировки.
 - `is_in_primary_key` (UInt8) — флаг, показывающий включение столбца в первичный ключ.
 - `is_in_sampling_key` (UInt8) — флаг, показывающий включение столбца в ключ выборки.
+
+## system.contributors {#system_contributors}
+
+Содержит информацию о контрибьютерах. Контрибьютеры расположены в таблице в случайном порядке. Порядок определяется заново при каждом запросе.
+
+Столбцы:
+
+- `name` (String) — Имя контрибьютера (автора коммита) из git log.
+
+**Пример**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+Чтобы найти себя в таблице, выполните запрос:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
 
 ## system.databases
 
@@ -317,7 +356,7 @@ SELECT * FROM system.metrics LIMIT 10
 Эта системная таблица используется для реализации запроса `SHOW PROCESSLIST`.
 Столбцы:
 
-```
+```text
 user String              - имя пользователя, который задал запрос. При распределённой обработке запроса, относится к пользователю, с помощью которого сервер-инициатор запроса отправил запрос на данный сервер, а не к имени пользователя, который задал распределённый запрос на сервер-инициатор запроса.
 
 address String           - IP-адрес, с которого задан запрос. При распределённой обработке запроса, аналогично.
@@ -441,7 +480,7 @@ WHERE table = 'visits'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 database:           merge
@@ -467,7 +506,7 @@ active_replicas:    2
 
 Столбцы:
 
-```
+```text
 database:           имя БД
 table:              имя таблицы
 engine:             имя движка таблицы
@@ -559,7 +598,7 @@ WHERE
 
 Столбцы:
 
-```
+```text
 name String   - имя настройки
 value String  - значение настройки
 changed UInt8 - была ли настройка явно задана в конфиге или изменена явным образом
@@ -573,7 +612,7 @@ FROM system.settings
 WHERE changed
 ```
 
-```
+```text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
 │ use_uncompressed_cache │ 0           │       1 │
@@ -642,7 +681,7 @@ WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 name:           example01-08-1.yandex.ru

@@ -6,6 +6,7 @@
 #include <Common/config.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
+#include <Core/Defines.h>
 
 #include <cstring>
 #include <filesystem>

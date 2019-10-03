@@ -18,7 +18,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#ifdef __SSE4_1__
+#ifdef __SSE4_2__
     #include <smmintrin.h>
 #endif
 
@@ -164,7 +164,7 @@ struct FNV1a
 };
 
 
-#ifdef __SSE4_1__
+#ifdef __SSE4_2__
 
 struct CrapWow
 {
@@ -254,7 +254,7 @@ struct SimpleHash
 
         if (size < 8)
         {
-#ifdef __SSE4_1__
+#ifdef __SSE4_2__
             return hashLessThan8(x.data, x.size);
 #endif
         }
@@ -291,7 +291,7 @@ struct VerySimpleHash
 
         if (size < 8)
         {
-#ifdef __SSE4_1__
+#ifdef __SSE4_2__
             return hashLessThan8(x.data, x.size);
 #endif
         }
@@ -342,7 +342,7 @@ struct SMetroHash64
 };
 
 
-#ifdef __SSE4_1__
+#ifdef __SSE4_2__
 
 /*struct CRC32Hash
 {
@@ -499,7 +499,7 @@ int main(int argc, char ** argv)
     if (!m || m == 3) bench<StringRef, SimpleHash>     (data, "StringRef_SimpleHash");
     if (!m || m == 4) bench<StringRef, FNV1a>          (data, "StringRef_FNV1a");
 
-#ifdef __SSE4_1__
+#ifdef __SSE4_2__
     if (!m || m == 5) bench<StringRef, CrapWow>        (data, "StringRef_CrapWow");
     if (!m || m == 6) bench<StringRef, CRC32Hash>      (data, "StringRef_CRC32Hash");
     if (!m || m == 7) bench<StringRef, CRC32ILPHash>   (data, "StringRef_CRC32ILPHash");

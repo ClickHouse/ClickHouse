@@ -4,7 +4,7 @@ The `users` section of the `user.xml` configuration file contains user settings.
 
 Structure of the `users` section:
 
-```
+```xml
 <users>
     <!-- If user name was not specified, 'default' user is used. -->
     <user_name>
@@ -80,7 +80,7 @@ All results of DNS requests are cached until the server restarts.
 
 To open access for user from any network, specify:
 
-```
+```xml
 <ip>::/0</ip>
 ```
 
@@ -90,7 +90,7 @@ To open access for user from any network, specify:
 
 To open access only from localhost, specify:
 
-```
+```xml
 <ip>::1</ip>
 <ip>127.0.0.1</ip>
 ```
@@ -114,7 +114,7 @@ In this section, you can you can limit rows that are returned by ClickHouse for 
 
 The following configuration forces that user `user1` can only see the rows of `table1` as the result of `SELECT` queries, where the value of the `id` field is 1000.
 
-```
+```xml
 <user1>
     <databases>
         <database_name>
