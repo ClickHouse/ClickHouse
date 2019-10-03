@@ -207,7 +207,7 @@ private:
     void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
-    void executeUnion(Pipeline & pipeline, Block header, bool allow_different_constant_values); /// If header is not empty, convert streams structure to it.
+    void executeUnion(Pipeline & pipeline, Block header);
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
@@ -233,7 +233,7 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
     /// Add ConvertingBlockInputStream to specified header.
-    void unifyStreams(Pipeline & pipeline, Block header, bool allow_different_constant_values);
+    void unifyStreams(Pipeline & pipeline, Block header);
 
     enum class Modificator
     {
