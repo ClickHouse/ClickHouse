@@ -5117,7 +5117,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         {
             auto src_data_parts_lock = lockParts();
             auto dest_data_parts_lock = dest_table_storage->lockParts();
-            
+
             transaction.commit(&src_data_parts_lock);
             parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, src_data_parts_lock);
         }
