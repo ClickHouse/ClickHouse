@@ -4,7 +4,6 @@
 
 #include "config_core.h"
 #include <Core/Names.h>
-#include <Core/Field.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
@@ -27,6 +26,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
+
+class Field;
 
 /// The simplest executable object.
 /// Motivation:
