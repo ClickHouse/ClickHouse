@@ -35,8 +35,7 @@ public:
         const Context & context,
         const BlockInputStreamPtr & input,
         const Block & result_header,
-        MatchColumnsMode mode,
-        bool allow_different_constant_values = false);
+        MatchColumnsMode mode);
 
     String getName() const override { return "Converting"; }
     Block getHeader() const override { return header; }
@@ -50,8 +49,6 @@ private:
     /// How to construct result block. Position in source block, where to get each column.
     using Conversion = std::vector<size_t>;
     Conversion conversion;
-
-    bool allow_different_constant_values;
 };
 
 }

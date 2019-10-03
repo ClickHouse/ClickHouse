@@ -36,12 +36,10 @@ ConvertingTransform::ConvertingTransform(
     Block source_header_,
     Block result_header_,
     MatchColumnsMode mode_,
-    const Context & context_,
-    bool allow_different_constant_values_)
+    const Context & context_)
     : ISimpleTransform(std::move(source_header_), std::move(result_header_), false)
     , context(context_)
     , conversion(getOutputPort().getHeader().columns())
-    , allow_different_constant_values(allow_different_constant_values_)
 {
     auto & source = getInputPort().getHeader();
     auto & result = getOutputPort().getHeader();
@@ -79,8 +77,7 @@ ConvertingTransform::ConvertingTransform(
         {
             if (auto * src_const = typeid_cast<const ColumnConst *>(src_elem.column.get()))
             {
-                if (!allow_different_constant_values
-                    && res_const->getField() != src_const->getField())
+                if (res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
                                     "it is constant but values of constants are different in source and result",
                                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
