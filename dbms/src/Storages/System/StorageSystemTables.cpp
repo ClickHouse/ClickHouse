@@ -65,9 +65,9 @@ static bool needLockStructure(const DatabasePtr& database, const Block& header) 
     if (database->getEngineName() != "Lazy")
         return true;
 
-    static std::set<std::string> columns_without_lock = { "database", "name", "metadata_modification_time" };
+    static const std::set<std::string> columns_without_lock = { "database", "name", "metadata_modification_time" };
     for (const auto& column : header.getColumnsWithTypeAndName()) {
-        if (columns_without_lock.find(column.name) != columns_without_lock.end()) {
+        if (columns_without_lock.find(column.name) == columns_without_lock.end()) {
             return true;
         }
     }
