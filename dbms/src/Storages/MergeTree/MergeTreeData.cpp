@@ -3357,7 +3357,7 @@ try
 
     part_log_elem.event_time = time(nullptr);
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-    part_log_elem.duration_ms = elapsed_ns / 10000000;
+    part_log_elem.duration_ms = elapsed_ns / 1000000;
 
     part_log_elem.database_name = database_name;
     part_log_elem.table_name = table_name;
