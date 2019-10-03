@@ -458,10 +458,13 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             optimize_prewhere(*merge_tree_data);
     }
 
+    if (storage && !options.only_analyze)
+        from_stage = storage->getQueryProcessingStage(context);
+
     analysis_result = analyzeExpressions(
             getSelectQuery(),
             *query_analyzer,
-            QueryProcessingStage::Enum::FetchColumns,
+            from_stage,
             options.to_stage,
             context,
             storage,
@@ -932,11 +935,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
     auto & expressions = analysis_result;
-
-    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-
-    if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(context);
 
     SortingInfoPtr sorting_info;
     if (settings.optimize_read_in_order && storage && query.orderBy() && !query_analyzer->hasAggregation() && !query.final() && !query.join())
