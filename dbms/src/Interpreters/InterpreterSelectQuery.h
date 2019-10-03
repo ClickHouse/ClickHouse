@@ -260,6 +260,10 @@ private:
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
 
+    /// Is calculated in getSampleBlock. Is used later in readImpl.
+    AnalysisResult analysis_result;
+    FilterInfoPtr filter_info;
+
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
 
