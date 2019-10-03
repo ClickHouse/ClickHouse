@@ -14,13 +14,13 @@ ${CLICKHOUSE_CLIENT} -n -q "
 sleep 1.5
 
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT * FROM system.tables WHERE database = 'testlazy';
+    SELECT database, name, create_table_query FROM system.tables WHERE database = 'testlazy';
 "
 
 sleep 1.5
 
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT database, name, metadata_modification_time FROM system.tables WHERE database = 'testlazy';
+    SELECT database, name FROM system.tables WHERE database = 'testlazy';
 "
 
 sleep 1.5
@@ -28,13 +28,13 @@ sleep 1.5
 ${CLICKHOUSE_CLIENT} -n -q "
     SELECT * FROM testlazy.log LIMIT 0; -- drop testlazy.log from cache
     RENAME TABLE testlazy.log TO testlazy.log2;
-    SELECT database, name, metadata_modification_time FROM system.tables WHERE database = 'testlazy';
+    SELECT database, name FROM system.tables WHERE database = 'testlazy';
 "
 
 sleep 1.5
 
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT database, name, metadata_modification_time FROM system.tables WHERE database = 'testlazy';
+    SELECT database, name FROM system.tables WHERE database = 'testlazy';
 "
 
 sleep 1.5

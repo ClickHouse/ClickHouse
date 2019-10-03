@@ -64,6 +64,12 @@ void DatabaseLazy::createTable(
     if (!endsWith(table->getName(), "Log"))
         throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
     DatabaseOnDisk::createTable(*this, context, table_name, table, query);
+
+    /// DatabaseOnDisk::createTable renames file, so we need to get new metadata_modification_time.
+    std::lock_guard lock(tables_mutex);
+    auto it = tables_cache.find(table_name);
+    if (it != tables_cache.end())
+        it->second.metadata_modification_time = DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name);
 }
 
 
@@ -191,9 +197,7 @@ void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & tab
     
     auto [it, inserted] = tables_cache.emplace(std::piecewise_construct,
                               std::forward_as_tuple(table_name),
-                              std::forward_as_tuple(table,
-                                                    current_time,
-                                                    DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name)));
+                              std::forward_as_tuple(table, current_time, DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name)));
     if (!inserted)
         throw Exception("Table " + getDatabaseName() + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
