@@ -654,7 +654,7 @@ inline void readDateTimeText(DateTime64 & datetime64, UInt32 scale, ReadBuffer &
     auto fractional_length = remainder1 - buf.available();
 
     c.fractional *= common::exp10_i64(scale - fractional_length);
-    datetime64 = decimalFromComponents(c, scale);
+    datetime64 = decimalFromComponents<DateTime64>(c, scale);
 }
 
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())

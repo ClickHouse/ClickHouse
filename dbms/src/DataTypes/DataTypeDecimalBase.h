@@ -347,4 +347,10 @@ DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
     return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
 }
 
+extern template class DataTypeDecimalBase<Decimal32>;
+extern template class DataTypeDecimalBase<Decimal64>;
+extern template class DataTypeDecimalBase<Decimal128>;
+extern template class DataTypeDecimalBase<DateTime64>;
+
+
 }

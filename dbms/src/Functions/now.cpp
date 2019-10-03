@@ -20,7 +20,7 @@ DateTime64::NativeType nowSubsecond(UInt8 scale) {
     timespec spec;
     clock_gettime(CLOCK_REALTIME, &spec);
 
-    return decimalFromComponents<DateTime64::NativeType>(spec.tv_sec, spec.tv_nsec, scale);
+    return decimalFromComponents<DateTime64>(spec.tv_sec, spec.tv_nsec, scale).value;
 }
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)

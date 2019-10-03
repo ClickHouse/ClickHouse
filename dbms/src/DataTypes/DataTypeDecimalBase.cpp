@@ -94,22 +94,10 @@ void DataTypeDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     x.resize(initial_size + size / sizeof(FieldType));
 }
 
-template <>
-Decimal32 DataTypeDecimalBase<Decimal32>::getScaleMultiplier(UInt32 scale_)
+template <typename T>
+T DataTypeDecimalBase<T>::getScaleMultiplier(UInt32 scale_)
 {
-    return decimalScaleMultiplier<Int32>(scale_);
-}
-
-template <>
-Decimal64 DataTypeDecimalBase<Decimal64>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int64>(scale_);
-}
-
-template <>
-Decimal128 DataTypeDecimalBase<Decimal128>::getScaleMultiplier(UInt32 scale_)
-{
-    return decimalScaleMultiplier<Int128>(scale_);
+    return decimalScaleMultiplier<typename T::NativeType>(scale_);
 }
 
 

@@ -21,43 +21,47 @@ struct DecimalComponents
     T fractional;
 };
 
-template <typename T>
-Decimal<T> decimalFromComponents(const T & whole, const T & fractional, UInt32 scale)
+template <typename DecimalType>
+DecimalType decimalFromComponents(const typename DecimalType::NativeType & whole, const typename DecimalType::NativeType & fractional, UInt32 scale)
 {
+    using T = typename DecimalType::NativeType;
+
     const auto mul = decimalScaleMultiplier<T>(scale);
     const T value = whole * mul + fractional / decimalScaleMultiplier<T>(std::numeric_limits<T>::digits10 - scale);
-    return Decimal<T>(value);
+    return DecimalType(value);
 }
 
-template <typename T>
-Decimal<T> decimalFromComponents(const DecimalComponents<T> & components, UInt32 scale)
+template <typename DecimalType>
+DecimalType decimalFromComponents(const DecimalComponents<typename DecimalType::NativeType> & components, UInt32 scale)
 {
-    return decimalFromComponents(components.whole, components.fractional, scale);
+    return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
 }
 
-template <typename T>
-DecimalComponents<T> decimalSplit(const Decimal<T> & decimal, UInt32 scale)
+template <typename DecimalType>
+DecimalComponents<typename DecimalType::NativeType> decimalSplit(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
     {
         return {decimal.value, 0};
     }
-    const auto scaleMultiplier = decimalScaleMultiplier<T>(scale);
+    const auto scaleMultiplier = decimalScaleMultiplier<typename DecimalType::NativeType>(scale);
     return {decimal.value / scaleMultiplier, decimal.value % scaleMultiplier};
 }
 
-template <typename T>
-T decimalWholePart(const Decimal<T> & decimal, size_t scale)
+template <typename DecimalType>
+typename DecimalType::NativeType decimalWholePart(const DecimalType & decimal, size_t scale)
 {
     if (scale == 0)
         return decimal.value;
 
-    return decimal.value / decimalScaleMultiplier<T>(scale);
+    return decimal.value / decimalScaleMultiplier<typename DecimalType::NativeType>(scale);
 }
 
-template <typename T>
-T decimalFractionalPart(const Decimal<T> & decimal, size_t scale)
+template <typename DecimalType>
+typename DecimalType::NativeType decimalFractionalPart(const DecimalType & decimal, size_t scale)
 {
+    using T = typename DecimalType::NativeType;
+
     if (scale == 0)
         return 0;
 
