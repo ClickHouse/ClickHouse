@@ -74,8 +74,8 @@ void DatabaseLazy::loadTables(
     Context & /* context */,
     bool /* has_force_restore_data_flag */)
 {
-    iterateTableFiles([this](const Poco::DirectoryIterator & dir_it) {
-        const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - 4);
+    DatabaseOnDisk::iterateTableFiles(*this, log, [this](const String & file_name) {
+        const std::string table_name = file_name.substr(0, file_name.size() - 4);
         attachTable(table_name, nullptr);
     });
 }
@@ -289,56 +289,6 @@ String DatabaseLazy::getDatabaseName() const
 String DatabaseLazy::getTableMetadataPath(const String & table_name) const
 {
     return DatabaseOnDisk::getTableMetadataPath(*this, table_name);
-}
-
-void DatabaseLazy::iterateTableFiles(const IteratingFunction & iterating_function) const
-{
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
-    {
-        /// For '.svn', '.gitignore' directory and similar.
-        if (dir_it.name().at(0) == '.')
-            continue;
-
-        /// There are .sql.bak files - skip them.
-        if (endsWith(dir_it.name(), ".sql.bak"))
-            continue;
-
-        // There are files that we tried to delete previously
-        static const char * tmp_drop_ext = ".sql.tmp_drop";
-        if (endsWith(dir_it.name(), tmp_drop_ext))
-        {
-            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(getDataPath() + '/' + table_name).exists())
-            {
-                Poco::File(dir_it->path()).renameTo(table_name + ".sql");
-                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
-            }
-            else
-            {
-                LOG_INFO(log, "Removing file " << dir_it->path());
-                Poco::File(dir_it->path()).remove();
-            }
-            continue;
-        }
-
-        /// There are files .sql.tmp - delete
-        if (endsWith(dir_it.name(), ".sql.tmp"))
-        {
-            LOG_INFO(log, "Removing file " << dir_it->path());
-            Poco::File(dir_it->path()).remove();
-            continue;
-        }
-
-        /// The required files have names like `table_name.sql`
-        if (endsWith(dir_it.name(), ".sql"))
-        {
-            iterating_function(dir_it);
-        }
-        else
-            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + metadata_path,
-                ErrorCodes::INCORRECT_FILE_NAME);
-    }
 }
 
 StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table_name) const

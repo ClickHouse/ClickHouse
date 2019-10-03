@@ -22,11 +22,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int SYNTAX_ERROR;
 }
 
 
@@ -230,6 +231,56 @@ void DatabaseOnDisk::drop(const IDatabase & database)
 String DatabaseOnDisk::getTableMetadataPath(const IDatabase & database, const String & table_name)
 {
     return detail::getTableMetadataPath(database.getMetadataPath(), table_name);
+}
+
+void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function)
+{
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator dir_it(database.getMetadataPath()); dir_it != dir_end; ++dir_it)
+    {
+        /// For '.svn', '.gitignore' directory and similar.
+        if (dir_it.name().at(0) == '.')
+            continue;
+
+        /// There are .sql.bak files - skip them.
+        if (endsWith(dir_it.name(), ".sql.bak"))
+            continue;
+
+        // There are files that we tried to delete previously
+        static const char * tmp_drop_ext = ".sql.tmp_drop";
+        if (endsWith(dir_it.name(), tmp_drop_ext))
+        {
+            const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
+            if (Poco::File(database.getDataPath() + '/' + table_name).exists())
+            {
+                Poco::File(dir_it->path()).renameTo(table_name + ".sql");
+                LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");
+            }
+            else
+            {
+                LOG_INFO(log, "Removing file " << dir_it->path());
+                Poco::File(dir_it->path()).remove();
+            }
+            continue;
+        }
+
+        /// There are files .sql.tmp - delete
+        if (endsWith(dir_it.name(), ".sql.tmp"))
+        {
+            LOG_INFO(log, "Removing file " << dir_it->path());
+            Poco::File(dir_it->path()).remove();
+            continue;
+        }
+
+        /// The required files have names like `table_name.sql`
+        if (endsWith(dir_it.name(), ".sql"))
+        {
+            iterating_function(dir_it.name());
+        }
+        else
+            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + database.getMetadataPath(),
+                ErrorCodes::INCORRECT_FILE_NAME);
+    }
 }
 
 }

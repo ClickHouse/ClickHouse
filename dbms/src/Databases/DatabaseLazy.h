@@ -142,9 +142,6 @@ private:
 
     Poco::Logger * log;
     
-    using IteratingFunction = std::function<void(const Poco::DirectoryIterator &)>;
-    void iterateTableFiles(const IteratingFunction & iterating_function) const;
-    
     StoragePtr loadTable(const Context & context, const String & table_name) const;
 
     void clearExpiredTables() const;
