@@ -83,7 +83,7 @@ class DataTypeDateTime64 final : public DataTypeDecimalBase<DateTime64>, public 
 public:
     static constexpr UInt8 default_scale = 3;
 
-    explicit DataTypeDateTime64(UInt8 scale_, const std::string & time_zone_name = "");
+    explicit DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name = "");
 
     const char * getFamilyName() const override { return "DateTime64"; }
     std::string doGetName() const override;

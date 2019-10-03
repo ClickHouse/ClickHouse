@@ -70,6 +70,7 @@ toYYYYMMDDhhmmss({datetime})
 # subtractSeconds({datetime}, 1)
 # subtractQuarters({datetime}, 1)
 CAST({datetime} as DateTime)
+CAST({datetime} as Date)
 CAST({datetime} as UInt64)
 formatDateTime({datetime}, '%C %d %D %e %F %H %I %j %m %M %n %p %R %S %t %T %u %V %w %y %Y %%')
 """.splitlines()
@@ -112,7 +113,7 @@ extra_ops =\
                 '> ',
                 '>='
             ],
-            'arg': ['now()'],
+            'arg': ['now()', 'toDate(now())'],
         }
     ),
     # With arithmetic types
@@ -148,9 +149,11 @@ for f, args in extra_ops:
         func = f.format(**dict(zip(args_keys, args_vals)))
         functions.append(func)
 
+datetime64_args = ['now64(0)', 'now64(3)', 'now64(6)', 'now64(9)', 'now64(12)', 'now64(15)']
+
 # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
 for func in functions:
-    f = func.format(datetime="now64()")
-    print("""SELECT {function};""".format(function=f))
-
-print("SELECT CAST( )")
+    for dt in datetime64_args:
+        f = func.format(datetime=dt)
+        print("""SELECT '{function}';""".format(function=f))
+        print("""SELECT {function};""".format(function=f))

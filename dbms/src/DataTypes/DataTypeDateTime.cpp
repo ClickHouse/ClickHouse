@@ -87,7 +87,7 @@ std::string DataTypeDateTime::doGetName() const
 
 void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeDateTimeText(assert_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr, time_zone);
+    writeDateTimeText(assert_cast<const ColumnType &>(column).getData()[row_num], ostr, time_zone);
 }
 
 void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -104,7 +104,7 @@ void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 {
     time_t x;
     ::readText(x, istr, settings, time_zone, utc_time_zone);
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -126,7 +126,7 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
     {
         readIntText(x, istr);
     }
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -148,7 +148,7 @@ void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     {
         readIntText(x, istr);
     }
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -175,7 +175,7 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
 
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
@@ -192,7 +192,7 @@ void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & pr
     if (!protobuf.readDateTime(t))
         return;
 
-    auto & container = assert_cast<ColumnUInt32 &>(column).getData();
+    auto & container = assert_cast<ColumnType &>(column).getData();
     if (allow_add_row)
     {
         container.emplace_back(t);
@@ -209,7 +209,7 @@ bool DataTypeDateTime::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-DataTypeDateTime64::DataTypeDateTime64(UInt8 scale_, const std::string & time_zone_name)
+DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
     : DataTypeDecimalBase<DateTime64>(maxDecimalPrecision<DateTime64>() - scale_, scale_),
       TimezoneMixin(time_zone_name)
 {
@@ -242,7 +242,7 @@ void DataTypeDateTime64::deserializeTextEscaped(IColumn & column, ReadBuffer & i
 {
     DateTime64 x;
     ::readText(x, scale, istr, settings, time_zone, utc_time_zone);
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime64::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -264,7 +264,7 @@ void DataTypeDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & is
     {
         readIntText(x, istr);
     }
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeDateTime64::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -286,7 +286,7 @@ void DataTypeDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr
     {
         readIntText(x, istr);
     }
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime64::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -313,7 +313,7 @@ void DataTypeDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
 
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime64::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
@@ -368,51 +368,54 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeDateTime>(arg->value.get<String>());
 }
 
-struct ArgumentSpec
+enum class ArgumentKind
 {
-    enum ArgumentKind
-    {
-        Optional,
-        Mandatory
-    };
-
-    size_t index;
-    const char * name;
-    ArgumentKind kind;
+    Optional,
+    Mandatory
 };
 
-template <typename T>
-T getArgument(const ASTPtr & arguments, ArgumentSpec argument_spec, const std::string context_data_type_name)
+template <typename T, ArgumentKind Kind>
+std::conditional_t<Kind == ArgumentKind::Optional, std::optional<T>, T>
+getArgument(const ASTPtr & arguments, size_t argument_index, const char * argument_name, const std::string context_data_type_name)
 {
     using NearestResultType = NearestFieldType<T>;
     const auto fieldType = Field::TypeToEnum<NearestResultType>::value;
+    const ASTLiteral * argument = nullptr;
 
-    if (!arguments || arguments->children.size() <= argument_spec.index)
+    auto exceptionMessage = [=](const String & message)
     {
-        if (argument_spec.kind == ArgumentSpec::Optional)
+        return std::string("Parameter #") + std::to_string(argument_index) + " '"
+                + argument_name + "' for " + context_data_type_name
+                + message
+                + ", expected: " + Field::Types::toString(fieldType) + " literal.";
+    };
+
+    if (!arguments || arguments->children.size() <= argument_index
+        || !(argument = arguments->children[argument_index]->as<ASTLiteral>()))
+    {
+        if constexpr (Kind == ArgumentKind::Optional)
             return {};
         else
-            throw Exception("Parameter #" + std::to_string(argument_spec.index) + "'" + argument_spec.name + "' for " + context_data_type_name + " is missing.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(exceptionMessage(" is missing"),
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
-    const auto * argument = arguments->children[argument_spec.index]->as<ASTLiteral>();
-    if (!argument || argument->value.getType() != fieldType)
-        throw Exception("'" + std::string(argument_spec.name) + "' parameter for " +
-                        context_data_type_name + " must be " + Field::Types::toString(fieldType) +
-                        " literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (argument->value.getType() != fieldType)
+        throw Exception(exceptionMessage(String(" has wrong type: ") + argument->value.getTypeName()),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return argument->value.get<NearestResultType>();
 }
 
 static DataTypePtr create64(const ASTPtr & arguments)
 {
-    if (!arguments)
+    if (!arguments || arguments->size() == 0)
         return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
 
-    const auto scale = getArgument<UInt64>(arguments, ArgumentSpec{0, "scale", ArgumentSpec::Mandatory}, "DateType64");
-    const auto timezone = getArgument<String>(arguments, ArgumentSpec{0, "timezone", ArgumentSpec::Optional}, "DateType64");
+    const auto scale = getArgument<UInt64, ArgumentKind::Optional>(arguments, 0, "scale", "DateType64");
+    const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, !!scale, "timezone", "DateType64");
 
-    return std::make_shared<DataTypeDateTime64>(scale, timezone);
+    return std::make_shared<DataTypeDateTime64>(scale.value_or(DataTypeDateTime64::default_scale), timezone.value_or(String{}));
 }
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
