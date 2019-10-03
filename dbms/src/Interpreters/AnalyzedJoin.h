@@ -59,8 +59,10 @@ class AnalyzedJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
+    String tmp_path;
+
 public:
-    AnalyzedJoin(const Settings &);
+    AnalyzedJoin(const Settings &, const String & tmp_path);
 
     /// for StorageJoin
     AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
@@ -76,6 +78,7 @@ public:
     ASTTableJoin::Kind kind() const { return table_join.kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     const SizeLimits & sizeLimits() const { return size_limits; }
+    const String & getTemporaryPath() const { return tmp_path; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }

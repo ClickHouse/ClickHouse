@@ -3,10 +3,10 @@
 #include <memory>
 #include <shared_mutex>
 
+#include <Common/filesystemHelpers.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
-
 
 namespace DB
 {
@@ -34,9 +34,13 @@ private:
     SortDescription right_sort_description;
     SortDescription left_merge_description;
     SortDescription right_merge_description;
+    Block right_sample_block;
     Block right_table_keys;
     Block right_columns_to_add;
     BlocksList right_blocks;
+    Blocks min_max_right_blocks;
+    std::vector<std::shared_ptr<Block>> loaded_right_blocks;
+    std::vector<std::unique_ptr<TemporaryFile>> flushed_right_blocks;
     Block totals;
     size_t right_blocks_row_count = 0;
     size_t right_blocks_bytes = 0;
@@ -50,10 +54,30 @@ private:
     void addRightColumns(Block & block, MutableColumns && columns);
 
     void mergeRightBlocks();
+
+    template <bool in_memory>
+    void joinSortedBlock(Block & block);
+    template <bool in_memory>
+    std::shared_ptr<Block> loadRightBlock(size_t pos);
+
     void leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
     void innerJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,
                    MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+
+    bool saveRightBlock(Block && block);
+    void flushRightBlocks();
+    bool isInMemory() const { return flushed_right_blocks.empty(); }
+
+    void mergeInMemoryRightBlocks(size_t max_rows_in_block);
+    void mergeFlushedRightBlocks(size_t max_rows_in_block);
+
+    void clearRightBlocksList()
+    {
+        right_blocks.clear();
+        right_blocks_row_count = 0;
+        right_blocks_bytes = 0;
+    }
 };
 
 }
