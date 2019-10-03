@@ -2967,6 +2967,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
         validateDetachedPartName(part_id);
         renamed_parts.addPart(part_id, "attaching_" + part_id);
+        if (MergeTreePartInfo::tryParsePartName(part_id, nullptr, format_version))
+            name_to_disk[part_id] = getDiskForPart(part_id, source_dir);
     }
     else
     {
