@@ -31,9 +31,6 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    if (formatDropACLQuery(settings))
-        return;
-
     settings.ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
         settings.ostr << "DROP ";
@@ -60,27 +57,6 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
     formatOnCluster(settings);
-}
-
-
-bool ASTDropQuery::formatDropACLQuery(const FormatSettings & settings) const
-{
-    if (kind != ASTDropQuery::Kind::Drop)
-        return false;
-
-    const auto & names = !roles.empty() ? roles : users;
-    if (names.empty())
-        return false;
-
-    const char * type = !roles.empty() ? "ROLE" : "USER";
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << type
-                  << (if_exists ? " IF EXISTS" : "")
-                  << (settings.hilite ? hilite_none : "");
-
-    for (size_t i = 0; i != names.size(); ++i)
-        settings.ostr << (i ? ", " : " ") << backQuoteIfNeed(names[i]);
-    return true;
 }
 }
 

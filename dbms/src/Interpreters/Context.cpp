@@ -27,8 +27,8 @@
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/IUsersManager.h>
-#include <AccessControl/AccessControlManager.h>
-#include <AccessControl/Quota.h>
+#include <Access/AccessControlManager.h>
+#include <Access/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/ExternalModels.h>
@@ -37,7 +37,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Compiler.h>
-#include <AccessControl/SettingsConstraints.h>
+#include <Access/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>

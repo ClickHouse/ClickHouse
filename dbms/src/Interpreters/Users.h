@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <AccessControl/AllowedHosts.h>
-#include <AccessControl/EncryptedPassword.h>
+#include <Access/AllowedHosts.h>
+#include <Access/EncryptedPassword.h>
 
 #include <memory>
 #include <unordered_map>

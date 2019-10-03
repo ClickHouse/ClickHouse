@@ -31,7 +31,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <AccessControl/AccessControlManager.h>
+#include <Access/AccessControlManager.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>

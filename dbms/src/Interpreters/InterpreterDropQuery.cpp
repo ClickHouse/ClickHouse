@@ -4,9 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <AccessControl/AccessControlManager.h>
-#include <AccessControl/Role.h>
-#include <AccessControl/User2.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
@@ -45,22 +42,6 @@ BlockIO InterpreterDropQuery::execute()
         return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     else if (!drop.database.empty())
         return executeToDatabase(drop.database, drop.kind, drop.if_exists);
-    else if (!drop.roles.empty())
-    {
-        if (drop.if_exists)
-            context.getAccessControlManager().tryRemove<Role>(drop.roles);
-        else
-            context.getAccessControlManager().remove<Role>(drop.roles);
-        return {};
-    }
-    else if (!drop.users.empty())
-    {
-        if (drop.if_exists)
-            context.getAccessControlManager().tryRemove<User2>(drop.users);
-        else
-            context.getAccessControlManager().remove<User2>(drop.users);
-        return {};
-    }
     else
         throw Exception("Database and table names is empty.", ErrorCodes::LOGICAL_ERROR);
 }

@@ -21,7 +21,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
-#include <AccessControl/Quota.h>
+#include <Access/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>

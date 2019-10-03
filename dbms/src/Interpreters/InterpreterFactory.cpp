@@ -1,8 +1,9 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateACQuery.h>
+#include <Parsers/ASTCreateAccessQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTDropAccessQuery.h>
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -21,10 +22,11 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterCreateACQuery.h>
+#include <Interpreters/InterpreterCreateAccessQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterDropAccessQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -113,10 +115,18 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterCreateUserQuery>(query, context);
     }
+    else if (query->as<ASTCreateRoleQuery>())
+    {
+        return std::make_unique<InterpreterCreateRoleQuery>(query, context);
+    }
     else if (query->as<ASTDropQuery>())
     {
         /// readonly and allow_ddl are checked inside InterpreterDropQuery
         return std::make_unique<InterpreterDropQuery>(query, context);
+    }
+    else if (query->as<ASTDropAccessQuery>())
+    {
+        return std::make_unique<InterpreterDropAccessQuery>(query, context);
     }
     else if (query->as<ASTRenameQuery>())
     {

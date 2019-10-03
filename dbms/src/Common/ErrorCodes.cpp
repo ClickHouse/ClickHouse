@@ -455,7 +455,7 @@ namespace ErrorCodes
     extern const int ROW_FILTER_POLICY_NOT_FOUND = 478;
     extern const int ROW_FILTER_POLICY_ALREADY_EXISTS = 479;
     extern const int ATTRIBUTES_NOT_FOUND = 480;
-    extern const int NOT_GRANTED_ROLE_SET = 481;
+    extern const int SET_NOT_GRANTED_ROLE = 481;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
