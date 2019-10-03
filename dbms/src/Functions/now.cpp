@@ -61,7 +61,8 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{0}; }
 
     // Return type depends on argument value.
