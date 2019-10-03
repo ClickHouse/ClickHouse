@@ -34,10 +34,8 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
     const Context & context_,
     const BlockInputStreamPtr & input,
     const Block & result_header,
-    MatchColumnsMode mode,
-    bool allow_different_constant_values_)
+    MatchColumnsMode mode)
     : context(context_), header(result_header), conversion(header.columns())
-    , allow_different_constant_values(allow_different_constant_values_)
 {
     children.emplace_back(input);
 
@@ -78,9 +76,7 @@ ConvertingBlockInputStream::ConvertingBlockInputStream(
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is non constant in source stream but must be constant in result",
                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
-            else if (!allow_different_constant_values
-                     && assert_cast<const ColumnConst &>(*src_elem.column).getField()
-                        != assert_cast<const ColumnConst &>(*res_elem.column).getField())
+            else if (assert_cast<const ColumnConst &>(*src_elem.column).getField() != assert_cast<const ColumnConst &>(*res_elem.column).getField())
                 throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name)
                     + " because it is constant but values of constants are different in source and result",
                     ErrorCodes::BLOCKS_HAVE_DIFFERENT_STRUCTURE);
