@@ -64,6 +64,11 @@ public:
         const IDatabase & database,
         const String & table_name);
 
+    static time_t getTableMetadataModificationTime(
+        const IDatabase & database,
+        const String & table_name);
+
+
     using IteratingFunction = std::function<void(const String &)>;
     static void iterateTableFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function);
 

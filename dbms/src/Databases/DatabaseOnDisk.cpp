@@ -233,6 +233,23 @@ String DatabaseOnDisk::getTableMetadataPath(const IDatabase & database, const St
     return detail::getTableMetadataPath(database.getMetadataPath(), table_name);
 }
 
+time_t DatabaseOnDisk::getTableMetadataModificationTime(
+    const IDatabase & database,
+    const String & table_name)
+{
+    String table_metadata_path = getTableMetadataPath(database, table_name);
+    Poco::File meta_file(table_metadata_path);
+
+    if (meta_file.exists())
+    {
+        return meta_file.getLastModified().epochTime();
+    }
+    else
+    {
+        return static_cast<time_t>(0);
+    }
+}
+
 void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function)
 {
     Poco::DirectoryIterator dir_end;

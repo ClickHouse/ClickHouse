@@ -46,18 +46,6 @@ namespace ErrorCodes
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
-static size_t getLastModifiedEpochTime(const String & table_metadata_path) {
-    Poco::File meta_file(table_metadata_path);
-
-    if (meta_file.exists())
-    {
-        return meta_file.getLastModified().epochTime();
-    }
-    else
-    {
-        return static_cast<time_t>(0);
-    }
-}
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context)
     : name(name_)
@@ -219,7 +207,7 @@ void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & tab
                               std::forward_as_tuple(table_name),
                               std::forward_as_tuple(table,
                                                     current_time,
-                                                    getLastModifiedEpochTime(getTableMetadataPath(table_name)))).second)
+                                                    DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name))).second)
         throw Exception("Table " + getDatabaseName() + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     if (!cache_expiration_queue.emplace(current_time, table_name).second)
         throw Exception("Failed to insert element to expiration queue.", ErrorCodes::LOGICAL_ERROR);
