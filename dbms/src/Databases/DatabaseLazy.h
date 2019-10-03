@@ -1,11 +1,7 @@
 #pragma once
 
-#include <set>
-
-#include <Poco/DirectoryIterator.h>
-#include <Interpreters/Context.h>
 #include <Databases/DatabasesCommon.h>
-#include <Common/ThreadPool.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

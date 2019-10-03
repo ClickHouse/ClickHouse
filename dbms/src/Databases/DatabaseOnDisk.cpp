@@ -1,21 +1,19 @@
-#include <Common/escapeForFileName.h>
 #include <Databases/DatabaseOnDisk.h>
+
+#include <Common/escapeForFileName.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Storages/IStorage.h>
 
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Event.h>
-#include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <Poco/DirectoryIterator.h>
 
 namespace DB
 {
