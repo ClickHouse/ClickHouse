@@ -10,7 +10,7 @@
 
 ## Использование движка в сервере ClickHouse
 
-```
+```sql
 File(Format)
 ```
 
@@ -29,7 +29,7 @@ File(Format)
 
 **1.** Создадим на сервере таблицу `file_engine_table`:
 
-``` sql
+```sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -45,11 +45,11 @@ two	2
 
 **3.** Запросим данные:
 
-``` sql
+```sql
 SELECT * FROM file_engine_table
 ```
 
-```
+```text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │

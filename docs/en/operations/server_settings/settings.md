@@ -141,7 +141,8 @@ Settings:
 - timeout – The timeout for sending data, in seconds.
 - root_path – Prefix for keys.
 - metrics – Sending data from a :ref:`system_tables-system.metrics` table.
-- events – Sending data from a :ref:`system_tables-system.events` table.
+- events – Sending deltas data accumulated for the time period from a :ref:`system_tables-system.events` table
+- events_cumulative – Sending cumulative data from a :ref:`system_tables-system.events` table
 - asynchronous_metrics – Sending data from a :ref:`system_tables-system.asynchronous_metrics` table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
@@ -157,6 +158,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
     <root_path>one_min</root_path>
     <metrics>true</metrics>
     <events>true</events>
+    <events_cumulative>false</events_cumulative>
     <asynchronous_metrics>true</asynchronous_metrics>
 </graphite>
 ```

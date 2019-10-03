@@ -126,7 +126,7 @@ MergeTreeData::MergeTreeData(
     , log_name(database_name + "." + table_name)
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
-    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy_name))
+    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)

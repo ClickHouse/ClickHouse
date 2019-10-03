@@ -258,6 +258,7 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>true</asynchronous_metrics>
     </graphite>
     <graphite>
@@ -269,6 +270,7 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>false</asynchronous_metrics>
     </graphite>
     -->
