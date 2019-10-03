@@ -95,11 +95,24 @@ public:
     ~DatabaseLazy() override;
 
 private:
+    struct CacheExpirationQueueElement
+    {
+        time_t last_touched;
+        String table_name;
+
+        CacheExpirationQueueElement(time_t last_touched_, String table_name_)
+            : last_touched(last_touched_), table_name(table_name_) {}
+    };
+
+    using CacheExpirationQueue = std::list<CacheExpirationQueueElement>;
+
+
     struct CachedTable
     {
         StoragePtr table;
         time_t last_touched;
         time_t metadata_modification_time;
+        CacheExpirationQueue::iterator expiration_iterator;
 
         CachedTable() {}
         CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
@@ -108,26 +121,6 @@ private:
 
     using TablesCache = std::unordered_map<String, CachedTable>;
 
-    struct CacheExpirationQueueElement
-    {
-        time_t last_touched;
-        String table_name;
-
-        CacheExpirationQueueElement(time_t last_touched_, String table_name_)
-            : last_touched(last_touched_), table_name(table_name_) {}
-
-        bool operator<(const CacheExpirationQueueElement & expiration_element) const
-        {
-            return std::tie(last_touched, table_name) < std::tie(expiration_element.last_touched, expiration_element.table_name);
-        }
-
-        bool operator==(const CacheExpirationQueueElement & expiration_element) const
-        {
-            return std::tie(last_touched, table_name) == std::tie(expiration_element.last_touched, expiration_element.table_name);
-        }
-    };
-
-    using CacheExpirationQueue = std::set<CacheExpirationQueueElement>;
 
     String name;
     const String metadata_path;
@@ -137,7 +130,6 @@ private:
 
     mutable std::mutex tables_mutex;
     mutable TablesCache tables_cache;
-
     mutable CacheExpirationQueue cache_expiration_queue;
 
     Poco::Logger * log;

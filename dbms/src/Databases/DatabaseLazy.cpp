@@ -169,9 +169,9 @@ StoragePtr DatabaseLazy::tryGetTable(
 
         if (it->second.table)
         {
-            cache_expiration_queue.erase({it->second.last_touched, table_name});
+            cache_expiration_queue.erase(it->second.expiration_iterator);
             it->second.last_touched = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            cache_expiration_queue.emplace(it->second.last_touched, table_name);
+            it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), it->second.last_touched, table_name);
 
             return it->second.table;
         }
@@ -203,14 +203,16 @@ void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & tab
     LOG_DEBUG(log, "attach table" << table_name);
     std::lock_guard lock(tables_mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    if (!tables_cache.emplace(std::piecewise_construct,
+    
+    auto [it, inserted] = tables_cache.emplace(std::piecewise_construct,
                               std::forward_as_tuple(table_name),
                               std::forward_as_tuple(table,
                                                     current_time,
-                                                    DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name))).second)
+                                                    DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name)));
+    if (!inserted)
         throw Exception("Table " + getDatabaseName() + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-    if (!cache_expiration_queue.emplace(current_time, table_name).second)
-        throw Exception("Failed to insert element to expiration queue.", ErrorCodes::LOGICAL_ERROR);
+
+    it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
 }
 
 StoragePtr DatabaseLazy::detachTable(const String & table_name)
@@ -223,7 +225,7 @@ StoragePtr DatabaseLazy::detachTable(const String & table_name)
         if (it == tables_cache.end())
             throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         res = it->second.table;
-        cache_expiration_queue.erase({it->second.last_touched, table_name});
+        cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
     }
     return res;
@@ -320,9 +322,9 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
             if (it == tables_cache.end())
                 throw Exception("Table " + getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-            cache_expiration_queue.erase({it->second.last_touched, table_name});
+            cache_expiration_queue.erase(it->second.expiration_iterator);
             it->second.last_touched = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            cache_expiration_queue.emplace(it->second.last_touched, table_name);
+            it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), it->second.last_touched, table_name);
 
             return it->second.table = table;
         }
@@ -338,18 +340,23 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
 void DatabaseLazy::clearExpiredTables() const
 {
     std::lock_guard lock(tables_mutex);
-    while (!cache_expiration_queue.empty() &&
-           (std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) - cache_expiration_queue.begin()->last_touched) >= expiration_time)
+    auto time_now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+    while (!cache_expiration_queue.empty() && (time_now - cache_expiration_queue.front().last_touched) >= expiration_time)
     {
-        auto it = tables_cache.find(cache_expiration_queue.begin()->table_name);
+        String table_name = cache_expiration_queue.front().table_name;
+        auto it = tables_cache.find(table_name);
         if (!it->second.table.unique())
+        {
+            cache_expiration_queue.erase(it->second.expiration_iterator);
+            it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), time_now, table_name);
             continue;
+        }
 
         LOG_DEBUG(log, "Drop table '" << it->first << "' from cache.");
         /// Table can be already removed by detachTable.
         if (it != tables_cache.end())
             it->second.table.reset();
-        cache_expiration_queue.erase(cache_expiration_queue.begin());
     }
 }
 
