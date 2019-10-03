@@ -51,7 +51,7 @@ void KafkaBlockInputStream::readPrefixImpl()
 
     const auto & limits_ = getLimits();
     const size_t poll_timeout = buffer->pollTimeout();
-    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits_.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
+    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits_.speed_limit.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
     rows_portion_size = std::max(rows_portion_size, 1ul);
 
     auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support

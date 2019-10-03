@@ -5,6 +5,7 @@
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/ExecutionSpeedLimits.h>
 #include <IO/Progress.h>
 #include <Core/SettingsCommon.h>
 #include <Storages/TableStructureLockHolder.h>
@@ -202,16 +203,9 @@ public:
 
         SizeLimits size_limits;
 
-        Poco::Timespan max_execution_time = 0;
-        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
+        ExecutionSpeedLimits speed_limit;
 
-        /// in rows per second
-        size_t min_execution_speed = 0;
-        size_t max_execution_speed = 0;
-        size_t min_execution_speed_bytes = 0;
-        size_t max_execution_speed_bytes = 0;
-        /// Verify that the speed is not too low after the specified time has elapsed.
-        Poco::Timespan timeout_before_checking_execution_speed = 0;
+        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
     };
 
     /** Set limitations that checked on each block. */
