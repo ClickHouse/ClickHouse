@@ -2,7 +2,6 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions_url .)
 add_library(clickhouse_functions_url ${clickhouse_functions_url_sources} ${clickhouse_functions_url_headers})
 target_link_libraries(clickhouse_functions_url PRIVATE dbms)
-target_include_directories(clickhouse_functions_url PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/../include) # ${CMAKE_CURRENT_BINARY_DIR}/include
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.

@@ -10,4 +10,4 @@ set_target_properties(readpassphrase
                       PROPERTIES LINKER_LANGUAGE C
                       )
 # . to allow #include <readpassphrase.h>
-target_include_directories(readpassphrase PUBLIC . ${CMAKE_CURRENT_BINARY_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/../include)
+target_include_directories(readpassphrase PUBLIC . ${CMAKE_CURRENT_BINARY_DIR}/include)
