@@ -6,6 +6,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -117,9 +118,10 @@ void TabSeparatedRowInputFormat::fillUnreadColumnsWithDefaults(MutableColumns & 
     }
 
     for (const auto column_index : columns_to_fill_with_default_values)
+    {
         data_types[column_index]->insertDefaultInto(*columns[column_index]);
-
-    row_read_extension.read_columns = read_columns;
+        row_read_extension.read_columns[column_index] = false;
+    }
 }
 
 
@@ -174,12 +176,20 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
     updateDiagnosticInfo();
 
+    ext.read_columns.assign(column_indexes_for_input_fields.size(), true);
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
         const auto & column_index = column_indexes_for_input_fields[file_column];
         if (column_index)
         {
-            data_types[*column_index]->deserializeAsTextEscaped(*columns[*column_index], in, format_settings);
+            const auto & type = data_types[*column_index];
+            if (format_settings.null_as_default && !type->isNullable())
+                ext.read_columns[*column_index] = DataTypeNullable::deserializeTextEscaped(*columns[*column_index], in, format_settings, type);
+            else
+            {
+                type->deserializeAsTextEscaped(*columns[*column_index], in, format_settings);
+                ext.read_columns[*column_index] = true;
+            }
         }
         else
         {
@@ -303,7 +313,12 @@ void TabSeparatedRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, I
 {
     prev_pos = in.position();
     if (column_indexes_for_input_fields[file_column])
-        type->deserializeAsTextEscaped(column, in, format_settings);
+    {
+        if (format_settings.null_as_default && !type->isNullable())
+            DataTypeNullable::deserializeTextEscaped(column, in, format_settings, type);
+        else
+            type->deserializeAsTextEscaped(column, in, format_settings);
+    }
     else
     {
         NullSink null_sink;

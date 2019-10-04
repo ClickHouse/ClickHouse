@@ -29,7 +29,7 @@ public:
     void syncAfterError() override;
 
 private:
-    void deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format);
+    bool deserializeField(const DataTypePtr & type, IColumn & column, ColumnFormat col_format);
     void skipField(ColumnFormat col_format);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
