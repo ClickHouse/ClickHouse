@@ -398,9 +398,13 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
     , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
+    , max_rows_in_right_block(table_join->maxRowsInRightBlock())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
         throw Exception("Partial merge supported for LEFT and INNER JOINs only", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (!max_rows_in_right_block)
+        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     JoinCommon::extractKeysForJoin(table_join->keyNamesRight(), right_sample_block, right_table_keys, right_columns_to_add);
 
@@ -432,17 +436,13 @@ void MergeJoin::joinTotals(Block & block) const
 
 void MergeJoin::mergeRightBlocks()
 {
-    size_t max_rows_in_block = table_join->maxRowsInRightBlock();
-    if (!max_rows_in_block)
-        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
-
     if (isInMemory())
-        mergeInMemoryRightBlocks(max_rows_in_block);
+        mergeInMemoryRightBlocks();
     else
-        mergeFlushedRightBlocks(max_rows_in_block);
+        mergeFlushedRightBlocks();
 }
 
-void MergeJoin::mergeInMemoryRightBlocks(size_t max_rows_in_block)
+void MergeJoin::mergeInMemoryRightBlocks()
 {
     std::unique_lock lock(rwlock);
 
@@ -453,17 +453,18 @@ void MergeJoin::mergeInMemoryRightBlocks(size_t max_rows_in_block)
     clearRightBlocksList();
 
     /// TODO: there should be no splitted keys by blocks for RIGHT|FULL JOIN
-    MergeSortingBlocksBlockInputStream sorted_input(blocks_to_merge, right_sort_description, max_rows_in_block);
+    MergeSortingBlocksBlockInputStream sorted_input(blocks_to_merge, right_sort_description, max_rows_in_right_block);
 
     while (Block block = sorted_input.read())
     {
         if (skip_not_intersected)
             min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
+        countBlockSize(block);
         loaded_right_blocks.emplace_back(std::make_shared<Block>(std::move(block)));
     }
 }
 
-void MergeJoin::mergeFlushedRightBlocks(size_t max_rows_in_block)
+void MergeJoin::mergeFlushedRightBlocks()
 {
     std::unique_lock lock(rwlock);
 
@@ -472,16 +473,24 @@ void MergeJoin::mergeFlushedRightBlocks(size_t max_rows_in_block)
 
     /// @note it clears flushed_right_blocks (gets ownership for the files and blocks)
     SortedFileBlockMerger merger(flushed_right_blocks, std::move(blocks_to_merge), right_sample_block,
-                                 right_sort_description, max_rows_in_block);
+                                 right_sort_description, max_rows_in_right_block);
 
     auto callback = [&](const Block & block)
     {
         if (skip_not_intersected)
             min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
+        countBlockSize(block);
     };
 
     flushStreamToFiles(table_join->getTemporaryPath(), right_sample_block, *merger.stream, flushed_right_blocks, callback);
-    loaded_right_blocks.resize(flushed_right_blocks.size()); /// fill with "not loaded" blocks
+
+    /// Get memory limit or aproximate it from row limit and bytes per row factor
+    UInt64 memory_limit = table_join->sizeLimits().max_bytes;
+    UInt64 rows_limit = table_join->sizeLimits().max_rows;
+    if (!memory_limit && rows_limit)
+        memory_limit = right_blocks_bytes * rows_limit / right_blocks_row_count;
+
+    cached_right_blocks = std::make_unique<Cache>(memory_limit);
 }
 
 void MergeJoin::flushRightBlocks()
@@ -505,9 +514,8 @@ bool MergeJoin::saveRightBlock(Block && block)
 {
     std::unique_lock lock(rwlock);
 
+    countBlockSize(block);
     right_blocks.emplace_back(std::move(block));
-    right_blocks_row_count += block.rows();
-    right_blocks_bytes += block.bytes();
 
     bool has_memory = table_join->sizeLimits().check(right_blocks_row_count, right_blocks_bytes, "MergeJoin",
                                                      ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -688,16 +696,16 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos)
 {
     if constexpr (!in_memory)
     {
-        /// TODO: eviction, multi-threading
-
-        if (!loaded_right_blocks[pos])
+        auto load_func = [&]() -> std::shared_ptr<Block>
         {
             TemporaryFileStream input(flushed_right_blocks[pos]->path(), right_sample_block);
-            loaded_right_blocks[pos] = std::make_shared<Block>(input.block_in->read());
-        }
-    }
+            return std::make_shared<Block>(input.block_in->read());
+        };
 
-    return loaded_right_blocks[pos];
+        return cached_right_blocks->getOrSet(pos, load_func).first;
+    }
+    else
+        return loaded_right_blocks[pos];
 }
 
 }

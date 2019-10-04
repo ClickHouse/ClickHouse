@@ -3,6 +3,7 @@
 #include <memory>
 #include <shared_mutex>
 
+#include <Common/LRUCache.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
@@ -28,6 +29,15 @@ public:
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
 
 private:
+    /// There're two size limits for right-hand table: max_rows_in_join, max_bytes_in_join.
+    /// max_bytes is prefered. If it isn't set we aproximate it as (max_rows * bytes/row).
+    struct BlockByteWeight
+    {
+        size_t operator()(const Block & block) const { return block.bytes(); }
+    };
+
+    using Cache = LRUCache<size_t, Block, std::hash<size_t>, BlockByteWeight>;
+
     mutable std::shared_mutex rwlock;
     std::shared_ptr<AnalyzedJoin> table_join;
     SortDescription left_sort_description;
@@ -39,6 +49,7 @@ private:
     Block right_columns_to_add;
     BlocksList right_blocks;
     Blocks min_max_right_blocks;
+    std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::vector<std::unique_ptr<TemporaryFile>> flushed_right_blocks;
     Block totals;
@@ -49,6 +60,7 @@ private:
     const bool is_inner;
     const bool is_left;
     const bool skip_not_intersected;
+    const size_t max_rows_in_right_block;
 
     void changeLeftColumns(Block & block, MutableColumns && columns);
     void addRightColumns(Block & block, MutableColumns && columns);
@@ -69,14 +81,20 @@ private:
     void flushRightBlocks();
     bool isInMemory() const { return flushed_right_blocks.empty(); }
 
-    void mergeInMemoryRightBlocks(size_t max_rows_in_block);
-    void mergeFlushedRightBlocks(size_t max_rows_in_block);
+    void mergeInMemoryRightBlocks();
+    void mergeFlushedRightBlocks();
 
     void clearRightBlocksList()
     {
         right_blocks.clear();
         right_blocks_row_count = 0;
         right_blocks_bytes = 0;
+    }
+
+    void countBlockSize(const Block & block)
+    {
+        right_blocks_row_count += block.rows();
+        right_blocks_bytes += block.bytes();
     }
 };
 
