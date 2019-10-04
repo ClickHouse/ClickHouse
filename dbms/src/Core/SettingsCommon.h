@@ -381,7 +381,7 @@ private:
         std::unordered_map<StringRef, size_t> by_name_map;
     };
 
-    static const MemberInfos & members() { return MemberInfos::instance(); }
+    static const MemberInfos & members();
 
 public:
     class const_iterator;
@@ -565,7 +565,6 @@ public:
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION(DERIVED_CLASS_NAME, LIST_OF_SETTINGS_MACRO) \
-    template class SettingsCollection<DERIVED_CLASS_NAME>; \
     template<> \
     SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos::MemberInfos() \
     { \
@@ -581,7 +580,13 @@ public:
     { \
         static const SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos single_instance; \
         return single_instance; \
-    }
+    } \
+    /** \
+      * Instantiation should happen when all method definitions from SettingsCollectionImpl.h \
+      * are accessible, so we instantiate explicitly. \
+      */ \
+    template class SettingsCollection<DERIVED_CLASS_NAME>;
+
 
 
 #define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \

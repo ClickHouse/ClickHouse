@@ -16,6 +16,10 @@ class InputPort;
 class OutputPort;
 class IProcessor;
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class Port
 {
