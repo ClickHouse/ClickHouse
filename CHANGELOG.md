@@ -1,21 +1,3 @@
-## ClickHouse release 19.11.12.69, 2019-10-02
-
-### Bug Fix
-* Fixed performance degradation of index analysis on complex keys on large tables. This fixes [#6924](https://github.com/ClickHouse/ClickHouse/issues/6924). [#7075](https://github.com/ClickHouse/ClickHouse/pull/7075) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Avoid rare SIGSEGV while sending data in tables with Distributed engine (`Failed to send batch: file with index XXXXX is absent`). [#7032](https://github.com/ClickHouse/ClickHouse/pull/7032) ([Azat Khuzhin](https://github.com/azat))
-* Fix `Unknown identifier` with multiple joins. This fixes [#5254](https://github.com/ClickHouse/ClickHouse/issues/5254). [#7022](https://github.com/ClickHouse/ClickHouse/pull/7022) ([Artem Zuikov](https://github.com/4ertus2))
-
-## ClickHouse release 19.13.6.51, 2019-10-02
-
-### Bug Fix
-* This release also contains all bug fixes from 19.11.12.69.
-
-## ClickHouse release 19.14.7.15, 2019-10-02
-
-### Bug Fix
-* This release also contains all bug fixes from 19.11.12.69.
-* Fixed compatibility for distributed queries between 19.14 and earlier versions. This fixes [#7068](https://github.com/ClickHouse/ClickHouse/issues/7068). [#7069](https://github.com/ClickHouse/ClickHouse/pull/7069) ([alexey-milovidov](https://github.com/alexey-milovidov))
-
 ## ClickHouse release 19.15.2.2, 2019-10-01
 
 ### New Feature
@@ -67,19 +49,11 @@
 * Fix "Unknown identifier" in ORDER BY and GROUP BY with Multiple JOINs [#7022](https://github.com/ClickHouse/ClickHouse/pull/7022) ([Artem Zuikov](https://github.com/4ertus2))
 * Fixed `MSan` warning while executing function with `LowCardinality` argument. [#7062](https://github.com/ClickHouse/ClickHouse/pull/7062) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 
-## ClickHouse release 19.13.5.44, 2019-09-20
+## ClickHouse release 19.14.7.15, 2019-10-02
 
 ### Bug Fix
-* This release also contains all bug fixes from 19.14.6.12.
-* Fixed possible inconsistent state of table while executing `DROP` query for replicated table while zookeeper is not accessible. [#6045](https://github.com/ClickHouse/ClickHouse/issues/6045) [#6413](https://github.com/ClickHouse/ClickHouse/pull/6413) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
-* Fix for data race in StorageMerge [#6717](https://github.com/ClickHouse/ClickHouse/pull/6717) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fix bug introduced in query profiler which leads to endless recv from socket. [#6386](https://github.com/ClickHouse/ClickHouse/pull/6386) ([alesapin](https://github.com/alesapin))
-* Fix excessive CPU usage while executing `JSONExtractRaw` function over a boolean value. [#6208](https://github.com/ClickHouse/ClickHouse/pull/6208) ([Vitaly Baranov](https://github.com/vitlibar))
-* Fixes the regression while pushing to materialized view. [#6415](https://github.com/ClickHouse/ClickHouse/pull/6415) ([Ivan](https://github.com/abyss7))
-* Table function `url` had the vulnerability allowed the attacker to inject arbitrary HTTP headers in the request. This issue was found by [Nikita Tikhomirov](https://github.com/NSTikhomirov). [#6466](https://github.com/ClickHouse/ClickHouse/pull/6466) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fix useless `AST` check in Set index. [#6510](https://github.com/ClickHouse/ClickHouse/issues/6510) [#6651](https://github.com/ClickHouse/ClickHouse/pull/6651) ([Nikita Vasilev](https://github.com/nikvas0))
-* Fixed parsing of `AggregateFunction` values embedded in query. [#6575](https://github.com/ClickHouse/ClickHouse/issues/6575) [#6773](https://github.com/ClickHouse/ClickHouse/pull/6773) ([Zhichang Yu](https://github.com/yuzhichang))
-* Fixed wrong behaviour of `trim` functions family. [#6647](https://github.com/ClickHouse/ClickHouse/pull/6647) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* This release also contains all bug fixes from 19.11.12.69.
+* Fixed compatibility for distributed queries between 19.14 and earlier versions. This fixes [#7068](https://github.com/ClickHouse/ClickHouse/issues/7068). [#7069](https://github.com/ClickHouse/ClickHouse/pull/7069) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ## ClickHouse release 19.14.6.12, 2019-09-19
 
@@ -338,9 +312,25 @@
 * Removed rarely used table function `catBoostPool` and storage `CatBoostPool`. If you have used this table function, please write email to `clickhouse-feedback@yandex-team.com`. Note that CatBoost integration remains and will be supported. [#6279](https://github.com/ClickHouse/ClickHouse/pull/6279) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Disable `ANY RIGHT JOIN` and `ANY FULL JOIN` by default. Set `any_join_get_any_from_right_table` setting to enable them. [#5126](https://github.com/ClickHouse/ClickHouse/issues/5126) [#6351](https://github.com/ClickHouse/ClickHouse/pull/6351) ([Artem Zuikov](https://github.com/4ertus2))
 
-## ClickHouse release 19.11.11.57, 2019-09-13
-* Fix logical error causing segfaults when selecting from Kafka empty topic. [#6902](https://github.com/ClickHouse/ClickHouse/issues/6902) [#6909](https://github.com/ClickHouse/ClickHouse/pull/6909) ([Ivan](https://github.com/abyss7))
-* Fix for function `АrrayEnumerateUniqRanked` with empty arrays in params. [#6928](https://github.com/ClickHouse/ClickHouse/pull/6928) ([proller](https://github.com/proller))
+## ClickHouse release 19.13.6.51, 2019-10-02
+
+### Bug Fix
+* This release also contains all bug fixes from 19.11.12.69.
+
+
+## ClickHouse release 19.13.5.44, 2019-09-20
+
+### Bug Fix
+* This release also contains all bug fixes from 19.14.6.12.
+* Fixed possible inconsistent state of table while executing `DROP` query for replicated table while zookeeper is not accessible. [#6045](https://github.com/ClickHouse/ClickHouse/issues/6045) [#6413](https://github.com/ClickHouse/ClickHouse/pull/6413) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
+* Fix for data race in StorageMerge [#6717](https://github.com/ClickHouse/ClickHouse/pull/6717) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix bug introduced in query profiler which leads to endless recv from socket. [#6386](https://github.com/ClickHouse/ClickHouse/pull/6386) ([alesapin](https://github.com/alesapin))
+* Fix excessive CPU usage while executing `JSONExtractRaw` function over a boolean value. [#6208](https://github.com/ClickHouse/ClickHouse/pull/6208) ([Vitaly Baranov](https://github.com/vitlibar))
+* Fixes the regression while pushing to materialized view. [#6415](https://github.com/ClickHouse/ClickHouse/pull/6415) ([Ivan](https://github.com/abyss7))
+* Table function `url` had the vulnerability allowed the attacker to inject arbitrary HTTP headers in the request. This issue was found by [Nikita Tikhomirov](https://github.com/NSTikhomirov). [#6466](https://github.com/ClickHouse/ClickHouse/pull/6466) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix useless `AST` check in Set index. [#6510](https://github.com/ClickHouse/ClickHouse/issues/6510) [#6651](https://github.com/ClickHouse/ClickHouse/pull/6651) ([Nikita Vasilev](https://github.com/nikvas0))
+* Fixed parsing of `AggregateFunction` values embedded in query. [#6575](https://github.com/ClickHouse/ClickHouse/issues/6575) [#6773](https://github.com/ClickHouse/ClickHouse/pull/6773) ([Zhichang Yu](https://github.com/yuzhichang))
+* Fixed wrong behaviour of `trim` functions family. [#6647](https://github.com/ClickHouse/ClickHouse/pull/6647) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ## ClickHouse release 19.13.4.32, 2019-09-10
 
@@ -357,6 +347,13 @@
 
 ### Security Fix
 * Fix two vulnerabilities in codecs in decompression phase (malicious user can fabricate compressed data that will lead to buffer overflow in decompression). [#6670](https://github.com/ClickHouse/ClickHouse/pull/6670) ([Artem Zuikov](https://github.com/4ertus2))
+
+## ClickHouse release 19.11.12.69, 2019-10-02
+
+### Bug Fix
+* Fixed performance degradation of index analysis on complex keys on large tables. This fixes [#6924](https://github.com/ClickHouse/ClickHouse/issues/6924). [#7075](https://github.com/ClickHouse/ClickHouse/pull/7075) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Avoid rare SIGSEGV while sending data in tables with Distributed engine (`Failed to send batch: file with index XXXXX is absent`). [#7032](https://github.com/ClickHouse/ClickHouse/pull/7032) ([Azat Khuzhin](https://github.com/azat))
+* Fix `Unknown identifier` with multiple joins. This fixes [#5254](https://github.com/ClickHouse/ClickHouse/issues/5254). [#7022](https://github.com/ClickHouse/ClickHouse/pull/7022) ([Artem Zuikov](https://github.com/4ertus2))
 
 ## ClickHouse release 19.11.10.54, 2019-09-10
 
@@ -425,6 +422,10 @@
 * Report memory usage in performance tests. [#5899](https://github.com/ClickHouse/ClickHouse/pull/5899) ([akuzm](https://github.com/akuzm))
 * Fix build with external `libcxx` [#6010](https://github.com/ClickHouse/ClickHouse/pull/6010) ([Ivan](https://github.com/abyss7))
 * Fix shared build with `rdkafka` library [#6101](https://github.com/ClickHouse/ClickHouse/pull/6101) ([Ivan](https://github.com/abyss7))
+
+## ClickHouse release 19.11.11.57, 2019-09-13
+* Fix logical error causing segfaults when selecting from Kafka empty topic. [#6902](https://github.com/ClickHouse/ClickHouse/issues/6902) [#6909](https://github.com/ClickHouse/ClickHouse/pull/6909) ([Ivan](https://github.com/abyss7))
+* Fix for function `АrrayEnumerateUniqRanked` with empty arrays in params. [#6928](https://github.com/ClickHouse/ClickHouse/pull/6928) ([proller](https://github.com/proller))
 
 ## ClickHouse release 19.11.8.46, 2019-08-22
 
