@@ -1,9 +1,7 @@
 #include <Parsers/ParserDropAccessQuery.h>
 #include <Parsers/ASTDropAccessQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserCreateAccessQuery.h>
+#include <Parsers/parseUserName.h>
 
 
 namespace DB
@@ -34,7 +32,7 @@ bool ParserDropAccessQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         do
         {
             String name;
-            if (!parseRoleNameAtHost(pos, name, expected))
+            if (!parseRoleName(pos, expected, name))
                 return false;
             names.emplace_back(std::move(name));
         }

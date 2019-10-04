@@ -56,8 +56,7 @@ std::optional<UUID> MultipleAttributesStorage::findImpl(const String & name, con
     {
         const auto [id, storage] = *from_cache;
         lock.unlock();
-        auto name_and_type = storage->tryReadNameAndType(id);
-        if ((name_and_type.first == name) && name_and_type.second && name_and_type.second->isDerived(type))
+        if (name == storage->tryReadName(id))
             return id;
     }
     else
@@ -127,9 +126,9 @@ AttributesPtr MultipleAttributesStorage::readImpl(const UUID & id) const
 }
 
 
-std::pair<String, const IAttributes::Type *> MultipleAttributesStorage::readNameAndTypeImpl(const UUID & id) const
+String MultipleAttributesStorage::readNameImpl(const UUID & id) const
 {
-    return getStorageByID(id).readNameAndType(id);
+    return getStorageByID(id).readName(id);
 }
 
 

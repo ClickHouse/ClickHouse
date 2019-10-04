@@ -77,7 +77,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
             }
             else if (startsWith(*it, "host"))
             {
-                allowed_hosts.addHost(value);
+                allowed_hosts.addHostName(value);
             }
             else
                 throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);

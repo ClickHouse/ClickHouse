@@ -81,10 +81,9 @@ AttributesPtr MemoryAttributesStorage::readImpl(const UUID & id) const
 }
 
 
-std::pair<String, const IAttributes::Type *> MemoryAttributesStorage::readNameAndTypeImpl(const UUID &id) const
+String MemoryAttributesStorage::readNameImpl(const UUID &id) const
 {
-    auto attrs = readImpl(id);
-    return {attrs->name, &attrs->getType()};
+    return readImpl(id)->name;
 }
 
 

@@ -9,12 +9,12 @@ namespace DB
 class Context;
 
 
-/** Return a single column containing granted privileges for a specified role.
+/** Returns a single item containing a statement which could be used to create a specified role.
   */
-class InterpreterShowGrantsQuery : public IInterpreter
+class InterpreterShowCreateUserQuery : public IInterpreter
 {
 public:
-    InterpreterShowGrantsQuery(const ASTPtr & query_ptr_, const Context & context_)
+    InterpreterShowCreateUserQuery(const ASTPtr & query_ptr_, const Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
@@ -24,6 +24,8 @@ private:
     const Context & context;
 
     BlockInputStreamPtr executeImpl();
-    std::vector<ASTPtr> enumerateGrantQueries() const;
+    ASTPtr getCreateUserQuery() const;
 };
+
+
 }

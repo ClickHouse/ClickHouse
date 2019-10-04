@@ -1,8 +1,7 @@
 #include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseUserName.h>
 
 
 namespace DB
@@ -10,26 +9,17 @@ namespace DB
 
 bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword show_p("SHOW");
-    if (!show_p.ignore(pos, expected))
+    ParserKeyword show_grants_for_p("SHOW GRANTS FOR");
+    if (!show_grants_for_p.ignore(pos, expected))
         return false;
 
-    ParserKeyword grants_p("GRANTS");
-    if (!grants_p.ignore(pos, expected))
-        return false;
-
-    ParserKeyword for_p("FOR");
-    if (!for_p.ignore(pos, expected))
-        return false;
-
-    ParserIdentifier role_p;
-    ASTPtr role;
-    if (!role_p.parse(pos, role, expected))
+    String role_name;
+    if (!parseRoleName(pos, expected, role_name))
         return false;
 
     auto query = std::make_shared<ASTShowGrantsQuery>();
     node = query;
-    query->role = getIdentifierName(role);
+    query->role = std::move(role_name);
     return true;
 }
 

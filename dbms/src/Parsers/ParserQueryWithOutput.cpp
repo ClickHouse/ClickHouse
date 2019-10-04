@@ -3,7 +3,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
-#include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -13,6 +12,8 @@
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserShowCreateUserQuery.h>
+#include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 
 
@@ -25,7 +26,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserDescribeTableQuery describe_table_p;
-    ParserShowGrantsQuery show_grants_p;
     ParserShowProcesslistQuery show_processlist_p;
     ParserCreateQuery create_p;
     ParserAlterQuery alter_p;
@@ -34,6 +34,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
+    ParserShowCreateUserQuery show_create_user_p;
+    ParserShowGrantsQuery show_grants_p;
 
     ASTPtr query;
 
@@ -52,7 +54,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_tables_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
         || describe_table_p.parse(pos, query, expected)
-        || show_grants_p.parse(pos, query, expected)
         || show_processlist_p.parse(pos, query, expected)
         || create_p.parse(pos, query, expected)
         || alter_p.parse(pos, query, expected)
@@ -60,7 +61,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || drop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
-        || optimize_p.parse(pos, query, expected);
+        || optimize_p.parse(pos, query, expected)
+        || show_create_user_p.parse(pos, query, expected)
+        || show_grants_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;

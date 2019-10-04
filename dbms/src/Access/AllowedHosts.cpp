@@ -119,6 +119,12 @@ namespace
 }
 
 
+String AllowedHosts::IPSubnet::toString() const
+{
+    return prefix.toString() + "/" + mask.toString();
+}
+
+
 bool operator==(const AllowedHosts::IPSubnet & lhs, const AllowedHosts::IPSubnet & rhs)
 {
     return (lhs.prefix == rhs.prefix) && (lhs.mask == rhs.mask);
@@ -145,7 +151,7 @@ AllowedHosts & AllowedHosts::operator =(const AllowedHosts & src)
 {
     ip_addresses = src.ip_addresses;
     ip_subnets = src.ip_subnets;
-    hosts = src.hosts;
+    host_names = src.host_names;
     host_regexps = src.host_regexps;
     host_regexps_compiled.clear();
     return *this;
@@ -156,7 +162,7 @@ void AllowedHosts::clear()
 {
     ip_addresses.clear();
     ip_subnets.clear();
-    hosts.clear();
+    host_names.clear();
     host_regexps.clear();
     host_regexps_compiled.clear();
 }
@@ -202,10 +208,10 @@ void AllowedHosts::addIPSubnet(const IPAddress & prefix, size_t num_prefix_bits)
 }
 
 
-void AllowedHosts::addHost(const String & host)
+void AllowedHosts::addHostName(const String & host_name)
 {
     /// The vector `hosts` is sorted to simplify the comparison.
-    hosts.insert(std::upper_bound(hosts.begin(), hosts.end(), host), host);
+    host_names.insert(std::upper_bound(host_names.begin(), host_names.end(), host_name), host_name);
 }
 
 
@@ -252,11 +258,11 @@ bool AllowedHosts::containsImpl(const IPAddress & address, const String & user_n
     auto user_name_with_colon = [&user_name]() { return user_name.empty() ? String() : user_name + ": "; };
 
     /// Check `hosts`.
-    for (const String & host : hosts)
+    for (const String & host_name : host_names)
     {
         try
         {
-            if (isAddressOfHost(address, host))
+            if (isAddressOfHost(address, host_name))
                 return true;
         }
         catch (Exception & e)
@@ -312,7 +318,7 @@ void AllowedHosts::ensureRegexpsCompiled() const
 
 bool operator ==(const AllowedHosts & lhs, const AllowedHosts & rhs)
 {
-    return (lhs.ip_addresses == rhs.ip_addresses) && (lhs.ip_subnets == rhs.ip_subnets) && (lhs.hosts == rhs.hosts)
+    return (lhs.ip_addresses == rhs.ip_addresses) && (lhs.ip_subnets == rhs.ip_subnets) && (lhs.host_names == rhs.host_names)
         && (lhs.host_regexps == rhs.host_regexps);
 }
 }

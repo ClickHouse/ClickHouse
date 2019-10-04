@@ -18,12 +18,10 @@ struct IAttributes : public std::enable_shared_from_this<IAttributes>
         const char * name; /// Name of this type, used to write error messages.
         const size_t namespace_idx; /// Index of the namespace used by this type of the attributes. Sometimes attributes of different types share the same namespace, for example, users and roles.
         const Type * const base_type; /// Base type of this type. For most cases it's nullptr.
-        using QuoteFunction = String (*)(const String &);
-        const QuoteFunction quote; /// Quotes name of the attributes.
         const int error_code_not_found;
         const int error_code_already_exists;
 
-        Type(const char * name_, size_t namespace_idx_, const Type *  base_type_, const QuoteFunction & quote_, int error_code_not_found_, int error_code_already_exists_);
+        Type(const char * name_, size_t namespace_idx_, const Type *  base_type_, int error_code_not_found_, int error_code_already_exists_);
         bool isDerived(const Type & base_type_) const;
         friend bool operator ==(const Type & lhs, const Type & rhs) { return &lhs == &rhs; }
         friend bool operator !=(const Type & lhs, const Type & rhs) { return !(lhs == rhs); }

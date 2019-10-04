@@ -5,11 +5,11 @@
 
 namespace DB
 {
-/// SHOW GRANTS FOR user_or_role
-class ASTShowGrantsQuery : public ASTQueryWithOutput
+/// SHOW CREATE USER user
+class ASTShowCreateUserQuery : public ASTQueryWithOutput
 {
 public:
-    String role;
+    String user_name;
 
     String getID(char) const override;
     ASTPtr clone() const override;

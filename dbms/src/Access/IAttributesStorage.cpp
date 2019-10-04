@@ -36,17 +36,17 @@ AttributesPtr IAttributesStorage::tryReadHelper(const UUID & id) const
 }
 
 
-std::pair<String, const IAttributes::Type *> IAttributesStorage::readNameAndType(const UUID & id) const
+String IAttributesStorage::readName(const UUID & id) const
 {
-    return readNameAndTypeImpl(id);
+    return readNameImpl(id);
 }
 
 
-std::pair<String, const IAttributes::Type *> IAttributesStorage::tryReadNameAndType(const UUID & id) const
+std::optional<String> IAttributesStorage::tryReadName(const UUID & id) const
 {
     try
     {
-        return readNameAndTypeImpl(id);
+        return readNameImpl(id);
     }
     catch (...)
     {

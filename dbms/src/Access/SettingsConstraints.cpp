@@ -48,6 +48,23 @@ void SettingsConstraints::setMaxValue(const String & name, const Field & max_val
 }
 
 
+SettingsConstraints::Infos SettingsConstraints::getInfo() const
+{
+    Infos result;
+    result.reserve(constraints_by_index.size());
+    for (const auto & [setting_index, constraint] : constraints_by_index)
+    {
+        result.emplace_back();
+        Info & info = result.back();
+        info.name = Settings::getName(setting_index);
+        info.min = constraint.min_value;
+        info.max = constraint.max_value;
+        info.read_only = constraint.read_only;
+    }
+    return result;
+}
+
+
 void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change) const
 {
     const String & name = change.name;

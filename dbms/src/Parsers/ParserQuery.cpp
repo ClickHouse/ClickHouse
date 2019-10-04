@@ -1,6 +1,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/ParserCreateAccessQuery.h>
+#include <Parsers/ParserCreateUserQuery.h>
+#include <Parsers/ParserCreateRoleQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserDropAccessQuery.h>

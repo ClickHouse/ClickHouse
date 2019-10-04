@@ -6,12 +6,12 @@
 namespace DB
 {
 /** Parses queries like
-  * SHOW GRANTS FOR user_or_role
+  * CREATE ROLE [IF NOT EXISTS] name [,...]
   */
-class ParserShowGrantsQuery : public IParserBase
+class ParserCreateRoleQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "SHOW GRANTS query"; }
+    const char * getName() const { return "CREATE ROLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

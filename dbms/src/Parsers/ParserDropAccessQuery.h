@@ -5,9 +5,9 @@
 
 namespace DB
 {
-
-/** Parses query like this:
+/** Parses queries like
   * DROP ROLE [IF EXISTS] role [,...]
+  *
   * DROP USER [IF EXISTS] user [,...]
   */
 class ParserDropAccessQuery : public IParserBase

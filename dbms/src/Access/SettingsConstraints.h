@@ -63,6 +63,17 @@ public:
     void setMaxValue(const String & name, const Field & max_value);
     void setReadOnly(const String & name, bool read_only);
 
+    struct Info
+    {
+        StringRef name;
+        Field min;
+        Field max;
+        bool read_only = false;
+    };
+    using Infos = std::vector<Info>;
+
+    Infos getInfo() const;
+
     void check(const Settings & current_settings, const SettingChange & change) const;
     void check(const Settings & current_settings, const SettingsChanges & changes) const;
 

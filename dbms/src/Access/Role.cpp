@@ -17,7 +17,7 @@ namespace AccessControlNames
 
 
 const Role::Type Role::TYPE{
-    "Role", AccessControlNames::ROLE_NAMESPACE_IDX, nullptr, nullptr, ErrorCodes::ROLE_NOT_FOUND, ErrorCodes::ROLE_ALREADY_EXISTS};
+    "Role", AccessControlNames::ROLE_NAMESPACE_IDX, nullptr, ErrorCodes::ROLE_NOT_FOUND, ErrorCodes::ROLE_ALREADY_EXISTS};
 
 
 bool Role::equal(const IAttributes & other) const

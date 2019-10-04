@@ -63,8 +63,8 @@ public:
     std::shared_ptr<const AttributesT> tryRead(const String & name) const;
 
     /// Reads only name and type of the attributes.
-    std::pair<String, const Type *> readNameAndType(const UUID & id) const;
-    std::pair<String, const Type *> tryReadNameAndType(const UUID & id) const;
+    String readName(const UUID & id) const;
+    std::optional<String> tryReadName(const UUID & id) const;
 
     /// Inserts attributes to the storage. If the specified name is already in use and `replace_if_exists == false` throws an exception.
     UUID insert(const IAttributes & attrs, bool replace_if_exists = false);
@@ -113,7 +113,7 @@ public:
     void update(const String & name, const UpdateFuncT & update_func) { update(name, AttributesT::TYPE, update_func); }
 
     template <typename UpdateFuncT>
-    void update(const String & name, const Type & type, const UpdateFuncT & update_func) { updateHelper(getID(name, type), castUpdateFunc(update_func)); }
+    void update(const String & name, const Type & type, const UpdateFuncT & update_func) { updateImpl(getID(name, type), castUpdateFunc(update_func)); }
 
     template <typename AttributesT, typename UpdateFuncT>
     void update(const Strings & names, const UpdateFuncT & update_func) { update(names, AttributesT::TYPE, update_func); }
@@ -178,7 +178,7 @@ protected:
     virtual std::optional<UUID> findImpl(const String & name, const Type & type) const = 0;
     virtual bool existsImpl(const UUID & id) const = 0;
     virtual AttributesPtr readImpl(const UUID & id) const = 0;
-    virtual std::pair<String, const Type *> readNameAndTypeImpl(const UUID & id) const = 0;
+    virtual String readNameImpl(const UUID & id) const = 0;
     virtual UUID insertImpl(const IAttributes & attrs, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;

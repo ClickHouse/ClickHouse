@@ -6,18 +6,17 @@
 
 namespace DB
 {
-/// ASTGrantQuery is used to represent GRANT or REVOKE query.
-/// Syntax:
-/// {GRANT | REVOKE}
-///     role [, role ...]
-///     {TO | FROM} user_or_role [, user_or_role...]
-///     [WITH ADMIN OPTION]
-///
-/// {GRANT | REVOKE}
-///     {USAGE | SELECT | SELECT(columns) | INSERT | DELETE | ALTER | CREATE | DROP | ALL [PRIVILEGES]} [, ...]
-///     ON *.* | database.* | database.table | * | table
-///     {TO | FROM} user_or_role [, user_or_role ...]
-///     [WITH GRANT OPTION]
+/** {GRANT | REVOKE}
+  *     role [, role ...]
+  *     {TO | FROM} user_or_role [, user_or_role...]
+  *     [WITH ADMIN OPTION]
+  *
+  * {GRANT | REVOKE}
+  *     {USAGE | SELECT | SELECT(columns) | INSERT | DELETE | ALTER | CREATE | DROP | ALL [PRIVILEGES]} [, ...]
+  *     ON *.* | database.* | database.table | * | table
+  *     {TO | FROM} user_or_role [, user_or_role ...]
+  *     [WITH GRANT OPTION]
+  */
 class ASTGrantQuery : public IAST
 {
 public:
@@ -29,7 +28,7 @@ public:
     };
     Kind kind = Kind::GRANT;
 
-    std::vector<String> roles;
+    Strings roles;
 
     String database;
     bool use_current_database = false;
@@ -64,7 +63,7 @@ public:
     AccessType access = USAGE;
     std::unordered_map<String, AccessType> columns_access;
 
-    std::vector<String> to_roles;
+    Strings to_roles;
     bool grant_option = false;
 
     String getID(char) const override;

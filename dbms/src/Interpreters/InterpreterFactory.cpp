@@ -1,7 +1,8 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateAccessQuery.h>
+#include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTDropAccessQuery.h>
 #include <Parsers/ASTGrantQuery.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowCreateUserQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
@@ -22,7 +24,8 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterCreateAccessQuery.h>
+#include <Interpreters/InterpreterCreateUserQuery.h>
+#include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -38,6 +41,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
+#include <Interpreters/InterpreterShowCreateUserQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
@@ -114,6 +118,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTCreateUserQuery>())
     {
         return std::make_unique<InterpreterCreateUserQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateUserQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateUserQuery>(query, context);
     }
     else if (query->as<ASTCreateRoleQuery>())
     {

@@ -3,6 +3,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseUserName.h>
 
 
 namespace DB
@@ -162,11 +163,10 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Grant roles to roles.
         do
         {
-            ParserIdentifier role_name_p;
-            ASTPtr role_name;
-            if (!role_name_p.parse(pos, role_name, expected))
+            String role_name;
+            if (!parseRoleName(pos, expected, role_name))
                 return false;
-            roles.emplace_back(getIdentifierName(role_name));
+            roles.emplace_back(std::move(role_name));
         }
         while (comma.ignore(pos, expected));
     }
@@ -187,11 +187,10 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::vector<String> to_roles;
     do
     {
-        ParserIdentifier role_name_p;
-        ASTPtr role_name;
-        if (!role_name_p.parse(pos, role_name, expected))
+        String role_name;
+        if (!parseRoleName(pos, expected, role_name))
             return false;
-        to_roles.emplace_back(getIdentifierName(role_name));
+        to_roles.emplace_back(std::move(role_name));
     }
     while (comma.ignore(pos, expected));
 

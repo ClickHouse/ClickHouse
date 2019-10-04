@@ -7,8 +7,9 @@ namespace DB
 {
 
 /** DROP ROLE [IF EXISTS] role [,...]
- *  DROP USER [IF EXISTS] user [,...]
- */
+  *
+  * DROP USER [IF EXISTS] user [,...]
+  */
 class ASTDropAccessQuery : public IAST
 {
 public:

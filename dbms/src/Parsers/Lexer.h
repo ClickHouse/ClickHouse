@@ -47,6 +47,7 @@ namespace DB
     M(LessOrEquals) \
     M(GreaterOrEquals) \
     M(Concatenation)          /** String concatenation operator: || */ \
+    M(At)                     /** @ */ \
     \
     /** Order is important. EndOfStream goes after all usual tokens, and special error tokens goes after EndOfStream. */ \
     \
