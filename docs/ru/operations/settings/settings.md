@@ -207,6 +207,7 @@ Ok.
 
 - [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 - [CSV](../../interfaces/formats.md#csv)
+- [TabSeparated](../../interfaces/formats.md#tabseparated)
 
 !!! note "Примечание"
     Когда опция включена, сервер отправляет клиенту расширенные метаданные. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
