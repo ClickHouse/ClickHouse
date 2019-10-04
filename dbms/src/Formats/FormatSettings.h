@@ -60,6 +60,13 @@ struct FormatSettings
 
     Template template_settings;
 
+    struct TSV
+    {
+        bool empty_as_default = false;
+    };
+
+    TSV tsv;
+
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool write_statistics = true;
