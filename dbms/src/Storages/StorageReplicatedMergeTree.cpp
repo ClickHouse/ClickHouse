@@ -5104,22 +5104,19 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         ops.emplace_back(zkutil::makeCreateRequest(dest_table_storage->zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-        Transaction transaction(*dest_table_storage);
         {
+            Transaction transaction(*dest_table_storage);
+
+            auto src_data_parts_lock = lockParts();
             auto dest_data_parts_lock = dest_table_storage->lockParts();
 
             for (MutableDataPartPtr & part : dst_parts)
                 dest_table_storage->renameTempPartAndReplace(part, nullptr, &transaction, dest_data_parts_lock);
-        }
 
-        op_results = zookeeper->multi(ops);
+            op_results = zookeeper->multi(ops);
 
-        {
-            auto src_data_parts_lock = lockParts();
-            auto dest_data_parts_lock = dest_table_storage->lockParts();
-
-            transaction.commit(&src_data_parts_lock);
-            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, src_data_parts_lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, dest_data_parts_lock);
+            transaction.commit(&dest_data_parts_lock);
         }
 
         PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
