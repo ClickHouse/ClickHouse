@@ -104,7 +104,7 @@ SELECT visibleWidth(NULL)
 Возвращает логин текущего пользователя. При распределенном запросе, возвращается имя пользователя, инициировавшего запрос.
 
 ```sql
-SELECT currentUser()
+SELECT currentUser();
 ```
 
 Алиас: `user()`, `USER()`.
@@ -121,12 +121,12 @@ SELECT currentUser()
 Запрос:
 
 ```sql
-SELECT currentUser()
+SELECT currentUser();
 ```
 
 Ответ:
 
-```
+```text
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
