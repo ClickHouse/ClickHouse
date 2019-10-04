@@ -380,8 +380,8 @@ void flushStreamToFiles(const String & tmp_path, const Block & header, IBlockInp
 {
     while (Block block = stream.read())
     {
-        auto tmp_file = flushBlockToFile(tmp_path, header, block);
         callback(block);
+        auto tmp_file = flushBlockToFile(tmp_path, header, block);
         files.emplace_back(std::move(tmp_file));
     }
 }
@@ -517,8 +517,7 @@ bool MergeJoin::saveRightBlock(Block && block)
     countBlockSize(block);
     right_blocks.emplace_back(std::move(block));
 
-    bool has_memory = table_join->sizeLimits().check(right_blocks_row_count, right_blocks_bytes, "MergeJoin",
-                                                     ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    bool has_memory = table_join->sizeLimits().softCheck(right_blocks_row_count, right_blocks_bytes);
     if (!has_memory)
         flushRightBlocks();
     return true;
@@ -556,7 +555,7 @@ void MergeJoin::joinSortedBlock(Block & block)
     MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
     MergeJoinCursor left_cursor(block, left_merge_description);
     size_t left_key_tail = 0;
-    size_t right_blocks_count = loaded_right_blocks.size();
+    size_t right_blocks_count = rightBlocksCount<in_memory>();
 
     if (is_left)
     {
@@ -689,6 +688,15 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
         const auto & column = right_columns_to_add.getByPosition(i);
         block.insert(ColumnWithTypeAndName{std::move(right_columns[i]), column.type, column.name});
     }
+}
+
+template <bool in_memory>
+size_t MergeJoin::rightBlocksCount()
+{
+    if constexpr (!in_memory)
+        return flushed_right_blocks.size();
+    else
+        return loaded_right_blocks.size();
 }
 
 template <bool in_memory>

@@ -68,6 +68,8 @@ private:
     void mergeRightBlocks();
 
     template <bool in_memory>
+    size_t rightBlocksCount();
+    template <bool in_memory>
     void joinSortedBlock(Block & block);
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos);
