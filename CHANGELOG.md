@@ -1,53 +1,51 @@
 ## ClickHouse release 19.15.2.2, 2019-10-01
 
 ### New Feature
+* Add ability to store data at multiple disk volumes in tables with MergeTree engine. Choose storage policy by using `storage_policy` table setting. Now you can store partitions on different performance media likes hdd, ssd. [#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba))  [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
+* Add table function `input()` for reading incoming data in `INSERT` `SELECT` query. [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1))  [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
 * Add a `sparse_hashed` dictionary layout, that is functionally equivalent to the `hashed` layout, but is more memory efficient. It uses about twice as less memory at the cost of slower value retrieval. [#6894](https://github.com/ClickHouse/ClickHouse/pull/6894) ([Azat Khuzhin](https://github.com/azat))
 * Implement ability to define list of users for access to dictionaries. Only current connected database using. [#6907](https://github.com/ClickHouse/ClickHouse/pull/6907) ([Guillaume Tassery](https://github.com/YiuRULE))
 * Add `LIMIT` option to `SHOW` query. [#6944](https://github.com/ClickHouse/ClickHouse/pull/6944) ([Philipp Malkovsky](https://github.com/malkfilipp))
 * Add `bitmapSubsetLimit(bitmap, range_start, limit)` function, that returns subset of the smallest `limit` values in set that is no smaller than `range_start`. [#6957](https://github.com/ClickHouse/ClickHouse/pull/6957) ([Zhichang Yu](https://github.com/yuzhichang))
 * Add `bitmapMin` and `bitmapMax` functions. [#6970](https://github.com/ClickHouse/ClickHouse/pull/6970) ([Zhichang Yu](https://github.com/yuzhichang))
 * Add function `repeat` related to [issue-6648](https://github.com/yandex/ClickHouse/issues/6648) [#6999](https://github.com/ClickHouse/ClickHouse/pull/6999) ([flynn](https://github.com/ucasFL))
-* Add table function `input()` for reading incoming data in `INSERT` `SELECT` query. [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1))  [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
-* Add ability to use function `hex` without using `reinterpretAsString` for `Float` and `Decimal`. [#7024](https://github.com/ClickHouse/ClickHouse/pull/7024) ([Mikhail Korotov](https://github.com/millb))
 
 ### Experimental Feature
-* Add ability to store data at multiple disk volumes in tables with MergeTree engine. Choose storage policy by using `storage_policy` setting. Now you can store partitions on different performance media likes hdd, ssd. [#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba))  [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
-* Implement (in memory) Merge Join variant that does not change current pipeline. Result is partially sorted by merge key. Set partial_merge_join = true to use this feature. [#6940](https://github.com/ClickHouse/ClickHouse/pull/6940) ([Artem Zuikov](https://github.com/4ertus2))
-* Add S3 engine and table function. [#5596](https://github.com/ClickHouse/ClickHouse/pull/5596) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Implement (in memory) Merge Join variant that does not change current pipeline. Result is partially sorted by merge key. Set `partial_merge_join = 1` to use this feature. The Merge Join is still in development. [#6940](https://github.com/ClickHouse/ClickHouse/pull/6940) ([Artem Zuikov](https://github.com/4ertus2))
+* Add `S3` engine and table function. It is still in development (no authentication support yet). [#5596](https://github.com/ClickHouse/ClickHouse/pull/5596) ([Vladimir Chebotarev](https://github.com/excitoon))
 
 ### Improvement
+* Every message read from Kafka is inserted atomically. This resolves almost all known issues with Kafka engine. [#6950](https://github.com/ClickHouse/ClickHouse/pull/6950) ([Ivan](https://github.com/abyss7))
+* Improvements for failover of Distributed queries. Shorten recovery time, also it is now configurable and can be seen in `system.clusters`. [#6399](https://github.com/ClickHouse/ClickHouse/pull/6399) ([Vasily Nemkov](https://github.com/Enmk))
 * Support numeric values for Enums directly in `IN` section. #6766 [#6941](https://github.com/ClickHouse/ClickHouse/pull/6941) ([dimarub2000](https://github.com/dimarub2000))
-* Implement merging aggregated data processors. Fixed tests for processors pipeline. Fixed performance for some queries. [#6684](https://github.com/ClickHouse/ClickHouse/pull/6684) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* Support (optional) redirects on URL storage. [#6914](https://github.com/ClickHouse/ClickHouse/pull/6914) ([maqroll](https://github.com/maqroll))
-* Implement atomically insert all rows from a single Kafka message. [#6950](https://github.com/ClickHouse/ClickHouse/pull/6950) ([Ivan](https://github.com/abyss7))
-* Add warning message when client with an older version connects to a server. [#6893](https://github.com/ClickHouse/ClickHouse/pull/6893) ([Philipp Malkovsky](https://github.com/malkfilipp))
-* Remove maximum sleep time limit for StorageDistributedDirectoryMonitor [#6895](https://github.com/ClickHouse/ClickHouse/pull/6895) ([Azat Khuzhin](https://github.com/azat))
-* Better log messages about disks [#7074](https://github.com/ClickHouse/ClickHouse/pull/7074) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Improvements for failover of Distributed queries. Shorten recovery time, also it is now configurable and can be seen in system.clusters. [#6399](https://github.com/ClickHouse/ClickHouse/pull/6399) ([Vasily Nemkov](https://github.com/Enmk))
-* Improvements in RWLock implementation: remove weak_ptrs and add strong exception safety guarantee. [#6854](https://github.com/ClickHouse/ClickHouse/pull/6854) ([Alexander Kazakov](https://github.com/Akazz))
-* Use CRoaring serialization functions instead of home-brewed ones. [#6908](https://github.com/ClickHouse/ClickHouse/pull/6908) ([Zhichang Yu](https://github.com/yuzhichang))
+* Support (optional, disabled by default) redirects on URL storage. [#6914](https://github.com/ClickHouse/ClickHouse/pull/6914) ([maqroll](https://github.com/maqroll))
+* Add information message when client with an older version connects to a server. [#6893](https://github.com/ClickHouse/ClickHouse/pull/6893) ([Philipp Malkovsky](https://github.com/malkfilipp))
+* Remove maximum backoff sleep time limit for sending data in Distributed tables [#6895](https://github.com/ClickHouse/ClickHouse/pull/6895) ([Azat Khuzhin](https://github.com/azat))
 * Add ability to send profile events (counters) with cumulative values to graphite. It can be enabled under `<events_cumulative>` in server `config.xml`. [#6969](https://github.com/ClickHouse/ClickHouse/pull/6969) ([Azat Khuzhin](https://github.com/azat))
-* Add automatically cast type `T` to `LowCardinality(T)` while inserting data in column of type `LowCardinality(T)` in Native format via http. [#6891](https://github.com/ClickHouse/ClickHouse/pull/6891) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Add automatically cast type `T` to `LowCardinality(T)` while inserting data in column of type `LowCardinality(T)` in Native format via HTTP. [#6891](https://github.com/ClickHouse/ClickHouse/pull/6891) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Add ability to use function `hex` without using `reinterpretAsString` for `Float32`, `Float64`. [#7024](https://github.com/ClickHouse/ClickHouse/pull/7024) ([Mikhail Korotov](https://github.com/millb))
 
 ### Build/Testing/Packaging Improvement
-* Add gdb-index to clickhouse binary with debug info. [#6947](https://github.com/ClickHouse/ClickHouse/pull/6947) ([alesapin](https://github.com/alesapin))
+* Add gdb-index to clickhouse binary with debug info. It will speed up startup time of `gdb`. [#6947](https://github.com/ClickHouse/ClickHouse/pull/6947) ([alesapin](https://github.com/alesapin))
 * Speed up deb packaging with patched dpkg-deb which uses `pigz`. [#6960](https://github.com/ClickHouse/ClickHouse/pull/6960) ([alesapin](https://github.com/alesapin))
 * Set `enable_fuzzing = 1` to enable libfuzzer instrumentation of all the project code. [#7042](https://github.com/ClickHouse/ClickHouse/pull/7042) ([kyprizel](https://github.com/kyprizel))
 * Add split build smoke test in CI. [#7061](https://github.com/ClickHouse/ClickHouse/pull/7061) ([alesapin](https://github.com/alesapin))
 * Add build with MemorySanitizer to CI. [#7066](https://github.com/ClickHouse/ClickHouse/pull/7066) ([Alexander Kuzmenkov](https://github.com/akuzm))
-* Replace libsparsehash with sparsehash-c11 [#6965](https://github.com/ClickHouse/ClickHouse/pull/6965) ([Azat Khuzhin](https://github.com/azat))
+* Replace `libsparsehash` with `sparsehash-c11` [#6965](https://github.com/ClickHouse/ClickHouse/pull/6965) ([Azat Khuzhin](https://github.com/azat))
 
 ### Bug Fix
 * Fixed performance degradation of index analysis on complex keys on large tables. This fixes #6924. [#7075](https://github.com/ClickHouse/ClickHouse/pull/7075) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix logical error causing segfaults when selecting from Kafka empty topic. [#6909](https://github.com/ClickHouse/ClickHouse/pull/6909) ([Ivan](https://github.com/abyss7))
-* Fix too early MySQL connection closure in `MySQLBlockInputStream.cpp`. [#6882](https://github.com/ClickHouse/ClickHouse/pull/6882) ([Clément Rodriguez](https://github.com/clemrodriguez))
+* Fix too early MySQL connection close in `MySQLBlockInputStream.cpp`. [#6882](https://github.com/ClickHouse/ClickHouse/pull/6882) ([Clément Rodriguez](https://github.com/clemrodriguez))
 * Returned support for very old Linux kernels (fix [#6841](https://github.com/ClickHouse/ClickHouse/issues/6841)) [#6853](https://github.com/ClickHouse/ClickHouse/pull/6853) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fix logical error causing segfaults when selecting from Kafka empty topic (#6902) [#6909](https://github.com/ClickHouse/ClickHouse/pull/6909) ([Ivan](https://github.com/abyss7))
 * Fix possible data loss in `insert select` query in case of empty block in input stream. #6834 #6862 [#6911](https://github.com/ClickHouse/ClickHouse/pull/6911) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Fix for function `АrrayEnumerateUniqRanked` with empty arrays in params [#6928](https://github.com/ClickHouse/ClickHouse/pull/6928) ([proller](https://github.com/proller))
 * Fix complex queries with array joins and global subqueries. [#6934](https://github.com/ClickHouse/ClickHouse/pull/6934) ([Ivan](https://github.com/abyss7))
-* Fix "Unknown identifier" in ORDER BY and GROUP BY with Multiple JOINs [#7022](https://github.com/ClickHouse/ClickHouse/pull/7022) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix `Unknown identifier` error in ORDER BY and GROUP BY with multiple JOINs [#7022](https://github.com/ClickHouse/ClickHouse/pull/7022) ([Artem Zuikov](https://github.com/4ertus2))
 * Fixed `MSan` warning while executing function with `LowCardinality` argument. [#7062](https://github.com/ClickHouse/ClickHouse/pull/7062) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+
+### Backward Incompatible Change
+* Changed serialization format of bitmap* aggregate function states to improve performance. Serialized states of bitmap* from previous versions cannot be read. [#6908](https://github.com/ClickHouse/ClickHouse/pull/6908) ([Zhichang Yu](https://github.com/yuzhichang))
 
 ## ClickHouse release 19.14.7.15, 2019-10-02
 
