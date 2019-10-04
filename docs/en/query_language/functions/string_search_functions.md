@@ -2,12 +2,89 @@
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle), locate(haystack, needle)
+## position(haystack, needle) {#position}
 
-Search for the substring `needle` in the string `haystack`.
-Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
+Returns the position (in bytes) of the found substring `needle` in the string `haystack`, starting from 1. Returns 0 if the substring was not found.
 
-For a case-insensitive search, use the function `positionCaseInsensitive`.
+Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met, it returns some result.
+
+For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
+
+**Syntax**
+
+```sql
+position(haystack, needle);
+```
+
+Alias: `locate(haystack, needle)`.
+
+**Parameters**
+
+- `haystack` — string, from which substring is to be searched.
+- `needle` —  substring, which is to be searched.
+
+**Returned values**
+
+- Starting position (in bytes), if substring was found.
+- 0, if the substring was not found.
+
+Type: `Integer`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT position('Hello, world!', 'Hello');
+```
+
+Result:
+
+```text
+┌─position('Hello, world!', 'Hello')─┐
+│                                  1 │
+└────────────────────────────────────┘
+```
+
+## positionCaseInsensitive(haystack, needle) {#positioncaseinsensitive}
+
+Returns the position (in bytes) of the found substring `needle` in the string `haystack`, starting from 1. Returns 0 if the substring was not found. Use the function for a case-insensitive search. 
+
+Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met, it returns some result.
+
+**Syntax**
+
+```sql
+positionCaseInsensitive(haystack, needle);
+```
+
+**Parameters**
+
+- `haystack` — string, from which substring is to be searched.
+- `needle` —  substring, which is to be searched.
+
+**Returned values**
+
+- Starting position (in bytes), if substring was found.
+- 0, if the substring was not found.
+
+Type: `Integer`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT positionCaseInsensitive('Hello, world!', 'hello');
+```
+
+Result:
+
+```text
+┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
+│                                                 1 │
+└───────────────────────────────────────────────────┘
+```
 
 ## positionUTF8(haystack, needle)
 
