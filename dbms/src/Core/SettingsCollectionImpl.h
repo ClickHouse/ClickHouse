@@ -140,4 +140,11 @@ void SettingsCollection<Derived>::copyChangesTo(Derived & dest) const
     dest.copyChangesFrom(castToDerived());
 }
 
+template <class Derived>
+const typename SettingsCollection<Derived>::MemberInfos &
+SettingsCollection<Derived>::members()
+{
+    return MemberInfos::instance();
+}
+
 } /* namespace DB */
