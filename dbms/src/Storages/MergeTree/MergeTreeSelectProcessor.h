@@ -23,7 +23,7 @@ public:
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
         Names column_names_,
-        const MarkRanges & mark_ranges,
+        MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         bool check_columns,

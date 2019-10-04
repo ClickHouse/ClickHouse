@@ -1,4 +1,5 @@
 #include <Processors/Executors/TreeExecutor.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <stack>
 
 namespace DB
@@ -13,7 +14,7 @@ static void checkProcessorHasSingleOutput(IProcessor * processor)
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-static void validateTree(const Processors & processors, IProcessor * root)
+static void validateTree(const Processors & processors, IProcessor * root, std::vector<ISourceWithProgress *> & sources)
 {
     std::unordered_map<IProcessor *, size_t> index;
 
@@ -56,6 +57,13 @@ static void validateTree(const Processors & processors, IProcessor * root)
         auto & children = node->getInputs();
         for (auto & child : children)
             stack.push(&child.getOutputPort().getProcessor());
+
+        /// Fill sources array.
+        if (children.empty())
+        {
+            if (auto * source = dynamic_cast<ISourceWithProgress *>(node))
+                sources.push_back(source);
+        }
     }
 
     for (size_t i = 0; i < is_visited.size(); ++i)
@@ -71,7 +79,7 @@ void TreeExecutor::init()
 
     root = processors.back().get();
 
-    validateTree(processors, root);
+    validateTree(processors, root, sources_with_progress);
 
     port = std::make_unique<InputPort>(getHeader(), root);
     connect(root->getOutputs().front(), *port);
@@ -168,6 +176,37 @@ Block TreeExecutor::readImpl()
 
         execute();
     }
+}
+
+void TreeExecutor::setProgressCallback(const ProgressCallback & callback)
+{
+    for (auto & source : sources_with_progress)
+        source->setProgressCallback(callback);
+}
+
+void TreeExecutor::setProcessListElement(QueryStatus * elem)
+{
+    for (auto & source : sources_with_progress)
+        source->setProcessListElement(elem);
+}
+
+void TreeExecutor::setLimits(const IBlockInputStream::LocalLimits & limits_)
+{
+    for (auto & source : sources_with_progress)
+        source->setLimits(limits_);
+}
+
+void TreeExecutor::setQuota(QuotaForIntervals & quota_)
+{
+    for (auto & source : sources_with_progress)
+        source->setQuota(quota_);
+}
+
+void TreeExecutor::addTotalRowsApprox(size_t value)
+{
+    /// Add only for one source.
+    if (!sources_with_progress.empty())
+        sources_with_progress.front()->addTotalRowsApprox(value);
 }
 
 }
