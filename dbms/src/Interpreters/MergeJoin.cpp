@@ -366,7 +366,7 @@ std::unique_ptr<TemporaryFile> flushBlockToFile(const String & tmp_path, const B
     auto tmp_file = createTemporaryFile(tmp_path);
 
     OneBlockInputStream stream(block);
-    std::atomic<bool> is_cancelled;
+    std::atomic<bool> is_cancelled{false};
     TemporaryFileStream::write(tmp_file->path(), header, stream, &is_cancelled);
     if (is_cancelled)
         throw Exception("Cannot flush MergeJoin data on disk. No space at " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
