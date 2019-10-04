@@ -163,7 +163,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     WhichDataType which_type(type);
     WhichDataType which_from_type;
     if (from_type_hint)
+    {
         which_from_type = WhichDataType(*from_type_hint);
+
+        // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatitable type.
+        if (which_type.idx == which_from_type.idx)
+        {
+            // TODO (vnemkov): looks dangerous and requires more testing, as it could break some assumptions in subtle ways.
+            return src;
+        }
+    }
 
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
