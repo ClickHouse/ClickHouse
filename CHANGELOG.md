@@ -13,20 +13,20 @@
 
 ### Bug Fix
 * Fixed performance degradation of index analysis on complex keys on large tables. This fixes [#6924](https://github.com/ClickHouse/ClickHouse/issues/6924). [#7075](https://github.com/ClickHouse/ClickHouse/pull/7075) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Avoid SIGSEGV on batch send failure (`Failed to send batch: file with index 23742 is absent`). [#7032](https://github.com/ClickHouse/ClickHouse/pull/7032) ([Azat Khuzhin](https://github.com/azat))
+* Avoid rare SIGSEGV while sending data in tables with Distributed engine (`Failed to send batch: file with index XXXXX is absent`). [#7032](https://github.com/ClickHouse/ClickHouse/pull/7032) ([Azat Khuzhin](https://github.com/azat))
 * Fix `Unknown identifier` with multiple joins. This fixes [#5254](https://github.com/ClickHouse/ClickHouse/issues/5254). [#7022](https://github.com/ClickHouse/ClickHouse/pull/7022) ([Artem Zuikov](https://github.com/4ertus2))
 
 ## ClickHouse release 19.15.2.2, 2019-10-01
 
 ### New Feature
 * Add a `sparse_hashed` dictionary layout, that is functionally equivalent to the `hashed` layout, but is more memory efficient. It uses about twice as less memory at the cost of slower value retrieval. [#6894](https://github.com/ClickHouse/ClickHouse/pull/6894) ([Azat Khuzhin](https://github.com/azat))
-* Add whitelist for dictionary access. Currently using the current connected database. [#6907](https://github.com/ClickHouse/ClickHouse/pull/6907) ([Guillaume Tassery](https://github.com/YiuRULE))
+* Implement ability to define list of users for access to dictionaries. Only current connected database using. [#6907](https://github.com/ClickHouse/ClickHouse/pull/6907) ([Guillaume Tassery](https://github.com/YiuRULE))
 * Add `LIMIT` option to `SHOW` query. [#6944](https://github.com/ClickHouse/ClickHouse/pull/6944) ([Philipp Malkovsky](https://github.com/malkfilipp))
 * Add `bitmapSubsetLimit(bitmap, range_start, limit)` function, that returns subset of the smallest `limit` values in set that is no smaller than `range_start`. [#6957](https://github.com/ClickHouse/ClickHouse/pull/6957) ([Zhichang Yu](https://github.com/yuzhichang))
 * Add `bitmapMin` and `bitmapMax` functions. [#6970](https://github.com/ClickHouse/ClickHouse/pull/6970) ([Zhichang Yu](https://github.com/yuzhichang))
 * Add function `repeat` related to [issue-6648](https://github.com/yandex/ClickHouse/issues/6648) [#6999](https://github.com/ClickHouse/ClickHouse/pull/6999) ([flynn](https://github.com/ucasFL))
 * Add S3 engine and table function. [#5596](https://github.com/ClickHouse/ClickHouse/pull/5596) ([Vladimir Chebotarev](https://github.com/excitoon))
-* Add table function `input()`` for reading incoming data in `INSERT` `SELECT` query. [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1))  [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
+* Add table function `input()` for reading incoming data in `INSERT` `SELECT` query. [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1))  [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
 * Add ability to use function `hex` without using `reinterpretAsString` for `Float` and `Decimal`. [#7024](https://github.com/ClickHouse/ClickHouse/pull/7024) ([Mikhail Korotov](https://github.com/millb))
 
 ### Experimental Feature
@@ -39,14 +39,13 @@
 * Support (optional) redirects on URL storage. [#6914](https://github.com/ClickHouse/ClickHouse/pull/6914) ([maqroll](https://github.com/maqroll))
 * Implement atomically insert all rows from a single Kafka message. [#6950](https://github.com/ClickHouse/ClickHouse/pull/6950) ([Ivan](https://github.com/abyss7))
 * Add warning message when client with an older version connects to a server. [#6893](https://github.com/ClickHouse/ClickHouse/pull/6893) ([Philipp Malkovsky](https://github.com/malkfilipp))
-* Automatically convert columns to `LowCardinality` when needed using `Native` format in http. Use header in `NativeBlockInputStream` created from `InterpreterSelectQuery` and fill skipped columns with default values. [#6891](https://github.com/ClickHouse/ClickHouse/pull/6891) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Remove maximum sleep time limit for StorageDistributedDirectoryMonitor [#6895](https://github.com/ClickHouse/ClickHouse/pull/6895) ([Azat Khuzhin](https://github.com/azat))
 * Better log messages about disks [#7074](https://github.com/ClickHouse/ClickHouse/pull/7074) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Improvements for failover of Distributed queries. Shorten recovery time, also it is now configurable and can be seen in system.clusters. [#6399](https://github.com/ClickHouse/ClickHouse/pull/6399) ([Vasily Nemkov](https://github.com/Enmk))
 * Improvements in RWLock implementation: remove weak_ptrs and add strong exception safety guarantee. [#6854](https://github.com/ClickHouse/ClickHouse/pull/6854) ([Alexander Kazakov](https://github.com/Akazz))
 * Use CRoaring serialization functions instead of home-brewed ones. [#6908](https://github.com/ClickHouse/ClickHouse/pull/6908) ([Zhichang Yu](https://github.com/yuzhichang))
 * Add ability to send profile events (counters) with cumulative values to graphite. It can be enabled under `<events_cumulative>` in server `config.xml`. [#6969](https://github.com/ClickHouse/ClickHouse/pull/6969) ([Azat Khuzhin](https://github.com/azat))
-* Add automatically cast type `T` to `LowCardinality(T)`` while inserting data in column of type `LowCardinality(T)` in Native format via http. [#6891](https://github.com/ClickHouse/ClickHouse/pull/6891) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Add automatically cast type `T` to `LowCardinality(T)` while inserting data in column of type `LowCardinality(T)` in Native format via http. [#6891](https://github.com/ClickHouse/ClickHouse/pull/6891) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 
 ### Build/Testing/Packaging Improvement
 * Add gdb-index to clickhouse binary with debug info. [#6947](https://github.com/ClickHouse/ClickHouse/pull/6947) ([alesapin](https://github.com/alesapin))
