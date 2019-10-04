@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
-#include <Core/Defines.h>
 
 
 namespace DB
@@ -39,7 +38,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     Names required_columns_,
-    const MarkRanges & mark_ranges_,
+    MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     bool check_columns,
@@ -55,10 +54,10 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
         storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
-    required_columns{required_columns_},
+    required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
-    all_mark_ranges(mark_ranges_),
+    all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     path(data_part->getFullPath())
 {
@@ -76,8 +75,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
         : "")
         << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
-    /// TODO
-    /// addTotalRowsApprox(total_rows);
+    addTotalRowsApprox(total_rows);
 
     ordered_names = header_without_virtual_columns.getNames();
 

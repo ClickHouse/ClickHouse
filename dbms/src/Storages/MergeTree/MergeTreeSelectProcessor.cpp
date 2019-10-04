@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
-#include <Core/Defines.h>
 
 
 namespace DB
@@ -39,7 +38,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     Names required_columns_,
-    const MarkRanges & mark_ranges_,
+    MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     bool check_columns_,
@@ -58,7 +57,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
-    all_mark_ranges(mark_ranges_),
+    all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns_),
     path(data_part->getFullPath())
@@ -77,9 +76,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         : "")
         << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
-    /// TODO
-    /// addTotalRowsApprox(total_rows);
-
+    addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();
 }
 

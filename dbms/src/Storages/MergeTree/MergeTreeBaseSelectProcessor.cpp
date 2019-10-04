@@ -3,9 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
-#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
 #include <DataTypes/DataTypeNothing.h>
 
 
@@ -32,7 +30,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     bool save_marks_in_cache_,
     const Names & virt_column_names_)
 :
-    ISource(getHeader(std::move(header), prewhere_info_, virt_column_names_)),
+    SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_)),
     storage(storage_),
     prewhere_info(prewhere_info_),
     max_block_size_rows(max_block_size_rows_),
@@ -176,7 +174,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
 
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;
 
-    /// TODO: progressImpl({ read_result.numReadRows(), read_result.numBytesRead() });
+    progress({ read_result.numReadRows(), read_result.numBytesRead() });
 
     if (task->size_predictor)
     {

@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ class MarkCache;
 
 
 /// Base class for MergeTreeThreadSelectBlockInputStream and MergeTreeSelectBlockInputStream
-class MergeTreeBaseSelectProcessor : public ISource
+class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
 public:
     MergeTreeBaseSelectProcessor(
@@ -39,7 +39,7 @@ public:
 protected:
     Chunk generate() final;
 
-    /// Creates new this->task, and initilizes readers
+    /// Creates new this->task, and initializes readers.
     virtual bool getNewTask() = 0;
 
     virtual Chunk readFromPart();
@@ -51,8 +51,6 @@ protected:
     static Block getHeader(Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns);
 
     void initializeRangeReaders(MergeTreeReadTask & task);
-
-    size_t estimateNumRows(MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader);
 
 protected:
     const MergeTreeData & storage;
