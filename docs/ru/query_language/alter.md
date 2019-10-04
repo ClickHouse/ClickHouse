@@ -185,7 +185,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 
 Для работы с [партициями](../operations/table_engines/custom_partitioning_key.md) доступны следующие операции:
 
-- [DETACH PARTITION](#alter_detach-partition) –  перенести партицию в директорию `detached`;
+- [DETACH PARTITION](#alter_detach-partition) – перенести партицию в директорию `detached`;
 - [DROP PARTITION](#alter_drop-partition) – удалить партицию;
 - [ATTACH PARTITION|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
 - [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы;
@@ -193,7 +193,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
 - [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
 - [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
-- [MOVE PARTITION|PART](#alter_move-partition) -- переместить партицию/кускок на другой диск или том.
+- [MOVE PARTITION|PART](#alter_move-partition) – переместить партицию/кускок на другой диск или том.
 
 #### DETACH PARTITION {#alter_detach-partition}
 
