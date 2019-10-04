@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class ExternalModels;
+class ExternalModelsLoader;
 
 /// Evaluate external model.
 /// First argument - model name, the others - model arguments.
@@ -17,7 +17,7 @@ public:
 
     static FunctionPtr create(const Context & context);
 
-    explicit FunctionModelEvaluate(const ExternalModels & models_) : models(models_) {}
+    explicit FunctionModelEvaluate(const ExternalModelsLoader & models_loader_) : models_loader(models_loader_) {}
 
     String getName() const override { return name; }
 
@@ -34,7 +34,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
-    const ExternalModels & models;
+    const ExternalModelsLoader & models_loader;
 };
 
 }

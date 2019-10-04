@@ -3,6 +3,11 @@
 #include <time.h>
 #include <errno.h>
 
+#if defined(OS_DARWIN)
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#endif
+
 /**
   * Sleep with nanoseconds precision. Tolerant to signal interruptions
   *
@@ -14,6 +19,18 @@
   */
 void sleepForNanoseconds(uint64_t nanoseconds)
 {
+#if defined(OS_DARWIN)
+    //https://developer.apple.com/library/archive/technotes/tn2169/_index.html
+    //https://dshil.github.io/blog/missed-os-x-clock-guide/
+    static mach_timebase_info_data_t timebase_info = {0};
+    if (timebase_info.denom == 0)
+        mach_timebase_info(&timebase_info);
+
+    uint64_t time_to_wait = nanoseconds * timebase_info.denom / timebase_info.numer;
+    uint64_t now = mach_absolute_time();
+
+    while (mach_wait_until(now + time_to_wait) != KERN_SUCCESS);
+#else
     constexpr auto clock_type = CLOCK_MONOTONIC;
 
     struct timespec current_time;
@@ -29,6 +46,7 @@ void sleepForNanoseconds(uint64_t nanoseconds)
     finish_time.tv_sec += (nanoseconds / resolution) + extra_second;
 
     while (clock_nanosleep(clock_type, TIMER_ABSTIME, &finish_time, nullptr) == EINTR);
+#endif
 }
 
 void sleepForMicroseconds(uint64_t microseconds)

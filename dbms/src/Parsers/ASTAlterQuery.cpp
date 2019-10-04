@@ -1,5 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <iomanip>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -166,6 +167,25 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ATTACH "
                       << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MOVE_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MOVE "
+                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+        settings.ostr << " TO ";
+        switch (move_destination_type)
+        {
+            case MoveDestinationType::DISK:
+                settings.ostr << "DISK ";
+                break;
+            case MoveDestinationType::VOLUME:
+                settings.ostr << "VOLUME ";
+                break;
+        }
+        WriteBufferFromOwnString move_destination_name_buf;
+        writeQuoted(move_destination_name, move_destination_name_buf);
+        settings.ostr << move_destination_name_buf.str();
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {

@@ -28,7 +28,7 @@ bool PeekableReadBuffer::peekNext()
         if (checkpoint)
             copy_from = checkpoint;
         bytes_read = copy_from - sub_buf.buffer().begin();
-        bytes_to_copy = sub_buf.buffer().end() - copy_from; /// sub_buf.available();
+        bytes_to_copy = sub_buf.buffer().end() - copy_from;
         if (!bytes_to_copy)
         {
             bytes += bytes_read;
@@ -91,40 +91,6 @@ bool PeekableReadBuffer::peekNext()
     return sub_buf.next();
 }
 
-void PeekableReadBuffer::setCheckpoint()
-{
-    checkStateCorrect();
-#ifndef NDEBUG
-    if (checkpoint)
-        throw DB::Exception("Does not support recursive checkpoints.", ErrorCodes::LOGICAL_ERROR);
-#endif
-    checkpoint_in_own_memory = currentlyReadFromOwnMemory();
-    if (!checkpoint_in_own_memory)
-    {
-        /// Don't need to store unread data anymore
-        peeked_size = 0;
-    }
-    checkpoint = pos;
-    checkStateCorrect();
-}
-
-void PeekableReadBuffer::dropCheckpoint()
-{
-    checkStateCorrect();
-#ifndef NDEBUG
-    if (!checkpoint)
-        throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
-#endif
-    if (!currentlyReadFromOwnMemory())
-    {
-        /// Don't need to store unread data anymore
-        peeked_size = 0;
-    }
-    checkpoint = nullptr;
-    checkpoint_in_own_memory = false;
-    checkStateCorrect();
-}
-
 void PeekableReadBuffer::rollbackToCheckpoint()
 {
     checkStateCorrect();
@@ -144,43 +110,38 @@ bool PeekableReadBuffer::nextImpl()
     checkStateCorrect();
     bool res;
 
-    if (!checkpoint)
-    {
-        if (!useSubbufferOnly())
-        {
-            /// All copied data have been read from own memory, continue reading from sub_buf
-            peeked_size = 0;
-            res = sub_buf.hasPendingData() || sub_buf.next();
-        }
-        else
-        {
-            /// Load next data to sub_buf
-            sub_buf.position() = pos;
-            res = sub_buf.next();
-        }
-
-        Buffer & sub_working = sub_buf.buffer();
-        /// Switch to reading from sub_buf (or just update it if already switched)
-        BufferBase::set(sub_working.begin(), sub_working.size(), 0);
-    }
-    else
+    if (checkpoint)
     {
         if (currentlyReadFromOwnMemory())
             res = sub_buf.hasPendingData() || sub_buf.next();
         else
             res = peekNext();
-        Buffer & sub_working = sub_buf.buffer();
-        BufferBase::set(sub_working.begin(), sub_working.size(), 0);
     }
+    else
+    {
+        if (useSubbufferOnly())
+        {
+            /// Load next data to sub_buf
+            sub_buf.position() = pos;
+            res = sub_buf.next();
+        }
+        else
+        {
+            /// All copied data have been read from own memory, continue reading from sub_buf
+            peeked_size = 0;
+            res = sub_buf.hasPendingData() || sub_buf.next();
+        }
+    }
+
+    /// Switch to reading from sub_buf (or just update it if already switched)
+    Buffer & sub_working = sub_buf.buffer();
+    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
+    working_buffer_offset = sub_buf.offset();
 
     checkStateCorrect();
     return res;
 }
 
-bool PeekableReadBuffer::useSubbufferOnly() const
-{
-    return !peeked_size;
-}
 
 void PeekableReadBuffer::checkStateCorrect() const
 {
@@ -193,6 +154,8 @@ void PeekableReadBuffer::checkStateCorrect() const
                 throw DB::Exception("Checkpoint in empty own buffer", ErrorCodes::LOGICAL_ERROR);
             if (currentlyReadFromOwnMemory() && pos < checkpoint)
                 throw DB::Exception("Current position in own buffer before checkpoint in own buffer", ErrorCodes::LOGICAL_ERROR);
+            if (!currentlyReadFromOwnMemory() && pos < sub_buf.position())
+                throw DB::Exception("Current position in subbuffer less than sub_buf.position()", ErrorCodes::LOGICAL_ERROR);
         }
         else
         {
@@ -216,15 +179,15 @@ void PeekableReadBuffer::checkStateCorrect() const
 #endif
 }
 
-size_t PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
+void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
 {
     checkStateCorrect();
-    bool needUpdateCheckpoint = checkpointInOwnMemory();
-    bool needUpdatePos = currentlyReadFromOwnMemory();
+    bool need_update_checkpoint = checkpointInOwnMemory();
+    bool need_update_pos = currentlyReadFromOwnMemory();
     size_t offset = 0;
-    if (needUpdateCheckpoint)
+    if (need_update_checkpoint)
         offset = checkpoint - memory.data();
-    else if (needUpdatePos)
+    else if (need_update_pos)
         offset = this->offset();
 
     size_t new_size = peeked_size + bytes_to_append;
@@ -237,13 +200,10 @@ size_t PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
             memmove(memory.data(), memory.data() + offset, peeked_size);
             bytes += offset;
 
-            if (needUpdateCheckpoint)
+            if (need_update_checkpoint)
                 checkpoint -= offset;
-            if (needUpdatePos)
+            if (need_update_pos)
                 pos -= offset;
-
-            checkStateCorrect();
-            return 0;
         }
         else
         {
@@ -259,17 +219,32 @@ size_t PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
                 new_size_amortized = unread_limit;
             memory.resize(new_size_amortized);
 
-            if (needUpdateCheckpoint)
+            if (need_update_checkpoint)
                 checkpoint = memory.data() + offset;
-            if (needUpdatePos)
+            if (need_update_pos)
             {
                 BufferBase::set(memory.data(), peeked_size, pos_offset);
             }
         }
     }
-
     checkStateCorrect();
-    return offset;
+}
+
+void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
+{
+#ifndef NDEBUG
+    if (!checkpoint)
+        throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
+    checkStateCorrect();
+#endif
+    if (!checkpointInOwnMemory() || currentlyReadFromOwnMemory())
+        return;     /// is't already continuous
+
+    size_t bytes_to_append = pos - sub_buf.position();
+    resizeOwnMemoryIfNecessary(bytes_to_append);
+    memcpy(memory.data() + peeked_size, sub_buf.position(), bytes_to_append);
+    sub_buf.position() = pos;
+    peeked_size += bytes_to_append;
 }
 
 PeekableReadBuffer::~PeekableReadBuffer()
@@ -278,39 +253,9 @@ PeekableReadBuffer::~PeekableReadBuffer()
         sub_buf.position() = pos;
 }
 
-std::shared_ptr<BufferWithOwnMemory<ReadBuffer>> PeekableReadBuffer::takeUnreadData()
+bool PeekableReadBuffer::hasUnreadData() const
 {
-    checkStateCorrect();
-    if (!currentlyReadFromOwnMemory())
-        return std::make_shared<BufferWithOwnMemory<ReadBuffer>>(0);
-    size_t unread_size = memory.data() + peeked_size - pos;
-    auto unread = std::make_shared<BufferWithOwnMemory<ReadBuffer>>(unread_size);
-    memcpy(unread->buffer().begin(), pos, unread_size);
-    unread->BufferBase::set(unread->buffer().begin(), unread_size, 0);
-    peeked_size = 0;
-    checkpoint = nullptr;
-    checkpoint_in_own_memory = false;
-    BufferBase::set(sub_buf.buffer().begin(), sub_buf.buffer().size(), sub_buf.offset());
-    checkStateCorrect();
-    return unread;
-}
-
-bool PeekableReadBuffer::currentlyReadFromOwnMemory() const
-{
-    return working_buffer.begin() != sub_buf.buffer().begin();
-}
-
-bool PeekableReadBuffer::checkpointInOwnMemory() const
-{
-    return checkpoint_in_own_memory;
-}
-
-void PeekableReadBuffer::assertCanBeDestructed() const
-{
-    if (peeked_size && pos != memory.data() + peeked_size)
-        throw DB::Exception("There are data, which were extracted from sub-buffer, but not from peekable buffer. "
-                            "Cannot destruct peekable buffer correctly because tha data will be lost."
-                            "Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+    return peeked_size && pos != memory.data() + peeked_size;
 }
 
 }

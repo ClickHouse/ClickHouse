@@ -13,6 +13,7 @@
 #include <Common/ThreadPool.h>
 #include "config_core.h"
 #include <Storages/IStorage_fwd.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -42,11 +43,10 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class IRuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
-class ExternalDictionaries;
-class ExternalModels;
+class ExternalDictionariesLoader;
+class ExternalModelsLoader;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class BackgroundSchedulePool;
@@ -173,7 +173,6 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
     Context(const Context &);
@@ -253,6 +252,8 @@ public:
     bool hasDatabaseAccessRights(const String & database_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
+    bool hasDictionaryAccessRights(const String & dictionary_name) const;
+
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
       * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
       * made this check.
@@ -318,11 +319,11 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes);
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
-    const ExternalDictionaries & getExternalDictionaries() const;
-    const ExternalModels & getExternalModels() const;
+    const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
+    const ExternalModelsLoader & getExternalModelsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
-    ExternalDictionaries & getExternalDictionaries();
-    ExternalModels & getExternalModels();
+    ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalModelsLoader & getExternalModelsLoader();
     void tryCreateEmbeddedDictionaries() const;
 
     /// I/O formats.
@@ -485,6 +486,16 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
+    DiskSpace::DiskSelector & getDiskSelector() const;
+
+    /// Provides storage disks
+    const DiskSpace::DiskPtr & getDisk(const String & name) const;
+
+    DiskSpace::StoragePolicySelector & getStoragePolicySelector() const;
+
+    /// Provides storage politics schemes
+    const DiskSpace::StoragePolicyPtr & getStoragePolicy(const String &name) const;
+
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
 
@@ -524,6 +535,7 @@ public:
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
     void setQueryParameter(const String & name, const String & value);
+    void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;

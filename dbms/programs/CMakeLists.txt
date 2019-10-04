@@ -24,9 +24,9 @@ configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
     if(NOT CLICKHOUSE_ONE_SHARED)
-        target_link_libraries(${target} PRIVATE clickhouse-${name}-lib ${MALLOC_LIBRARIES})
+        target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
     else()
-        target_link_libraries(${target} PRIVATE clickhouse-lib ${MALLOC_LIBRARIES})
+        target_link_libraries(${target} PRIVATE clickhouse-lib)
     endif()
 endmacro()
 
@@ -111,7 +111,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
     install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
     add_executable (clickhouse main.cpp)
-    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${MALLOC_LIBRARIES})
+    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils)
     target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -205,6 +205,9 @@ else ()
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
+    if (USE_GDB_ADD_INDEX)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
+    endif()
 endif ()
 
 if (TARGET clickhouse-server AND TARGET copy-headers)

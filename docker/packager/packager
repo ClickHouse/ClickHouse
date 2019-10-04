@@ -105,9 +105,12 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
 
 def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official, alien_pkgs, with_coverage):
     result = []
-    cmake_flags = ['$CMAKE_FLAGS']
+    cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
-    cc = compiler
+    if compiler.endswith("-darwin"):
+        cc = compiler[:-len("-darwin")]
+    else:
+        cc = compiler
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
     if package_type == "deb":
         result.append("DEB_CC={}".format(cc))
@@ -117,6 +120,13 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append("CXX={}".format(cxx))
         cmake_flags.append('-DCMAKE_C_COMPILER=`which {}`'.format(cc))
         cmake_flags.append('-DCMAKE_CXX_COMPILER=`which {}`'.format(cxx))
+
+    if "darwin" in compiler:
+        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
+        cmake_flags.append("-DCMAKE_SYSTEM_NAME=Darwin")
+        cmake_flags.append("-DSDK_PATH=/cctools/MacOSX10.14.sdk")
+        cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
@@ -166,12 +176,12 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="ClickHouse building script via virtualization mechanisms")
+    parser = argparse.ArgumentParser(description="ClickHouse building script using prebuilt Docker image")
     parser.add_argument("--package-type", choices=IMAGE_MAP.keys(), required=True)
     parser.add_argument("--clickhouse-repo-path", default="../../")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "clang-8", "gcc-8", "gcc-9"), default="gcc-7")
+    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "clang-8", "clang-8-darwin", "gcc-8", "gcc-9"), default="gcc-7")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")

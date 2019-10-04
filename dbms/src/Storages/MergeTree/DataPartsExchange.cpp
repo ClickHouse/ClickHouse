@@ -4,7 +4,6 @@
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
 #include <ext/scope_guard.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -27,6 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_PROTOCOL;
     extern const int INSECURE_PATH;
 }
 
@@ -35,6 +35,9 @@ namespace DataPartsExchange
 
 namespace
 {
+
+static constexpr auto REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE = "0";
+static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = "1";
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -53,7 +56,14 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     if (blocker.isCancelled())
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
+    String client_protocol_version = params.get("client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
+
+
     String part_name = params.get("part");
+
+    if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
+        throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
+
     const auto data_settings = data.getSettings();
 
     /// Validation of the input that may come from malicious replica.
@@ -70,6 +80,8 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         response.setChunkedTransferEncoding(false);
         return;
     }
+    response.addCookie({"server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE});
+
     ++total_sends;
     SCOPE_EXIT({--total_sends;});
 
@@ -100,12 +112,16 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         MergeTreeData::DataPart::Checksums data_checksums;
 
+
+        if (client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+            writeBinary(checksums.getTotalSizeOnDisk(), out);
+
         writeBinary(checksums.files.size(), out);
         for (const auto & it : checksums.files)
         {
             String file_name = it.first;
 
-            String path = data.getFullPath() + part_name + "/" + file_name;
+            String path = part->getFullPath() + file_name;
 
             UInt64 size = Poco::File(path).getSize();
 
@@ -183,9 +199,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     uri.setPort(port);
     uri.setQueryParameters(
     {
-        {"endpoint", getEndpointId(replica_path)},
-        {"part", part_name},
-        {"compress", "false"}
+        {"endpoint",                getEndpointId(replica_path)},
+        {"part",                    part_name},
+        {"client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE},
+        {"compress",                "false"}
     });
 
     Poco::Net::HTTPBasicCredentials creds{};
@@ -202,14 +219,46 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         timeouts,
         creds,
         DBMS_DEFAULT_BUFFER_SIZE,
+        0, /* no redirects */
         data_settings->replicated_max_parallel_fetches_for_host
     };
+
+    auto server_protocol_version = in.getResponseCookie("server_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
+
+
+    DiskSpace::ReservationPtr reservation;
+    if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+    {
+        size_t sum_files_size;
+        readBinary(sum_files_size, in);
+        reservation = data.reserveSpace(sum_files_size);
+    }
+    else
+    {
+        /// We don't know real size of part because sender server version is too old
+        reservation = data.makeEmptyReservationOnLargestDisk();
+    }
+
+    return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
+}
+
+MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
+    const String & part_name,
+    const String & replica_path,
+    bool to_detached,
+    const String & tmp_prefix_,
+    const DiskSpace::ReservationPtr reservation,
+    PooledReadWriteBufferFromHTTP & in)
+{
+
+    size_t files;
+    readBinary(files, in);
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String absolute_part_path = Poco::Path(data.getFullPath() + relative_part_path + "/").absolute().toString();
+    String absolute_part_path = Poco::Path(data.getFullPathOnDisk(reservation->getDisk()) + relative_part_path + "/").absolute().toString();
     Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
@@ -219,12 +268,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name);
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name);
     new_data_part->relative_path = relative_part_path;
     new_data_part->is_temp = true;
 
-    size_t files;
-    readBinary(files, in);
+
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
     {

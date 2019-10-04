@@ -88,6 +88,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingMaxThreads, max_part_loading_threads, 0, "The number of theads to load data parts at startup.") \
     M(SettingMaxThreads, max_part_removal_threads, 0, "The number of theads for concurrent removal of inactive data parts. One is usually enough, but in 'Google Compute Environment SSD Persistent Disks' file removal (unlink) operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).") \
     M(SettingUInt64, concurrent_part_removal_threshold, 100, "Activate concurrent part removal (see 'max_part_removal_threads') only if the number of inactive data parts is at least this.") \
+    M(SettingString, storage_policy, "default", "Name of storage disk policy")
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_MERGE_TREE_SETTINGS)
 
@@ -103,7 +104,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
     {
-        return name == "index_granularity" || name == "index_granularity_bytes";
+        return name == "index_granularity" || name == "index_granularity_bytes" || name == "storage_policy";
     }
 };
 
