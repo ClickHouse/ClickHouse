@@ -3,12 +3,14 @@ I hereby agree to the terms of the CLA available at: https://yandex.ru/legal/cla
 For changelog. Remove if this is non-significant change.
 
 Category (leave one):
+
 - New Feature
 - Bug Fix
 - Improvement
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
+- Documentation
 - Other
 
 Short description (up to few sentences):
