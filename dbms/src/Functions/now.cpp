@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-DateTime64::NativeType nowSubsecond(UInt8 scale) {
+DateTime64::NativeType nowSubsecond(UInt32 scale) {
     timespec spec;
     clock_gettime(CLOCK_REALTIME, &spec);
 
@@ -64,11 +64,12 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return ColumnNumbers{0}; }
+    bool isDeterministic() const override { return false; }
 
     // Return type depends on argument value.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        UInt64 scale = DataTypeDateTime64::default_scale;
+        UInt32 scale = DataTypeDateTime64::default_scale;
 
         // Type check is similar to the validateArgumentType, trying to keep error codes and messages as close to the said function as possible.
         if (arguments.size() >= 1)
@@ -87,11 +88,9 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale);
     }
 
-    bool isDeterministic() const override { return false; }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        UInt64 scale = DataTypeDateTime64::default_scale;
+        UInt32 scale = DataTypeDateTime64::default_scale;
         if (arguments.size() == 1)
         {
             const IColumn * scale_column = block.getByPosition(arguments[0]).column.get();
