@@ -303,7 +303,8 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
         "CapnProto",
         [](ReadBuffer & buf, const Block & sample, const Context & context, IRowInputFormat::Params params, const FormatSettings &)
         {
-            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params), FormatSchemaInfo(context, "CapnProto"));
+            return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
+                                                             FormatSchemaInfo(context, context.getSettingsRef().format_schema, "CapnProto", true));
         });
 }
 

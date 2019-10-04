@@ -1,12 +1,12 @@
 # Функции по работе с массивами
 
-## empty
+## empty {#function-empty}
 
 Возвращает 1 для пустого массива, и 0 для непустого массива.
 Тип результата - UInt8.
 Функция также работает для строк.
 
-## notEmpty
+## notEmpty {#function-notempty}
 
 Возвращает 0 для пустого массива, и 1 для непустого массива.
 Тип результата - UInt8.
@@ -49,7 +49,7 @@
 
 Объединяет массивы, переданные в качестве аргументов.
 
-```
+```sql
 arrayConcat(arrays)
 ```
 
@@ -62,7 +62,7 @@ arrayConcat(arrays)
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
-```
+```text
 ┌─res───────────┐
 │ [1,2,3,4,5,6] │
 └───────────────┘
@@ -83,9 +83,10 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 `NULL` обрабатывается как значение.
 
-```
+```sql
 SELECT has([1, 2, NULL], NULL)
-
+```
+```text
 ┌─has([1, 2, NULL], NULL)─┐
 │                       1 │
 └─────────────────────────┘
@@ -95,7 +96,7 @@ SELECT has([1, 2, NULL], NULL)
 
 Проверяет, является ли один массив подмножеством другого.
 
-```
+```sql
 hasAll(set, subset)
 ```
 
@@ -133,7 +134,7 @@ hasAll(set, subset)
 
 Проверяет, имеют ли два массива хотя бы один общий элемент.
 
-```
+```sql
 hasAny(array1, array2)
 ```
 
@@ -170,11 +171,10 @@ hasAny(array1, array2)
 
 Пример:
 
-```
-:) SELECT indexOf([1,3,NULL,NULL],NULL)
-
+```sql
 SELECT indexOf([1, 3, NULL, NULL], NULL)
-
+```
+```text
 ┌─indexOf([1, 3, NULL, NULL], NULL)─┐
 │                                 3 │
 └───────────────────────────────────┘
@@ -190,9 +190,10 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 Пример:
 
-```
+```sql
 SELECT countEqual([1, 2, NULL, NULL], NULL)
-
+```
+```text
 ┌─countEqual([1, 2, NULL, NULL], NULL)─┐
 │                                    2 │
 └──────────────────────────────────────┘
@@ -216,7 +217,7 @@ WHERE CounterID = 160656
 LIMIT 10
 ```
 
-```
+```text
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -232,7 +233,7 @@ FROM test.hits
 WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 ```
 
-```
+```text
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -263,7 +264,7 @@ ORDER BY Reaches DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌──GoalID─┬─Reaches─┬─Visits─┐
 │   53225 │    3214 │   1097 │
 │ 2825062 │    3188 │   1097 │
@@ -286,7 +287,7 @@ LIMIT 10
 SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 ```
 
-```
+```text
 ┌─res───────────┐
 │ [1,2,1,1,2,1] │
 └───────────────┘
@@ -298,7 +299,7 @@ SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 
 Удаляет последний элемент из массива.
 
-```
+```sql
 arrayPopBack(array)
 ```
 
@@ -311,7 +312,7 @@ arrayPopBack(array)
 ```sql
 SELECT arrayPopBack([1, 2, 3]) AS res
 ```
-
+text
 ```
 ┌─res───┐
 │ [1,2] │
@@ -322,7 +323,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res
 
 Удаляет первый элемент из массива.
 
-```
+```sql
 arrayPopFront(array)
 ```
 
@@ -336,7 +337,7 @@ arrayPopFront(array)
 SELECT arrayPopFront([1, 2, 3]) AS res
 ```
 
-```
+```text
 ┌─res───┐
 │ [2,3] │
 └───────┘
@@ -346,7 +347,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res
 
 Добавляет один элемент в конец массива.
 
-```
+```sql
 arrayPushBack(array, single_value)
 ```
 
@@ -361,7 +362,7 @@ arrayPushBack(array, single_value)
 SELECT arrayPushBack(['a'], 'b') AS res
 ```
 
-```
+```text
 ┌─res───────┐
 │ ['a','b'] │
 └───────────┘
@@ -371,7 +372,7 @@ SELECT arrayPushBack(['a'], 'b') AS res
 
 Добавляет один элемент в начало массива.
 
-```
+```sql
 arrayPushFront(array, single_value)
 ```
 
@@ -386,7 +387,7 @@ arrayPushFront(array, single_value)
 SELECT arrayPushBack(['b'], 'a') AS res
 ```
 
-```
+```text
 ┌─res───────┐
 │ ['a','b'] │
 └───────────┘
@@ -396,7 +397,7 @@ SELECT arrayPushBack(['b'], 'a') AS res
 
 Изменяет длину массива.
 
-```
+```sql
 arrayResize(array, size[, extender])
 ```
 
@@ -414,17 +415,19 @@ arrayResize(array, size[, extender])
 
 **Примеры вызовов**
 
-```
+```sql
 SELECT arrayResize([1], 3)
-
+```
+```text
 ┌─arrayResize([1], 3)─┐
 │ [1,0,0]             │
 └─────────────────────┘
 ```
 
-```
+```sql
 SELECT arrayResize([1], 3, NULL)
-
+```
+```text
 ┌─arrayResize([1], 3, NULL)─┐
 │ [1,NULL,NULL]             │
 └───────────────────────────┘
@@ -434,7 +437,7 @@ SELECT arrayResize([1], 3, NULL)
 
 Возвращает срез массива.
 
-```
+```sql
 arraySlice(array, offset[, length])
 ```
 
@@ -450,7 +453,7 @@ arraySlice(array, offset[, length])
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 ```
 
-```
+```text
 ┌─res────────┐
 │ [2,NULL,4] │
 └────────────┘
@@ -464,10 +467,10 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Пример сортировки целочисленных значений:
 
-``` sql
+```sql
 SELECT arraySort([1, 3, 3, 0])
 ```
-```
+```text
 ┌─arraySort([1, 3, 3, 0])─┐
 │ [0,1,3,3]               │
 └─────────────────────────┘
@@ -475,10 +478,10 @@ SELECT arraySort([1, 3, 3, 0])
 
 Пример сортировки строковых значений:
 
-``` sql
+```sql
 SELECT arraySort(['hello', 'world', '!'])
 ```
-```
+```text
 ┌─arraySort(['hello', 'world', '!'])─┐
 │ ['!','hello','world']              │
 └────────────────────────────────────┘
@@ -486,10 +489,10 @@ SELECT arraySort(['hello', 'world', '!'])
 
 Значения `NULL`, `NaN` и `Inf` сортируются по следующему принципу:
 
-``` sql
+```sql
 SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 ```
-```
+```text
 ┌─arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf])─┐
 │ [-inf,-4,1,2,3,inf,nan,nan,NULL,NULL]                     │
 └───────────────────────────────────────────────────────────┘
@@ -504,10 +507,10 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 
 Рассмотрим пример: 
 
-``` sql
+```sql
 SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
 ```
-```
+```text
 ┌─res─────┐
 │ [3,2,1] │
 └─────────┘
@@ -517,11 +520,11 @@ SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
 
 Лямбда-функция может принимать несколько аргументов. В этом случае, в функцию `arraySort` нужно передавать несколько массивов, которые будут соответствовать аргументам лямбда-функции (массивы должны быть одинаковой длины). Следует иметь в виду, что результат будет содержать элементы только из первого массива; элементы из всех последующих массивов будут задавать ключи сортировки. Например:
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
 
-```
+```text
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘
@@ -531,18 +534,18 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 Ниже приведены другие примеры.
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> y, [0, 1, 2], ['c', 'b', 'a']) as res;
 ```
-``` sql
+```text
 ┌─res─────┐
 │ [2,1,0] │
 └─────────┘
 ```
-``` sql
+```sql
 SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 ```
-``` sql
+```text
 ┌─res─────┐
 │ [2,1,0] │
 └─────────┘
@@ -557,10 +560,10 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
  
 Пример сортировки целочисленных значений:
   
-``` sql
+```sql
 SELECT arrayReverseSort([1, 3, 3, 0]);
 ```
-```
+```text
 ┌─arrayReverseSort([1, 3, 3, 0])─┐
 │ [3,3,1,0]                      │
 └────────────────────────────────┘
@@ -568,21 +571,21 @@ SELECT arrayReverseSort([1, 3, 3, 0]);
 
 Пример сортировки строковых значений:
 
-``` sql
+```sql
 SELECT arrayReverseSort(['hello', 'world', '!']);
 ```
-```
+```text
 ┌─arrayReverseSort(['hello', 'world', '!'])─┐
 │ ['world','hello','!']                     │
 └───────────────────────────────────────────┘
-```  
+``` 
 
 Значения `NULL`, `NaN` и `Inf` сортируются в следующем порядке:
 
-``` sql
+```sql
 SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 ```
-``` sql
+```text
 ┌─res───────────────────────────────────┐
 │ [inf,3,2,1,-4,-inf,nan,nan,NULL,NULL] │
 └───────────────────────────────────────┘
@@ -595,10 +598,10 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 
 Функция `arrayReverseSort` является [функцией высшего порядка](higher_order_functions.md). Вы можете передать ей в качестве первого аргумента лямбда-функцию. Например:
 
-``` sql
+```sql
 SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
 ```
-```
+```text
 ┌─res─────┐
 │ [1,2,3] │
 └─────────┘
@@ -611,10 +614,10 @@ SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
   
 Лямбда-функция может принимать на вход несколько аргументов. В этом случае, в функцию `arrayReverseSort` нужно передавать несколько массивов, которые будут соответствовать аргументам лямбда-функции (массивы должны быть одинаковой длины). Следует иметь в виду, что результат будет содержать элементы только из первого массива; элементы из всех последующих массивов будут определять ключи сортировки. Например:
   
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
-``` sql
+```text
 ┌─res───────────────┐
 │ ['hello','world'] │
 └───────────────────┘
@@ -627,32 +630,172 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 Ниже приведены ещё примеры.
 
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> y, [0, 1, 2], ['c', 'b', 'a']) as res;
 ```
-``` sql
+```text
 ┌─res─────┐
 │ [0,1,2] │
 └─────────┘
 ```
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 ```
-``` sql
+```text
 ┌─res─────┐
 │ [4,3,5] │
 └─────────┘
 ```
 
-## arrayUniq(arr, ...)
+## arrayUniq(arr, ...) {#array_functions-arrayuniq}
 
 Если передан один аргумент, считает количество разных элементов в массиве.
 Если передано несколько аргументов, считает количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
 
 Если необходимо получить список уникальных элементов массива, можно воспользоваться arrayReduce('groupUniqArray', arr).
 
-## arrayJoin(arr)
+## arrayJoin(arr) {#array_functions-arrayjoin}
 
 Особенная функция. Смотрите раздел ["Функция arrayJoin"](array_join.md#functions_arrayjoin).
+
+## arrayDifference(arr) {#array_functions-arraydifference}
+
+Принимает массив, возвращает массив разностей между соседними элементами. Первым элементом будет 0, вторым разность между вторым и первым элементами исходного массива, и т.д. Тип элементов результирующего массива определяется правилами выведения типов при вычитании (напр. UInt8 - UInt8 = Int16). Поддерживаются UInt*/Int*/Float* типы (тип Decimal не поддерживается).
+
+Пример:
+
+```sql
+SELECT arrayDifference([1, 2, 3, 4])
+```
+
+```text
+┌─arrayDifference([1, 2, 3, 4])─┐
+│ [0,1,1,1]                     │
+└───────────────────────────────┘
+```
+
+Пример переполнения из-за результирующего типа Int64:
+
+```sql
+SELECT arrayDifference([0, 10000000000000000000])
+```
+
+```text
+┌─arrayDifference([0, 10000000000000000000])─┐
+│ [0,-8446744073709551616]                   │
+└────────────────────────────────────────────┘
+```
+
+## arrayDistinct(arr) {#array_functions-arraydistinct}
+
+Принимает массив, возвращает массив, содержащий уникальные элементы. 
+
+Пример:
+
+```sql
+SELECT arrayDistinct([1, 2, 2, 3, 1])
+```
+
+```text
+┌─arrayDistinct([1, 2, 2, 3, 1])─┐
+│ [1,2,3]                        │
+└────────────────────────────────┘
+```
+
+## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
+
+Возвращает массив того же размера, что и исходный массив, с индексами исходного массива, указывающими, где каждый элемент впервые появляется в исходном массиве.
+
+Пример:
+
+```sql
+SELECT arrayEnumerateDense([10, 20, 10, 30])
+```
+
+```text
+┌─arrayEnumerateDense([10, 20, 10, 30])─┐
+│ [1,2,1,3]                             │
+└───────────────────────────────────────┘
+```
+
+## arrayIntersect(arr) {#array_functions-arrayintersect}
+
+Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах. Элементы на выходе следуют в порядке следования в первом массиве.
+
+Пример:
+
+```sql
+SELECT
+    arrayIntersect([1, 2], [1, 3], [2, 3]) AS no_intersect,
+    arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
+```
+
+```text
+┌─no_intersect─┬─intersect─┐
+│ []           │ [1]       │
+└──────────────┴───────────┘
+```
+
+## arrayReduce(agg_func, arr1, ...) {#array_functions-arrayreduce}
+
+Применяет агрегатную функцию к элементам массива и возвращает ее результат. Имя агрегирующей функции передается как строка в одинарных кавычках `'max'`, `'sum'`. При использовании параметрических агрегатных функций, параметр указывается после имени функции в круглых скобках `'uniqUpTo(6)'`.
+
+Пример:
+
+```sql
+SELECT arrayReduce('max', [1, 2, 3])
+```
+
+```text
+┌─arrayReduce('max', [1, 2, 3])─┐
+│                             3 │
+└───────────────────────────────┘
+```
+
+Если агрегатная функция имеет несколько аргументов, то эту функцию можно применять к нескольким массивам одинакового размера.
+
+Пример:
+
+```sql
+SELECT arrayReduce('maxIf', [3, 5], [1, 0])
+```
+
+```text
+┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
+│                                    3 │
+└──────────────────────────────────────┘
+```
+
+Пример с параметрической агрегатной функцией:
+
+```sql
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+```
+
+```text
+┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
+│                                                           4 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## arrayReverse(arr) {#array_functions-arrayreverse}
+
+Возвращает массив того же размера, что и исходный массив, содержащий элементы в обратном порядке.
+
+Пример:
+```sql
+SELECT arrayReverse([1, 2, 3])
+```
+
+```text
+┌─arrayReverse([1, 2, 3])─┐
+│ [3,2,1]                 │
+└─────────────────────────┘
+```
+
+## reverse(arr) {#array_functions-reverse}
+
+Синоним для ["arrayReverse"](#array_functions-arrayreverse)
+
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_functions/) <!--hide-->

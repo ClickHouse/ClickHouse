@@ -103,6 +103,7 @@ class ClickHouseCluster:
         self.with_hdfs = False
         self.with_mongo = False
         self.with_net_trics = False
+        self.with_redis = False
 
         self.docker_client = None
         self.is_up = False
@@ -114,7 +115,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, with_redis=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -132,10 +133,10 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, self.base_configs_dir, self.server_bin_path,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address,
-            with_installed_binary=with_installed_binary)
+            with_installed_binary=with_installed_binary, tmpfs=tmpfs)
 
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
@@ -208,6 +209,13 @@ class ClickHouseCluster:
             for cmd in cmds:
                 cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
 
+        if with_redis and not self.with_redis:
+            self.with_redis = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')])
+            self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')]
+
+
         return instance
 
 
@@ -225,12 +233,12 @@ class ClickHouseCluster:
     def restart_instance_with_ip_change(self, node, new_ip):
         if '::' in new_ip:
             if node.ipv6_address is None:
-                raise Exception("You shoud specity ipv6_address in add_node method")
+                raise Exception("You should specity ipv6_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
             node.ipv6_address = new_ip
         else:
             if node.ipv4_address is None:
-                raise Exception("You shoud specity ipv4_address in add_node method")
+                raise Exception("You should specity ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
         subprocess.check_call(self.base_cmd + ["stop", node.name])
@@ -367,6 +375,11 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_mongo_cmd + common_opts)
             self.wait_mongo_to_start(30)
 
+        if self.with_redis and self.base_redis_cmd:
+            subprocess_check_call(self.base_redis_cmd + ['up', '-d', '--force-recreate'])
+            time.sleep(10)
+
+
         subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds
@@ -393,6 +406,10 @@ class ClickHouseCluster:
             instance.docker_client = None
             instance.ip_address = None
             instance.client = None
+
+
+    def open_bash_shell(self, instance_name):
+        os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
 
 
     def get_kazoo_client(self, zoo_instance_name):
@@ -435,6 +452,7 @@ services:
             {odbc_bridge_volume}
             {odbc_ini_path}
         entrypoint: {entrypoint_cmd}
+        tmpfs: {tmpfs}
         cap_add:
             - SYS_PTRACE
         depends_on: {depends_on}
@@ -454,9 +472,9 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -464,6 +482,7 @@ class ClickHouseInstance:
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
+        self.tmpfs = tmpfs[:]
         self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
@@ -479,6 +498,7 @@ class ClickHouseInstance:
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
         self.with_mongo = with_mongo
+        self.with_redis = with_redis
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
@@ -811,6 +831,7 @@ class ClickHouseInstance:
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,
+                tmpfs=str(self.tmpfs),
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),
                 user=os.getuid(),

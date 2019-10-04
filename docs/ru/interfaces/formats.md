@@ -14,6 +14,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
+| [CustomSeparated](#format-customseparated) | ✔ | ✔ |
 | [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
@@ -50,7 +51,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```
+```text
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -82,7 +83,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Строки выводятся с экранированием спецсимволов с помощью обратного слеша. При выводе, используются следующие escape-последовательности: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Парсер также поддерживает последовательности `\a`, `\v`, и `\xHH` (последовательности hex escape) и любые последовательности вида `\c`, где `c` — любой символ (такие последовательности преобразуются в `c`). Таким образом, при чтении поддерживаются форматы, где перевод строки может быть записан как `\n` и как `\` и перевод строки. Например, строка `Hello world`, где между словами вместо пробела стоит перевод строки, может быть считана в любом из следующих вариантов:
 
-```
+```text
 Hello\nworld
 
 Hello\
@@ -125,14 +126,14 @@ world
 
 Этот формат позволяет указать произвольную форматную строку, в которую подставляются значения, сериализованные выбранным способом.
 
-Для этого используются настройки `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
+Для этого используются настройки `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
 
-Форматная строка `format_schema_rows` задаёт формат для строк таблицы и должна иметь вид:
+Настройка `format_template_row` задаёт путь к файлу, содержащему форматную строку для строк таблицы, которая должна иметь вид:
 
  `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
   где `delimiter_i` - разделители между значениями (символ `$` в разделителе экранируется как `$$`), 
-  `column_i` - имена столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается), 
+  `column_i` - имена или номера столбцов, значения которых должны быть выведены или считаны (если имя не указано - столбец пропускается), 
   `serializeAs_i` - тип экранирования для значений соответствующего столбца. Поддерживаются следующие типы экранирования:
   
   - `CSV`, `JSON`, `XML` (как в одноимённых форматах)
@@ -151,14 +152,14 @@ world
 
   `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
   
- Настройка `format_schema_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
+ Настройка `format_template_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
   
-Форматная строка `format_schema` имеет аналогичный `format_schema_rows` синтаксис и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
+Настройка `format_template_resultset` задаёт путь к файлу, содержащему форматную строку для результата. Форматная строка для результата имеет синтаксис аналогичный форматной строке для строк таблицы и позволяет указать префикс, суффикс и способ вывода дополнительной информации. Вместо имён столбцов в ней указываются следующие имена подстановок:
 
- - `data` - строки с данными в формате `format_schema_rows`, разделённые `format_schema_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
- - `totals` - строка с тотальными значениями в формате `format_schema_rows` (при использовании WITH TOTALS)
- - `min` - строка с минимальными значениями в формате `format_schema_rows` (при настройке extremes, выставленной в 1)
- - `max` - строка с максимальными значениями в формате `format_schema_rows` (при настройке extremes, выставленной в 1)
+ - `data` - строки с данными в формате `format_template_row`, разделённые `format_template_rows_between_delimiter`. Эта подстановка должна быть первой подстановкой в форматной строке.
+ - `totals` - строка с тотальными значениями в формате `format_template_row` (при использовании WITH TOTALS)
+ - `min` - строка с минимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
+ - `max` - строка с максимальными значениями в формате `format_template_row` (при настройке extremes, выставленной в 1)
  - `rows` - общее количество выведенных стрчек
  - `rows_before_limit` - не менее скольких строчек получилось бы, если бы не было LIMIT-а. Выводится только если запрос содержит LIMIT. В случае, если запрос содержит GROUP BY, `rows_before_limit` - точное число строк, которое получилось бы, если бы не было LIMIT-а.
  - `time` - время выполнения запроса в секундах
@@ -166,15 +167,18 @@ world
  - `bytes_read` - сколько байт (несжатых) было прочитано при выполнении запроса
  
  У подстановок `data`, `totals`, `min` и `max` не должны быть указаны типы экранирования (или должен быть указан `None`). Остальные подстановки - это отдельные значения, для них может быть указан любой тип экранирования.
- Если строка `format_schema` пустая, то по-умолчанию используется `${data}`.
- Из всех перечисленных подстановок форматная строка `format_schema` для ввода может содержать только `data`.
+ Если строка `format_template_resultset` пустая, то по-умолчанию используется `${data}`.
+ Из всех перечисленных подстановок форматная строка `format_template_resultset` для ввода может содержать только `data`.
  Также при вводе формат поддерживает пропуск значений столбцов и пропуск значений в префиксе и суффиксе (см. пример).
  
  Пример вывода:
 ```sql
-SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5
-FORMAT Template 
-SETTINGS format_schema = '<!DOCTYPE HTML>
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS 
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
+```
+`/some/path/resultset.format`:
+```
+<!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
  <body>
   <table border="1"> <caption>Search phrases</caption>
@@ -186,10 +190,13 @@ SETTINGS format_schema = '<!DOCTYPE HTML>
   </table>
   <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
  </body>
-</html>',
-format_schema_rows = '<tr> <td>${SearchPhrase:XML}</td> <td>${с:XML}</td> </tr>',
-format_schema_rows_between_delimiter = '\n    '
+</html>
 ```
+`/some/path/row.format`:
+```
+<tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
+```
+Резутьтат:
 ```html
 <!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
@@ -211,7 +218,7 @@ format_schema_rows_between_delimiter = '\n    '
 ```
 
 Пример ввода:
-```
+```text
 Some header
 Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
 Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
@@ -219,8 +226,15 @@ Total rows: 2
 ```
 ```sql
 INSERT INTO UserActivity FORMAT Template SETTINGS 
-format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
-format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
+```
+`/some/path/resultset.format`:
+```
+Some header\n${data}\nTotal rows: ${:CSV}\n
+```
+`/some/path/row.format`:
+```
+Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
 ```
 `PageViews`, `UserID`, `Duration` и `Sign` внутри подстановок - имена столбцов в таблице, в которую вставляются данные. Значения после `Useless field` в строках и значение после `\nTotal rows: ` в суффиксе будут проигнорированы.
 Все разделители во входных данных должны строго соответствовать разделителям в форматных строках.
@@ -239,7 +253,7 @@ format_schema_rows_between_delimiter = ','
 
 Похож на TabSeparated, но выводит значения в формате name=value. Имена экранируются так же, как строки в формате TabSeparated и, дополнительно, экранируется также символ =.
 
-```
+```text
 SearchPhrase=   count()=8267016
 SearchPhrase=интерьер ванной комнаты    count()=2166
 SearchPhrase=яндекс     count()=1655
@@ -258,7 +272,7 @@ SearchPhrase=баку       count()=1000
 SELECT * FROM t_null FORMAT TSKV
 ```
 
-```
+```text
 x=1	y=\N
 ```
 
@@ -274,8 +288,8 @@ x=1	y=\N
 
 При форматировании, строки выводятся в двойных кавычках. Двойная кавычка внутри строки выводится как две двойные кавычки подряд. Других правил экранирования нет. Даты и даты-с-временем выводятся в двойных кавычках. Числа выводятся без кавычек. Значения разделяются символом-разделителем, по умолчанию  — `,`. Символ-разделитель определяется настройкой [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Строки разделяются unix переводом строки (LF). Массивы сериализуются в CSV следующим образом: сначала массив сериализуется в строку, как в формате TabSeparated, а затем полученная строка выводится в CSV в двойных кавычках. Кортежи в формате CSV сериализуются, как отдельные столбцы (то есть, теряется их вложенность в кортеж).
 
-```
-clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
+```bash
+$ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
 &ast;По умолчанию — `,`. См. настройку [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) для дополнительной информации.
@@ -291,6 +305,11 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 ## CSVWithNames
 
 Выводит также заголовок, аналогично `TabSeparatedWithNames`.
+
+## CustomSeparated {#format-customseparated}
+
+Аналогичен [Template](#format-template), но выводит (или считывает) все столбцы, используя для них правило экранирования из настройки `format_custom_escaping_rule` и разделители из настроек `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` и `format_custom_result_after_delimiter`, а не из форматных строк.
+Также существует формат `CustomSeparatedIgnoreSpaces`, аналогичный `TemplateIgnoreSpaces`.
 
 ## JSON {#json}
 
@@ -460,7 +479,7 @@ ClickHouse заменяет опущенные значения значения
 
 Рассмотрим следующую таблицу:
 
-```
+```sql
 CREATE TABLE IF NOT EXISTS example_table
 (
     x UInt32,
@@ -478,7 +497,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 Рассмотрим в качестве примера таблицу `UserActivity`:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -487,7 +506,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 Запрос `SELECT * FROM UserActivity FORMAT JSONEachRow` возвращает:
 
-```
+```text
 {"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
 {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
 ```
@@ -578,7 +597,7 @@ SELECT * FROM json_each_row_nested
 ```sql
 SELECT * FROM t_null
 ```
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
@@ -590,7 +609,7 @@ SELECT * FROM t_null
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-```
+```text
 ┌─Escaping_test────────────────────────┐
 │ String with 'quotes' and 	 character │
 └──────────────────────────────────────┘
@@ -605,7 +624,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```
+```text
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -644,7 +663,7 @@ Extremes:
 Пример:
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 Для отображения в браузере, вы можете использовать HTTP интерфейс.
@@ -703,7 +722,7 @@ Array представлены как длина в формате varint (unsig
 ```sql
 SELECT * FROM t_null FORMAT Vertical
 ```
-```
+```text
 Row 1:
 ──────
 x: 1
@@ -716,7 +735,7 @@ y: ᴺᵁᴸᴸ
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 test: string with 'quotes' and 	 with some special
@@ -806,12 +825,12 @@ Cap'n Proto - формат бинарных сообщений, похож на 
 Сообщения Cap'n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется между запросами.
 
 ```bash
-cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Где `schema.capnp` выглядит следующим образом:
 
-```
+```capnp
 struct Message {
   SearchPhrase @0 :Text;
   c @1 :Uint64;
@@ -838,12 +857,12 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 или
 
 ```bash
-cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
+$ cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
 Где файл `schemafile.proto` может выглядеть так:
 
-```
+```capnp
 syntax = "proto3";
 
 message MessageType {
@@ -860,7 +879,7 @@ message MessageType {
 
 Вложенные сообщения поддерживаются, например, для поля `z` в таком сообщении
 
-```
+```capnp
 message MessageType {
   message XType {
     message YType {
@@ -877,7 +896,7 @@ ClickHouse попытается найти столбец с именем `x.y.z
 
 Значения по умолчанию, определённые в схеме `proto2`, например,
 
-```
+```capnp
 syntax = "proto2";
 
 message MessageType {
@@ -926,14 +945,14 @@ ClickHouse поддерживает настраиваемую точность 
 
 Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
 
-```
-cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+```bash
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
-```
-clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
 Для обмена данными с экосистемой Hadoop можно использовать движки таблиц [HDFS](../operations/table_engines/hdfs.md) и `URL`.

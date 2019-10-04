@@ -64,7 +64,7 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
-```
+```sql
 toValidUTF8( input_string )
 ```
 
@@ -100,13 +100,16 @@ Formatting constant pattern with the string listed in the arguments. `pattern` i
 
 ```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
-
+```
+```text
 ┌─format('{1} {0} {1}', 'World', 'Hello')─┐
 │ Hello World Hello                       │
 └─────────────────────────────────────────┘
-
+```
+```sql
 SELECT format('{} {}', 'Hello', 'World')
-
+```
+```text
 ┌─format('{} {}', 'Hello', 'World')─┐
 │ Hello World                       │
 └───────────────────────────────────┘
@@ -149,9 +152,34 @@ Similar to base64Decode, but in case of error an empty string would be returned.
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(s, prefix) {#function-startswith}
+## startsWith(str, prefix) {#function-startswith}
 
-Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
+Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
+
+```sql
+SELECT startsWith('Spider-Man', 'Spi');
+```
+
+**Returned values**
+
+- 1, if the string starts with the specified prefix.
+- 0, if the string doesn't start with the specified prefix.
+
+**Example**
+
+Query:
+
+```sql
+SELECT startsWith('Hello, world!', 'He');
+```
+
+Result:
+
+```text
+┌─startsWith('Hello, world!', 'He')─┐
+│                                 1 │
+└───────────────────────────────────┘
+```
 
 ## trimLeft(s)
 

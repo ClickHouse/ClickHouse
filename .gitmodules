@@ -103,3 +103,6 @@
 [submodule "contrib/orc"]
 	path = contrib/orc
 	url = https://github.com/apache/orc
+[submodule "contrib/sparsehash-c11"]
+	path = contrib/sparsehash-c11
+	url = https://github.com/sparsehash/sparsehash-c11.git

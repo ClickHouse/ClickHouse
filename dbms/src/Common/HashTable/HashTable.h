@@ -77,6 +77,67 @@ void set(T & x) { x = 0; }
 
 }
 
+/**
+  * lookupResultGetKey/Mapped -- functions to get key/"mapped" values from the
+  * LookupResult returned by find() and emplace() methods of HashTable.
+  * Must not be called for a null LookupResult.
+  *
+  * We don't use iterators for lookup result to avoid creating temporary
+  * objects. Instead, LookupResult is a pointer of some kind. There are global
+  * functions lookupResultGetKey/Mapped, overloaded for this pointer type, that
+  * return pointers to key/"mapped" values. They are implemented as global
+  * functions and not as methods, because they have to be overloaded for POD
+  * types, e.g. in StringHashTable where different components have different
+  * Cell format.
+  *
+  * Different hash table implementations support this interface to a varying
+  * degree:
+  *
+  * 1) Hash tables that store neither the key in its original form, nor a
+  *    "mapped" value: FixedHashTable or StringHashTable.
+  *    Neither GetKey nor GetMapped are supported, the only valid operation is
+  *    checking LookupResult for null.
+  *
+  * 2) Hash maps that do not store the key, e.g. FixedHashMap or StringHashMap.
+  *    Only GetMapped is supported.
+  *
+  * 3) Hash tables that store the key and do not have a "mapped" value, e.g. the
+  *    normal HashTable.
+  *    GetKey returns the key, and GetMapped returns a zero void pointer. This
+  *    simplifies generic code that works with mapped values: it can overload
+  *    on the return type of GetMapped(), and doesn't need other parameters. One
+  *    example is insertSetMapped() function.
+  *
+  * 4) Hash tables that store both the key and the "mapped" value, e.g. HashMap.
+  *    Both GetKey and GetMapped are supported.
+  *
+  * The implementation side goes as follows:
+  * for (1), LookupResult = void *, no getters;
+  * for (2), LookupResult = Mapped *, GetMapped is a default implementation that
+  * takes any pointer-like object;
+  * for (3) and (4), LookupResult = Cell *, and both getters are implemented.
+  * They have to be specialized for each particular Cell class to supersede the
+  * default verision that takes a generic pointer-like object.
+  */
+
+/**
+  * The default implementation of GetMapped that is used for the above case (2).
+  */
+template<typename PointerLike>
+ALWAYS_INLINE inline auto lookupResultGetMapped(PointerLike && ptr) { return &*ptr; }
+
+/**
+  * Generic const wrapper for lookupResultGetMapped, that calls a non-const
+  * version. Should be safe, given that these functions only do pointer
+  * arithmetics.
+  */
+template<typename T>
+ALWAYS_INLINE inline auto lookupResultGetMapped(const T * obj)
+{
+    auto mapped_ptr = lookupResultGetMapped(const_cast<T *>(obj));
+    const auto const_mapped_ptr = mapped_ptr;
+    return const_mapped_ptr;
+}
 
 /** Compile-time interface for cell of the hash table.
   * Different cell types are used to implement different hash tables.
@@ -89,7 +150,10 @@ struct HashTableCell
 {
     using State = TState;
 
+    using key_type = Key;
     using value_type = Key;
+    using mapped_type = void;
+
     Key key;
 
     HashTableCell() {}
@@ -142,6 +206,24 @@ struct HashTableCell
     void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
     void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
 };
+
+template<typename Key, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetKey(HashTableCell<Key, Hash, State> * cell)
+{ return &cell->key; }
+
+template<typename Key, typename Hash, typename State>
+ALWAYS_INLINE inline void * lookupResultGetMapped(HashTableCell<Key, Hash, State> *)
+{ return nullptr; }
+
+/**
+  * A helper function for HashTable::insert() to set the "mapped" value.
+  * Overloaded on the mapped type, does nothing if it's void.
+  */
+template <typename ValueType>
+void insertSetMapped(void * /* dest */, const ValueType & /* src */) {}
+
+template <typename MappedType, typename ValueType>
+void insertSetMapped(MappedType * dest, const ValueType & src) { *dest = src.second; }
 
 
 /** Determines the size of the hash table, and when and how much it should be resized.
@@ -224,8 +306,18 @@ private:
 
 public:
     bool hasZero() const { return has_zero; }
-    void setHasZero() { has_zero = true; }
-    void clearHasZero() { has_zero = false; }
+
+    void setHasZero()
+    {
+        has_zero = true;
+        new (zeroValue()) Cell();
+    }
+
+    void clearHasZero()
+    {
+        has_zero = false;
+        zeroValue()->~Cell();
+    }
 
     Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
     const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
@@ -466,12 +558,33 @@ protected:
         {
             return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
         }
+
+        /**
+          * A hack for HashedDictionary.
+          *
+          * The problem: std-like find() returns an iterator, which has to be
+          * compared to end(). On the other hand, HashMap::find() returns
+          * LookupResult, which is compared to nullptr. HashedDictionary has to
+          * support both hash maps with the same code, hence the need for this
+          * hack.
+          *
+          * The proper way would be to remove iterator interface from our
+          * HashMap completely, change all its users to the existing internal
+          * iteration interface, and redefine end() to return LookupResult for
+          * compatibility with std find(). Unfortunately, now is not the time to
+          * do this.
+          */
+        operator Cell * () const { return nullptr; }
     };
 
 
 public:
     using key_type = Key;
     using value_type = typename Cell::value_type;
+
+    // Use lookupResultGetMapped/Key to work with these values.
+    using LookupResult = Cell *;
+    using ConstLookupResult = const Cell *;
 
     size_t hash(const Key & x) const { return Hash::operator()(x); }
 
@@ -632,7 +745,7 @@ protected:
     /// If the key is zero, insert it into a special place and return true.
     /// We don't have to persist a zero key, because it's not actually inserted.
     /// That's why we just take a Key by value, an not a key holder.
-    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+    bool ALWAYS_INLINE emplaceIfZero(Key x, LookupResult & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
         if (!Cell::need_zero_value_storage)
@@ -640,12 +753,13 @@ protected:
 
         if (Cell::isZero(x, *this))
         {
-            it = iteratorToZero();
+            it = this->zeroValue();
+
             if (!this->hasZero())
             {
                 ++m_size;
                 this->setHasZero();
-                it.ptr->setHash(hash_value);
+                this->zeroValue()->setHash(hash_value);
                 inserted = true;
             }
             else
@@ -659,9 +773,9 @@ protected:
 
     template <typename KeyHolder>
     void ALWAYS_INLINE emplaceNonZeroImpl(size_t place_value, KeyHolder && key_holder,
-                                          iterator & it, bool & inserted, size_t hash_value)
+                                          LookupResult & it, bool & inserted, size_t hash_value)
     {
-        it = iterator(this, &buf[place_value]);
+        it = &buf[place_value];
 
         if (!buf[place_value].isZero(*this))
         {
@@ -695,13 +809,16 @@ protected:
                 throw;
             }
 
-            it = find(keyHolderGetKey(key_holder), hash_value);
+            // The hash table was rehashed, so we have to re-find the key.
+            size_t new_place = findCell(key, hash_value, grower.place(hash_value));
+            assert(!buf[new_place].isZero(*this));
+            it = &buf[new_place];
         }
     }
 
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplaceNonZero(KeyHolder && key_holder, iterator & it,
+    void ALWAYS_INLINE emplaceNonZero(KeyHolder && key_holder, LookupResult & it,
                                       bool & inserted, size_t hash_value)
     {
         const auto & key = keyHolderGetKey(key_holder);
@@ -712,9 +829,9 @@ protected:
 
 public:
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
-    std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
-        std::pair<iterator, bool> res;
+        std::pair<LookupResult, bool> res;
 
         size_t hash_value = hash(Cell::getKey(x));
         if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, hash_value))
@@ -723,7 +840,7 @@ public:
         }
 
         if (res.second)
-            res.first.ptr->setMapped(x);
+            insertSetMapped(lookupResultGetMapped(res.first), x);
 
         return res;
     }
@@ -736,9 +853,10 @@ public:
     }
 
 
-    /** Insert the key,
-      * return an iterator to a position that can be used for `placement new` of value,
-      * as well as the flag - whether a new key was inserted.
+    /** Insert the key.
+      * Return values:
+      * 'it' -- a LookupResult pointing to the corresponding key/mapped pair.
+      * 'inserted' -- whether a new key was inserted.
       *
       * You have to make `placement new` of value if you inserted a new key,
       * since when destroying a hash table, it will call the destructor!
@@ -752,14 +870,14 @@ public:
       *     new(&it->second) Mapped(value);
       */
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder && key_holder, iterator & it, bool & inserted)
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         const auto & key = keyHolderGetKey(key_holder);
         emplace(key_holder, it, inserted, hash(key));
     }
 
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder && key_holder, iterator & it,
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it,
                                   bool & inserted, size_t hash_value)
     {
         const auto & key = keyHolderGetKey(key_holder);
@@ -779,47 +897,29 @@ public:
             resize();
     }
 
-    iterator ALWAYS_INLINE find(Key x)
+    LookupResult ALWAYS_INLINE find(Key x)
     {
         if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
+            return this->hasZero() ? this->zeroValue() : nullptr;
 
         size_t hash_value = hash(x);
         size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
+        return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
     }
 
+    ConstLookupResult ALWAYS_INLINE find(Key x) const
+    {
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x);
+    }
 
-    const_iterator ALWAYS_INLINE find(Key x) const
+    LookupResult ALWAYS_INLINE find(Key x, size_t hash_value)
     {
         if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
-
-        size_t hash_value = hash(x);
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
-    }
-
-
-    iterator ALWAYS_INLINE find(Key x, size_t hash_value)
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
+            return this->hasZero() ? this->zeroValue() : nullptr;
 
         size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
+        return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
     }
-
-
-    const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
-
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
-    }
-
 
     bool ALWAYS_INLINE has(Key x) const
     {

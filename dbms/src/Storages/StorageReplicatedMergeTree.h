@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
@@ -167,8 +168,6 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
-    String getDataPath() const override { return full_path; }
-
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
     /// Checks ability to use granularity
@@ -264,6 +263,10 @@ private:
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
+    /// A task which move parts to another disks/volumes
+    /// Transparent for replication.
+    BackgroundProcessingPool::TaskHandle move_parts_task_handle;
+
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
@@ -334,10 +337,9 @@ private:
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction,
                                                                const DataPartPtr & part);
 
-    void getCommitPartOps(
-        Coordination::Requests & ops,
-        MutableDataPartPtr & part,
-        const String & block_id_path = "") const;
+    bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
+
+    void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
 
     /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
     void updatePartHeaderInZooKeeperAndCommit(
@@ -365,12 +367,6 @@ private:
       */
     bool executeLogEntry(LogEntry & entry);
 
-    void writePartLog(
-        PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
-        const String & new_part_name,
-        const DataPartPtr & result_part,
-        const DataPartsVector & source_parts,
-        const MergeListEntry * merge_entry);
 
     void executeDropRange(const LogEntry & entry);
 
@@ -378,6 +374,7 @@ private:
     bool tryExecuteMerge(const LogEntry & entry);
 
     bool tryExecutePartMutation(const LogEntry & entry);
+
 
     bool executeFetch(LogEntry & entry);
 
@@ -402,6 +399,11 @@ private:
     /** Performs actions from the queue.
       */
     BackgroundProcessingPoolTaskResult queueTask();
+
+    /// Perform moves of parts to another disks.
+    /// Local operation, doesn't interact with replicationg queue.
+    BackgroundProcessingPoolTaskResult movePartsTask();
+
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
@@ -458,6 +460,7 @@ private:
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
+
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
@@ -527,7 +530,7 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & path_, const String & database_name_, const String & name_,
+        const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
         const ConstraintsDescription & constraints_,

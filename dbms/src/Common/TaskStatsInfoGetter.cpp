@@ -4,7 +4,7 @@
 
 #include <unistd.h>
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include "hasLinuxCapability.h"
 #include <common/unaligned.h>
@@ -321,7 +321,7 @@ bool TaskStatsInfoGetter::checkPermissions()
 
 TaskStatsInfoGetter::TaskStatsInfoGetter()
 {
-    throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
+    // TODO: throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)

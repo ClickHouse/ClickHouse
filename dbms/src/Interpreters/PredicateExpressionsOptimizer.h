@@ -20,7 +20,7 @@ class Context;
  *      - Query after optimization :
  *          SELECT id_1, name_1 FROM (SELECT id_1, name_1 FROM table_a WHERE id_1 = 1 UNION ALL SELECT id_2, name_2 FROM table_b WHERE id_2 = 1)
  *              WHERE id_1 = 1
- *  For more details : https://github.com/yandex/ClickHouse/pull/2015#issuecomment-374283452
+ *  For more details : https://github.com/ClickHouse/ClickHouse/pull/2015#issuecomment-374283452
  */
 class PredicateExpressionsOptimizer
 {

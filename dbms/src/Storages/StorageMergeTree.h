@@ -9,11 +9,13 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Storages/MergeTree/DiskSpaceMonitor.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -58,8 +60,6 @@ public:
     void drop(TableStructureWriteLockHolder &) override;
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
-
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
@@ -68,14 +68,9 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
-    String getDataPath() const override { return full_path; }
-
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
 private:
-    String path;
-
-    BackgroundProcessingPool & background_pool;
 
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
@@ -87,14 +82,23 @@ private:
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
 
-    mutable std::mutex currently_merging_mutex;
-    DataParts currently_merging;
+    /// Mutex for parts currently processing in background
+    /// merging (also with TTL), mutating or moving.
+    mutable std::mutex currently_processing_in_background_mutex;
+
+    /// Parts that currently participate in merge or mutation.
+    /// This set have to be used with `currently_processing_in_background_mutex`.
+    DataParts currently_merging_mutating_parts;
+
+
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
 
-    BackgroundProcessingPool::TaskHandle background_task_handle;
+    /// Task handler for merges, mutations and moves.
+    BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
+    BackgroundProcessingPool::TaskHandle moving_task_handle;
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> prepareAlterTransactions(
         const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context);
@@ -107,14 +111,16 @@ private:
       */
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
+    BackgroundProcessingPoolTaskResult movePartsTask();
+
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
-    BackgroundProcessingPoolTaskResult backgroundTask();
+    BackgroundProcessingPoolTaskResult mergeMutateTask();
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
-        std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
+        std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     void clearOldMutations(bool truncate = false);
 
@@ -123,6 +129,8 @@ private:
     void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
+
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
@@ -137,7 +145,6 @@ protected:
       * See MergeTreeData constructor for comments on parameters.
       */
     StorageMergeTree(
-        const String & path_,
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
