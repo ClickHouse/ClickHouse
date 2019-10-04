@@ -220,7 +220,7 @@ Ok.
 
 ## input_format_null_as_default {#settings-input_format_null_as_default}
 
-Включает или отключает использование значений по-умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для фомата CSV).
+Включает или отключает использование значений по-умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для текстовых форматов).
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
