@@ -20,8 +20,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-namespace
-{
 
 bool isParseError(int code)
 {
@@ -35,7 +33,6 @@ bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
 }
 
-}
 
 Chunk IRowInputFormat::generate()
 {

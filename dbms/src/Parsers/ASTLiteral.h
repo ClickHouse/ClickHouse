@@ -3,6 +3,8 @@
 #include <Core/Field.h>
 #include <Common/FieldVisitors.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/TokenIterator.h>
+#include <optional>
 
 
 namespace DB
@@ -14,6 +16,10 @@ class ASTLiteral : public ASTWithAlias
 {
 public:
     Field value;
+
+    /// For ConstantExpressionTemplate
+    std::optional<TokenIterator> begin;
+    std::optional<TokenIterator> end;
 
     ASTLiteral(const Field & value_) : value(value_) {}
 
