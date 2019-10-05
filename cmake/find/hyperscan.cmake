@@ -1,5 +1,5 @@
 if (HAVE_SSSE3)
-    option (ENABLE_HYPERSCAN "Enable hyperscan" ON)
+    option (ENABLE_HYPERSCAN "Enable hyperscan" ${ENABLE_LIBRARIES})
 endif ()
 
 if (ENABLE_HYPERSCAN)
