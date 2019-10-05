@@ -104,7 +104,8 @@ void DatabaseOrdinary::loadTables(
     using FileNames = std::vector<std::string>;
     FileNames file_names;
 
-    DatabaseOnDisk::iterateTableFiles(*this, log, [&file_names](const String & file_name) {
+    DatabaseOnDisk::iterateTableFiles(*this, log, [&file_names](const String & file_name)
+    {
         file_names.push_back(file_name);
     });
 

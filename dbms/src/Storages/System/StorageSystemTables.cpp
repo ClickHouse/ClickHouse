@@ -61,15 +61,16 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     return block.getByPosition(0).column;
 }
 
-static bool needLockStructure(const DatabasePtr& database, const Block& header) {
+static bool needLockStructure(const DatabasePtr& database, const Block& header)
+{
     if (database->getEngineName() != "Lazy")
         return true;
 
     static const std::set<std::string> columns_without_lock = { "database", "name", "metadata_modification_time" };
-    for (const auto& column : header.getColumnsWithTypeAndName()) {
-        if (columns_without_lock.find(column.name) == columns_without_lock.end()) {
+    for (const auto& column : header.getColumnsWithTypeAndName())
+    {
+        if (columns_without_lock.find(column.name) == columns_without_lock.end())
             return true;
-        }
     }
     return false;
 }
@@ -187,9 +188,9 @@ protected:
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getIterator(context);
-            
+
             const bool need_lock_structure = needLockStructure(database, header);
-            
+
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
@@ -238,7 +239,7 @@ protected:
                 {
                     if (!table)
                         table = tables_it->table();
-                
+
                     Array table_paths_array;
                     auto paths = table->getDataPaths();
                     table_paths_array.reserve(paths.size());
