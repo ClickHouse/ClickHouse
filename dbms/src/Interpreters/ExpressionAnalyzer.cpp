@@ -594,7 +594,7 @@ void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsCha
     initChain(chain, sourceColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-        // FIXME: assert(filter_info);
+    // FIXME: assert(filter_info);
     step.actions = std::move(actions);
     step.required_output.push_back(std::move(column_name));
     step.can_remove_required_output = {true};
