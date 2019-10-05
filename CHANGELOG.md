@@ -2,7 +2,7 @@
 
 ### New Feature
 * Tiered storage: support to use multiple storage volumes for tables with MergeTree engine. It's possible to store fresh data on SSD and automatically move old data to HDD. ([example](https://clickhouse.github.io/clickhouse-presentations/meetup30/new_features/#12)). [#4918](https://github.com/ClickHouse/ClickHouse/pull/4918) ([Igr](https://github.com/ObjatieGroba))  [#6489](https://github.com/ClickHouse/ClickHouse/pull/6489) ([alesapin](https://github.com/alesapin))
-* Add table function `input()` for reading incoming data in `INSERT` `SELECT` query. [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1))  [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
+* Add table function `input` for reading incoming data in `INSERT SELECT` query. [#5450](https://github.com/ClickHouse/ClickHouse/pull/5450) ([palasonic1](https://github.com/palasonic1))  [#6832](https://github.com/ClickHouse/ClickHouse/pull/6832) ([Anton Popov](https://github.com/CurtizJ))
 * Add a `sparse_hashed` dictionary layout, that is functionally equivalent to the `hashed` layout, but is more memory efficient. It uses about twice as less memory at the cost of slower value retrieval. [#6894](https://github.com/ClickHouse/ClickHouse/pull/6894) ([Azat Khuzhin](https://github.com/azat))
 * Implement ability to define list of users for access to dictionaries. Only current connected database using. [#6907](https://github.com/ClickHouse/ClickHouse/pull/6907) ([Guillaume Tassery](https://github.com/YiuRULE))
 * Add `LIMIT` option to `SHOW` query. [#6944](https://github.com/ClickHouse/ClickHouse/pull/6944) ([Philipp Malkovsky](https://github.com/malkfilipp))
