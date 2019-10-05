@@ -113,7 +113,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Assumes `storage` is set and the table filter is not empty.
+/// Assumes `storage` is set and the table filter (row-level security) is not empty.
 String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & storage, const Context & context, const Names & prerequisite_columns = {})
 {
     const auto & db_name = storage->getDatabaseName();
@@ -435,7 +435,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     /// Do all AST changes here, because actions from analysis_result will be used later in readImpl.
 
     /// PREWHERE optimization.
-    /// Turn off, if the table filter is applied.
+    /// Turn off, if the table filter (row-level security) is applied.
     if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
         query_analyzer->makeSetsForIndex(query.where());
