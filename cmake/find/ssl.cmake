@@ -1,6 +1,6 @@
-option (ENABLE_SSL "Enable ssl" ON)
+option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
-if (ENABLE_SSL AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(ENABLE_SSL)
 
 if(NOT ARCH_32)
     option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})

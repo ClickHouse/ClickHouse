@@ -1,4 +1,4 @@
-option (ENABLE_BROTLI "Enable brotli" ON)
+option (ENABLE_BROTLI "Enable brotli" ${ENABLE_LIBRARIES})
 
 if (ENABLE_BROTLI)
 
