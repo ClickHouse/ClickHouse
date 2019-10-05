@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Access/AllowedHosts.h>
+#include <Access/SettingsConstraints.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -40,12 +43,6 @@ public:
     };
     std::optional<Authentication> authentication;
 
-    struct AllowedHosts
-    {
-        ASTs host_names;
-        ASTs host_regexps;
-        ASTs ip_addresses;
-    };
     std::optional<AllowedHosts> allowed_hosts;
 
     struct DefaultRoles
@@ -55,16 +52,8 @@ public:
     };
     std::optional<DefaultRoles> default_roles;
 
-    struct Setting
-    {
-        String name;
-        ASTPtr value;
-        ASTPtr min;
-        ASTPtr max;
-        bool read_only = false;
-    };
-    using Settings = std::vector<Setting>;
-    std::optional<Settings> settings;
+    std::optional<SettingsChanges> settings;
+    std::optional<SettingsConstraints> settings_constraints;
 
     struct AccountLock
     {

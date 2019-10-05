@@ -4,9 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User2.h>
-#include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -81,36 +79,8 @@ void InterpreterCreateUserQuery::extractAuthenticationFromQuery(User2 & user, co
 
 void InterpreterCreateUserQuery::extractAllowedHostsFromQuery(User2 & user, const ASTCreateUserQuery & query) const
 {
-    if (!query.allowed_hosts)
-        return;
-
-    const auto & ah = *query.allowed_hosts;
-
-    user.allowed_hosts.clear();
-    for (const auto & name_ast : ah.host_names)
-        user.allowed_hosts.addHostName(name_ast->as<ASTLiteral &>().value.safeGet<String>());
-
-    for (const auto & regexp_ast : ah.host_regexps)
-        user.allowed_hosts.addHostRegexp(regexp_ast->as<ASTLiteral &>().value.safeGet<String>());
-
-    for (const auto & ip_address_ast : ah.ip_addresses)
-    {
-        String ip_address = ip_address_ast->as<ASTLiteral &>().value.safeGet<String>();
-        size_t slash = ip_address.find('/');
-        if (slash == String::npos)
-        {
-            user.allowed_hosts.addIPAddress(Poco::Net::IPAddress(ip_address));
-        }
-        else
-        {
-            String prefix(ip_address, 0, slash);
-            String mask(ip_address, slash + 1, ip_address.length() - slash - 1);
-            if (std::all_of(mask.begin(), mask.end(), isNumericASCII))
-                user.allowed_hosts.addIPSubnet(Poco::Net::IPAddress(prefix), parseFromString<UInt8>(mask));
-            else
-                user.allowed_hosts.addIPSubnet(Poco::Net::IPAddress(prefix), Poco::Net::IPAddress(mask));
-        }
-    }
+    if (query.allowed_hosts)
+        user.allowed_hosts = *query.allowed_hosts;
 }
 
 
@@ -159,36 +129,17 @@ void InterpreterCreateUserQuery::extractDefaultRolesFromQuery(User2 & user, cons
 
 void InterpreterCreateUserQuery::extractSettingsFromQuery(User2 & user, const ASTCreateUserQuery & query) const
 {
-    if (!query.settings)
-        return;
+    if (query.settings)
+        user.settings = *query.settings;
 
-    const auto & entries = *query.settings;
-    user.settings.clear();
-    user.settings_constraints.clear();
-
-    for (const auto & entry : entries)
-    {
-        const String & name = entry.name;
-        if (entry.value)
-            user.settings.emplace_back(SettingChange{name, entry.value->as<const ASTLiteral &>().value});
-
-        if (entry.min)
-            user.settings_constraints.setMinValue(name, entry.min->as<const ASTLiteral &>().value);
-
-        if (entry.max)
-            user.settings_constraints.setMaxValue(name, entry.max->as<const ASTLiteral &>().value);
-
-        if (entry.read_only)
-            user.settings_constraints.setReadOnly(name, true);
-    }
+    if (query.settings_constraints)
+        user.settings_constraints = *query.settings_constraints;
 }
 
 
 void InterpreterCreateUserQuery::extractAccountLockFromQuery(User2 & user, const ASTCreateUserQuery & query) const
 {
-    if (!query.account_lock)
-        return;
-
-    user.account_locked = query.account_lock->locked;
+    if (query.account_lock)
+        user.account_locked = query.account_lock->locked;
 }
 }

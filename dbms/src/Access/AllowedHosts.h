@@ -28,6 +28,7 @@ public:
         String toString() const;
         friend bool operator ==(const IPSubnet & lhs, const IPSubnet & rhs);
         friend bool operator !=(const IPSubnet & lhs, const IPSubnet & rhs) { return !(lhs == rhs); }
+        static const IPSubnet ALL_ADDRESSES;
     };
 
     AllowedHosts();
@@ -41,9 +42,11 @@ public:
     /// Adds exact IP address.
     /// For example, 213.180.204.3 or 2a02:6b8::3
     void addIPAddress(const IPAddress & address);
+    void addIPAddress(const String & address);
 
     /// Adds an IP subnet.
     void addIPSubnet(const IPSubnet & subnet);
+    void addIPSubnet(const String & subnet);
 
     /// Adds an IP subnet.
     /// For example, 312.234.1.1/255.255.255.0 or 2a02:6b8::3/FFFF:FFFF:FFFF:FFFF::

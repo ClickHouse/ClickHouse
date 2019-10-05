@@ -1,115 +1,96 @@
 #include <Parsers/parseUserName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/CommonParsers.h>
+#include <Access/AllowedHosts.h>
+#include <Functions/likePatternToRegexp.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Poco/Net/IPAddress.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
 {
 namespace
 {
-    template <bool ipV6>
-    AllowedHosts extractAllowedHostsFromIP(const String & pattern)
+    using IPAddress = Poco::Net::IPAddress;
+
+    void extractAllowedHostsFromIPPattern(const String & pattern, IPAddress::Family address_family, AllowedHosts & result)
     {
-        std::string_view view = pattern;
-        if constexpr (ipV6)
+        size_t slash = pattern.find('/');
+        if (slash != String::npos)
         {
-            if (!view.empty() && (view[0] == "[") && (view[view.length() - 1] == "]"))
-            {
-                view.remove_prefix(1);
-                view.remove_suffix(1);
-            }
+            /// IP subnet, e.g. "192.168.0.0/16" or "192.168.0.0/255.255.0.0".
+            result.addIPSubnet(pattern);
+            return;
         }
 
-        auto family = ipV6 ? Poco::Net::IPAddress::Family::IPv6 : Poco::Net::IPAddress::Family::IPv4;
-
-        AllowedHosts result;
-        size_t first_wildcard = view.find_first_of("%_");
-        if (first_wildcard == String::npos)
+        bool has_wildcard = (pattern.find_first_not_of("%_") != String::npos);
+        if (has_wildcard)
         {
-            /// No wildcard characters, it's an exact IP address or IP subnet.
-            size_t slash = pattern.find('/');
-            if (slash == String::npos)
-            {
-                /// Exact IP address.
-                result.addIPAddress(Poco::Net::IPAddress{view});
-                return result;
-            }
+            /// IP subnet specified with one of the wildcard characters, e.g. "192.168.%.%".
+            String pattern2 = pattern;
+            if (address_family == IPAddress::IPv6)
+                boost::algorithm::replace_all(pattern2, "____", "%");
 
-            /// IP subnet.
-            auto prefix = view.substr(0, slash);
-            auto mask = view.substr(slash + 1, view.length() - slash - 1);
-            if (std::all_of(mask.begin(), mask.end(), isNumericASCII))
-                result.addIPSubnet(Poco::Net::IPAddress(prefix, family), parseFromString<UInt8>(mask));
-            else
-                result.addIPSubnet(Poco::Net::IPAddress(prefix, family), Poco::Net::IPAddress(mask, family));
-            return result;
+            String wildcard_replaced_with_zero_bits
+                = boost::algorithm::replace_all_copy(pattern2, "%", (address_family == IPAddress::IPv6) ? "0000" : "0");
+            String wildcard_replaced_with_one_bits
+                = boost::algorithm::replace_all_copy(pattern2, "%", (address_family == IPAddress::IPv6) ? "ffff" : "255");
+
+            IPAddress prefix{wildcard_replaced_with_zero_bits};
+            IPAddress mask = ~(prefix ^ IPAddress{wildcard_replaced_with_one_bits});
+            result.addIPSubnet(prefix, mask);
+            return;
         }
 
-        /// Calculate number of prefix components.
-        size_t num_prefix_components = 0;
-        for (size_t i = 0; i != first_wildcard; ++i)
-        {
-            if (view[i] == '.')
-                ++num_prefix_components;
-        }
-
-        size_t total_num_components = ipV6 ? 8 : 4;
-        if (num_prefix_components > total_num_components - 1)
-            return {};
-
-        String prefix(pattern, 0, first_wildcard);
-        String expected_wildcard = "%";
-        for (size_t i = 0; i != total_num_components - 1 - num_prefix_components; ++i)
-        {
-            prefix += ".0";
-            expected_wildcard += ".%";
-        }
-
-        if (pattern.compare(first_wildcard, String::npos, expected_wildcard) != 0)
-            return {};
-
-        result.addIPSubnet(Poco::Net::IPAddress(prefix), num_prefix_components * 8);
-        return result;
+        /// Exact IP address.
+        result.addIPAddress(pattern);
+        return;
     }
 
 
-    AllowedHosts extractAllowedHostsFromIPv4(const String & pattern)
+    void extractAllowedHostsFromHostPattern(const String & pattern, AllowedHosts & result)
     {
-        return extractAllowedHostsFromIP<false>(pattern);
+        bool has_wildcard = (pattern.find_first_not_of("%_") != String::npos);
+        if (has_wildcard)
+        {
+            result.addHostRegexp(likePatternToRegexp(pattern));
+            return;
+        }
+
+        result.addHostName(pattern);
+        return;
     }
 
 
-    AllowedHosts extractAllowedHostsFromIPv6(const String & pattern)
-    {
-        return extractAllowedHostsFromIP<true>(pattern);
-    }
-
-
-    AllowedHosts extractAllowedHostsFromHostName(const String & pattern)
+    AllowedHosts extractAllowedHostsFromPattern(const String & pattern)
     {
         AllowedHosts result;
-        size_t first_wildcard = pattern.find_first_of("%_");
-        if (first_wildcard == String::npos)
+
+        if (pattern.empty())
         {
-            result.addHostName(pattern);
+            result.addIPSubnet(AllowedHosts::IPSubnet::ALL_ADDRESSES);
             return result;
         }
-
-        result.addHostRegexp(likePatternToRegexp(pattern));
-        return result;
-    }
-
-
-    AllowedHosts extractAllowedHosts(const String & pattern)
-    {
-        if (!pattern.empty() && ((pattern[0] == '[') || (std::count(pattern.begin(), pattern.end(), ':') == 7)))
-            return extractAllowedHostsFromIPv6(pattern);
 
         /// If `host` starts with digits and a dot then it's an IP pattern, otherwise it's a hostname pattern.
         size_t first_not_digit = pattern.find_first_not_of("0123456789");
         if ((first_not_digit != String::npos) && (first_not_digit != 0) && (pattern[first_not_digit] == '.'))
-            return extractAllowedHostsFromIPv4(pattern);
+        {
+            extractAllowedHostsFromIPPattern(pattern, IPAddress::IPv4, result);
+            return result;
+        }
 
-        return extractAllowedHostsFromHostName(pattern);
+        size_t first_not_hex = pattern.find_first_not_of("0123456789ABCDEFabcdef");
+        if (((first_not_hex == 4) && pattern[first_not_hex] == ':')
+                || startsWith(pattern, "::"))
+        {
+            extractAllowedHostsFromIPPattern(pattern, IPAddress::IPv6, result);
+            return result;
+        }
+
+        extractAllowedHostsFromHostPattern(pattern, result);
+        return result;
     }
 
 
@@ -131,16 +112,7 @@ namespace
                 result = name + "@" + host;
 
             if (allowed_hosts)
-            {
-                allowed_hosts->clear();
-                try
-                {
-                    *allowed_hosts = extractAllowedHosts(host);
-                }
-                catch (...)
-                {
-                }
-            }
+                *allowed_hosts = extractAllowedHostsFromPattern(host);
         }
         else
         {
@@ -158,9 +130,9 @@ bool parseUserName(IParser::Pos & pos, Expected & expected, String & result)
 }
 
 
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & result, HostPatternExtractedFromUserName & host_pattern)
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & result, AllowedHosts & allowed_hosts)
 {
-    return parseNameImpl(pos, expected, result, &host_pattern);
+    return parseNameImpl(pos, expected, result, &allowed_hosts);
 }
 
 

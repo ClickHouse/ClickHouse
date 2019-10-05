@@ -56,29 +56,12 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
         {
             String value = config.getString(config_networks + "." + *it);
-           if (startsWith(*it, "ip"))
-            {
-                const char * pos = strchr(value.c_str(), '/');
-                if (pos)
-                {
-                    String prefix(value, 0, pos - value.c_str());
-                    String mask(value, prefix.length() + 1, value.length() - prefix.length() - 1);
-                    if (std::all_of(mask.begin(), mask.end(), isNumericASCII))
-                        allowed_hosts.addIPSubnet(Poco::Net::IPAddress(prefix), parse<UInt8>(pos + 1));
-                    else
-                        allowed_hosts.addIPSubnet(Poco::Net::IPAddress(prefix), Poco::Net::IPAddress(mask));
-                }
-                else
-                    allowed_hosts.addIPAddress(Poco::Net::IPAddress(value));
-            }
+            if (startsWith(*it, "ip"))
+                allowed_hosts.addIPSubnet(value);
             else if (startsWith(*it, "host_regexp"))
-            {
                 allowed_hosts.addHostRegexp(value);
-            }
             else if (startsWith(*it, "host"))
-            {
                 allowed_hosts.addHostName(value);
-            }
             else
                 throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
         }

@@ -1,6 +1,8 @@
 #include <Access/AllowedHosts.h>
 #include <Common/Exception.h>
 #include <common/SimpleCache.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
 #include <ext/scope_guard.h>
@@ -72,8 +74,7 @@ namespace
                 }
                 else if (ai->ai_family == AF_INET)
                 {
-                    if (addr_v6 == toIPv6(Poco::Net::IPAddress(
-                        &reinterpret_cast<sockaddr_in*>(ai->ai_addr)->sin_addr, sizeof(in_addr))))
+                    if (addr_v6 == toIPv6(IPAddress(&reinterpret_cast<sockaddr_in *>(ai->ai_addr)->sin_addr, sizeof(in_addr))))
                     {
                         return true;
                     }
@@ -121,6 +122,10 @@ namespace
 
 String AllowedHosts::IPSubnet::toString() const
 {
+    unsigned int prefix_length = mask.prefixLength();
+    if (IPAddress{prefix_length, mask.family()} == mask)
+        return prefix.toString() + "/" + std::to_string(prefix_length);
+
     return prefix.toString() + "/" + mask.toString();
 }
 
@@ -136,6 +141,8 @@ bool operator<(const AllowedHosts::IPSubnet & lhs, const AllowedHosts::IPSubnet 
     return (lhs.prefix < rhs.prefix) || ((lhs.prefix == rhs.prefix) && (lhs.mask < rhs.mask));
 }
 
+
+const AllowedHosts::IPSubnet AllowedHosts::IPSubnet::ALL_ADDRESSES{};
 
 AllowedHosts::AllowedHosts() = default;
 AllowedHosts::~AllowedHosts() = default;
@@ -177,13 +184,19 @@ void AllowedHosts::addIPAddress(const IPAddress & address)
 }
 
 
+void AllowedHosts::addIPAddress(const String & address)
+{
+    addIPAddress(IPAddress{address});
+}
+
+
 void AllowedHosts::addIPSubnet(const IPSubnet & subnet)
 {
     IPSubnet subnet_v6;
     subnet_v6.prefix = toIPv6(subnet.prefix);
     subnet_v6.mask = maskToIPv6(subnet.mask);
 
-    if (subnet_v6.mask == Poco::Net::IPAddress(128, Poco::Net::IPAddress::IPv6))
+    if (subnet_v6.mask == IPAddress(128, IPAddress::IPv6))
     {
         addIPAddress(subnet_v6.prefix);
         return;
@@ -204,7 +217,25 @@ void AllowedHosts::addIPSubnet(const IPAddress & prefix, const IPAddress & mask)
 
 void AllowedHosts::addIPSubnet(const IPAddress & prefix, size_t num_prefix_bits)
 {
-    addIPSubnet(prefix, Poco::Net::IPAddress(num_prefix_bits, prefix.family()));
+    addIPSubnet(prefix, IPAddress(num_prefix_bits, prefix.family()));
+}
+
+
+void AllowedHosts::addIPSubnet(const String & subnet)
+{
+    size_t slash = subnet.find('/');
+    if (slash == String::npos)
+    {
+        addIPAddress(subnet);
+        return;
+    }
+
+    IPAddress prefix{String{subnet, 0, slash}};
+    String mask(subnet, slash + 1, subnet.length() - slash - 1);
+    if (std::all_of(mask.begin(), mask.end(), isNumericASCII))
+        addIPSubnet(prefix, parseFromString<UInt8>(mask));
+    else
+        addIPSubnet(prefix, IPAddress{mask});
 }
 
 

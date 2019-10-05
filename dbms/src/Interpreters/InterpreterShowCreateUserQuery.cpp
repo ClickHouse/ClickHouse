@@ -9,8 +9,6 @@
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
-#include <common/StringRef.h>
-#include <map>
 #include <sstream>
 
 
@@ -69,18 +67,7 @@ ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
         }
     }
 
-    {
-        query.allowed_hosts.emplace();
-        auto & qah = *query.allowed_hosts;
-        for (const auto & host_name : user->allowed_hosts.getHostNames())
-            qah.host_names.emplace_back(std::make_shared<ASTLiteral>(host_name));
-        for (const auto & host_regexp : user->allowed_hosts.getHostRegexps())
-            qah.host_regexps.emplace_back(std::make_shared<ASTLiteral>(host_regexp));
-        for (const auto & ip_address : user->allowed_hosts.getIPAddresses())
-            qah.ip_addresses.emplace_back(std::make_shared<ASTLiteral>(ip_address.toString()));
-        for (const auto & ip_subnet : user->allowed_hosts.getIPSubnets())
-            qah.ip_addresses.emplace_back(std::make_shared<ASTLiteral>(ip_subnet.toString()));
-    }
+    query.allowed_hosts.emplace(user->allowed_hosts);
 
     {
         Strings default_roles;
@@ -100,29 +87,8 @@ ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
     }
 
     {
-        std::map<String, ASTCreateUserQuery::Setting> settings_map;
-        for (const auto & entry : user->settings)
-            settings_map[entry.name].value = std::make_shared<ASTLiteral>(entry.value);
-
-        for (const auto & constraint : user->settings_constraints.getInfo())
-        {
-            auto & out = settings_map[constraint.name.toString()];
-            if (!constraint.min.isNull())
-                out.min = std::make_shared<ASTLiteral>(constraint.min);
-            if (!constraint.max.isNull())
-                out.max = std::make_shared<ASTLiteral>(constraint.max);
-            out.read_only = constraint.read_only;
-        }
-
-        if (!settings_map.empty())
-        {
-            query.settings.emplace();
-            for (auto & [name, setting] : settings_map)
-            {
-                setting.name = name;
-                query.settings->emplace_back(std::move(setting));
-            }
-        }
+        query.settings.emplace(user->settings);
+        query.settings_constraints.emplace(user->settings_constraints);
     }
 
     {
