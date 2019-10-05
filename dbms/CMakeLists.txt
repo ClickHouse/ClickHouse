@@ -256,6 +256,7 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
+    ${Poco_XML_LIBRARY}
 )
 
 if(RE2_LIBRARY)
