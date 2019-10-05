@@ -129,7 +129,7 @@ private:
     mutable CacheExpirationQueue cache_expiration_queue;
 
     Poco::Logger * log;
-    
+
     StoragePtr loadTable(const Context & context, const String & table_name) const;
 
     void clearExpiredTables() const;

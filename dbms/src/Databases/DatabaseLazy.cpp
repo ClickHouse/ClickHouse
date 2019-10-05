@@ -47,7 +47,8 @@ void DatabaseLazy::loadTables(
     Context & /* context */,
     bool /* has_force_restore_data_flag */)
 {
-    DatabaseOnDisk::iterateTableFiles(*this, log, [this](const String & file_name) {
+    DatabaseOnDisk::iterateTableFiles(*this, log, [this](const String & file_name)
+    {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
         attachTable(table_name, nullptr);
     });
@@ -167,7 +168,7 @@ StoragePtr DatabaseLazy::tryGetTable(
             return it->second.table;
         }
     }
-    
+
     return loadTable(context, table_name);
 }
 
@@ -194,7 +195,7 @@ void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & tab
     LOG_DEBUG(log, "attach table" << table_name);
     std::lock_guard lock(tables_mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    
+
     auto [it, inserted] = tables_cache.emplace(std::piecewise_construct,
                               std::forward_as_tuple(table_name),
                               std::forward_as_tuple(table, current_time, DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name)));
