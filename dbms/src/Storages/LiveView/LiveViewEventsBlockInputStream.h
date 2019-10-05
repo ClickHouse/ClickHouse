@@ -213,12 +213,8 @@ protected:
 
         // move right to the end
         it = end;
-
-        if (it == end)
-        {
-            end_of_blocks = false;
-            num_updates += 1;
-        }
+        end_of_blocks = false;
+        num_updates += 1;
 
         last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
 
