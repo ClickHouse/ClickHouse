@@ -45,28 +45,7 @@ ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
     auto & query = *result;
 
     query.user_name = user->name;
-
-    {
-        query.authentication.emplace();
-        auto & qauth = *query.authentication;
-        switch (user->password.getType())
-        {
-            case EncryptedPassword::NONE:
-                qauth.type = ASTCreateUserQuery::Authentication::NO_PASSWORD;
-                break;
-            case EncryptedPassword::PLAINTEXT:
-                qauth.type = ASTCreateUserQuery::Authentication::PLAINTEXT_PASSWORD;
-                qauth.password = std::make_shared<ASTLiteral>(user->password.getHash());
-                break;
-            case EncryptedPassword::SHA256:
-                qauth.type = ASTCreateUserQuery::Authentication::SHA256_HASH;
-                qauth.password = std::make_shared<ASTLiteral>(user->password.getHashHex());
-                break;
-            default:
-                __builtin_unreachable();
-        }
-    }
-
+    query.authentication.emplace(user->authentication);
     query.allowed_hosts.emplace(user->allowed_hosts);
 
     {
@@ -86,14 +65,12 @@ ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
         }
     }
 
-    {
-        query.settings.emplace(user->settings);
-        query.settings_constraints.emplace(user->settings_constraints);
-    }
+    query.settings.emplace(user->settings);
+    query.settings_constraints.emplace(user->settings_constraints);
 
     {
         query.account_lock.emplace();
-        query.account_lock->locked = user->account_locked;
+        query.account_lock->account_locked = user->account_locked;
     }
 
     return result;

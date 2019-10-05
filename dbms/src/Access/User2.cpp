@@ -27,8 +27,10 @@ bool User2::equal(const IAttributes & other) const
 {
     if (!Role::equal(other))
         return false;
-    //const auto & other_user = *other.cast<User2>();
-    return true;
+    const auto & other_user = *other.cast<User2>();
+    return (authentication == other_user.authentication) && (allowed_hosts == other_user.allowed_hosts)
+        && (default_roles == other_user.default_roles) && (settings == other_user.settings)
+        && (settings_constraints == other_user.settings_constraints) && (account_locked == other_user.account_locked);
 }
 
 

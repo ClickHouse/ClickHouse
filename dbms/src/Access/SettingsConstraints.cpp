@@ -176,4 +176,15 @@ void SettingsConstraints::loadFromConfig(const String & path_to_constraints, con
     }
 }
 
+
+bool SettingsConstraints::Constraint::operator==(const Constraint & rhs) const
+{
+    return (read_only == rhs.read_only) && (min_value == rhs.min_value) && (max_value == rhs.max_value);
+}
+
+
+bool operator ==(const SettingsConstraints & lhs, const SettingsConstraints & rhs)
+{
+    return lhs.constraints_by_index == rhs.constraints_by_index;
+}
 }

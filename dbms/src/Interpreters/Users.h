@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Access/AllowedHosts.h>
-#include <Access/EncryptedPassword.h>
+#include <Access/Authentication.h>
 
 #include <memory>
 #include <unordered_map>
@@ -30,7 +30,7 @@ struct User
     String name;
 
     /// Required password. Could be stored in plaintext or in SHA256.
-    EncryptedPassword password;
+    Authentication authentication;
 
     String profile;
     String quota;

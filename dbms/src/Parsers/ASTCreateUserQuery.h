@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Access/Authentication.h>
 #include <Access/AllowedHosts.h>
 #include <Access/SettingsConstraints.h>
 #include <Common/SettingsChanges.h>
@@ -29,20 +30,7 @@ public:
     String user_name;
     bool alter = false;
 
-    struct Authentication
-    {
-        enum Type
-        {
-            NO_PASSWORD,
-            PLAINTEXT_PASSWORD,
-            SHA256_PASSWORD,
-            SHA256_HASH,
-        };
-        Type type = NO_PASSWORD;
-        ASTPtr password;
-    };
     std::optional<Authentication> authentication;
-
     std::optional<AllowedHosts> allowed_hosts;
 
     struct DefaultRoles
@@ -57,7 +45,7 @@ public:
 
     struct AccountLock
     {
-        bool locked = false;
+        bool account_locked = false;
     };
     std::optional<AccountLock> account_lock;
 

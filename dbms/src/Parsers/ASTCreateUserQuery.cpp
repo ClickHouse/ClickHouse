@@ -38,21 +38,17 @@ void ASTCreateUserQuery::formatAuthentication(const FormatSettings & s) const
     const auto & auth = *authentication;
     s.ostr << (s.hilite ? hilite_keyword : "") << " IDENTIFY WITH ";
 
-    switch (auth.type)
+    switch (auth.getType())
     {
         case Authentication::NO_PASSWORD: s.ostr << "NO_PASSWORD"; break;
         case Authentication::PLAINTEXT_PASSWORD: s.ostr << "PLAINTEXT_PASSWORD"; break;
-        case Authentication::SHA256_PASSWORD: s.ostr << "SHA256_PASSWORD"; break;
-        case Authentication::SHA256_HASH: s.ostr << "SHA256_HASH"; break;
+        case Authentication::SHA256_PASSWORD: s.ostr << "SHA256_HASH"; break;
         default: __builtin_unreachable();
     }
     s.ostr << (s.hilite ? hilite_none : "");
 
-    if (auth.password)
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
-        auth.password->format(s);
-    }
+    if (auth.getType() != Authentication::NO_PASSWORD)
+        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "") << auth.getPasswordHash();
 }
 
 
@@ -193,7 +189,7 @@ void ASTCreateUserQuery::formatAccountLock(const FormatSettings & s) const
         return;
 
     s.ostr << (s.hilite ? hilite_keyword : "")
-           << " ACCOUNT " << (account_lock->locked ? "LOCK" : "UNLOCK")
+           << " ACCOUNT " << (account_lock->account_locked ? "LOCK" : "UNLOCK")
            << (s.hilite ? hilite_none : "");
 }
 }

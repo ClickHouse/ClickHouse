@@ -85,12 +85,18 @@ public:
     /// Loads the constraints from configuration file, at "path" prefix in configuration.
     void loadFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
+    friend bool operator ==(const SettingsConstraints & lhs, const SettingsConstraints & rhs);
+    friend bool operator !=(const SettingsConstraints & lhs, const SettingsConstraints & rhs) { return !(lhs == rhs); }
+
 private:
     struct Constraint
     {
         bool read_only = false;
         Field min_value;
         Field max_value;
+
+        bool operator ==(const Constraint & rhs) const;
+        bool operator !=(const Constraint & rhs) const { return !(*this == rhs); }
     };
 
     Constraint & getConstraintRef(size_t index);

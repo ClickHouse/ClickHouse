@@ -6,7 +6,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseUserName.h>
-#include <Access/EncryptedPassword.h>
+#include <Access/Authentication.h>
 
 
 namespace DB
@@ -84,41 +84,42 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserCreateUserQuery::parseAuthentication(Pos & pos, Expected & expected, ASTCreateUserQuery & query)
 {
-    using Authentication = ASTCreateUserQuery::Authentication;
-    Authentication::Type type = Authentication::SHA256_PASSWORD;
-    ParserKeyword with_p("WITH");
-    if (with_p.ignore(pos, expected))
+    Authentication authentication;
+
+    bool need_password = false;
+    bool need_password_hash = false;
+    if (ParserKeyword{"WITH"}.ignore(pos, expected))
     {
         if (ParserKeyword{"PLAINTEXT_PASSWORD"}.ignore(pos, expected))
-            type = Authentication::PLAINTEXT_PASSWORD;
+            authentication.setType(Authentication::PLAINTEXT_PASSWORD);
         else if (ParserKeyword{"SHA256_PASSWORD"}.ignore(pos, expected))
-            type = Authentication::SHA256_PASSWORD;
+        {
+            authentication.setType(Authentication::SHA256_PASSWORD);
+            need_password = true;
+        }
         else if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
-            type = Authentication::SHA256_HASH;
+        {
+            authentication.setType(Authentication::SHA256_PASSWORD);
+            need_password_hash = true;
+        }
         else
             return false;
     }
 
-    ParserKeyword by_p("BY");
-    ParserExpression password_p;
-    ASTPtr password_ast;
-    if (!by_p.ignore(pos, expected) || !password_p.parse(pos, password_ast, expected))
-        return false;
-
-    String password_string;
-    auto * password_literal = password_ast->as<ASTLiteral>();
-    if (password_literal && password_literal->value.tryGet(password_string))
+    if (need_password || need_password_hash)
     {
-        if (type == Authentication::SHA256_PASSWORD)
-        {
-            type = Authentication::SHA256_HASH;
-            password_literal->value = EncryptedPassword{}.setPassword(EncryptedPassword::SHA256, password_string).getHashHex();
-        }
+        ASTPtr password_ast;
+        if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, password_ast, expected))
+            return false;
+
+        String password = password_ast->as<const ASTLiteral &>().value.safeGet<String>();
+        if (need_password)
+            authentication.setPassword(password);
+        else
+            authentication.setPasswordHash(password);
     }
 
-    query.authentication.emplace();
-    query.authentication->type = type;
-    query.authentication->password = std::move(password_ast);
+    query.authentication.emplace(authentication);
     return true;
 }
 
@@ -288,7 +289,7 @@ bool ParserCreateUserQuery::parseAccountLock(Pos & pos, Expected & expected, AST
         return false;
 
     query.account_lock.emplace();
-    query.account_lock->locked = locked;
+    query.account_lock->account_locked = locked;
     return true;
 }
 }

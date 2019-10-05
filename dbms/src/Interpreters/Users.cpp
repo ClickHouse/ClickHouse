@@ -39,10 +39,15 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         throw Exception("Either 'password' or 'password_sha256_hex' must be specified for user " + name + ".", ErrorCodes::BAD_ARGUMENTS);
 
     if (has_password)
-        password.setPassword(EncryptedPassword::PLAINTEXT, config.getString(config_elem + ".password"));
-
-    if (has_password_sha256_hex)
-        password.setHashHex(EncryptedPassword::SHA256, config.getString(config_elem + ".password_sha256_hex"));
+    {
+        authentication.setType(Authentication::PLAINTEXT_PASSWORD);
+        authentication.setPassword(config.getString(config_elem + ".password"));
+    }
+    else if (has_password_sha256_hex)
+    {
+        authentication.setType(Authentication::SHA256_PASSWORD);
+        authentication.setPasswordHash(config.getString(config_elem + ".password_sha256_hex"));
+    }
 
     profile = config.getString(config_elem + ".profile");
     quota = config.getString(config_elem + ".quota");

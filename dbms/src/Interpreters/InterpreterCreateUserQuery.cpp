@@ -53,27 +53,8 @@ void InterpreterCreateUserQuery::extractUserOptionsFromQuery(User2 & user, const
 
 void InterpreterCreateUserQuery::extractAuthenticationFromQuery(User2 & user, const ASTCreateUserQuery & query) const
 {
-    if (!query.authentication)
-        return;
-
-    using Authentication = ASTCreateUserQuery::Authentication;
-    const Authentication & auth = *query.authentication;
-
-    switch (auth.type)
-    {
-        case Authentication::NO_PASSWORD:
-            user.password.clear();
-            break;
-        case Authentication::PLAINTEXT_PASSWORD:
-            user.password.setPassword(EncryptedPassword::PLAINTEXT, auth.password->as<const ASTLiteral &>().value.safeGet<String>());
-            break;
-        case Authentication::SHA256_PASSWORD:
-            user.password.setPassword(EncryptedPassword::SHA256, auth.password->as<const ASTLiteral &>().value.safeGet<String>());
-            break;
-        case Authentication::SHA256_HASH:
-            user.password.setHashHex(EncryptedPassword::SHA256, auth.password->as<const ASTLiteral &>().value.safeGet<String>());
-            break;
-    }
+    if (query.authentication)
+        user.authentication = *query.authentication;
 }
 
 
@@ -140,6 +121,6 @@ void InterpreterCreateUserQuery::extractSettingsFromQuery(User2 & user, const AS
 void InterpreterCreateUserQuery::extractAccountLockFromQuery(User2 & user, const ASTCreateUserQuery & query) const
 {
     if (query.account_lock)
-        user.account_locked = query.account_lock->locked;
+        user.account_locked = query.account_lock->account_locked;
 }
 }

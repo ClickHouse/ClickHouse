@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/Role.h>
-#include <Access/EncryptedPassword.h>
+#include <Access/Authentication.h>
 #include <Access/AllowedHosts.h>
 #include <Access/SettingsConstraints.h>
 #include <Common/SettingsChanges.h>
@@ -31,7 +31,7 @@ namespace DB
 /// DROP USER [IF EXISTS] name
 struct User2 : public Role
 {
-    EncryptedPassword password;
+    Authentication authentication;
     AllowedHosts allowed_hosts;
 
     std::unordered_set<UUID> default_roles;
