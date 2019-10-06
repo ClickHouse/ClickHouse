@@ -17,10 +17,10 @@ public:
     BlockIO execute() override;
 
 protected:
-    void extractUserOptionsFromQuery(User2 & user, const ASTCreateUserQuery & query) const;
+    void extractUserOptionsFromQuery(User2 & user, const ASTCreateUserQuery & query, const std::vector<UUID> & default_role_ids) const;
     void extractAuthenticationFromQuery(User2 & user, const ASTCreateUserQuery & query) const;
     void extractAllowedHostsFromQuery(User2 & user, const ASTCreateUserQuery & query) const;
-    void extractDefaultRolesFromQuery(User2 & user, const ASTCreateUserQuery & query) const;
+    void extractDefaultRolesFromQuery(User2 & user, const ASTCreateUserQuery & query, const std::vector<UUID> & default_role_ids) const;
     void extractSettingsFromQuery(User2 & user, const ASTCreateUserQuery & query) const;
     void extractAccountLockFromQuery(User2 & user, const ASTCreateUserQuery & query) const;
 

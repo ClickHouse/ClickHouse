@@ -51,6 +51,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         analyze_syntax = true;
 
     bool parsed = select_p.parse(pos, query, expected)
+        || show_create_user_p.parse(pos, query, expected)
+        || show_grants_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
         || describe_table_p.parse(pos, query, expected)
@@ -61,9 +63,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || drop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
-        || optimize_p.parse(pos, query, expected)
-        || show_create_user_p.parse(pos, query, expected)
-        || show_grants_p.parse(pos, query, expected);
+        || optimize_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;

@@ -20,8 +20,8 @@ ASTPtr ASTCreateUserQuery::clone() const
 
 void ASTCreateUserQuery::formatImpl(const FormatSettings & s, FormatState &, FormatStateStacked) const
 {
-    s.ostr << (s.hilite ? hilite_keyword : "") << "CREATE USER " << (if_not_exists ? "IF NOT EXISTS " : "") << (s.hilite ? hilite_none : "")
-           << backQuoteIfNeed(user_name);
+    s.ostr << (s.hilite ? hilite_keyword : "") << (alter ? "ALTER" : "CREATE") << " USER " << (if_not_exists ? "IF NOT EXISTS " : "")
+           << (s.hilite ? hilite_none : "") << backQuoteIfNeed(user_name);
 
     formatAuthentication(s);
     formatAllowedHosts(s);
@@ -49,7 +49,7 @@ void ASTCreateUserQuery::formatAuthentication(const FormatSettings & s) const
     s.ostr << (s.hilite ? hilite_none : "");
 
     if (auth.getType() != Authentication::NO_PASSWORD)
-        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "") << auth.getPasswordHash();
+        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "") << quoteString(auth.getPasswordHash());
 }
 
 
@@ -113,7 +113,11 @@ void ASTCreateUserQuery::formatDefaultRoles(const FormatSettings & s) const
     const auto & dr = *default_roles;
     s.ostr << (s.hilite ? hilite_keyword : "") << " DEFAULT ROLE " << (s.hilite ? hilite_none : "");
 
-    if (dr.role_names.empty())
+    if (dr.all_granted)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << "ALL" << (s.hilite ? hilite_none : "");
+    }
+    else if (dr.role_names.empty())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << "NONE" << (s.hilite ? hilite_none : "");
     }
@@ -156,7 +160,7 @@ void ASTCreateUserQuery::formatSettings(const FormatSettings & s) const
         }
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << " SETTINGS " << (s.hilite ? hilite_none : "");
+    s.ostr << (s.hilite ? hilite_keyword : "") << " SETTINGS" << (s.hilite ? hilite_none : "");
     if (entries.empty())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " NONE" << (s.hilite ? hilite_none : "");

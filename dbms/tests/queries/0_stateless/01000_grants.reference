@@ -1,0 +1,8 @@
+GRANT SELECT(address, age, name) ON mytable TO role1
+GRANT SELECT, INSERT, DROP ON mytable TO role2
+GRANT SELECT, INSERT, DELETE, ALTER, DROP ON mytable TO role3
+GRANT role1, role2 TO role3
+after revoke:
+GRANT SELECT(address, name) ON mytable TO role1
+GRANT SELECT, DROP ON mytable TO role2
+GRANT role2 TO role3

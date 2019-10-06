@@ -105,6 +105,8 @@ namespace
         if (!parseIdentifierOrStringLiteral(pos, expected, result))
             return false;
 
+        boost::algorithm::trim(result);
+
         if (allowed_hosts)
         {
             allowed_hosts->clear();
@@ -117,7 +119,8 @@ namespace
             if (!parseIdentifierOrStringLiteral(pos, expected, host))
                 return false;
 
-            if (!host.empty())
+            boost::algorithm::trim(host);
+            if (host != "%")
             {
                 result += "@" + host;
                 if (allowed_hosts)

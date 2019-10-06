@@ -38,42 +38,37 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parseUserName(pos, expected, query->user_name, allowed_hosts_from_user_name))
         return false;
 
-    do
+    while (true)
     {
         if (!query->authentication && ParserKeyword{"IDENTIFY"}.ignore(pos, expected))
         {
             if (!parseAuthentication(pos, expected, *query))
                 return false;
-            continue;
         }
-        if (!query->allowed_hosts && ParserKeyword{"HOST"}.ignore(pos, expected))
+        else if (!query->allowed_hosts && ParserKeyword{"HOST"}.ignore(pos, expected))
         {
             if (!parseAllowedHosts(pos, expected, *query))
                 return false;
-            continue;
         }
-        if (!query->default_roles && ParserKeyword{"DEFAULT ROLE"}.ignore(pos, expected))
+        else if (!query->default_roles && ParserKeyword{"DEFAULT ROLE"}.ignore(pos, expected))
         {
             if (!parseDefaultRoles(pos, expected, *query))
                 return false;
-            continue;
         }
-        if (!query->settings && ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+        else if (!query->settings && ParserKeyword{"SETTINGS"}.ignore(pos, expected))
         {
             if (!parseSettings(pos, expected, *query))
                 return false;
-            continue;
         }
-        if (!query->account_lock && ParserKeyword{"ACCOUNT"}.ignore(pos, expected))
+        else if (!query->account_lock && ParserKeyword{"ACCOUNT"}.ignore(pos, expected))
         {
             if (!parseAccountLock(pos, expected, *query))
-                return false;
-            continue;
-        }
+                return false;        }
+        else
+            break;
     }
-    while (false);
 
-    if (!query->allowed_hosts)
+    if (!query->allowed_hosts && !alter)
         query->allowed_hosts.emplace(allowed_hosts_from_user_name);
 
     node = query;
@@ -84,21 +79,34 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateUserQuery::parseAuthentication(Pos & pos, Expected & expected, ASTCreateUserQuery & query)
 {
     Authentication authentication;
-
-    bool need_password = false;
+    authentication.setType(Authentication::SHA256_PASSWORD);
+    bool need_password = true;
     bool need_password_hash = false;
+
     if (ParserKeyword{"WITH"}.ignore(pos, expected))
     {
-        if (ParserKeyword{"PLAINTEXT_PASSWORD"}.ignore(pos, expected))
+        if (ParserKeyword{"NO_PASSWORD"}.ignore(pos, expected))
+        {
+            authentication.setType(Authentication::NO_PASSWORD);
+            need_password = false;
+            need_password_hash = false;
+        }
+        else if (ParserKeyword{"PLAINTEXT_PASSWORD"}.ignore(pos, expected))
+        {
             authentication.setType(Authentication::PLAINTEXT_PASSWORD);
+            need_password = true;
+            need_password_hash = false;
+        }
         else if (ParserKeyword{"SHA256_PASSWORD"}.ignore(pos, expected))
         {
             authentication.setType(Authentication::SHA256_PASSWORD);
             need_password = true;
+            need_password_hash = false;
         }
         else if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
         {
             authentication.setType(Authentication::SHA256_PASSWORD);
+            need_password = false;
             need_password_hash = true;
         }
         else
@@ -137,7 +145,7 @@ bool ParserCreateUserQuery::parseAllowedHosts(Pos & pos, Expected & expected, AS
     else
     {
         ParserToken comma{TokenType::Comma};
-        do
+        while (true)
         {
             if (ParserKeyword{"NAME"}.ignore(pos, expected))
             {
@@ -146,30 +154,26 @@ bool ParserCreateUserQuery::parseAllowedHosts(Pos & pos, Expected & expected, AS
                     return false;
 
                 allowed_hosts.addHostName(host_name->as<ASTLiteral &>().value.safeGet<String>());
-                continue;
             }
-
-            if (ParserKeyword{"REGEXP"}.ignore(pos, expected))
+            else if (ParserKeyword{"REGEXP"}.ignore(pos, expected))
             {
                 ASTPtr host_regexp;
                 if (!ParserStringLiteral().parse(pos, host_regexp, expected))
                     return false;
 
                 allowed_hosts.addHostRegexp(host_regexp->as<ASTLiteral &>().value.safeGet<String>());
-                continue;
             }
-
-            if (ParserKeyword{"IP"}.ignore(pos, expected))
+            else if (ParserKeyword{"IP"}.ignore(pos, expected))
             {
                 ASTPtr ip_address;
                 if (!ParserStringLiteral().parse(pos, ip_address, expected))
                     return false;
 
                 allowed_hosts.addIPSubnet(ip_address->as<ASTLiteral &>().value.safeGet<String>());
-                continue;
             }
+            else
+                break;
         }
-        while(false);
     }
 
     query.allowed_hosts.emplace(std::move(allowed_hosts));
@@ -233,40 +237,46 @@ bool ParserCreateUserQuery::parseSettings(Pos & pos, Expected & expected, ASTCre
                 return false;
 
             String name = getIdentifierName(name_ast);
+            bool value_or_constraint_used = false;
 
-            do
+            while (true)
             {
                 if (eq_p.ignore(pos, expected))
                 {
                     ASTPtr value;
                     if (!value_p.parse(pos, value, expected))
                         return false;
+                    Settings::findIndexStrict(name); /// Check existence of the setting.
                     settings.push_back({name, value->as<const ASTLiteral &>().value});
-                    continue;
+                    value_or_constraint_used = true;
                 }
-                if (min_p.ignore(pos, expected))
+                else if (min_p.ignore(pos, expected))
                 {
                     ASTPtr min;
                     if (!value_p.parse(pos, min, expected))
                         return false;
                     settings_constraints.setMinValue(name, min->as<const ASTLiteral &>().value);
-                    continue;
+                    value_or_constraint_used = true;
                 }
-                if (max_p.ignore(pos, expected))
+                else if (max_p.ignore(pos, expected))
                 {
                     ASTPtr max;
                     if (!value_p.parse(pos, max, expected))
                         return false;
                     settings_constraints.setMaxValue(name, max->as<const ASTLiteral &>().value);
-                    continue;
+                    value_or_constraint_used = true;
                 }
-                if (readonly_p.ignore(pos, expected))
+                else if (readonly_p.ignore(pos, expected))
                 {
                     settings_constraints.setReadOnly(name, true);
-                    continue;
+                    value_or_constraint_used = true;
                 }
+                else
+                    break;
             }
-            while (false);
+
+            if (!value_or_constraint_used)
+                return false;
         }
         while (comma_p.ignore(pos, expected));
     }
@@ -283,7 +293,7 @@ bool ParserCreateUserQuery::parseAccountLock(Pos & pos, Expected & expected, AST
     if (ParserKeyword{"LOCK"}.ignore(pos, expected))
         locked = true;
     else if (ParserKeyword{"UNLOCK"}.ignore(pos, expected))
-        locked = true;
+        locked = false;
     else
         return false;
 

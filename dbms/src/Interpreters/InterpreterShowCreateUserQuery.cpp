@@ -45,7 +45,10 @@ ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
     auto & query = *result;
 
     query.user_name = user->name;
-    query.authentication.emplace(user->authentication);
+
+    if (user->authentication.getType() != Authentication::NO_PASSWORD)
+        query.authentication.emplace(user->authentication);
+
     query.allowed_hosts.emplace(user->allowed_hosts);
 
     {
@@ -65,9 +68,12 @@ ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
         }
     }
 
-    query.settings.emplace(user->settings);
-    query.settings_constraints.emplace(user->settings_constraints);
+    if (!user->settings.empty())
+        query.settings.emplace(user->settings);
+    if (!user->settings_constraints.empty())
+        query.settings_constraints.emplace(user->settings_constraints);
 
+    if (user->account_locked)
     {
         query.account_lock.emplace();
         query.account_lock->account_locked = user->account_locked;

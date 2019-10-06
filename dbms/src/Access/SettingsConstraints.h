@@ -58,6 +58,7 @@ public:
     ~SettingsConstraints();
 
     void clear();
+    bool empty() const { return constraints_by_index.empty(); }
 
     void setMinValue(const String & name, const Field & min_value);
     void setMaxValue(const String & name, const Field & max_value);
