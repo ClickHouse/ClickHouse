@@ -223,5 +223,7 @@ private:
 String backQuoteIfNeed(const String & x);
 /// Quote the identifier with backquotes.
 String backQuote(const String & x);
+/// Quote the string.
+String quoteString(const String & x);
 
 }

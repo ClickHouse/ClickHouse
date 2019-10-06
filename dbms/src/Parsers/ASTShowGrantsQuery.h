@@ -9,7 +9,7 @@ namespace DB
 class ASTShowGrantsQuery : public ASTQueryWithOutput
 {
 public:
-    String role;
+    String role_name;
 
     String getID(char) const override;
     ASTPtr clone() const override;

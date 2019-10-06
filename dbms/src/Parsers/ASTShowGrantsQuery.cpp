@@ -23,6 +23,6 @@ void ASTShowGrantsQuery::formatQueryImpl(const FormatSettings & settings, Format
     settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "SHOW GRANTS FOR"
                   << (settings.hilite ? hilite_none : "")
-                  << " " + backQuoteIfNeed(role);
+                  << " " + backQuoteIfNeed(role_name);
 }
 }

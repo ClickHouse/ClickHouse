@@ -39,7 +39,7 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
     return std::make_shared<OneBlockInputStream>(Block{{
         std::move(column),
         std::make_shared<DataTypeString>(),
-        "Grants for " + query.role}});
+        "Grants for " + query.role_name}});
 }
 
 
@@ -49,7 +49,7 @@ std::vector<ASTPtr> InterpreterShowGrantsQuery::enumerateGrantQueries() const
     auto & manager = context.getAccessControlManager();
     const String & current_database = context.getCurrentDatabase();
 
-    auto role = manager.read<Role>(query.role);
+    auto role = manager.read<Role>(query.role_name);
     std::vector<ASTPtr> result;
     using Kind = ASTGrantQuery::Kind;
 
@@ -58,7 +58,7 @@ std::vector<ASTPtr> InterpreterShowGrantsQuery::enumerateGrantQueries() const
         std::map<std::pair<StringRef /* database */, StringRef /* table */>, std::shared_ptr<ASTGrantQuery>> grants;
         std::map<std::pair<StringRef /* database */, StringRef /* table */>, std::shared_ptr<ASTGrantQuery>> partial_revokes;
 
-        for (const auto & priv : role->allowed_databases_by_grant_option[grant_option].getInfo())
+        for (const auto & priv : role->privileges[grant_option].getInfo())
         {
             for (Kind kind : {Kind::GRANT, Kind::REVOKE})
             {
@@ -104,7 +104,7 @@ std::vector<ASTPtr> InterpreterShowGrantsQuery::enumerateGrantQueries() const
     for (bool admin_option : {false, true})
     {
         Strings granted_roles;
-        for (const UUID & granted_role_id : role->granted_roles_by_admin_option[admin_option])
+        for (const UUID & granted_role_id : role->granted_roles[admin_option])
         {
             auto granted_role_name = manager.tryReadName(granted_role_id);
             if (granted_role_name)

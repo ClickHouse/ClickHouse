@@ -47,6 +47,14 @@ String backQuote(const String & x)
 }
 
 
+String quoteString(const String & x)
+{
+    String res(x.size(), '\0');
+    WriteBufferFromString wb(res);
+    writeQuotedString(x, wb);
+    return res;
+}
+
 size_t IAST::checkSize(size_t max_size) const
 {
     size_t res = 1;

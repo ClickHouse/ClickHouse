@@ -19,7 +19,7 @@ bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     auto query = std::make_shared<ASTShowGrantsQuery>();
     node = query;
-    query->role = std::move(role_name);
+    query->role_name = std::move(role_name);
     return true;
 }
 

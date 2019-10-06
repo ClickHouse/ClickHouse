@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int REQUIRED_PASSWORD;
     extern const int WRONG_PASSWORD;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -47,10 +48,16 @@ void Authentication::setPassword(const String & password_)
 {
     switch (type)
     {
-        case NO_PASSWORD: break;
-        case PLAINTEXT_PASSWORD: setPasswordHash(password_); break;
-        case SHA256_PASSWORD: setPasswordHash(encodeSHA256(password_)); break;
-        default: __builtin_unreachable();
+        case NO_PASSWORD:
+            throw Exception("Cannot specify password for the 'NO_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
+        case PLAINTEXT_PASSWORD:
+            setPasswordHash(password_);
+            break;
+        case SHA256_PASSWORD:
+            setPasswordHash(encodeSHA256(password_));
+            break;
+        default:
+            throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -68,8 +75,9 @@ bool Authentication::isCorrect(const String & password_) const
         case NO_PASSWORD: return true;
         case PLAINTEXT_PASSWORD: return password_ == password_hash;
         case SHA256_PASSWORD: return encodeSHA256(password_) == password_hash;
+        default: throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+
     }
-    __builtin_unreachable();
 }
 
 

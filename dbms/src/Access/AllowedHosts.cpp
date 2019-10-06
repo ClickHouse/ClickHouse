@@ -142,7 +142,8 @@ bool operator<(const AllowedHosts::IPSubnet & lhs, const AllowedHosts::IPSubnet 
 }
 
 
-const AllowedHosts::IPSubnet AllowedHosts::IPSubnet::ALL_ADDRESSES{};
+const AllowedHosts::IPSubnet AllowedHosts::IPSubnet::ALL_ADDRESSES = IPSubnet{IPAddress{IPAddress::IPv6}, IPAddress{IPAddress::IPv6}};
+
 
 AllowedHosts::AllowedHosts() = default;
 AllowedHosts::~AllowedHosts() = default;

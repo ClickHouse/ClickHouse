@@ -75,7 +75,7 @@ void InterpreterCreateUserQuery::extractDefaultRolesFromQuery(User2 & user, cons
     user.default_roles.clear();
     if (dr.all_granted)
     {
-        for (const auto & granted_roles : user.granted_roles_by_admin_option)
+        for (const auto & granted_roles : user.granted_roles)
             user.default_roles.insert(granted_roles.begin(), granted_roles.end());
         return;
     }
@@ -86,7 +86,7 @@ void InterpreterCreateUserQuery::extractDefaultRolesFromQuery(User2 & user, cons
         if (query.alter)
         {
             bool role_is_granted = false;
-            for (const auto & granted_roles : user.granted_roles_by_admin_option)
+            for (const auto & granted_roles : user.granted_roles)
             {
                 if (granted_roles.count(role_id))
                 {
@@ -101,7 +101,7 @@ void InterpreterCreateUserQuery::extractDefaultRolesFromQuery(User2 & user, cons
         }
         else
         {
-            user.granted_roles_by_admin_option[false].emplace(role_id);
+            user.granted_roles[false].emplace(role_id);
         }
         user.default_roles.emplace(role_id);
     }

@@ -1,5 +1,6 @@
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteBufferFromString.h>
 #include <map>
 
 
@@ -72,7 +73,8 @@ void ASTCreateUserQuery::formatAllowedHosts(const FormatSettings & s) const
     }
 
     if (std::count(ip_subnets.begin(), ip_subnets.end(), AllowedHosts::IPSubnet::ALL_ADDRESSES)
-        || std::count(host_regexps.begin(), host_regexps.end(), ".*"))
+        || std::count(host_regexps.begin(), host_regexps.end(), ".*")
+        || std::count(host_regexps.begin(), host_regexps.end(), "$"))
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " ANY" << (s.hilite ? hilite_none : "");
         return;
@@ -82,23 +84,23 @@ void ASTCreateUserQuery::formatAllowedHosts(const FormatSettings & s) const
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " IP " << (s.hilite ? hilite_none : "");
         for (size_t i = 0; i != ip_addresses.size(); ++i)
-            s.ostr << (i ? ", " : "") << ip_addresses[i].toString();
+            s.ostr << (i ? ", " : "") << quoteString(ip_addresses[i].toString());
         for (size_t i = 0; i != ip_subnets.size(); ++i)
-            s.ostr << ((i + ip_addresses.size()) ? ", " : "") << ip_subnets[i].toString();
+            s.ostr << ((i + ip_addresses.size()) ? ", " : "") << quoteString(ip_subnets[i].toString());
     }
 
     if (!host_names.empty())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " NAME " << (s.hilite ? hilite_none : "");
         for (size_t i = 0; i != host_names.size(); ++i)
-            s.ostr << (i ? ", " : "") << host_names[i];
+            s.ostr << (i ? ", " : "") << quoteString(host_names[i]);
     }
 
     if (!host_regexps.empty())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " REGEXP " << (s.hilite ? hilite_none : "");
         for (size_t i = 0; i != host_regexps.size(); ++i)
-            s.ostr << (i ? ", " : "") << host_regexps[i];
+            s.ostr << (i ? ", " : "") << quoteString(host_regexps[i]);
     }
 }
 

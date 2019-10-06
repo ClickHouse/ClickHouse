@@ -24,18 +24,24 @@ namespace
             return;
         }
 
-        bool has_wildcard = (pattern.find_first_not_of("%_") != String::npos);
+        bool has_wildcard = (pattern.find_first_of("%_") != String::npos);
         if (has_wildcard)
         {
             /// IP subnet specified with one of the wildcard characters, e.g. "192.168.%.%".
-            String pattern2 = pattern;
+            String wildcard_replaced_with_zero_bits = pattern;
+            String wildcard_replaced_with_one_bits = pattern;
             if (address_family == IPAddress::IPv6)
-                boost::algorithm::replace_all(pattern2, "____", "%");
-
-            String wildcard_replaced_with_zero_bits
-                = boost::algorithm::replace_all_copy(pattern2, "%", (address_family == IPAddress::IPv6) ? "0000" : "0");
-            String wildcard_replaced_with_one_bits
-                = boost::algorithm::replace_all_copy(pattern2, "%", (address_family == IPAddress::IPv6) ? "ffff" : "255");
+            {
+                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "_", "0");
+                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "%", "0000");
+                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "_", "f");
+                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "%", "ffff");
+            }
+            else if (address_family == IPAddress::IPv4)
+            {
+                boost::algorithm::replace_all(wildcard_replaced_with_zero_bits, "%", "0");
+                boost::algorithm::replace_all(wildcard_replaced_with_one_bits, "%", "255");
+            }
 
             IPAddress prefix{wildcard_replaced_with_zero_bits};
             IPAddress mask = ~(prefix ^ IPAddress{wildcard_replaced_with_one_bits});
@@ -51,7 +57,7 @@ namespace
 
     void extractAllowedHostsFromHostPattern(const String & pattern, AllowedHosts & result)
     {
-        bool has_wildcard = (pattern.find_first_not_of("%_") != String::npos);
+        bool has_wildcard = (pattern.find_first_of("%_") != String::npos);
         if (has_wildcard)
         {
             result.addHostRegexp(likePatternToRegexp(pattern));
@@ -96,27 +102,27 @@ namespace
 
     bool parseNameImpl(IParser::Pos & pos, Expected & expected, String & result, AllowedHosts * allowed_hosts)
     {
-        String name;
-        if (!parseIdentifierOrStringLiteral(pos, expected, name))
+        if (!parseIdentifierOrStringLiteral(pos, expected, result))
             return false;
+
+        if (allowed_hosts)
+        {
+            allowed_hosts->clear();
+            allowed_hosts->addIPSubnet(AllowedHosts::IPSubnet::ALL_ADDRESSES);
+        }
 
         if (ParserToken{TokenType::At}.ignore(pos, expected))
         {
             String host;
-            if (!parseIdentifierOrStringLiteral(pos, expected, name))
+            if (!parseIdentifierOrStringLiteral(pos, expected, host))
                 return false;
 
-            if (host.empty())
-                result = name;
-            else
-                result = name + "@" + host;
-
-            if (allowed_hosts)
-                *allowed_hosts = extractAllowedHostsFromPattern(host);
-        }
-        else
-        {
-            result = name;
+            if (!host.empty())
+            {
+                result += "@" + host;
+                if (allowed_hosts)
+                    *allowed_hosts = extractAllowedHostsFromPattern(host);
+            }
         }
 
         return true;

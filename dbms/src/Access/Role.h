@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAttributes.h>
-#include <Access/AllowedDatabases.h>
+#include <Access/AccessPrivileges.h>
 #include <unordered_set>
 
 
@@ -14,8 +14,8 @@ namespace DB
 /// DROP ROLE [IF EXISTS] name
 struct Role : public IAttributes
 {
-    AllowedDatabases allowed_databases_by_grant_option[2 /* 0 - without grant option, 1 - with grant option */];
-    std::unordered_set<UUID> granted_roles_by_admin_option[2 /* 0 - without admin option, 1 - with admin option */];
+    AccessPrivileges privileges[2 /* Grant option: false - without grant option, true - with grant option */];
+    std::unordered_set<UUID> granted_roles[2 /* Admin option: false - without admin option, true - with admin option */];
 
     static const Type TYPE;
     const Type & getType() const override { return TYPE; }

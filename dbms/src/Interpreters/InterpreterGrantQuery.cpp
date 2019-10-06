@@ -27,13 +27,13 @@ BlockIO InterpreterGrantQuery::execute()
             {
                 if (is_grant)
                 {
-                    role.allowed_databases_by_grant_option[query.grant_option].grant(params...);
+                    role.privileges[query.grant_option].grant(params...);
                 }
                 else
                 {
-                    role.allowed_databases_by_grant_option[true].revoke(params...);
+                    role.privileges[true].revoke(params...);
                     if (!query.grant_option)
-                        role.allowed_databases_by_grant_option[false].revoke(params...);
+                        role.privileges[false].revoke(params...);
                 }
             };
 
@@ -41,13 +41,13 @@ BlockIO InterpreterGrantQuery::execute()
             {
                 if (is_grant)
                 {
-                    role.granted_roles_by_admin_option[query.grant_option].insert(role_id);
+                    role.granted_roles[query.grant_option].insert(role_id);
                 }
                 else
                 {
-                    role.granted_roles_by_admin_option[true].erase(role_id);
+                    role.granted_roles[true].erase(role_id);
                     if (!query.grant_option)
-                        role.granted_roles_by_admin_option[false].erase(role_id);
+                        role.granted_roles[false].erase(role_id);
                 }
             };
 

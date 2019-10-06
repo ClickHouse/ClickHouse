@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Access/AccessPrivileges.h>
 #include <unordered_map>
 
 
@@ -34,33 +35,8 @@ public:
     bool use_current_database = false;
     String table;
 
-    using AccessType = int;
-    enum AccessTypes : AccessType
-    {
-        USAGE = 0x00,
-        SELECT = 0x01,
-        INSERT = 0x02,
-        DELETE = 0x04,
-        ALTER = 0x08,
-        CREATE = 0x10,
-        DROP = 0x20,
-        ALL_COLUMN_LEVEL = SELECT,
-        ALL_TABLE_LEVEL = ALL_COLUMN_LEVEL | INSERT | DELETE | ALTER | DROP,
-        ALL_DATABASE_LEVEL = ALL_TABLE_LEVEL | CREATE,
-        ALL = ALL_DATABASE_LEVEL,
-    };
-
-    static const std::vector<std::pair<AccessTypes, String>> & getAccessTypeNames();
-
-    /// Outputs a grant to string in readable format, for example "SELECT(column), INSERT ON mydatabase.*".
-    static String accessTypeToString(AccessType access_);
-    static String accessToString(AccessType access_);
-    static String accessToString(AccessType access_, const String & database_);
-    static String accessToString(AccessType access_, const String & database_, const String & table_);
-    static String accessToString(AccessType access_, const String & database_, const String & table_, const String & column_);
-    static String accessToString(AccessType access_, const String & database_, const String & table_, const Strings & columns_);
-
-    AccessType access = USAGE;
+    using AccessType = AccessPrivileges::Type;
+    AccessType access = AccessPrivileges::USAGE;
     std::unordered_map<String, AccessType> columns_access;
 
     Strings to_roles;

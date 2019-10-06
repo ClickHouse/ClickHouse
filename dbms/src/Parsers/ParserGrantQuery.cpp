@@ -16,6 +16,7 @@ namespace ErrorCodes
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Parse "GRANT" or "REVOKE".
     ParserKeyword grant_p("GRANT");
     ParserKeyword revoke_p("REVOKE");
 
@@ -28,60 +29,54 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
+    /// Parse "GRANT OPTION FOR" or "ADMIN OPTION FOR".
     bool grant_option = false;
-    std::optional<bool> should_be_access_specifiers;
+    std::optional<bool> expect_access_types;
     if (kind == Kind::REVOKE)
     {
         if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
         {
             grant_option = true;
-            should_be_access_specifiers = true;
+            expect_access_types = true;
         }
         else if (ParserKeyword{"ADMIN OPTION FOR"}.ignore(pos, expected))
         {
             grant_option = true;
-            should_be_access_specifiers = false;
+            expect_access_types = false;
         }
     }
 
-    ParserToken comma{TokenType::Comma};
-
-    using AccessType = ASTGrantQuery::AccessType;
+    /// Parse access types, maybe with column list.
+    bool access_types_used = false;
+    using AccessType = AccessPrivileges::Type;
     AccessType access = 0;
-    bool all_privileges = false;
     std::unordered_map<String, AccessType> columns_access;
-    bool access_specifiers_found = false;
-    if (!should_be_access_specifiers || *should_be_access_specifiers)
+    ParserToken comma{TokenType::Comma};
+    if (!expect_access_types || *expect_access_types)
     {
         do
         {
-            for (const auto & [access_type, access_name] : ASTGrantQuery::getAccessTypeNames())
+            for (const auto & [access_type, access_name] : AccessPrivileges::getAllTypeNames())
             {
                 ParserKeyword access_p{access_name.c_str()};
                 if (access_p.ignore(pos, expected))
                 {
-                    access_specifiers_found = true;
+                    access_types_used = true;
 
-                    if (access_type == ASTGrantQuery::ALL)
+                    if (access_type == AccessPrivileges::ALL)
                         ParserKeyword{"PRIVILEGES"}.ignore(pos, expected);
 
                     ParserToken open(TokenType::OpeningRoundBracket);
                     ParserToken close(TokenType::ClosingRoundBracket);
                     if (open.ignore(pos, expected))
                     {
-                        AccessType add_column_access = access_type;
-                        if (add_column_access == ASTGrantQuery::ALL)
-                            add_column_access = ASTGrantQuery::ALL_COLUMN_LEVEL;
-                        else if (add_column_access & ~ASTGrantQuery::ALL_COLUMN_LEVEL)
-                            throw Exception("Privilege " + access_name + " cannot be granted on a column", ErrorCodes::INVALID_GRANT);
-
                         do
                         {
                             ParserIdentifier column_name_p;
                             ASTPtr column_name;
                             if (!column_name_p.parse(pos, column_name, expected))
                                 return false;
-                            columns_access[getIdentifierName(column_name)] |= add_column_access;
+                            columns_access[getIdentifierName(column_name)] |= access_type;
                         }
                         while (comma.ignore(pos, expected));
 
@@ -89,17 +84,12 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                             return false;
                     }
                     else
-                    {
-                        if (access_type == ASTGrantQuery::ALL)
-                            all_privileges = true;
-                        else
-                            access |= access_type;
-                    }
+                        access |= access_type;
                 }
             }
         }
-        while (access_specifiers_found && comma.ignore(pos, expected));
-        if (should_be_access_specifiers && *should_be_access_specifiers && !access_specifiers_found)
+        while (access_types_used && comma.ignore(pos, expected));
+        if (expect_access_types && *expect_access_types && !access_types_used)
             return false;
     }
 
@@ -108,7 +98,8 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr table;
     std::vector<String> roles;
 
-    if (access_specifiers_found)
+    /// Parse "ON database.table".
+    if (access_types_used)
     {
         /// Grant access to roles.
         if (!ParserKeyword{"ON"}.ignore(pos, expected))
@@ -131,36 +122,52 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             database = nullptr;
             use_current_database = true;
         }
+    }
 
+    /// Check access types.
+    if (access_types_used)
+    {
+        if (!columns_access.empty())
+        {
+            if (!table)
+                throw Exception("Cannot specify privileges on columns without specifying a table", ErrorCodes::INVALID_GRANT);
+            for (auto & columns_access_item : columns_access)
+            {
+                auto & column_access = columns_access_item.second;
+                if (column_access == AccessPrivileges::ALL)
+                    column_access = AccessPrivileges::ALL_COLUMN_LEVEL;
+                else if (column_access & ~AccessPrivileges::ALL_COLUMN_LEVEL)
+                    throw Exception(
+                        "Privilege " + AccessPrivileges::typeToString(column_access & ~AccessPrivileges::ALL_COLUMN_LEVEL)
+                            + " cannot be granted on a column",
+                        ErrorCodes::INVALID_GRANT);
+            }
+        }
         if (table)
         {
-            if (access & ~ASTGrantQuery::ALL_TABLE_LEVEL)
+            if (access == AccessPrivileges::ALL)
+                access = AccessPrivileges::ALL_TABLE_LEVEL;
+            else if (access & ~AccessPrivileges::ALL_TABLE_LEVEL)
                 throw Exception(
-                    "Privileges " + ASTGrantQuery::accessToString(access & ~ASTGrantQuery::ALL_TABLE_LEVEL)
+                    "Privileges " + AccessPrivileges::accessToString(access & ~AccessPrivileges::ALL_TABLE_LEVEL)
                         + " cannot be granted on a table",
                     ErrorCodes::INVALID_GRANT);
-            if (all_privileges)
-                access = ASTGrantQuery::ALL_TABLE_LEVEL;
         }
         else if (database || use_current_database)
         {
-            if (access & ~ASTGrantQuery::ALL_DATABASE_LEVEL)
+            if (access == AccessPrivileges::ALL)
+                access = AccessPrivileges::ALL_DATABASE_LEVEL;
+            else if (access & ~AccessPrivileges::ALL_DATABASE_LEVEL)
                 throw Exception(
-                    "Privileges " + ASTGrantQuery::accessToString(access & ~ASTGrantQuery::ALL_TABLE_LEVEL)
+                    "Privileges " + AccessPrivileges::accessToString(access & ~AccessPrivileges::ALL_TABLE_LEVEL)
                         + " cannot be granted on a database",
                     ErrorCodes::INVALID_GRANT);
-            if (all_privileges)
-                access = ASTGrantQuery::ALL_DATABASE_LEVEL;
-        }
-        else
-        {
-            if (all_privileges)
-                access = ASTGrantQuery::ALL;
         }
     }
-    else
+
+    /// Parse list of roles which granted to other roles.
+    if (!access_types_used)
     {
-        /// Grant roles to roles.
         do
         {
             String role_name;
@@ -171,6 +178,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         while (comma.ignore(pos, expected));
     }
 
+    /// Parse "TO" or "FROM" and list of roles which get/lost new privileges.
     if (kind == Kind::GRANT)
     {
         ParserKeyword to_p{"TO"};
@@ -194,9 +202,10 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     while (comma.ignore(pos, expected));
 
+    /// Parse "WITH GRANT OPTION" or "WITH ADMIN OPTION".
     if (kind == Kind::GRANT)
     {
-        if (access_specifiers_found)
+        if (access_types_used)
         {
             ParserKeyword with_grant_option_p{"WITH GRANT OPTION"};
             if (with_grant_option_p.ignore(pos, expected))

@@ -1,4 +1,5 @@
 #include <Access/Role.h>
+#include <algorithm>
 
 
 namespace DB
@@ -25,22 +26,20 @@ bool Role::equal(const IAttributes & other) const
     if (!IAttributes::equal(other))
         return false;
     const auto & other_role = *other.cast<Role>();
-    return (allowed_databases_by_grant_option[false] == other_role.allowed_databases_by_grant_option[false])
-        && (allowed_databases_by_grant_option[true] == other_role.allowed_databases_by_grant_option[true])
-        && (granted_roles_by_admin_option[false] == other_role.granted_roles_by_admin_option[false])
-        && (granted_roles_by_admin_option[true] == other_role.granted_roles_by_admin_option[true]);
+    return std::equal(std::begin(privileges), std::end(privileges), std::begin(other_role.privileges))
+        && std::equal(std::begin(granted_roles), std::end(granted_roles), std::begin(other_role.granted_roles));
 }
 
 
 bool Role::hasReferences(const UUID & id) const
 {
-    return granted_roles_by_admin_option[false].count(id) || granted_roles_by_admin_option[true].count(id);
+    return granted_roles[false].count(id) || granted_roles[true].count(id);
 }
 
 
 void Role::removeReferences(const UUID & id)
 {
-    granted_roles_by_admin_option[false].erase(id);
-    granted_roles_by_admin_option[true].erase(id);
+    granted_roles[false].erase(id);
+    granted_roles[true].erase(id);
 }
 }

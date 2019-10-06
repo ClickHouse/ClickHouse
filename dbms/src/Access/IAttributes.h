@@ -57,7 +57,7 @@ struct IAttributes : public std::enable_shared_from_this<IAttributes>
 protected:
     /// Helper function to define clone() in the derived classes.
     template <typename AttributesT>
-    std::shared_ptr<IAttributes> cloneImpl() const { return std::make_shared<AttributesT>(*cast<AttributesT>()); }
+    std::shared_ptr<IAttributes> cloneImpl() const { return std::make_shared<AttributesT>(static_cast<const AttributesT &>(*this)); }
 
     virtual bool equal(const IAttributes & other) const;
 };
