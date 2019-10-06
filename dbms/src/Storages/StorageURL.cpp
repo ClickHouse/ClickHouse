@@ -38,29 +38,10 @@ IStorageURLBase::IStorageURLBase(
     const ConstraintsDescription & constraints_)
     : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
-    if (!checkHostWhitelist(uri.getHost()) &&
-        !checkHostWhitelist(uri.getHost() + ":" + Poco::NumberFormatter::format(uri.getPort())))
+    if (!checkHost(uri.getHost()) &&
+        !checkHost(uri.getHost() + ":" + Poco::NumberFormatter::format(uri.getPort())))
     {
-        const std::unordered_set<std::string> primary_hosts = context_global.getAllowedPrimaryUrlHosts();
-        const std::vector<std::string> regexp_hosts = context_global.getAllowedRegexpUrlHosts();
-        std::string string_error = "\nUnacceptable URL. You can use ";
-        if (!primary_hosts.empty())
-        {
-            string_error += "URL like\n\n";
-            for (auto host : primary_hosts)
-                string_error += host + "\n";
-            string_error += '\n';
-            if (!regexp_hosts.empty())
-                string_error += "Or ";
-        }
-        if (!regexp_hosts.empty())
-        {
-            string_error += "URL that match the following regular expressions\n\n";
-            for (auto reg_host : regexp_hosts)
-                string_error += reg_host + "\n";
-        }
-        string_error += "\nIf you want to change this look at config.xml";
-        throw Exception(string_error, ErrorCodes::UNACCEPTABLE_URL);
+        throwUnacceptableURLException();
     }
     setColumns(columns_);
     setConstraints(constraints_);
@@ -250,7 +231,8 @@ void registerStorageURL(StorageFactory & factory)
     });
 }
 
-bool IStorageURLBase::checkHostWhitelist(const std::string & host) {
+bool IStorageURLBase::checkHost(const std::string & host)
+{
     const std::unordered_set<std::string> primary_hosts = context_global.getAllowedPrimaryUrlHosts();
     const std::vector<std::string> regexp_hosts = context_global.getAllowedRegexpUrlHosts();
     if (!primary_hosts.empty() || !regexp_hosts.empty())
@@ -265,5 +247,27 @@ bool IStorageURLBase::checkHostWhitelist(const std::string & host) {
         return true;
     }
     return true;
+}
+
+void IStorageURLBase::throwUnacceptableURLException()
+{
+    const std::unordered_set<std::string> primary_hosts = context_global.getAllowedPrimaryUrlHosts();
+    const std::vector<std::string> regexp_hosts = context_global.getAllowedRegexpUrlHosts();
+    std::string string_error = "Unacceptable URL. You can use ";
+    if (!primary_hosts.empty())
+    {
+        string_error += "URL like: ";
+        for (auto host : primary_hosts)
+            string_error += host + ", ";
+        if (!regexp_hosts.empty())
+            string_error += "or ";
+    }
+    if (!regexp_hosts.empty())
+    {
+        string_error += "URL that match the following regular expressions: ";
+        for (auto reg_host : regexp_hosts)
+            string_error += reg_host + ", ";
+    }
+    throw Exception(string_error.substr(0, string_error.size() - 2), ErrorCodes::UNACCEPTABLE_URL);
 }
 }
