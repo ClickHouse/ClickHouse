@@ -36,8 +36,8 @@ def test_config_with_only_primary_hosts(start_cluster):
 def test_config_with_only_regexp_hosts(start_cluster):
     assert node3.query("CREATE TABLE table_test_3_1 (word String) Engine=URL('https://host:80', CSV)") == ""
     assert node3.query("CREATE TABLE table_test_3_2 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
-    assert "Unacceptable URL." in node1.query_and_get_error("CREATE TABLE table_test_1_4 (word String) Engine=URL('https://host', CSV)")
-    assert "Unacceptable URL." in node1.query_and_get_error("CREATE TABLE table_test_1_4 (word String) Engine=URL('https://yandex2.ru', CSV)")
+    assert "Unacceptable URL." in node3.query_and_get_error("CREATE TABLE table_test_3_3 (word String) Engine=URL('https://host', CSV)")
+    assert "Unacceptable URL." in node3.query_and_get_error("CREATE TABLE table_test_3_4 (word String) Engine=URL('https://yandex2.ru', CSV)")
 
 def test_config_without_allowed_hosts(start_cluster):
     assert node4.query("CREATE TABLE table_test_4_1 (word String) Engine=URL('https://host:80', CSV)") == ""
