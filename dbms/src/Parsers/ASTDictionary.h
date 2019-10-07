@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -11,8 +12,8 @@ namespace DB
 class ASTDictionaryLifetime : public IAST
 {
 public:
-    uint64_t min_sec;
-    uint64_t max_sec;
+    UInt64 min_sec = 0;
+    UInt64 max_sec = 0;
 
     String getID(char) const override { return "Dictionary lifetime"; }
 
@@ -54,7 +55,7 @@ public:
 class ASTDictionary : public IAST
 {
 public:
-    IAST * primary_key;
+    ASTExpressionList * primary_key;
     ASTFunctionWithKeyValueArguments * source;
     ASTDictionaryLifetime * lifetime;
     ASTDictionaryLayout * layout;

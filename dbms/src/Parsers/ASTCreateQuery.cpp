@@ -283,6 +283,9 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (storage)
         storage->formatImpl(settings, state, frame);
 
+    if (dictionary)
+        dictionary->formatImpl(settings, state, frame);
+
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
 
@@ -297,9 +300,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
         tables->formatImpl(settings, state, frame);
     }
-
-    if (dictionary)
-        dictionary->formatImpl(settings, state, frame);
 }
 
 }
