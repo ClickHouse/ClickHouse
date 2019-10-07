@@ -7,15 +7,11 @@ namespace DB
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
 ExternalDictionariesLoader::ExternalDictionariesLoader(
-    std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
-    const Poco::Util::AbstractConfiguration & config,
-    Context & context_)
-        : ExternalLoader(config,
-                         "external dictionary",
-                         &Logger::get("ExternalDictionariesLoader")),
-        context(context_)
+    ExternalLoaderConfigRepositoryPtr config_repository, Context & context_)
+    : ExternalLoader("external dictionary", &Logger::get("ExternalDictionariesLoader"))
+    , context(context_)
 {
-    addConfigRepository(std::move(config_repository), {"dictionary", "name", "dictionaries_config"});
+    addConfigRepository(std::move(config_repository), {"dictionary", "name"});
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }

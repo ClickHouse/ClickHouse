@@ -29,6 +29,7 @@
 #include <Interpreters/Quota.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1320,8 +1321,8 @@ const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() cons
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = std::make_unique<ExternalLoaderConfigRepository>();
-        shared->external_dictionaries_loader.emplace(std::move(config_repository), config, *this->global_context);
+        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config");
+        shared->external_dictionaries_loader.emplace(std::move(config_repository), *this->global_context);
     }
     return *shared->external_dictionaries_loader;
 }
@@ -1340,7 +1341,7 @@ const ExternalModelsLoader & Context::getExternalModelsLoader() const
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = std::make_unique<ExternalLoaderConfigRepository>();
+        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(getConfigRef(), "models_config");
         shared->external_models_loader.emplace(std::move(config_repository), *this->global_context);
     }
     return *shared->external_models_loader;

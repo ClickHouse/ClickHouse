@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <Core/Types.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <Interpreters/ExternalLoaderConfigRepository.h>
+#include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
 
 
@@ -24,8 +24,6 @@ struct ExternalLoaderConfigSettings
 {
     std::string external_config;
     std::string external_name;
-
-    std::string path_setting_name;
 };
 
 
@@ -78,12 +76,12 @@ public:
 
     using LoadResults = std::vector<std::pair<String, LoadResult>>;
 
-    ExternalLoader(const Poco::Util::AbstractConfiguration & main_config, const String & type_name_, Logger * log);
+    ExternalLoader(const String & type_name_, Logger * log);
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
     void addConfigRepository(
-        std::unique_ptr<ExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings);
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings);
 
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
@@ -157,8 +155,8 @@ private:
 
     LoadablePtr createObject(const String & name, const ObjectConfig & config, bool config_changed, const LoadablePtr & previous_version) const;
 
-    class ConfigFilesReader;
-    std::unique_ptr<ConfigFilesReader> config_files_reader;
+    class LoadablesConfigReader;
+    std::unique_ptr<LoadablesConfigReader> config_files_reader;
 
     class LoadingDispatcher;
     std::unique_ptr<LoadingDispatcher> loading_dispatcher;

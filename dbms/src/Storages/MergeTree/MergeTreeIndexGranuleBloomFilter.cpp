@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexGranuleBloomFilter.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
@@ -37,10 +38,20 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
         if (index == 0)
         {
             static size_t atom_size = 8;
-            size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
 
             for (size_t column = 0, columns = granule_index_block.columns(); column < columns; ++column)
+            {
+                size_t total_items = total_rows;
+
+                if (const ColumnArray * array_col = typeid_cast<const ColumnArray *>(granule_index_block.getByPosition(column).column.get()))
+                {
+                    const IColumn * nested_col = array_col->getDataPtr().get();
+                    total_items = nested_col->size();
+                }
+
+                size_t bytes_size = (bits_per_row * total_items + atom_size - 1) / atom_size;
                 bloom_filters.emplace_back(std::make_shared<BloomFilter>(bytes_size, hash_functions, 0));
+            }
         }
 
         for (size_t column = 0, columns = granule_index_block.columns(); column < columns; ++column)
