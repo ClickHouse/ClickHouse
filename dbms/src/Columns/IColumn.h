@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Common/COW.h>
-#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
+#include <Core/Types.h>
 
 
 class SipHash;
@@ -373,32 +374,7 @@ protected:
     /// Template is to devirtualize calls to insertFrom method.
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
-    std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const
-    {
-        size_t num_rows = size();
-
-        if (num_rows != selector.size())
-            throw Exception(
-                    "Size of selector: " + std::to_string(selector.size()) + " doesn't match size of column: " + std::to_string(num_rows),
-                    ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        std::vector<MutablePtr> columns(num_columns);
-        for (auto & column : columns)
-            column = cloneEmpty();
-
-        {
-            size_t reserve_size = num_rows * 1.1 / num_columns;    /// 1.1 is just a guess. Better to use n-sigma rule.
-
-            if (reserve_size > 1)
-                for (auto & column : columns)
-                    column->reserve(reserve_size);
-        }
-
-        for (size_t i = 0; i < num_rows; ++i)
-            static_cast<Derived &>(*columns[selector[i]]).insertFrom(*this, i);
-
-        return columns;
-    }
+    std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

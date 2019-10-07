@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
 #include <common/unaligned.h>
 #include <Core/Field.h>
