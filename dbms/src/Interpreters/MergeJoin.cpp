@@ -12,6 +12,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
+#include <DataStreams/ConcatBlockInputStream.h>
 
 namespace DB
 {
@@ -87,33 +88,6 @@ Block extractMinMax(const Block & block, const Block & keys)
     min_max.setColumns(std::move(columns));
     return min_max;
 }
-
-struct SortedFileBlockMerger
-{
-    std::vector<std::unique_ptr<TemporaryFile>> files;
-    Blocks blocks;
-    std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
-    BlockInputStreams inputs;
-    std::unique_ptr<MergingSortedBlockInputStream> stream;
-
-    SortedFileBlockMerger(std::vector<std::unique_ptr<TemporaryFile>> & files_, Blocks && blocks_, const Block & header,
-                          const SortDescription & description, size_t max_rows_in_block)
-        :  blocks(blocks_)
-    {
-        files.swap(files_);
-
-        for (const auto & file : files)
-        {
-            temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path(), header));
-            inputs.emplace_back(temporary_inputs.back()->block_in);
-        }
-
-        if (!blocks.empty())
-            inputs.emplace_back(std::make_shared<MergeSortingBlocksBlockInputStream>(blocks, description, max_rows_in_block));
-
-        stream = std::make_unique<MergingSortedBlockInputStream>(inputs, description, max_rows_in_block);
-    }
-};
 
 }
 
@@ -389,8 +363,71 @@ void flushStreamToFiles(const String & tmp_path, const Block & header, IBlockInp
     }
 }
 
+struct SortedFilesMerger
+{
+    using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
+
+    std::vector<std::unique_ptr<TemporaryFile>> files;
+    std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
+    BlockInputStreams inputs;
+
+    SortedFilesMerger(std::vector<SortedFiles> & sorted_files, const Block & header)
+    {
+        for (const auto & track : sorted_files)
+        {
+            BlockInputStreams sequence;
+            for (const auto & file : track)
+            {
+                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path(), header));
+                sequence.emplace_back(temporary_inputs.back()->block_in);
+            }
+            inputs.emplace_back(std::make_shared<ConcatBlockInputStream>(sequence));
+        }
+    }
+};
+
 }
 
+
+void MiniLSM::insert(const BlocksList & blocks)
+{
+    if (blocks.empty())
+        return;
+
+    SortedFiles sorted_blocks;
+    if (blocks.size() > 1)
+    {
+        BlockInputStreams inputs;
+        inputs.reserve(blocks.size());
+        for (auto & block : blocks)
+            inputs.push_back(std::make_shared<OneBlockInputStream>(block));
+
+        MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+        flushStreamToFiles(path, sample_block, sorted_input, sorted_blocks);
+    }
+    else
+    {
+        OneBlockInputStream sorted_input(blocks.front());
+        flushStreamToFiles(path, sample_block, sorted_input, sorted_blocks);
+    }
+
+    sorted_files.emplace_back(std::move(sorted_blocks));
+    if (sorted_files.size() >= max_size)
+        merge();
+}
+
+/// TODO: better merge strategy
+void MiniLSM::merge(std::function<void(const Block &)> callback)
+{
+    SortedFilesMerger merger(sorted_files, sample_block);
+    MergingSortedBlockInputStream sorted_stream(merger.inputs, sort_description, rows_in_block);
+
+    SortedFiles out;
+    flushStreamToFiles(path, sample_block, sorted_stream, out, callback);
+
+    sorted_files.clear();
+    sorted_files.emplace_back(std::move(out));
+}
 
 
 MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
@@ -424,6 +461,8 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
 
     makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
     makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
+
+    lsm = std::make_unique<MiniLSM>(table_join->getTemporaryPath(), right_sample_block, right_sort_description, max_rows_in_right_block);
 }
 
 void MergeJoin::setTotals(const Block & totals_block)
@@ -439,7 +478,7 @@ void MergeJoin::joinTotals(Block & block) const
 
 void MergeJoin::mergeRightBlocks()
 {
-    if (isInMemory())
+    if (is_in_memory)
         mergeInMemoryRightBlocks();
     else
         mergeFlushedRightBlocks();
@@ -474,12 +513,8 @@ void MergeJoin::mergeFlushedRightBlocks()
 {
     std::unique_lock lock(rwlock);
 
-    Blocks blocks_to_merge = blocksListToBlocks(right_blocks);
+    lsm->insert(right_blocks);
     clearRightBlocksList();
-
-    /// @note it clears flushed_right_blocks (gets ownership for the files and blocks)
-    SortedFileBlockMerger merger(flushed_right_blocks, std::move(blocks_to_merge), right_sample_block,
-                                 right_sort_description, max_rows_in_right_block);
 
     auto callback = [&](const Block & block)
     {
@@ -488,7 +523,8 @@ void MergeJoin::mergeFlushedRightBlocks()
         countBlockSize(block);
     };
 
-    flushStreamToFiles(table_join->getTemporaryPath(), right_sample_block, *merger.stream, flushed_right_blocks, callback);
+    lsm->merge(callback);
+    flushed_right_blocks.swap(lsm->sorted_files.front());
 
     /// Get memory limit or aproximate it from row limit and bytes per row factor
     UInt64 memory_limit = table_join->sizeLimits().max_bytes;
@@ -503,16 +539,8 @@ void MergeJoin::flushRightBlocks()
 {
     /// it's under unique_lock(rwlock)
 
-    static const size_t max_rows_in_block = std::numeric_limits<size_t>::max();
-
-    BlockInputStreams inputs;
-    inputs.reserve(right_blocks.size());
-    for (auto & block : right_blocks)
-        inputs.push_back(std::make_shared<OneBlockInputStream>(block));
-
-    MergingSortedBlockInputStream sorted_input(inputs, right_sort_description, max_rows_in_block);
-
-    flushStreamToFiles(table_join->getTemporaryPath(), right_sample_block, sorted_input, flushed_right_blocks);
+    is_in_memory = false;
+    lsm->insert(right_blocks);
     clearRightBlocksList();
 }
 
@@ -545,7 +573,7 @@ void MergeJoin::joinBlock(Block & block)
     JoinCommon::removeLowCardinalityInplace(block);
 
     sortBlock(block, left_sort_description);
-    if (isInMemory())
+    if (is_in_memory)
         joinSortedBlock<true>(block);
     else
         joinSortedBlock<false>(block);

@@ -16,6 +16,31 @@ class AnalyzedJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 
+struct MiniLSM
+{
+    using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
+
+    const String & path;
+    const Block & sample_block;
+    const SortDescription & sort_description;
+    const size_t rows_in_block;
+    const size_t max_size;
+    std::vector<SortedFiles> sorted_files;
+
+    MiniLSM(const String & path_, const Block & sample_block_, const SortDescription & description,
+            size_t rows_in_block_, size_t max_size_ = 64)
+        : path(path_)
+        , sample_block(sample_block_)
+        , sort_description(description)
+        , rows_in_block(rows_in_block_)
+        , max_size(max_size_)
+    {}
+
+    void insert(const BlocksList & blocks);
+    void merge(std::function<void(const Block &)> callback = [](const Block &){});
+};
+
+
 class MergeJoin : public IJoin
 {
 public:
@@ -51,10 +76,12 @@ private:
     Blocks min_max_right_blocks;
     std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
-    std::vector<std::unique_ptr<TemporaryFile>> flushed_right_blocks;
+    std::unique_ptr<MiniLSM> lsm;
+    MiniLSM::SortedFiles flushed_right_blocks;
     Block totals;
     size_t right_blocks_row_count = 0;
     size_t right_blocks_bytes = 0;
+    bool is_in_memory = true;
     const bool nullable_right_side;
     const bool is_all;
     const bool is_inner;
@@ -81,7 +108,6 @@ private:
 
     bool saveRightBlock(Block && block);
     void flushRightBlocks();
-    bool isInMemory() const { return flushed_right_blocks.empty(); }
 
     void mergeInMemoryRightBlocks();
     void mergeFlushedRightBlocks();
