@@ -258,6 +258,9 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
 bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
     const char delimiter = format_settings.csv.delimiter;
+    const String bad_delimiters = " \t\"'.UL";
+    if (bad_delimiters.find(delimiter) != String::npos)
+        out << "CSV format may not work correctly with delimiter '" << delimiter << "'\n";
 
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
