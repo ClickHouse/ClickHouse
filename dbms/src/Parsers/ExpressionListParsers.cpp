@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -78,7 +79,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
 
-    auto list = std::make_shared<ASTExpressionList>();
+    auto list = std::make_shared<ASTExpressionList>(result_separator);
     node = list;
 
     while (true)
@@ -627,5 +628,30 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     return true;
 }
 
+bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserLiteral literal_parser;
+
+    ASTPtr identifier;
+    ASTPtr value;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+        return false;
+
+    auto pair = std::make_shared<ASTPair>();
+    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    pair->second = value;
+    node = pair;
+    return true;
+}
+
+bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList parser(std::make_unique<ParserKeyValuePair>(), std::make_unique<ParserNothing>(), true, 0);
+    return parser.parse(pos, node, expected);
+}
 
 }

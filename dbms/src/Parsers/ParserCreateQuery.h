@@ -37,18 +37,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-
-/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
-  * Parse result is ASTFunction, with or without arguments.
-  */
-class ParserIdentifierWithOptionalParameters : public IParserBase
-{
-protected:
-    const char * getName() const { return "identifier with optional parameters"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
-
 template <typename NameParser>
 class IParserNameTypePair : public IParserBase
 {

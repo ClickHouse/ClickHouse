@@ -63,7 +63,7 @@ public:
     bool is_dictionary{false};
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;
-    ASTDictionaryAttributesDeclarations * dictionary_attributes_list = nullptr;
+    ASTExpressionList * dictionary_attributes_list = nullptr;
     ASTExpressionList * tables = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
