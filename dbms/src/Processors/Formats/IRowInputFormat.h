@@ -3,9 +3,6 @@
 #include <string>
 #include <Columns/IColumn.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <DataStreams/SizeLimits.h>
-#include <Poco/Timespan.h>
-#include <Common/Stopwatch.h>
 
 
 namespace DB
@@ -26,14 +23,6 @@ struct RowInputFormatParams
 
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;
-
-    UInt64 rows_portion_size;
-
-    using ReadCallback = std::function<void()>;
-    ReadCallback callback;
-
-    Poco::Timespan max_execution_time = 0;
-    OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
 
 ///Row oriented input format: reads data row by row.
@@ -45,8 +34,8 @@ public:
     IRowInputFormat(
         Block header,
         ReadBuffer & in_,
-        Params params_)
-        : IInputFormat(std::move(header), in_), params(params_)
+        Params params)
+        : IInputFormat(std::move(header), in_), params(params)
     {
     }
 
@@ -72,16 +61,11 @@ protected:
     /// If not implemented, returns empty string.
     virtual std::string getDiagnosticInfo() { return {}; }
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
-
 private:
     Params params;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     size_t total_rows = 0;
     size_t num_errors = 0;
-
-    BlockMissingValues block_missing_values;
 };
 
 }

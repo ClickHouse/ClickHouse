@@ -3,7 +3,6 @@
 #include <array>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -150,7 +149,7 @@ public:
     {
         if (result_is_nullable)
         {
-            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
+            ColumnNullable & to_concrete = static_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
                 nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
@@ -195,7 +194,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const ColumnNullable * column = static_cast<const ColumnNullable *>(columns[0]);
         if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
@@ -234,7 +233,7 @@ public:
         {
             if (is_nullable[i])
             {
-                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
+                const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
                 if (nullable_col.isNullAt(row_num))
                 {
                     /// If at least one column has a null value in the current row,

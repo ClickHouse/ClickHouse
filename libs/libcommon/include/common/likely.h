@@ -1,15 +1,9 @@
+#pragma once
+
 #if defined(_MSC_VER)
-#   if !defined(likely)
-#      define likely(x)   (x)
-#   endif
-#   if !defined(unlikely)
-#      define unlikely(x) (x)
-#   endif
+#define likely(x)   (x)
+#define unlikely(x) (x)
 #else
-#   if !defined(likely)
-#       define likely(x)   (__builtin_expect(!!(x), 1))
-#   endif
-#   if !defined(unlikely)
-#       define unlikely(x) (__builtin_expect(!!(x), 0))
-#   endif
+#define likely(x)   (__builtin_expect(!!(x), 1))
+#define unlikely(x) (__builtin_expect(!!(x), 0))
 #endif

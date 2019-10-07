@@ -126,32 +126,20 @@ private:
     {
         for (size_t i = 0; i < buf_size(); ++i)
         {
-            if (buf[i])
+            if (buf[i] && !good(buf[i]))
             {
-                if (!good(buf[i]))
-                {
-                    buf[i] = 0;
-                    --m_size;
-                }
-                /** After removing the elements, there may have been room for items,
-                  * which were placed further than necessary, due to a collision.
-                  * You need to move them.
-                  */
-                else if (i != place(buf[i]))
-                {
-                    HashValue x = buf[i];
-                    buf[i] = 0;
-                    reinsertImpl(x);
-                }
+                buf[i] = 0;
+                --m_size;
             }
         }
 
-        /** We must process first collision resolution chain once again.
-          * Look at the comment in "resize" function.
+        /** After removing the elements, there may have been room for items,
+          * which were placed further than necessary, due to a collision.
+          * You need to move them.
           */
-        for (size_t i = 0; i < buf_size() && buf[i]; ++i)
+        for (size_t i = 0; i < buf_size(); ++i)
         {
-            if (i != place(buf[i]))
+            if (unlikely(buf[i] && i != place(buf[i])))
             {
                 HashValue x = buf[i];
                 buf[i] = 0;

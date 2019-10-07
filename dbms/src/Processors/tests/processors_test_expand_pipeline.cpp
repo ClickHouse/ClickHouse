@@ -26,9 +26,9 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink(String prefix_)
+    PrintSink(String prefix)
             : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-              prefix(std::move(prefix_))
+              prefix(std::move(prefix))
     {
     }
 
@@ -64,9 +64,9 @@ class OneNumberSource : public ISource
 public:
     String getName() const override { return "OneNumber"; }
 
-    OneNumberSource(UInt64 number_)
+    OneNumberSource(UInt64 number)
             : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-              number(number_)
+              number(number)
     {
     }
 

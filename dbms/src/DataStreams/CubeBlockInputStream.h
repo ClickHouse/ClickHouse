@@ -36,7 +36,6 @@ private:
     UInt32 mask = 0;
     Block source_block;
     Block zero_block;
-    bool is_data_read = false;
 };
 
 }

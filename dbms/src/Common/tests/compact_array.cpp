@@ -7,7 +7,7 @@
 #include <Common/CompactArray.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
-#include <filesystem>
+#include <boost/filesystem.hpp>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -15,7 +15,7 @@
 #include <cstdlib>
 #include <port/unistd.h>
 
-namespace fs = std::filesystem;
+namespace fs = boost::filesystem;
 
 std::string createTmpPath(const std::string & filename)
 {

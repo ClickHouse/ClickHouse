@@ -98,7 +98,7 @@ public:
         /// Index of tuple element, starting at 1.
         String tuple_element_name;
 
-        Substream(Type type_) : type(type_) {}
+        Substream(Type type) : type(type) {}
     };
 
     using SubstreamPath = std::vector<Substream>;
@@ -463,8 +463,9 @@ struct WhichDataType
 {
     TypeIndex idx;
 
-    WhichDataType(TypeIndex idx_ = TypeIndex::Nothing)
-        : idx(idx_)
+    /// For late initialization.
+    WhichDataType()
+        : idx(TypeIndex::Nothing)
     {}
 
     WhichDataType(const IDataType & data_type)

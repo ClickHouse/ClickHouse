@@ -1,5 +1,6 @@
 #include <random>
-#include <Common/thread_local_rng.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 
 
@@ -20,7 +21,8 @@ BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t wid
     for (size_t i = 0; i < size; ++i)
         distribution[i] = i % width;
 
-    std::shuffle(distribution.begin(), distribution.end(), thread_local_rng);
+    pcg64 generator(randomSeed());
+    std::shuffle(distribution.begin(), distribution.end(), generator);
 
     for (size_t i = 0; i < size; ++i)
         partitions[distribution[i]].push_back(inputs[i]);

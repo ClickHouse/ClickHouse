@@ -1,7 +1,6 @@
 #include "SharedLibrary.h"
 #include <string>
 #include <boost/core/noncopyable.hpp>
-#include <common/phdr_cache.h>
 #include "Exception.h"
 
 
@@ -18,11 +17,6 @@ SharedLibrary::SharedLibrary(const std::string & path, int flags)
     handle = dlopen(path.c_str(), flags);
     if (!handle)
         throw Exception(std::string("Cannot dlopen: ") + dlerror(), ErrorCodes::CANNOT_DLOPEN);
-
-    updatePHDRCache();
-
-    /// NOTE: race condition exists when loading multiple shared libraries concurrently.
-    /// We don't care (or add global mutex for this method).
 }
 
 SharedLibrary::~SharedLibrary()

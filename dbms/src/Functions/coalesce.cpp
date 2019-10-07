@@ -26,7 +26,7 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    FunctionCoalesce(const Context & context_) : context(context_) {}
+    FunctionCoalesce(const Context & context) : context(context) {}
 
     std::string getName() const override
     {

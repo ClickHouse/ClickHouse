@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -27,7 +26,7 @@ private:
     WrappedPtr data;
     size_t s;
 
-    ColumnConst(const ColumnPtr & data, size_t s_);
+    ColumnConst(const ColumnPtr & data, size_t s);
     ColumnConst(const ColumnConst & src) = default;
 
 public:
@@ -176,7 +175,7 @@ public:
 
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
     {
-        return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
+        return data->compareAt(0, 0, *static_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;

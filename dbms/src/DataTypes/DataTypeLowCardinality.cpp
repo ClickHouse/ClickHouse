@@ -4,7 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -141,11 +140,11 @@ struct IndexesSerializationType
     }
 
     IndexesSerializationType(const IColumn & column,
-                             bool has_additional_keys_,
-                             bool need_global_dictionary_,
+                             bool has_additional_keys,
+                             bool need_global_dictionary,
                              bool enumerate_dictionaries)
-        : has_additional_keys(has_additional_keys_)
-        , need_global_dictionary(need_global_dictionary_)
+        : has_additional_keys(has_additional_keys)
+        , need_global_dictionary(need_global_dictionary)
         , need_update_dictionary(enumerate_dictionaries)
     {
         if (typeid_cast<const ColumnUInt8 *>(&column))
@@ -183,7 +182,7 @@ struct SerializeStateLowCardinality : public IDataType::SerializeBinaryBulkState
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
-    explicit SerializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
+    explicit SerializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
 };
 
 struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkState
@@ -202,7 +201,7 @@ struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkS
     ///   in case of long block of empty arrays we may not need read dictionary at first reading.
     bool need_update_dictionary = false;
 
-    explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
+    explicit DeserializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
 };
 
 static SerializeStateLowCardinality * checkAndGetLowCardinalitySerializeState(
@@ -792,8 +791,8 @@ namespace
         const IDataType & keys_type;
         const Creator & creator;
 
-        CreateColumnVector(MutableColumnUniquePtr & column_, const IDataType & keys_type_, const Creator & creator_)
-                : column(column_), keys_type(keys_type_), creator(creator_)
+        CreateColumnVector(MutableColumnUniquePtr & column, const IDataType & keys_type, const Creator & creator)
+                : column(column), keys_type(keys_type), creator(creator)
         {
         }
 

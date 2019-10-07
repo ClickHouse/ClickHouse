@@ -31,9 +31,9 @@ class NumbersSource : public ISource
 public:
     String getName() const override { return "Numbers"; }
 
-    NumbersSource(UInt64 start_number, unsigned sleep_useconds_)
+    NumbersSource(UInt64 start_number, unsigned sleep_useconds)
         : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-        current_number(start_number), sleep_useconds(sleep_useconds_)
+        current_number(start_number), sleep_useconds(sleep_useconds)
     {
     }
 
@@ -61,9 +61,9 @@ protected:
 public:
     String getName() const override { return "SleepyNumbers"; }
 
-    SleepyNumbersSource(UInt64 start_number, unsigned sleep_useconds_)
+    SleepyNumbersSource(UInt64 start_number, unsigned sleep_useconds)
         : IProcessor({}, {Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})})
-        , output(outputs.front()), current_number(start_number), sleep_useconds(sleep_useconds_)
+        , output(outputs.front()), current_number(start_number), sleep_useconds(sleep_useconds)
     {
     }
 
@@ -122,9 +122,9 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink(String prefix_)
+    PrintSink(String prefix)
         : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-        prefix(std::move(prefix_))
+        prefix(std::move(prefix))
     {
     }
 

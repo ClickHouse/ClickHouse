@@ -1,5 +1,4 @@
 #include <Common/FieldVisitors.h>
-#include <Common/assert_cast.h>
 #include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -113,7 +112,7 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
 
         RowRef next_key;
 
-        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
+        Int8 sign = static_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
 
         setPrimaryKeyRef(next_key, current);
 

@@ -41,6 +41,9 @@ add_executable (two_level_hash_map two_level_hash_map.cpp)
 target_include_directories (two_level_hash_map SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (two_level_hash_map PRIVATE dbms)
 
+add_executable (compiler_test compiler_test.cpp)
+target_link_libraries (compiler_test PRIVATE dbms)
+
 add_executable (logical_expressions_optimizer logical_expressions_optimizer.cpp)
 target_link_libraries (logical_expressions_optimizer PRIVATE dbms clickhouse_parsers)
 
@@ -53,7 +56,7 @@ target_link_libraries (expression_analyzer PRIVATE dbms clickhouse_storages_syst
 add_check(expression_analyzer)
 
 add_executable (users users.cpp)
-target_link_libraries (users PRIVATE dbms clickhouse_common_config stdc++fs)
+target_link_libraries (users PRIVATE dbms clickhouse_common_config ${Boost_FILESYSTEM_LIBRARY})
 
 if (OS_LINUX)
     add_executable (internal_iotop internal_iotop.cpp)

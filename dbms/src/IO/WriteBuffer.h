@@ -35,7 +35,7 @@ public:
       */
     inline void next()
     {
-        if (!offset() && available())
+        if (!offset())
             return;
         bytes += offset();
 

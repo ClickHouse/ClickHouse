@@ -1,4 +1,5 @@
 <test>
+    <name>merge_tree_simple_select</name>
 
     <type>loop</type>
 

@@ -60,14 +60,6 @@ StoragePtr StorageFactory::get(
 
         name = "View";
     }
-    else if (query.is_live_view)
-    {
-
-        if (query.storage)
-            throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
-
-        name = "LiveView";
-    }
     else
     {
         /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
@@ -121,12 +113,6 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(
                     "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement",
-                    ErrorCodes::INCORRECT_QUERY);
-            }
-            else if (name == "LiveView")
-            {
-                throw Exception(
-                    "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
         }

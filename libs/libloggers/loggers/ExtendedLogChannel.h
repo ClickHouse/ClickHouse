@@ -13,7 +13,7 @@ namespace DB
 class ExtendedLogMessage
 {
 public:
-    explicit ExtendedLogMessage(const Poco::Message & base_) : base(base_) {}
+    explicit ExtendedLogMessage(const Poco::Message & base) : base(base) {}
 
     /// Attach additional data to the message
     static ExtendedLogMessage getFrom(const Poco::Message & base);

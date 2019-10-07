@@ -1,12 +1,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -14,7 +11,10 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 
 #include <Common/typeid_cast.h>
-
+#include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Parsers/ASTAsterisk.h>
+#include <iostream>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {

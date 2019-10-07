@@ -68,16 +68,16 @@ bool operator<(const RangeHashedDictionary::Range & left, const RangeHashedDicti
 
 
 RangeHashedDictionary::RangeHashedDictionary(
-    const std::string & dictionary_name_,
-    const DictionaryStructure & dict_struct_,
-    DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_)
-    : dictionary_name{dictionary_name_}
-    , dict_struct(dict_struct_)
-    , source_ptr{std::move(source_ptr_)}
-    , dict_lifetime(dict_lifetime_)
-    , require_nonempty(require_nonempty_)
+    const std::string & dictionary_name,
+    const DictionaryStructure & dict_struct,
+    DictionarySourcePtr source_ptr,
+    const DictionaryLifetime dict_lifetime,
+    bool require_nonempty)
+    : dictionary_name{dictionary_name}
+    , dict_struct(dict_struct)
+    , source_ptr{std::move(source_ptr)}
+    , dict_lifetime(dict_lifetime)
+    , require_nonempty(require_nonempty)
 {
     createAttributes();
     loadData();
@@ -92,7 +92,7 @@ RangeHashedDictionary::RangeHashedDictionary(
         const PaddedPODArray<RangeStorageType> & dates, \
         ResultArrayType<TYPE> & out) const \
     { \
-        const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::ut##TYPE); \
+        const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE); \
         getItems<TYPE>(attribute, ids, dates, out); \
     }
 DECLARE_MULTIPLE_GETTER(UInt8)
@@ -117,7 +117,7 @@ void RangeHashedDictionary::getString(
     const PaddedPODArray<RangeStorageType> & dates,
     ColumnString * out) const
 {
-    const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::utString);
+    const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::String);
     const auto & attr = *std::get<Ptr<StringRef>>(attribute.maps);
     const auto & null_value = std::get<String>(attribute.null_values);
 
@@ -227,51 +227,51 @@ void RangeHashedDictionary::calculateBytesAllocated()
     {
         switch (attribute.type)
         {
-            case AttributeUnderlyingType::utUInt8:
+            case AttributeUnderlyingType::UInt8:
                 addAttributeSize<UInt8>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt16:
+            case AttributeUnderlyingType::UInt16:
                 addAttributeSize<UInt16>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt32:
+            case AttributeUnderlyingType::UInt32:
                 addAttributeSize<UInt32>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt64:
+            case AttributeUnderlyingType::UInt64:
                 addAttributeSize<UInt64>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt128:
+            case AttributeUnderlyingType::UInt128:
                 addAttributeSize<UInt128>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt8:
+            case AttributeUnderlyingType::Int8:
                 addAttributeSize<Int8>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt16:
+            case AttributeUnderlyingType::Int16:
                 addAttributeSize<Int16>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt32:
+            case AttributeUnderlyingType::Int32:
                 addAttributeSize<Int32>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt64:
+            case AttributeUnderlyingType::Int64:
                 addAttributeSize<Int64>(attribute);
                 break;
-            case AttributeUnderlyingType::utFloat32:
+            case AttributeUnderlyingType::Float32:
                 addAttributeSize<Float32>(attribute);
                 break;
-            case AttributeUnderlyingType::utFloat64:
+            case AttributeUnderlyingType::Float64:
                 addAttributeSize<Float64>(attribute);
                 break;
 
-            case AttributeUnderlyingType::utDecimal32:
+            case AttributeUnderlyingType::Decimal32:
                 addAttributeSize<Decimal32>(attribute);
                 break;
-            case AttributeUnderlyingType::utDecimal64:
+            case AttributeUnderlyingType::Decimal64:
                 addAttributeSize<Decimal64>(attribute);
                 break;
-            case AttributeUnderlyingType::utDecimal128:
+            case AttributeUnderlyingType::Decimal128:
                 addAttributeSize<Decimal128>(attribute);
                 break;
 
-            case AttributeUnderlyingType::utString:
+            case AttributeUnderlyingType::String:
             {
                 addAttributeSize<StringRef>(attribute);
                 bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
@@ -296,51 +296,51 @@ RangeHashedDictionary::createAttributeWithType(const AttributeUnderlyingType typ
 
     switch (type)
     {
-        case AttributeUnderlyingType::utUInt8:
+        case AttributeUnderlyingType::UInt8:
             createAttributeImpl<UInt8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt16:
+        case AttributeUnderlyingType::UInt16:
             createAttributeImpl<UInt16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt32:
+        case AttributeUnderlyingType::UInt32:
             createAttributeImpl<UInt32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt64:
+        case AttributeUnderlyingType::UInt64:
             createAttributeImpl<UInt64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt128:
+        case AttributeUnderlyingType::UInt128:
             createAttributeImpl<UInt128>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt8:
+        case AttributeUnderlyingType::Int8:
             createAttributeImpl<Int8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt16:
+        case AttributeUnderlyingType::Int16:
             createAttributeImpl<Int16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt32:
+        case AttributeUnderlyingType::Int32:
             createAttributeImpl<Int32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt64:
+        case AttributeUnderlyingType::Int64:
             createAttributeImpl<Int64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utFloat32:
+        case AttributeUnderlyingType::Float32:
             createAttributeImpl<Float32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utFloat64:
+        case AttributeUnderlyingType::Float64:
             createAttributeImpl<Float64>(attr, null_value);
             break;
 
-        case AttributeUnderlyingType::utDecimal32:
+        case AttributeUnderlyingType::Decimal32:
             createAttributeImpl<Decimal32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utDecimal64:
+        case AttributeUnderlyingType::Decimal64:
             createAttributeImpl<Decimal64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utDecimal128:
+        case AttributeUnderlyingType::Decimal128:
             createAttributeImpl<Decimal128>(attr, null_value);
             break;
 
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
         {
             attr.null_values = null_value.get<String>();
             attr.maps = std::make_unique<Collection<StringRef>>();
@@ -363,7 +363,7 @@ void RangeHashedDictionary::getItems(
     if (false)
     {
     }
-#define DISPATCH(TYPE) else if (attribute.type == AttributeUnderlyingType::ut##TYPE) getItemsImpl<TYPE, OutputType>(attribute, ids, dates, out);
+#define DISPATCH(TYPE) else if (attribute.type == AttributeUnderlyingType::TYPE) getItemsImpl<TYPE, OutputType>(attribute, ids, dates, out);
     DISPATCH(UInt8)
     DISPATCH(UInt16)
     DISPATCH(UInt32)
@@ -443,51 +443,51 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::utUInt8:
+        case AttributeUnderlyingType::UInt8:
             setAttributeValueImpl<UInt8>(attribute, id, range, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt16:
+        case AttributeUnderlyingType::UInt16:
             setAttributeValueImpl<UInt16>(attribute, id, range, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt32:
+        case AttributeUnderlyingType::UInt32:
             setAttributeValueImpl<UInt32>(attribute, id, range, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt64:
+        case AttributeUnderlyingType::UInt64:
             setAttributeValueImpl<UInt64>(attribute, id, range, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt128:
+        case AttributeUnderlyingType::UInt128:
             setAttributeValueImpl<UInt128>(attribute, id, range, value.get<UInt128>());
             break;
-        case AttributeUnderlyingType::utInt8:
+        case AttributeUnderlyingType::Int8:
             setAttributeValueImpl<Int8>(attribute, id, range, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utInt16:
+        case AttributeUnderlyingType::Int16:
             setAttributeValueImpl<Int16>(attribute, id, range, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utInt32:
+        case AttributeUnderlyingType::Int32:
             setAttributeValueImpl<Int32>(attribute, id, range, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utInt64:
+        case AttributeUnderlyingType::Int64:
             setAttributeValueImpl<Int64>(attribute, id, range, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utFloat32:
+        case AttributeUnderlyingType::Float32:
             setAttributeValueImpl<Float32>(attribute, id, range, value.get<Float64>());
             break;
-        case AttributeUnderlyingType::utFloat64:
+        case AttributeUnderlyingType::Float64:
             setAttributeValueImpl<Float64>(attribute, id, range, value.get<Float64>());
             break;
 
-        case AttributeUnderlyingType::utDecimal32:
+        case AttributeUnderlyingType::Decimal32:
             setAttributeValueImpl<Decimal32>(attribute, id, range, value.get<Decimal32>());
             break;
-        case AttributeUnderlyingType::utDecimal64:
+        case AttributeUnderlyingType::Decimal64:
             setAttributeValueImpl<Decimal64>(attribute, id, range, value.get<Decimal64>());
             break;
-        case AttributeUnderlyingType::utDecimal128:
+        case AttributeUnderlyingType::Decimal128:
             setAttributeValueImpl<Decimal128>(attribute, id, range, value.get<Decimal128>());
             break;
 
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
         {
             auto & map = *std::get<Ptr<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
@@ -544,50 +544,50 @@ void RangeHashedDictionary::getIdsAndDates(
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::utUInt8:
+        case AttributeUnderlyingType::UInt8:
             getIdsAndDates<UInt8>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utUInt16:
+        case AttributeUnderlyingType::UInt16:
             getIdsAndDates<UInt16>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utUInt32:
+        case AttributeUnderlyingType::UInt32:
             getIdsAndDates<UInt32>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utUInt64:
+        case AttributeUnderlyingType::UInt64:
             getIdsAndDates<UInt64>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utUInt128:
+        case AttributeUnderlyingType::UInt128:
             getIdsAndDates<UInt128>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utInt8:
+        case AttributeUnderlyingType::Int8:
             getIdsAndDates<Int8>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utInt16:
+        case AttributeUnderlyingType::Int16:
             getIdsAndDates<Int16>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utInt32:
+        case AttributeUnderlyingType::Int32:
             getIdsAndDates<Int32>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utInt64:
+        case AttributeUnderlyingType::Int64:
             getIdsAndDates<Int64>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utFloat32:
+        case AttributeUnderlyingType::Float32:
             getIdsAndDates<Float32>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utFloat64:
+        case AttributeUnderlyingType::Float64:
             getIdsAndDates<Float64>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
             getIdsAndDates<StringRef>(attribute, ids, start_dates, end_dates);
             break;
 
-        case AttributeUnderlyingType::utDecimal32:
+        case AttributeUnderlyingType::Decimal32:
             getIdsAndDates<Decimal32>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utDecimal64:
+        case AttributeUnderlyingType::Decimal64:
             getIdsAndDates<Decimal64>(attribute, ids, start_dates, end_dates);
             break;
-        case AttributeUnderlyingType::utDecimal128:
+        case AttributeUnderlyingType::Decimal128:
             getIdsAndDates<Decimal128>(attribute, ids, start_dates, end_dates);
             break;
     }

@@ -8,6 +8,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -110,7 +111,8 @@ String transformQueryForExternalDatabase(
 {
     auto clone_query = query.clone();
     auto syntax_result = SyntaxAnalyzer(context).analyze(clone_query, available_columns);
-    const Names used_columns = syntax_result->requiredSourceColumns();
+    ExpressionAnalyzer analyzer(clone_query, syntax_result, context);
+    const Names & used_columns = analyzer.getRequiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
 

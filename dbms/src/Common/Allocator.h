@@ -11,7 +11,7 @@
 #endif
 
 #include <pcg_random.hpp>
-#include <Common/thread_local_rng.h>
+#include <Common/randomSeed.h>
 
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
@@ -86,8 +86,10 @@ struct RandomHint
 {
     void * mmap_hint()
     {
-        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
+        return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(rng));
     }
+private:
+    pcg64 rng{randomSeed()};
 };
 }
 
@@ -265,12 +267,13 @@ using Allocator = AllocatorWithHint<clear_memory, AllocatorHints::DefaultHint, M
 #endif
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
+  * TODO alignment
   */
-template <typename Base, size_t N = 64, size_t Alignment = 1>
+template <typename Base, size_t N = 64>
 class AllocatorWithStackMemory : private Base
 {
 private:
-    alignas(Alignment) char stack_memory[N];
+    char stack_memory[N];
 
 public:
     /// Do not use boost::noncopyable to avoid the warning about direct base
@@ -290,7 +293,7 @@ public:
             return stack_memory;
         }
 
-        return Base::alloc(size, Alignment);
+        return Base::alloc(size);
     }
 
     void free(void * buf, size_t size)
@@ -307,10 +310,10 @@ public:
 
         /// Already was big enough to not fit in stack_memory.
         if (old_size > N)
-            return Base::realloc(buf, old_size, new_size, Alignment);
+            return Base::realloc(buf, old_size, new_size);
 
         /// Was in stack memory, but now will not fit there.
-        void * new_buf = Base::alloc(new_size, Alignment);
+        void * new_buf = Base::alloc(new_size);
         memcpy(new_buf, buf, old_size);
         return new_buf;
     }

@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
-
 
 namespace DB
 {
@@ -41,7 +39,7 @@ struct LastElementCache
     bool check(const Value & value_) { return !empty && value == value_; }
 
     template <typename Key>
-    bool check(const Key & key) { return !empty && value.first == key; }
+    bool check(const Key & key) { return !empty && value.getFirst() == key; }
 };
 
 template <typename Data>
@@ -58,8 +56,8 @@ class EmplaceResultImpl
     bool inserted;
 
 public:
-    EmplaceResultImpl(Mapped & value_, Mapped & cached_value_, bool inserted_)
-            : value(value_), cached_value(cached_value_), inserted(inserted_) {}
+    EmplaceResultImpl(Mapped & value, Mapped & cached_value, bool inserted)
+            : value(value), cached_value(cached_value), inserted(inserted) {}
 
     bool isInserted() const { return inserted; }
     auto & getMapped() const { return value; }
@@ -77,7 +75,7 @@ class EmplaceResultImpl<void>
     bool inserted;
 
 public:
-    explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
+    explicit EmplaceResultImpl(bool inserted) : inserted(inserted) {}
     bool isInserted() const { return inserted; }
 };
 
@@ -88,7 +86,7 @@ class FindResultImpl
     bool found;
 
 public:
-    FindResultImpl(Mapped * value_, bool found_) : value(value_), found(found_) {}
+    FindResultImpl(Mapped * value, bool found) : value(value), found(found) {}
     bool isFound() const { return found; }
     Mapped & getMapped() const { return *value; }
 };
@@ -99,7 +97,7 @@ class FindResultImpl<void>
     bool found;
 
 public:
-    explicit FindResultImpl(bool found_) : found(found_) {}
+    explicit FindResultImpl(bool found) : found(found) {}
     bool isFound() const { return found; }
 };
 
@@ -149,8 +147,8 @@ protected:
             if constexpr (has_mapped)
             {
                 /// Init PairNoInit elements.
-                cache.value.second = Mapped();
-                cache.value.first = {};
+                cache.value.getSecond() = Mapped();
+                cache.value.getFirstMutable() = {};
             }
             else
                 cache.value = Value();
@@ -172,7 +170,7 @@ protected:
                 static_cast<Derived &>(*this).onExistingKey(key, pool);
 
                 if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                    return EmplaceResult(cache.value.getSecond(), cache.value.getSecond(), false);
                 else
                     return EmplaceResult(false);
             }
@@ -206,7 +204,7 @@ protected:
             cache.empty = false;
 
             if constexpr (has_mapped)
-                cached = &cache.value.second;
+                cached = &cache.value.getSecond();
         }
 
         if constexpr (has_mapped)
@@ -223,7 +221,7 @@ protected:
             if (cache.check(key))
             {
                 if constexpr (has_mapped)
-                    return FindResult(&cache.value.second, cache.found);
+                    return FindResult(&cache.value.getSecond(), cache.found);
                 else
                     return FindResult(cache.found);
             }
@@ -242,7 +240,7 @@ protected:
             else
             {
                 if constexpr (has_mapped)
-                    cache.value.first = key;
+                    cache.value.getFirstMutable() = key;
                 else
                     cache.value = key;
             }
@@ -312,7 +310,7 @@ protected:
         {
             if (null_maps[k] != nullptr)
             {
-                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+                const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
                 if (null_map[row] == 1)
                 {
                     size_t bucket = k / 8;

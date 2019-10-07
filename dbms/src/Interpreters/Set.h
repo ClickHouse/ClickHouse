@@ -31,9 +31,9 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_)
+    Set(const SizeLimits & limits, bool fill_set_elements)
         : log(&Logger::get("Set")),
-        limits(limits_), fill_set_elements(fill_set_elements_)
+        limits(limits), fill_set_elements(fill_set_elements)
     {
     }
 
@@ -69,9 +69,6 @@ public:
 
     bool hasExplicitSetElements() const { return fill_set_elements; }
     Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
-
-    void checkColumnsNumber(size_t num_key_columns) const;
-    void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
 private:
     size_t keys_size = 0;

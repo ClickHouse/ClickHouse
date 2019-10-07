@@ -8,7 +8,6 @@
 #include <Columns/ColumnArray.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Functions/FunctionHelpers.h>
@@ -552,8 +551,8 @@ public:
         }
         else
         {
-            const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*block.getByPosition(arguments[0]).column);
-            const ColumnString & col_string = assert_cast<const ColumnString &>(col_arr.getData());
+            const ColumnArray & col_arr = static_cast<const ColumnArray &>(*block.getByPosition(arguments[0]).column);
+            const ColumnString & col_string = static_cast<const ColumnString &>(col_arr.getData());
 
             auto col_res = ColumnString::create();
 

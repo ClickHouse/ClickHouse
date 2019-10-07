@@ -66,6 +66,8 @@ private:
 
     /// Here, total values are accumulated. After the work is finished, they will be placed in IBlockInputStream::totals.
     MutableColumns current_totals;
+    /// Arena for aggregate function states in totals.
+    ArenaPtr arena;
 };
 
 void finalizeChunk(Chunk & chunk);

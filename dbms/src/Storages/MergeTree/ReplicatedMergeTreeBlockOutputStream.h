@@ -23,7 +23,7 @@ class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
     ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_,
-        size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_,
+        size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block,
         bool deduplicate_);
 
     Block getHeader() const override;

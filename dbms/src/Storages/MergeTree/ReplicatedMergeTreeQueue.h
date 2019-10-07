@@ -138,7 +138,7 @@ private:
     friend class SubscriberHandler;
     struct SubscriberHandler : public boost::noncopyable
     {
-        SubscriberHandler(SubscriberIterator it_, ReplicatedMergeTreeQueue & queue_) : it(it_), queue(queue_) {}
+        SubscriberHandler(SubscriberIterator it, ReplicatedMergeTreeQueue & queue) : it(it), queue(queue) {}
         ~SubscriberHandler();
 
     private:
@@ -215,7 +215,7 @@ private:
         friend class ReplicatedMergeTreeQueue;
 
         /// Created only in the selectEntryToProcess function. It is called under mutex.
-        CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_);
+        CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
         static void setActualPartName(ReplicatedMergeTreeQueue::LogEntry & entry, const String & actual_part_name,
@@ -296,7 +296,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    std::pair<size_t, size_t> countMergesAndPartMutations() const;
+    size_t countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;

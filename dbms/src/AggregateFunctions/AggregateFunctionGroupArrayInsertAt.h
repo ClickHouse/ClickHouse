@@ -10,7 +10,6 @@
 #include <Columns/ColumnVector.h>
 
 #include <Common/FieldVisitors.h>
-#include <Common/assert_cast.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -181,7 +180,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & to_array = assert_cast<ColumnArray &>(to);
+        ColumnArray & to_array = static_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();
         ColumnArray::Offsets & to_offsets = to_array.getOffsets();
 

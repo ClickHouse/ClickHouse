@@ -45,11 +45,6 @@ ASTPtr ASTAlterCommand::clone() const
         res->ttl = ttl->clone();
         res->children.push_back(res->ttl);
     }
-    if (values)
-    {
-        res->values = values->clone();
-        res->children.push_back(res->values);
-    }
 
     return res;
 }
@@ -114,45 +109,12 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::DROP_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << (clear_index ? "CLEAR " : "DROP ") << "INDEX " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+                      << "DROP INDEX " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         index->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << "MATERIALIZE INDEX " << (settings.hilite ? hilite_none : "");
-        index->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::ADD_CONSTRAINT)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD CONSTRAINT" << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        constraint_decl->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::DROP_CONSTRAINT)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << "DROP CONSTRAINT " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        constraint->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (detach ? "DETACH" : "DROP") << " PARTITION "
-                      << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
                       << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
     }
@@ -222,10 +184,6 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
-    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
@@ -278,10 +236,7 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    if (is_live_view)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER LIVE VIEW " << (settings.hilite ? hilite_none : "");
-    else
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
     if (!table.empty())
     {

@@ -26,7 +26,7 @@ namespace ext
         std::size_t idx;
         It it;
 
-        enumerate_iterator(const std::size_t idx_, It it_) : idx{idx_}, it{it_} {}
+        enumerate_iterator(const std::size_t idx, It it) : idx{idx}, it{it} {}
 
         auto operator*() const { return reference(idx, *it); }
 
@@ -42,7 +42,7 @@ namespace ext
 
         Collection & collection;
 
-        enumerate_wrapper(Collection & collection_) : collection(collection_) {}
+        enumerate_wrapper(Collection & collection) : collection(collection) {}
 
         auto begin() { return iterator(0, std::begin(collection)); }
         auto end() { return iterator(ext::size(collection), std::end(collection)); }

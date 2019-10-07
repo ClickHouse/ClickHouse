@@ -5,7 +5,6 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
-#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -56,7 +55,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).update(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+        this->data(place).update(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -76,7 +75,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).value);
+        static_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).value);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

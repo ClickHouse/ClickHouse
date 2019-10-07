@@ -15,7 +15,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,7 +24,6 @@
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
 #include <Functions/FunctionFactory.h>
-
 
 namespace DB
 {
@@ -138,10 +136,7 @@ bool PredicateExpressionsOptimizer::allowPushDown(
     const std::vector<IdentifierWithQualifier> & dependencies,
     OptimizeKind & optimize_kind)
 {
-    if (!subquery
-        || (!settings.enable_optimize_predicate_expression_to_final_subquery && subquery->final())
-        || subquery->limitBy() || subquery->limitLength()
-        || subquery->with())
+    if (!subquery || subquery->final() || subquery->limitBy() || subquery->limitLength() || subquery->with())
         return false;
     else
     {
@@ -271,7 +266,7 @@ std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(con
                     continue;
                 }
             }
-            ++idx;
+            idx++;
         }
     }
     return predicate_expressions;
@@ -417,7 +412,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     for (const auto & projection_column : select_query->select()->children)
     {
-        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>() || projection_column->as<ASTColumnsMatcher>())
+        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>())
         {
             ASTs evaluated_columns = evaluateAsterisk(select_query, projection_column);
 
@@ -488,20 +483,8 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
                 throw Exception("Logical error: unexpected table expression", ErrorCodes::LOGICAL_ERROR);
 
             const auto block = storage->getSampleBlock();
-            if (const auto * asterisk_pattern = asterisk->as<ASTColumnsMatcher>())
-            {
-                for (size_t idx = 0; idx < block.columns(); ++idx)
-                {
-                    auto & col = block.getByPosition(idx);
-                    if (asterisk_pattern->isColumnMatching(col.name))
-                        projection_columns.emplace_back(std::make_shared<ASTIdentifier>(col.name));
-                }
-            }
-            else
-            {
-                for (size_t idx = 0; idx < block.columns(); ++idx)
-                    projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
-            }
+            for (size_t idx = 0; idx < block.columns(); idx++)
+                projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
         }
     }
     return projection_columns;

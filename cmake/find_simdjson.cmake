@@ -3,11 +3,8 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/simdjson/include/simdjson/jsonp
     return()
 endif ()
 
-if (NOT HAVE_SSE42)
-    message (WARNING "submodule contrib/simdjson requires support of SSE4.2 instructions")
-    return()
-elseif (NOT HAVE_PCLMULQDQ)
-    message (WARNING "submodule contrib/simdjson requires support of PCLMULQDQ instructions")
+if (NOT HAVE_AVX2)
+    message (WARNING "submodule contrib/simdjson requires AVX2 support")
     return()
 endif ()
 

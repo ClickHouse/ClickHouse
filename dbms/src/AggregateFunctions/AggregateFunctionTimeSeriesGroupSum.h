@@ -16,7 +16,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
-#include <Common/assert_cast.h>
 #include <ext/range.h>
 #include "IAggregateFunction.h"
 
@@ -236,9 +235,9 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        auto uid = assert_cast<const ColumnVector<UInt64> *>(columns[0])->getData()[row_num];
-        auto ts = assert_cast<const ColumnVector<Int64> *>(columns[1])->getData()[row_num];
-        auto val = assert_cast<const ColumnVector<Float64> *>(columns[2])->getData()[row_num];
+        auto uid = static_cast<const ColumnVector<UInt64> *>(columns[0])->getData()[row_num];
+        auto ts = static_cast<const ColumnVector<Int64> *>(columns[1])->getData()[row_num];
+        auto val = static_cast<const ColumnVector<Float64> *>(columns[2])->getData()[row_num];
         if (uid && ts && val)
         {
             this->data(place).add(uid, ts, val);
@@ -256,7 +255,7 @@ public:
         const auto & value = this->data(place).result;
         size_t size = value.size();
 
-        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         size_t old_size = offsets_to.back();
 
@@ -265,9 +264,9 @@ public:
         if (size)
         {
             typename ColumnInt64::Container & ts_to
-                = assert_cast<ColumnInt64 &>(assert_cast<ColumnTuple &>(arr_to.getData()).getColumn(0)).getData();
+                = static_cast<ColumnInt64 &>(static_cast<ColumnTuple &>(arr_to.getData()).getColumn(0)).getData();
             typename ColumnFloat64::Container & val_to
-                = assert_cast<ColumnFloat64 &>(assert_cast<ColumnTuple &>(arr_to.getData()).getColumn(1)).getData();
+                = static_cast<ColumnFloat64 &>(static_cast<ColumnTuple &>(arr_to.getData()).getColumn(1)).getData();
             ts_to.reserve(old_size + size);
             val_to.reserve(old_size + size);
             size_t i = 0;

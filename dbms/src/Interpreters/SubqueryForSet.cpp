@@ -7,13 +7,15 @@ namespace DB
 {
 
 void SubqueryForSet::makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
-                                const std::unordered_map<String, String> & name_to_origin)
+                                const std::list<JoinedColumn> & columns_from_joined_table,
+                                const NameSet & required_columns_from_joined_table)
 {
     source = std::make_shared<LazyBlockInputStream>(interpreter->getSampleBlock(),
                                                     [interpreter]() mutable { return interpreter->execute().in; });
 
-    for (const auto & names : name_to_origin)
-        joined_block_aliases.emplace_back(names.second, names.first);
+    for (const auto & column : columns_from_joined_table)
+        if (required_columns_from_joined_table.count(column.name_and_type.name))
+            joined_block_aliases.emplace_back(column.original_name, column.name_and_type.name);
 
     sample_block = source->getHeader();
     for (const auto & name_with_alias : joined_block_aliases)

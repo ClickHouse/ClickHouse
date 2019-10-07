@@ -22,7 +22,6 @@ void registerOutputFormatProcessorNull(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
-        FormatFactory::WriteCallback,
         const FormatSettings &)
     {
         return std::make_shared<NullOutputFormat>(sample, buf);

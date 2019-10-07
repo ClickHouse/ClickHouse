@@ -10,19 +10,19 @@ namespace DB
 
 /// Visits AST tree in depth, call functions for nodes according to Matcher type data.
 /// You need to define Data, visit() and needChildVisit() in Matcher class.
-template <typename Matcher, bool _top_to_bottom, typename T>
-class InDepthNodeVisitorTemplate
+template <typename Matcher, bool _top_to_bottom>
+class InDepthNodeVisitor
 {
 public:
     using Data = typename Matcher::Data;
 
-    InDepthNodeVisitorTemplate(Data & data_, std::ostream * ostr_ = nullptr)
+    InDepthNodeVisitor(Data & data_, std::ostream * ostr_ = nullptr)
     :   data(data_),
         visit_depth(0),
         ostr(ostr_)
     {}
 
-    void visit(T & ast)
+    void visit(ASTPtr & ast)
     {
         DumpASTNode dump(*ast, ostr, visit_depth, typeid(Matcher).name());
 
@@ -40,19 +40,13 @@ private:
     size_t visit_depth;
     std::ostream * ostr;
 
-    void visitChildren(T & ast)
+    void visitChildren(ASTPtr & ast)
     {
         for (auto & child : ast->children)
             if (Matcher::needChildVisit(ast, child))
                 visit(child);
     }
 };
-
-template <typename Matcher, bool top_to_bottom>
-using InDepthNodeVisitor = InDepthNodeVisitorTemplate<Matcher, top_to_bottom, ASTPtr>;
-
-template <typename Matcher, bool top_to_bottom>
-using ConstInDepthNodeVisitor = InDepthNodeVisitorTemplate<Matcher, top_to_bottom, const ASTPtr>;
 
 /// Simple matcher for one node type without complex traversal logic.
 template <typename _Data, bool _visit_children = true>

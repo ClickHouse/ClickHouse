@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DatabaseAndTableWithAlias.h"
+#include "ExpressionAnalyzer.h"
 #include <Parsers/ASTSelectQuery.h>
 #include <map>
 
@@ -38,17 +39,15 @@ class PredicateExpressionsOptimizer
 
         /// for PredicateExpressionsOptimizer
         const bool enable_optimize_predicate_expression;
-        const bool enable_optimize_predicate_expression_to_final_subquery;
         const bool join_use_nulls;
 
         template<typename T>
-        ExtractedSettings(const T & settings_)
-        :   max_ast_depth(settings_.max_ast_depth),
-            max_expanded_ast_elements(settings_.max_expanded_ast_elements),
-            count_distinct_implementation(settings_.count_distinct_implementation),
-            enable_optimize_predicate_expression(settings_.enable_optimize_predicate_expression),
-            enable_optimize_predicate_expression_to_final_subquery(settings_.enable_optimize_predicate_expression_to_final_subquery),
-            join_use_nulls(settings_.join_use_nulls)
+        ExtractedSettings(const T & settings)
+        :   max_ast_depth(settings.max_ast_depth),
+            max_expanded_ast_elements(settings.max_expanded_ast_elements),
+            count_distinct_implementation(settings.count_distinct_implementation),
+            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
+            join_use_nulls(settings.join_use_nulls)
         {}
     };
 

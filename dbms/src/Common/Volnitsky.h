@@ -327,17 +327,15 @@ protected:
     FallbackSearcher fallback_searcher;
 
 public:
-    using Searcher = FallbackSearcher;
-
     /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
       * If you specify it small enough, the fallback algorithm will be used,
       *  since it is considered that it's useless to waste time initializing the hash table.
       */
-    VolnitskyBase(const char * const needle_, const size_t needle_size_, size_t haystack_size_hint = 0)
-        : needle{reinterpret_cast<const UInt8 *>(needle_)}
-        , needle_size{needle_size_}
+    VolnitskyBase(const char * const needle, const size_t needle_size, size_t haystack_size_hint = 0)
+        : needle{reinterpret_cast<const UInt8 *>(needle)}
+        , needle_size{needle_size}
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
-        , fallback_searcher{needle_, needle_size}
+        , fallback_searcher{needle, needle_size}
     {
         if (fallback)
             return;
@@ -375,7 +373,7 @@ public:
                 const auto res = pos - (hash[cell_num] - 1);
 
                 /// pointer in the code is always padded array so we can use pagesafe semantics
-                if (fallback_searcher.compare(haystack, haystack_end, res))
+                if (fallback_searcher.compare(res))
                     return res;
             }
         }
@@ -522,7 +520,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
                             return true;
                     }
                 }
@@ -554,7 +552,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
                             ans = std::min(ans, ind);
                     }
                 }
@@ -592,7 +590,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
                             ans = std::min<UInt64>(ans, res - haystack);
                     }
                 }
@@ -627,7 +625,7 @@ public:
                     {
                         const auto * res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (ans[ind] == 0 && res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (ans[ind] == 0 && res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
                             ans[ind] = count_chars(haystack, res);
                     }
                 }
@@ -651,8 +649,6 @@ using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using VolnitskyUTF8 = VolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>; /// exactly same as Volnitsky
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
-
-using VolnitskyToken = VolnitskyBase<true, true, ASCIICaseSensitiveTokenSearcher>;
 
 using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>;

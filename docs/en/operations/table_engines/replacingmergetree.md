@@ -17,7 +17,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = ReplacingMergeTree([ver])
 [PARTITION BY expr]
 [ORDER BY expr]
-[PRIMARY KEY expr]
 [SAMPLE BY expr]
 [SETTINGS name=value, ...]
 ```

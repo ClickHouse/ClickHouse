@@ -1,11 +1,11 @@
-#include <Functions/FunctionMathUnary.h>
+#include <Functions/FunctionMathUnaryFloat64.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
 {
 
 struct CbrtName { static constexpr auto name = "cbrt"; };
-using FunctionCbrt = FunctionMathUnary<UnaryFunctionVectorized<CbrtName, cbrt>>;
+using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName, cbrt>>;
 
 void registerFunctionCbrt(FunctionFactory & factory)
 {

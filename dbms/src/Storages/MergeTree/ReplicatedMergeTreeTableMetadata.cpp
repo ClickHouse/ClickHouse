@@ -51,8 +51,6 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         index_granularity_bytes = data.settings.index_granularity_bytes;
     else
         index_granularity_bytes = 0;
-
-    constraints = data.getConstraints().toString();
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -82,9 +80,6 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (index_granularity_bytes != 0)
         out << "granularity bytes: " << index_granularity_bytes << "\n";
-
-    if (!constraints.empty())
-        out << "constraints: " << constraints << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -128,9 +123,6 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     }
     else
         index_granularity_bytes = 0;
-
-    if (checkString("constraints: ", in))
-        in >> constraints >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -240,21 +232,6 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                     "Existing table metadata in ZooKeeper differs in skip indexes."
                     " Stored in ZooKeeper: " + from_zk.skip_indices +
                     ", local: " + skip_indices,
-                    ErrorCodes::METADATA_MISMATCH);
-    }
-
-    if (constraints != from_zk.constraints)
-    {
-        if (allow_alter)
-        {
-            diff.constraints_changed = true;
-            diff.new_constraints = from_zk.constraints;
-        }
-        else
-            throw Exception(
-                    "Existing table metadata in ZooKeeper differs in constraints."
-                    " Stored in ZooKeeper: " + from_zk.constraints +
-                    ", local: " + constraints,
                     ErrorCodes::METADATA_MISMATCH);
     }
 

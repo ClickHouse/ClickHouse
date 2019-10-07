@@ -3,10 +3,9 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
+#include <boost/filesystem.hpp>
 #include "applySubstitutions.h"
-#include <filesystem>
 #include <iostream>
-
 
 namespace DB
 {
@@ -40,7 +39,7 @@ void extractSettings(
 }
 
 
-namespace fs = std::filesystem;
+namespace fs = boost::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,

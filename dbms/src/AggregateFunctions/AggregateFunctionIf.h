@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 
@@ -76,7 +75,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num])
+        if (static_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num])
             nested_func->add(place, columns, row_num, arena);
     }
 

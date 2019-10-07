@@ -13,7 +13,7 @@ namespace DB
 
 class Context;
 
-/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
+/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs)
 /// to this data.
 class MutationsInterpreter
 {
@@ -25,25 +25,20 @@ public:
     {
     }
 
-    void validate(TableStructureReadLockHolder & table_lock_holder);
+    void validate();
 
     /// Return false if the data isn't going to be changed by mutations.
     bool isStorageTouchedByMutations() const;
 
-    /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
-    BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
-
-    /// Only changed columns.
-    const Block & getUpdatedHeader() const;
+    /// The resulting stream will return blocks containing changed columns only.
+    BlockInputStreamPtr execute();
 
 private:
     void prepare(bool dry_run);
 
-    struct Stage;
+    BlockInputStreamPtr addStreamsForLaterStages(BlockInputStreamPtr in) const;
 
-    std::unique_ptr<InterpreterSelectQuery> prepareInterpreterSelect(std::vector<Stage> & prepared_stages, bool dry_run);
-    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
-
+private:
     StoragePtr storage;
     std::vector<MutationCommand> commands;
     const Context & context;
@@ -64,7 +59,7 @@ private:
 
     struct Stage
     {
-        Stage(const Context & context_) : expressions_chain(context_) {}
+        Stage(const Context & context) : expressions_chain(context) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -83,7 +78,6 @@ private:
     };
 
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
-    std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
 };

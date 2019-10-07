@@ -141,8 +141,7 @@ void ProtobufWriter::SimpleWriter::endMessage()
     size_t size_of_message = buffer.size() - num_bytes_skipped;
     writeVarint(size_of_message, out);
     for (const auto & piece : pieces)
-        if (piece.end > piece.start)
-            out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
+        out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
     buffer.clear();
     pieces.clear();
     num_bytes_skipped = 0;

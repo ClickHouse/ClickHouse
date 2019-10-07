@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
 #include <ext/range.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
@@ -143,9 +142,9 @@ template <typename T, typename Data, typename Derived>
 class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<Data, Derived>
 {
 public:
-    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_)
+    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern)
         : IAggregateFunctionDataHelper<Data, Derived>(arguments, params)
-        , pattern(pattern_)
+        , pattern(pattern)
     {
         arg_count = arguments.size();
         parsePattern();
@@ -153,12 +152,12 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
+        const auto timestamp = static_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
         typename Data::Events events;
         for (const auto i : ext::range(1, arg_count))
         {
-            const auto event = assert_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
+            const auto event = static_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
             events.set(i - 1, event);
         }
 
@@ -200,7 +199,7 @@ private:
         std::uint64_t extra;
 
         PatternAction() = default;
-        PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
+        PatternAction(const PatternActionType type, const std::uint64_t extra = 0) : type{type}, extra{extra} {}
     };
 
     using PatternActions = PODArrayWithStackMemory<PatternAction, 64>;
@@ -521,8 +520,8 @@ private:
 
     struct DFAState
     {
-        DFAState(bool has_kleene_ = false)
-            : has_kleene{has_kleene_}, event{0}, transition{DFATransition::None}
+        DFAState(bool has_kleene = false)
+            : has_kleene{has_kleene}, event{0}, transition{DFATransition::None}
         {}
 
         ///   .-------.
@@ -555,8 +554,8 @@ template <typename T, typename Data>
 class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>
 {
 public:
-    AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_) {}
+    AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>::AggregateFunctionSequenceBase;
 
@@ -575,7 +574,7 @@ public:
         auto events_it = events_begin;
 
         bool match = this->pattern_has_time ? this->backtrackingMatch(events_it, events_end) : this->dfaMatch(events_it, events_end);
-        assert_cast<ColumnUInt8 &>(to).getData().push_back(match);
+        static_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
 
@@ -583,8 +582,8 @@ template <typename T, typename Data>
 class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>
 {
 public:
-    AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_) {}
+    AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>::AggregateFunctionSequenceBase;
 
@@ -595,7 +594,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         const_cast<Data &>(this->data(place)).sort();
-        assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
+        static_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
 
 private:

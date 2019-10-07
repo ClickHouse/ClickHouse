@@ -4,7 +4,6 @@
 #include <Core/Defines.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
-#include <Common/assert_cast.h>
 #include <Columns/ColumnTuple.h>
 
 
@@ -68,7 +67,7 @@ struct UniqVariadicHash<false, true>
     {
         UInt64 hash;
 
-        const auto & tuple_columns = assert_cast<const ColumnTuple *>(columns[0])->getColumns();
+        const auto & tuple_columns = static_cast<const ColumnTuple *>(columns[0])->getColumns();
 
         const auto * column = tuple_columns.data();
         const auto * columns_end = column + num_args;
@@ -117,7 +116,7 @@ struct UniqVariadicHash<true, true>
 {
     static inline UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
-        const auto & tuple_columns = assert_cast<const ColumnTuple *>(columns[0])->getColumns();
+        const auto & tuple_columns = static_cast<const ColumnTuple *>(columns[0])->getColumns();
 
         const auto * column = tuple_columns.data();
         const auto * columns_end = column + num_args;

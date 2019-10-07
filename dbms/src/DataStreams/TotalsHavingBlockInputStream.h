@@ -54,6 +54,8 @@ private:
 
     /// Here, total values are accumulated. After the work is finished, they will be placed in IBlockInputStream::totals.
     MutableColumns current_totals;
+    /// Arena for aggregate function states in totals.
+    ArenaPtr arena;
 
     /// If filter == nullptr - add all rows. Otherwise, only the rows that pass the filter (HAVING).
     void addToTotals(const Block & block, const IColumn::Filter * filter);

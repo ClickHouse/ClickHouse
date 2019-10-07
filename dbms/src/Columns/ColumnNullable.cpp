@@ -2,7 +2,6 @@
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -130,7 +129,7 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
+    const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
 }
@@ -151,7 +150,7 @@ void ColumnNullable::insert(const Field & x)
 
 void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 {
-    const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
+    const ColumnNullable & src_concrete = static_cast<const ColumnNullable &>(src);
     getNestedColumn().insertFrom(src_concrete.getNestedColumn(), n);
     getNullMapData().push_back(src_concrete.getNullMapData()[n]);
 }
@@ -191,7 +190,7 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
     /// the ordering specified by either NULLS FIRST or NULLS LAST in the
     /// ORDER BY construction.
 
-    const ColumnNullable & nullable_rhs = assert_cast<const ColumnNullable &>(rhs_);
+    const ColumnNullable & nullable_rhs = static_cast<const ColumnNullable &>(rhs_);
 
     bool lval_is_null = isNullAt(n);
     bool rval_is_null = nullable_rhs.isNullAt(m);
@@ -459,7 +458,7 @@ ColumnPtr makeNullable(const ColumnPtr & column)
         return column;
 
     if (isColumnConst(*column))
-        return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+        return ColumnConst::create(makeNullable(static_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
 }

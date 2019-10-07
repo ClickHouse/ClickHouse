@@ -40,8 +40,7 @@ ColumnsDescription getStructureOfRemoteTable(
         if (shard_info.isLocal())
         {
             const auto * table_function = table_func_ptr->as<ASTFunction>();
-            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
-            return table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName())->getColumns();
+            return TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context)->getColumns();
         }
 
         auto table_func_name = queryToString(table_func_ptr);

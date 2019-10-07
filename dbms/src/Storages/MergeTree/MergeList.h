@@ -110,7 +110,7 @@ public:
     MergeListEntry(const MergeListEntry &) = delete;
     MergeListEntry & operator=(const MergeListEntry &) = delete;
 
-    MergeListEntry(MergeList & list_, const container_t::iterator it_) : list(list_), it{it_} {}
+    MergeListEntry(MergeList & list, const container_t::iterator it) : list(list), it{it} {}
     ~MergeListEntry();
 
     MergeListElement * operator->() { return &*it; }

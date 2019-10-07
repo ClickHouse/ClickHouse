@@ -27,7 +27,7 @@ private:
     Names column_names;
     UInt64 max_block_size;
 
-    ConsumerBufferPtr buffer;
+    BufferPtr buffer;
     MutableColumns virtual_columns;
     bool broken = true, claimed = false;
 };

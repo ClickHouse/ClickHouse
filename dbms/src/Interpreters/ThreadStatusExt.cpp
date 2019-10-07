@@ -2,7 +2,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/QueryProfiler.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
@@ -41,6 +40,11 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
         if (!thread_group->global_context)
             thread_group->global_context = global_context;
     }
+}
+
+StringRef ThreadStatus::getQueryId() const
+{
+    return query_id;
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -122,8 +126,6 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 #endif
 
     initPerformanceCounters();
-    initQueryProfiler();
-
     thread_state = ThreadState::AttachedToQuery;
 }
 
@@ -151,31 +153,6 @@ void ThreadStatus::finalizePerformanceCounters()
     }
 }
 
-void ThreadStatus::initQueryProfiler()
-{
-    /// query profilers are useless without trace collector
-    if (!global_context || !global_context->hasTraceCollector())
-        return;
-
-    const auto & settings = query_context->getSettingsRef();
-
-    if (settings.query_profiler_real_time_period_ns > 0)
-        query_profiler_real = std::make_unique<QueryProfilerReal>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
-
-    if (settings.query_profiler_cpu_time_period_ns > 0)
-        query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
-            /* thread_id */ os_thread_id,
-            /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
-}
-
-void ThreadStatus::finalizeQueryProfiler()
-{
-    query_profiler_real.reset();
-    query_profiler_cpu.reset();
-}
-
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
@@ -185,8 +162,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     }
 
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
-
-    finalizeQueryProfiler();
     finalizePerformanceCounters();
 
     /// Detach from thread group
@@ -283,6 +258,13 @@ void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group
         return;
     current_thread->attachQuery(thread_group, false);
     current_thread->deleter = CurrentThread::defaultThreadDeleter;
+}
+
+StringRef CurrentThread::getQueryId()
+{
+    if (unlikely(!current_thread))
+        return {};
+    return current_thread->getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)

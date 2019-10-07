@@ -8,7 +8,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
-#include <Common/assert_cast.h>
 
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
@@ -19,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_JOIN_KEYS;
+    extern const int UNKNOWN_SET_DATA_VARIANT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -91,7 +90,7 @@ void registerStorageJoin(StorageFactory & factory)
                 "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto opt_strictness_id = tryGetIdentifierName(engine_args[0]);
+        auto opt_strictness_id = getIdentifierName(engine_args[0]);
         if (!opt_strictness_id)
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -104,7 +103,7 @@ void registerStorageJoin(StorageFactory & factory)
         else
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-        auto opt_kind_id = tryGetIdentifierName(engine_args[1]);
+        auto opt_kind_id = getIdentifierName(engine_args[1]);
         if (!opt_kind_id)
             throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
@@ -125,7 +124,7 @@ void registerStorageJoin(StorageFactory & factory)
         key_names.reserve(engine_args.size() - 2);
         for (size_t i = 2, size = engine_args.size(); i < size; ++i)
         {
-            auto opt_key = tryGetIdentifierName(engine_args[i]);
+            auto opt_key = getIdentifierName(engine_args[i]);
             if (!opt_key)
                 throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -265,7 +264,7 @@ private:
                 if (key_pos == i)
                 {
                     // unwrap null key column
-                    ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*columns[i]);
+                    ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*columns[i]);
                     columns[i] = nullable_col.getNestedColumnPtr()->assumeMutable();
                 }
                 else
@@ -286,8 +285,7 @@ private:
 #undef M
 
             default:
-                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(parent.type)),
-                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
+                throw Exception("Unknown JOIN keys variant for limited use", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
         }
 
         if (!rows_added)
@@ -301,7 +299,7 @@ private:
                     res.getByPosition(i).column = makeNullable(std::move(columns[i]));
                 else
                 {
-                    const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
+                    const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
                     res.getByPosition(i).column = nullable_col.getNestedColumnPtr();
                 }
             }

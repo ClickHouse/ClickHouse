@@ -4,7 +4,6 @@
 
 #include <common/DateLUT.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
@@ -40,7 +39,7 @@ std::string DataTypeDateTime::doGetName() const
 
 void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeDateTimeText(assert_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr, time_zone);
+    writeDateTimeText(static_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr, time_zone);
 }
 
 void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -72,7 +71,7 @@ void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
 {
     time_t x;
     readText(x, istr, settings, time_zone, utc_time_zone);
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -94,7 +93,7 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
     {
         readIntText(x, istr);
     }
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    static_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -116,7 +115,7 @@ void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     {
         readIntText(x, istr);
     }
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -143,14 +142,14 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
 
-    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     if (value_index)
         return;
-    value_index = static_cast<bool>(protobuf.writeDateTime(assert_cast<const ColumnUInt32 &>(column).getData()[row_num]));
+    value_index = static_cast<bool>(protobuf.writeDateTime(static_cast<const ColumnUInt32 &>(column).getData()[row_num]));
 }
 
 void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
@@ -160,7 +159,7 @@ void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & pr
     if (!protobuf.readDateTime(t))
         return;
 
-    auto & container = assert_cast<ColumnUInt32 &>(column).getData();
+    auto & container = static_cast<ColumnUInt32 &>(column).getData();
     if (allow_add_row)
     {
         container.emplace_back(t);

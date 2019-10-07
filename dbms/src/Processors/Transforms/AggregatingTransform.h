@@ -24,8 +24,8 @@ struct AggregatingTransformParams
     Aggregator aggregator;
     bool final;
 
-    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
-        : params(params_), aggregator(params), final(final_) {}
+    AggregatingTransformParams(const Aggregator::Params & params, bool final)
+        : params(params), aggregator(params), final(final) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
 };
@@ -71,6 +71,7 @@ private:
     AggregatingTransformParamsPtr params;
     Logger * log = &Logger::get("AggregatingTransform");
 
+    StringRefs key;
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
     bool no_more_keys = false;

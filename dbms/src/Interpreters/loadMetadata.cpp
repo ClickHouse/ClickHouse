@@ -33,6 +33,7 @@ static void executeCreateQuery(
     Context & context,
     const String & database,
     const String & file_name,
+    ThreadPool * pool,
     bool has_force_restore_data_flag)
 {
     ParserCreateQuery parser;
@@ -44,6 +45,8 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
+    if (pool)
+        interpreter.setDatabaseLoadingThreadpool(*pool);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
     interpreter.execute();
 }
@@ -53,6 +56,7 @@ static void loadDatabase(
     Context & context,
     const String & database,
     const String & database_path,
+    ThreadPool * thread_pool,
     bool force_restore_data)
 {
     /// There may exist .sql file with database creation statement.
@@ -69,8 +73,7 @@ static void loadDatabase(
     else
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database);
 
-    executeCreateQuery(database_attach_query, context, database,
-                       database_metadata_file, force_restore_data);
+    executeCreateQuery(database_attach_query, context, database, database_metadata_file, thread_pool, force_restore_data);
 }
 
 
@@ -88,6 +91,9 @@ void loadMetadata(Context & context)
       */
     Poco::File force_restore_data_flag_file(context.getFlagsPath() + "force_restore_data");
     bool has_force_restore_data_flag = force_restore_data_flag_file.exists();
+
+    /// For parallel tables loading.
+    ThreadPool thread_pool(SettingMaxThreads().getAutoValue());
 
     /// Loop over databases.
     std::map<String, String> databases;
@@ -107,8 +113,10 @@ void loadMetadata(Context & context)
         databases.emplace(unescapeForFileName(it.name()), it.path().toString());
     }
 
-    for (const auto & [name, db_path] : databases)
-        loadDatabase(context, name, db_path, has_force_restore_data_flag);
+    for (const auto & elem : databases)
+        loadDatabase(context, elem.first, elem.second, &thread_pool, has_force_restore_data_flag);
+
+    thread_pool.wait();
 
     if (has_force_restore_data_flag)
     {
@@ -130,7 +138,7 @@ void loadMetadataSystem(Context & context)
     if (Poco::File(path).exists())
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, SYSTEM_DATABASE, path, true);
+        loadDatabase(context, SYSTEM_DATABASE, path, nullptr, true);
     }
     else
     {

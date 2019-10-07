@@ -26,11 +26,6 @@ void CurrentThread::updatePerformanceCounters()
     current_thread->updatePerformanceCounters();
 }
 
-bool CurrentThread::isInitialized()
-{
-    return current_thread;
-}
-
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
@@ -49,6 +44,12 @@ MemoryTracker * CurrentThread::getMemoryTracker()
     if (unlikely(!current_thread))
         return nullptr;
     return &current_thread->memory_tracker;
+}
+
+Int64 & CurrentThread::getUntrackedMemory()
+{
+    /// It assumes that (current_thread != nullptr) is already checked with getMemoryTracker()
+    return current_thread->untracked_memory;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)

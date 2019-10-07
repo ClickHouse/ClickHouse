@@ -4,13 +4,14 @@
 #include "TestKeeper.h"
 
 #include <random>
+#include <pcg_random.hpp>
 #include <functional>
 #include <boost/algorithm/string.hpp>
 
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
-#include <Common/thread_local_rng.h>
+#include <Common/randomSeed.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/NetException.h>
@@ -106,10 +107,10 @@ void ZooKeeper::init(const std::string & implementation, const std::string & hos
         throw KeeperException("Zookeeper root doesn't exist. You should create root node " + chroot + " before start.", Coordination::ZNONODE);
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation)
+ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms,
+                     int32_t operation_timeout_ms, const std::string & chroot, const std::string & implementation)
 {
-    init(implementation, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
+    init(implementation, hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 struct ZooKeeperArgs
@@ -158,7 +159,8 @@ struct ZooKeeperArgs
         }
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::shuffle(hosts_strings.begin(), hosts_strings.end(), thread_local_rng);
+        pcg64 rng(randomSeed());
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), rng);
 
         for (auto & host : hosts_strings)
         {
@@ -891,9 +893,9 @@ size_t KeeperMultiException::getFailedOpIndex(int32_t exception_code, const Coor
 }
 
 
-KeeperMultiException::KeeperMultiException(int32_t exception_code, const Coordination::Requests & requests_, const Coordination::Responses & responses_)
+KeeperMultiException::KeeperMultiException(int32_t exception_code, const Coordination::Requests & requests, const Coordination::Responses & responses)
         : KeeperException("Transaction failed", exception_code),
-          requests(requests_), responses(responses_), failed_op_index(getFailedOpIndex(exception_code, responses))
+          requests(requests), responses(responses), failed_op_index(getFailedOpIndex(exception_code, responses))
 {
     addMessage("Op #" + std::to_string(failed_op_index) + ", path: " + getPathForFirstFailedOp());
 }

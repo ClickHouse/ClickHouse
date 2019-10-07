@@ -1,4 +1,5 @@
 <test>
+    <name>count</name>
 
     <type>loop</type>
 

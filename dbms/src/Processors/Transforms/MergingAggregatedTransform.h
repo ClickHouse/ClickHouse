@@ -12,7 +12,7 @@ namespace DB
 class MergingAggregatedTransform : public IAccumulatingTransform
 {
 public:
-    MergingAggregatedTransform(Block header_, AggregatingTransformParamsPtr params_, size_t max_threads_);
+    MergingAggregatedTransform(Block header, AggregatingTransformParamsPtr params, size_t max_threads);
     String getName() const override { return "MergingAggregatedTransform"; }
 
 protected:

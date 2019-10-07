@@ -3,7 +3,6 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Core/Names.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -121,7 +120,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
 
@@ -142,7 +141,6 @@ protected:
         const String & table_name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
-        const ConstraintsDescription & constraints_,
         bool attach,
         Context & context_,
         const String & date_column_name,

@@ -7,7 +7,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -89,12 +88,12 @@ std::string DataTypeTuple::doGetName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-    return assert_cast<ColumnTuple &>(column).getColumn(idx);
+    return static_cast<ColumnTuple &>(column).getColumn(idx);
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-    return assert_cast<const ColumnTuple &>(column).getColumn(idx);
+    return static_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
 

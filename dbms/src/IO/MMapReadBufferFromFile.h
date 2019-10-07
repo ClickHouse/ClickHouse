@@ -16,7 +16,7 @@ namespace DB
 class MMapReadBufferFromFile : public MMapReadBufferFromFileDescriptor
 {
 public:
-    MMapReadBufferFromFile(const std::string & file_name, size_t offset, size_t length_);
+    MMapReadBufferFromFile(const std::string & file_name, size_t offset, size_t length);
 
     /// Map till end of file.
     MMapReadBufferFromFile(const std::string & file_name, size_t offset);

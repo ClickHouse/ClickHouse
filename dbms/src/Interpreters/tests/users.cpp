@@ -1,6 +1,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Interpreters/UsersManager.h>
-#include <filesystem>
+#include <boost/filesystem.hpp>
 #include <vector>
 #include <string>
 #include <tuple>
@@ -14,7 +14,7 @@
 namespace
 {
 
-namespace fs = std::filesystem;
+namespace fs = boost::filesystem;
 
 struct TestEntry
 {

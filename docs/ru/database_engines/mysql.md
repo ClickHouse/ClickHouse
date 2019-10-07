@@ -1,10 +1,10 @@
 # MySQL
 
-Позволяет подключаться к базам данных на удалённом MySQL сервере и выполнять запросы `INSERT` и `SELECT` для обмена данными между ClickHouse и MySQL.
+Allows to connect to some database on remote MySQL server and perform `INSERT` and `SELECT` queries with tables to exchange data between ClickHouse and MySQL.
 
-Движок баз данных `MySQL` транслирует запросы при передаче на сервер MySQL, что позволяет выполнять и другие виды запросов, например `SHOW TABLES` или `SHOW CREATE TABLE`.
+The `MySQL` database engine translate queries to the MySQL server, so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
 
-Не поддерживаемые виды запросов:
+You cannot perform with tables the following queries:
 
 - `ATTACH`/`DETACH`
 - `DROP`
@@ -12,45 +12,48 @@
 - `CREATE TABLE`
 - `ALTER`
 
-## Создание базы данных
 
-```sql
+## Creating a Database
+
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MySQL('host:port', 'database', 'user', 'password')
 ```
 
-**Параметры движка**
+**Engine Parameters**
 
-- `host:port` — адрес сервера MySQL.
-- `database` — имя базы данных на удалённом сервере.
-- `user` — пользователь MySQL.
-- `password` — пароль пользователя.
+- `host:port` — MySQL server address.
+- `database` — Remote database name.
+- `user` — MySQL user.
+- `password` — User password.
 
-## Поддержка типов данных
 
-| MySQL | ClickHouse |
-| ------ | ------------ |
-| UNSIGNED TINYINT | [UInt8](../data_types/int_uint.md) |
-| TINYINT | [Int8](../data_types/int_uint.md) |
-| UNSIGNED SMALLINT | [UInt16](../data_types/int_uint.md) |
-| SMALLINT | [Int16](../data_types/int_uint.md) |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../data_types/int_uint.md) |
-| INT, MEDIUMINT | [Int32](../data_types/int_uint.md) |
-| UNSIGNED BIGINT | [UInt64](../data_types/int_uint.md) |
-| BIGINT | [Int64](../data_types/int_uint.md) |
-| FLOAT | [Float32](../data_types/float.md) |
-| DOUBLE | [Float64](../data_types/float.md) |
-| DATE | [Date](../data_types/date.md) |
-| DATETIME, TIMESTAMP | [DateTime](../data_types/datetime.md) |
-| BINARY | [FixedString](../data_types/fixedstring.md) |
+## Data Types Support
 
-Все прочие типы данных преобразуются в [String](../data_types/string.md).
+MySQL | ClickHouse
+------|------------
+UNSIGNED TINYINT | [UInt8](../data_types/int_uint.md)
+TINYINT | [Int8](../data_types/int_uint.md)
+UNSIGNED SMALLINT | [UInt16](../data_types/int_uint.md)
+SMALLINT | [Int16](../data_types/int_uint.md)
+UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../data_types/int_uint.md)
+INT, MEDIUMINT | [Int32](../data_types/int_uint.md)
+UNSIGNED BIGINT | [UInt64](../data_types/int_uint.md)
+BIGINT | [Int64](../data_types/int_uint.md)
+FLOAT | [Float32](../data_types/float.md)
+DOUBLE | [Float64](../data_types/float.md)
+DATE | [Date](../data_types/date.md)
+DATETIME, TIMESTAMP | [DateTime](../data_types/datetime.md)
+BINARY | [FixedString](../data_types/fixedstring.md)
 
-[Nullable](../data_types/nullable.md) поддержан.
+All other MySQL data types are converted into [String](../data_types/string.md).
 
-## Примеры использования
+[Nullable](../data_types/nullable.md) data type is supported.
 
-Таблица в MySQL:
+
+## Examples of Use
+
+Table in MySQL:
 
 ```
 mysql> USE test;
@@ -74,16 +77,14 @@ mysql> select * from mysql_table;
 1 row in set (0,00 sec)
 ```
 
-База данных в ClickHouse, позволяющая обмениваться данными с сервером MySQL:
+Database in ClickHouse, exchanging data with the MySQL server:
 
 ```sql
 CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 ```
-
 ```sql
 SHOW DATABASES
 ```
-
 ```text
 ┌─name─────┐
 │ default  │
@@ -91,39 +92,31 @@ SHOW DATABASES
 │ system   │
 └──────────┘
 ```
-
 ```sql
 SHOW TABLES FROM mysql_db
 ```
-
 ```text
 ┌─name─────────┐
 │  mysql_table │
 └──────────────┘
 ```
-
 ```sql
 SELECT * FROM mysql_db.mysql_table
 ```
-
 ```text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 └────────┴───────┘
 ```
-
 ```sql
 INSERT INTO mysql_db.mysql_table VALUES (3,4)
 ```
-
 ```sql
 SELECT * FROM mysql_db.mysql_table
 ```
-
 ```text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 │      3 │     4 │
 └────────┴───────┘
 ```
-

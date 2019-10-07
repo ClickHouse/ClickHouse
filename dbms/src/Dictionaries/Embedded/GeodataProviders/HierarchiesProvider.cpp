@@ -20,7 +20,7 @@ IRegionsHierarchyReaderPtr RegionsHierarchyDataSource::createReader()
 }
 
 
-RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string & path_) : path(path_)
+RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string & path) : path(path)
 {
     discoverFilesWithCustomHierarchies();
 }

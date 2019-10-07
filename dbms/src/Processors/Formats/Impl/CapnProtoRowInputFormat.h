@@ -1,10 +1,10 @@
 #pragma once
-
-#include "config_formats.h"
+#include <Common/config.h>
 #if USE_CAPNP
 
 #include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
+
 #include <capnp/schema-parser.h>
 
 namespace DB
@@ -33,15 +33,13 @@ public:
       * schema_file - location of the capnproto schema, e.g. "schema.capnp"
       * root_object - name to the root object, e.g. "Message"
       */
-    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info);
+    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSchemaInfo & info);
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
 
 private:
-    kj::Array<capnp::word> readMessage();
-
     // Build a traversal plan from a sorted list of fields
     void createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader);
 

@@ -1,6 +1,5 @@
 #include <type_traits>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/ProtobufReader.h>
@@ -11,7 +10,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
-
 
 namespace DB
 {
@@ -49,7 +47,7 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 template <typename T>
 void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    T value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    T value = static_cast<const ColumnType &>(column).getData()[row_num];
     writeText(value, scale, ostr);
 }
 
@@ -78,7 +76,7 @@ void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, co
 {
     T x;
     readText(x, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
+    static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <typename T>
@@ -86,7 +84,7 @@ void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 {
     T x;
     readText(x, istr, true);
-    assert_cast<ColumnType &>(column).getData().push_back(x);
+    static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <typename T>
@@ -111,7 +109,7 @@ void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    const FieldType & x = assert_cast<const ColumnType &>(column).getData()[row_num];
+    const FieldType & x = static_cast<const ColumnType &>(column).getData()[row_num];
     writeBinary(x, ostr);
 }
 
@@ -142,7 +140,7 @@ void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 {
     typename FieldType::NativeType x;
     readBinary(x, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(FieldType(x));
+    static_cast<ColumnType &>(column).getData().push_back(FieldType(x));
 }
 
 template <typename T>
@@ -161,7 +159,7 @@ void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_nu
 {
     if (value_index)
         return;
-    value_index = static_cast<bool>(protobuf.writeDecimal(assert_cast<const ColumnType &>(column).getData()[row_num], scale));
+    value_index = static_cast<bool>(protobuf.writeDecimal(static_cast<const ColumnType &>(column).getData()[row_num], scale));
 }
 
 
@@ -173,7 +171,7 @@ void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & 
     if (!protobuf.readDecimal(decimal, precision, scale))
         return;
 
-    auto & container = assert_cast<ColumnType &>(column).getData();
+    auto & container = static_cast<ColumnType &>(column).getData();
     if (allow_add_row)
     {
         container.emplace_back(decimal);

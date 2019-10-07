@@ -22,16 +22,16 @@ HTTPDictionarySource::HTTPDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block_,
-    const Context & context_)
+    Block & sample_block,
+    const Context & context)
     : log(&Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , url{config.getString(config_prefix + ".url", "")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , format{config.getString(config_prefix + ".format")}
-    , sample_block{sample_block_}
-    , context(context_)
+    , sample_block{sample_block}
+    , context(context)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
 }
@@ -66,6 +66,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     else
     {
         update_time = std::chrono::system_clock::now();
+        uri.addQueryParameter(update_field, "0000-00-00 00:00:00");
     }
 }
 

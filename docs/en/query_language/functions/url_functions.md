@@ -12,42 +12,7 @@ Returns the protocol. Examples: http, ftp, mailto, magnet...
 
 ### domain
 
-Extracts the host part from URL.
-
-```
-domain(url)
-```
-
-**Parameters**
-
-- `url` — URL. Type: [String](../../data_types/string.md).
-
-
-URL can be specified with or without scheme. Examples:
-
-```
-svn+ssh://some.svn-hosting.com:80/repo/trunk
-some.svn-hosting.com:80/repo/trunk
-https://yandex.com/time/
-```
-
-**Returned values**
-
-- Host name. If ClickHouse can parse input string as URL.
-- Empty string. If ClickHouse cannot parse input string as URL.
-
-Type: `String`.
-
-**Example**
-
-```sql
-SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
-```
-```text
-┌─domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')─┐
-│ some.svn-hosting.com                                   │
-└────────────────────────────────────────────────────────┘
-```
+Gets the domain. Cut scheme with size less than 16 bytes.
 
 ### domainWithoutWWW
 
@@ -55,41 +20,7 @@ Returns the domain and removes no more than one 'www.' from the beginning of it,
 
 ### topLevelDomain
 
-Extracts the the top-level domain from URL.
-
-```
-topLevelDomain(url)
-```
-
-**Parameters**
-
-- `url` — URL. Type: [String](../../data_types/string.md).
-
-URL can be specified with or without scheme. Examples:
-
-```
-svn+ssh://some.svn-hosting.com:80/repo/trunk
-some.svn-hosting.com:80/repo/trunk
-https://yandex.com/time/
-```
-
-**Returned values**
-
-- Domain name. If ClickHouse can parse input string as URL.
-- Empty string. If ClickHouse cannot parse input string as URL.
-
-Type: `String`.
-
-**Example**
-
-```sql
-SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
-```
-```text
-┌─topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
-│ com                                                                │
-└────────────────────────────────────────────────────────────────────┘
-```
+Returns the top-level domain. Example: .ru.
 
 ### firstSignificantSubdomain
 
@@ -135,7 +66,7 @@ Returns an array of name strings corresponding to the names of URL parameters. T
 
 ### URLHierarchy(URL)
 
-Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters.
+Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters. 
 
 ### URLPathHierarchy(URL)
 

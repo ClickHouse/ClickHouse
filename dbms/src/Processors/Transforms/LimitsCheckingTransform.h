@@ -30,7 +30,7 @@ public:
     using LimitsMode = IBlockInputStream::LimitsMode;
 
     /// LIMITS_CURRENT
-    LimitsCheckingTransform(const Block & header_, LocalLimits limits_);
+    LimitsCheckingTransform(const Block & header, LocalLimits limits);
     /// LIMITS_TOTAL
     /// LimitsCheckingTransform(const Block & header, LocalLimits limits, QueryStatus * process_list_elem);
 

@@ -1,7 +1,6 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -15,7 +14,7 @@ namespace ErrorCodes
 
 static bool sameConstants(const IColumn & a, const IColumn & b)
 {
-    return assert_cast<const ColumnConst &>(a).getField() == assert_cast<const ColumnConst &>(b).getField();
+    return static_cast<const ColumnConst &>(a).getField() == static_cast<const ColumnConst &>(b).getField();
 }
 
 ColumnWithTypeAndName getLeastSuperColumn(std::vector<const ColumnWithTypeAndName *> columns)
@@ -58,7 +57,7 @@ ColumnWithTypeAndName getLeastSuperColumn(std::vector<const ColumnWithTypeAndNam
     }
 
     if (save_constness)
-        result.column = result.type->createColumnConst(0, assert_cast<const ColumnConst &>(*columns[0]->column).getField());
+        result.column = result.type->createColumnConst(0, static_cast<const ColumnConst &>(*columns[0]->column).getField());
     else
         result.column = result.type->createColumn();
 

@@ -1,9 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#include "intDiv.h"
-
-
 namespace DB
 {
 
@@ -15,10 +12,7 @@ struct DivideIntegralOrZeroImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
-            return 0;
-
-        return DivideIntegralImpl<A, B>::template apply<Result>(a, b);
+        return unlikely(divisionLeadsToFPE(a, b)) ? 0 : a / b;
     }
 
 #if USE_EMBEDDED_COMPILER

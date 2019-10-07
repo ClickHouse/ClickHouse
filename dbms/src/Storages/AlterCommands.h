@@ -5,7 +5,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/ConstraintsDescription.h>
 
 
 namespace DB
@@ -26,8 +25,6 @@ struct AlterCommand
         MODIFY_ORDER_BY,
         ADD_INDEX,
         DROP_INDEX,
-        ADD_CONSTRAINT,
-        DROP_CONSTRAINT,
         MODIFY_TTL,
         UKNOWN_TYPE,
     };
@@ -65,12 +62,6 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
-    // For ADD CONSTRAINT
-    ASTPtr constraint_decl;
-
-    // For ADD/DROP CONSTRAINT
-    String constraint_name;
-
     /// For MODIFY TTL
     ASTPtr ttl;
 
@@ -81,20 +72,19 @@ struct AlterCommand
     CompressionCodecPtr codec;
 
     AlterCommand() = default;
-    AlterCommand(const Type type_, const String & column_name_, const DataTypePtr & data_type_,
-                 const ColumnDefaultKind default_kind_, const ASTPtr & default_expression_,
-                 const String & after_column_, const String & comment_,
-                 const bool if_exists_, const bool if_not_exists_)
-        : type{type_}, column_name{column_name_}, data_type{data_type_}, default_kind{default_kind_},
-        default_expression{default_expression_}, comment(comment_), after_column{after_column_},
-        if_exists(if_exists_), if_not_exists(if_not_exists_)
+    AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
+                 const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
+                 const String & after_column, const String & comment,
+                 const bool if_exists, const bool if_not_exists)
+        : type{type}, column_name{column_name}, data_type{data_type}, default_kind{default_kind},
+        default_expression{default_expression}, comment(comment), after_column{after_column},
+        if_exists(if_exists), if_not_exists(if_not_exists)
     {}
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-               ConstraintsDescription & constraints_description,
-               ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
+            ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
 
     /// Checks that not only metadata touched by that command
     bool isMutable() const;
@@ -105,9 +95,8 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-               ConstraintsDescription & constraints_description,
-               ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
+            ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
 
     /// For storages that don't support MODIFY_ORDER_BY.
     void apply(ColumnsDescription & columns_description) const;

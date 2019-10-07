@@ -14,23 +14,25 @@ namespace DB
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key_, RSA & private_key_, bool ssl_enabled, size_t connection_id_);
+    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key, RSA & private_key, bool ssl_enabled, size_t connection_id);
 
     void run() final;
 
 private:
     /// Enables SSL, if client requested.
-    void finishHandshake(MySQLProtocol::HandshakeResponse &);
+    MySQLProtocol::HandshakeResponse finishHandshake();
 
-    void comQuery(ReadBuffer & payload);
+    void comQuery(const String & payload);
 
-    void comFieldList(ReadBuffer & payload);
+    void comFieldList(const String & payload);
 
     void comPing();
 
-    void comInitDB(ReadBuffer & payload);
+    void comInitDB(const String & payload);
 
-    void authenticate(const String & user_name, const String & auth_plugin_name, const String & auth_response);
+    static String generateScramble();
+
+    void authenticate(const MySQLProtocol::HandshakeResponse &, const String & scramble);
 
     IServer & server;
     Poco::Logger * log;
@@ -46,13 +48,11 @@ private:
     RSA & public_key;
     RSA & private_key;
 
-    std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
-
-    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
     bool secure_connection = false;
+    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 
 }

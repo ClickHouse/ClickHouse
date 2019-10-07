@@ -6,9 +6,9 @@
 namespace DB
 {
 
-SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_)
+SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info)
     : ISource(stream_->getHeader())
-    , force_add_aggregating_info(force_add_aggregating_info_)
+    , force_add_aggregating_info(force_add_aggregating_info)
     , stream(std::move(stream_))
 {
     auto & sample = getPort().getHeader();

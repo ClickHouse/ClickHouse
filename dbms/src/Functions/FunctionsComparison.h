@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/memcmpSmall.h>
-#include <Common/assert_cast.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -555,8 +554,8 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
 
-    FunctionComparison(const Context & context_)
-    :   context(context_),
+    FunctionComparison(const Context & context)
+    :   context(context),
         check_decimal_overflow(decimalCheckComparisonOverflow(context))
     {}
 
@@ -839,7 +838,7 @@ private:
                 throw Exception("String is too long for Date: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, date);
-            const ColumnConst * parsed_const_date = assert_cast<const ColumnConst *>(parsed_const_date_holder.get());
+            const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
                 left_is_num ? parsed_const_date : col_right_untyped);
@@ -853,7 +852,7 @@ private:
                 throw Exception("String is too long for DateTime: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(input_rows_count, UInt64(date_time));
-            const ColumnConst * parsed_const_date_time = assert_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
+            const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date_time,
                 left_is_num ? parsed_const_date_time : col_right_untyped);
@@ -867,7 +866,7 @@ private:
                 throw Exception("String is too long for UUID: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, uuid);
-            const ColumnConst * parsed_const_uuid = assert_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
+            const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
                 left_is_num ? parsed_const_uuid : col_right_untyped);
@@ -933,12 +932,12 @@ private:
         if (x_const)
             x_columns = convertConstTupleToConstantElements(*x_const);
         else
-            x_columns = assert_cast<const ColumnTuple &>(*c0.column).getColumnsCopy();
+            x_columns = static_cast<const ColumnTuple &>(*c0.column).getColumnsCopy();
 
         if (y_const)
             y_columns = convertConstTupleToConstantElements(*y_const);
         else
-            y_columns = assert_cast<const ColumnTuple &>(*c1.column).getColumnsCopy();
+            y_columns = static_cast<const ColumnTuple &>(*c1.column).getColumnsCopy();
 
         for (size_t i = 0; i < tuple_size; ++i)
         {

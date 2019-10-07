@@ -1,1 +1,1 @@
-../../CHANGELOG.md
+../../CHANGELOG_RU.md

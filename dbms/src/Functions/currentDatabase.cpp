@@ -18,7 +18,7 @@ public:
         return std::make_shared<FunctionCurrentDatabase>(context.getCurrentDatabase());
     }
 
-    explicit FunctionCurrentDatabase(const String & db_name_) : db_name{db_name_}
+    explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name}
     {
     }
 

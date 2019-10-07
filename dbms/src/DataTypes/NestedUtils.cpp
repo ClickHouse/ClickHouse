@@ -1,7 +1,6 @@
 #include <string.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -95,7 +94,7 @@ Block flatten(const Block & block)
                 bool is_const = isColumnConst(*elem.column);
                 const ColumnArray * column_array;
                 if (is_const)
-                    column_array = typeid_cast<const ColumnArray *>(&assert_cast<const ColumnConst &>(*elem.column).getDataColumn());
+                    column_array = typeid_cast<const ColumnArray *>(&static_cast<const ColumnConst &>(*elem.column).getDataColumn());
                 else
                     column_array = typeid_cast<const ColumnArray *>(elem.column.get());
 
@@ -182,8 +181,8 @@ void validateArraySizes(const Block & block)
                 /// It's not the first column of Nested data structure.
                 if (!inserted)
                 {
-                    const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*block.getByPosition(it->second).column);
-                    const ColumnArray & another_array_column = assert_cast<const ColumnArray &>(*elem.column);
+                    const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*block.getByPosition(it->second).column);
+                    const ColumnArray & another_array_column = static_cast<const ColumnArray &>(*elem.column);
 
                     if (!first_array_column.hasEqualOffsets(another_array_column))
                         throw Exception("Elements '" + block.getByPosition(it->second).name

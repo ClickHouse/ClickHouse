@@ -23,7 +23,7 @@ struct ArraySortImpl
     {
         const IColumn & column;
 
-        Less(const IColumn & column_) : column(column_) {}
+        Less(const IColumn & column) : column(column) {}
 
         bool operator()(size_t lhs, size_t rhs) const
         {

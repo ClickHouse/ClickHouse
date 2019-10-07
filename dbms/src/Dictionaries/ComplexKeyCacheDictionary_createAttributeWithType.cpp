@@ -10,7 +10,7 @@ ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType
     switch (type)
     {
 #define DISPATCH(TYPE) \
-    case AttributeUnderlyingType::ut##TYPE: \
+    case AttributeUnderlyingType::TYPE: \
         attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
         attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
         bytes_allocated += size * sizeof(TYPE); \
@@ -30,7 +30,7 @@ ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType
         DISPATCH(Float32)
         DISPATCH(Float64)
 #undef DISPATCH
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
             attr.null_values = null_value.get<String>();
             attr.arrays = std::make_unique<ContainerType<StringRef>>(size);
             bytes_allocated += size * sizeof(StringRef);

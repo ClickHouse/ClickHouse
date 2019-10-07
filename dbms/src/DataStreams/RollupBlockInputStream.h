@@ -35,7 +35,6 @@ private:
     ColumnNumbers keys;
     ssize_t current_key = -1;
     Block rollup_block;
-    bool is_data_read = false;
 };
 
 }

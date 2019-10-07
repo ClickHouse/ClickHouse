@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TaskStatsInfoGetter.h>
-#include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 
 #include <Poco/Logger.h>

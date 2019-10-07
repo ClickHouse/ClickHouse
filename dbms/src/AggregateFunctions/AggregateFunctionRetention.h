@@ -5,7 +5,6 @@
 #include <unordered_set>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
@@ -101,7 +100,7 @@ public:
     {
         for (const auto i : ext::range(0, events_size))
         {
-            auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
+            auto event = static_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
             {
                 this->data(place).add(i);
@@ -126,8 +125,8 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & data_to = assert_cast<ColumnUInt8 &>(assert_cast<ColumnArray &>(to).getData()).getData();
-        auto & offsets_to = assert_cast<ColumnArray &>(to).getOffsets();
+        auto & data_to = static_cast<ColumnUInt8 &>(static_cast<ColumnArray &>(to).getData()).getData();
+        auto & offsets_to = static_cast<ColumnArray &>(to).getOffsets();
 
         ColumnArray::Offset current_offset = data_to.size();
         data_to.resize(current_offset + events_size);

@@ -14,8 +14,8 @@ template <typename OwnType>
 class OwningBlockInputStream : public IBlockInputStream
 {
 public:
-    OwningBlockInputStream(const BlockInputStreamPtr & stream_, std::unique_ptr<OwnType> own_)
-        : stream{stream_}, own{std::move(own_)}
+    OwningBlockInputStream(const BlockInputStreamPtr & stream, std::unique_ptr<OwnType> own)
+        : stream{stream}, own{std::move(own)}
     {
         children.push_back(stream);
     }

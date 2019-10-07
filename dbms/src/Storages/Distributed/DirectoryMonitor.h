@@ -20,7 +20,7 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_, const std::string & name_, const ConnectionPoolPtr & pool_, ActionBlocker & monitor_blocker_);
+        StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool, ActionBlocker & monitor_blocker);
 
     ~StorageDistributedDirectoryMonitor();
 

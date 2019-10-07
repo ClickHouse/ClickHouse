@@ -1,6 +1,8 @@
-#include "ReadBufferFromHDFS.h"
+#include <Common/config.h>
 
 #if USE_HDFS
+
+#include <IO/ReadBufferFromHDFS.h>
 #include <IO/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <hdfs/hdfs.h>

@@ -247,12 +247,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             res = interpreter->execute();
 
         if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
-        {
-            /// Save insertion table (not table function). TODO: support remote() table function.
-            auto db_table = insert_interpreter->getDatabaseTable();
-            if (!db_table.second.empty())
-                context.setInsertionTable(std::move(db_table));
-        }
+            context.setInsertionTable(insert_interpreter->getDatabaseTable());
 
         if (process_list_entry)
         {
@@ -565,7 +560,7 @@ void executeQuery(
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? getIdentifierName(ast_query_with_output->format)
+                ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
             if (ast_query_with_output && ast_query_with_output->settings_ast)
@@ -610,7 +605,7 @@ void executeQuery(
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                 ? getIdentifierName(ast_query_with_output->format)
+                                 ? *getIdentifierName(ast_query_with_output->format)
                                  : context.getDefaultFormat();
 
             if (ast_query_with_output && ast_query_with_output->settings_ast)

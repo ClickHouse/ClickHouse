@@ -2,20 +2,19 @@
 
 #if USE_HDFS
 #include <Storages/StorageHDFS.h>
-#include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
 
 namespace DB
 {
 StoragePtr TableFunctionHDFS::getStorage(
-    const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const
+    const String & source, const String & format, const Block & sample_block, Context & global_context) const
 {
     return StorageHDFS::create(source,
         getDatabaseName(),
-        table_name,
+        getName(),
         format,
-        columns,
+        ColumnsDescription{sample_block.getNamesAndTypesList()},
         global_context);
 }
 

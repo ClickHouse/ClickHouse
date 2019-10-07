@@ -19,7 +19,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     if (!storage.getSchemaName().empty())
         context.setSetting("format_schema", storage.getSchemaName());
 
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneEmptyColumns();
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -28,12 +28,9 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
         return;
 
     if (broken)
-    {
         buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->unsubscribe();
-        buffer->reset();
-    }
 
-    storage.pushReadBuffer(buffer);
+    storage.pushBuffer(buffer);
 }
 
 Block KafkaBlockInputStream::getHeader() const
@@ -43,37 +40,31 @@ Block KafkaBlockInputStream::getHeader() const
 
 void KafkaBlockInputStream::readPrefixImpl()
 {
-    auto timeout = std::chrono::milliseconds(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
-    buffer = storage.popReadBuffer(timeout);
+    buffer = storage.tryClaimBuffer(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
     claimed = !!buffer;
 
     if (!buffer)
-        return;
+        buffer = storage.createBuffer();
 
     buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.getTopics());
 
-    const auto & limits_ = getLimits();
+    const auto & limits = getLimits();
     const size_t poll_timeout = buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->pollTimeout();
-    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits_.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
+    size_t rows_portion_size = poll_timeout ? std::min<size_t>(max_block_size, limits.max_execution_time.totalMilliseconds() / poll_timeout) : max_block_size;
     rows_portion_size = std::max(rows_portion_size, 1ul);
 
     auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
     auto read_callback = [this]
     {
         const auto * sub_buffer = buffer->subBufferAs<ReadBufferFromKafkaConsumer>();
-        virtual_columns[0]->insert(sub_buffer->currentTopic());     // "topic"
-        virtual_columns[1]->insert(sub_buffer->currentKey());       // "key"
-        virtual_columns[2]->insert(sub_buffer->currentOffset());    // "offset"
-        virtual_columns[3]->insert(sub_buffer->currentPartition()); // "partition"
-
-        auto timestamp = sub_buffer->currentTimestamp();
-        if (timestamp)
-            virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(timestamp->get_timestamp()).count()); // "timestamp"
+        virtual_columns[0]->insert(sub_buffer->currentTopic());  // "topic"
+        virtual_columns[1]->insert(sub_buffer->currentKey());    // "key"
+        virtual_columns[2]->insert(sub_buffer->currentOffset()); // "offset"
     };
 
     auto child = FormatFactory::instance().getInput(
         storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, rows_portion_size, read_callback);
-    child->setLimits(limits_);
+    child->setLimits(limits);
     addChild(child);
 
     broken = true;
@@ -81,15 +72,12 @@ void KafkaBlockInputStream::readPrefixImpl()
 
 Block KafkaBlockInputStream::readImpl()
 {
-    if (!buffer)
-        return Block();
-
     Block block = children.back()->read();
     if (!block)
         return block;
 
-    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneWithColumns(std::move(virtual_columns));
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
+    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneWithColumns(std::move(virtual_columns));
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneEmptyColumns();
 
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         block.insert(column);
@@ -103,9 +91,6 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
-    if (!buffer)
-        return;
-
     buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->commit();
 
     broken = false;

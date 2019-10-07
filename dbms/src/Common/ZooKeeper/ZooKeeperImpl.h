@@ -108,9 +108,9 @@ public:
         const String & root_path,
         const String & auth_scheme,
         const String & auth_data,
-        Poco::Timespan session_timeout_,
+        Poco::Timespan session_timeout,
         Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_);
+        Poco::Timespan operation_timeout);
 
     ~ZooKeeper() override;
 

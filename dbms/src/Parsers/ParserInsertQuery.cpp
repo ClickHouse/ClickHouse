@@ -147,11 +147,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        tryGetIdentifierNameInto(database, query->database);
-        tryGetIdentifierNameInto(table, query->table);
+        getIdentifierName(database, query->database);
+        getIdentifierName(table, query->table);
     }
 
-    tryGetIdentifierNameInto(format, query->format);
+    getIdentifierName(format, query->format);
 
     query->columns = columns;
     query->select = select;

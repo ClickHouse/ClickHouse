@@ -46,8 +46,6 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/addTypeConversionToAST.h>
 
-#include <TableFunctions/TableFunctionFactory.h>
-
 
 namespace DB
 {
@@ -161,7 +159,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
 
-        database->loadTables(context, has_force_restore_data_flag);
+        database->loadTables(context, thread_pool, has_force_restore_data_flag);
     }
     catch (...)
     {
@@ -248,16 +246,6 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 
     for (const auto & index : indices.indices)
         res->children.push_back(index->clone());
-
-    return res;
-}
-
-ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & constraints)
-{
-    auto res = std::make_shared<ASTExpressionList>();
-
-    for (const auto & constraint : constraints.constraints)
-        res->children.push_back(constraint->clone());
 
     return res;
 }
@@ -386,8 +374,6 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 {
     ColumnsDescription columns;
     IndicesDescription indices;
-    ConstraintsDescription constraints;
-
 
     if (create.columns_list)
     {
@@ -397,16 +383,11 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
             for (const auto & index : create.columns_list->indices->children)
                 indices.indices.push_back(
                     std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
-        if (create.columns_list->constraints)
-            for (const auto & constraint : create.columns_list->constraints->children)
-                constraints.constraints.push_back(
-                        std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
     }
     else if (!create.as_table.empty())
     {
         columns = as_storage->getColumns();
         indices = as_storage->getIndices();
-        constraints = as_storage->getConstraints();
     }
     else if (create.select)
     {
@@ -418,7 +399,6 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(columns);
     ASTPtr new_indices = formatIndices(indices);
-    ASTPtr new_constraints = formatConstraints(constraints);
 
     if (!create.columns_list)
     {
@@ -435,11 +415,6 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
         create.columns_list->replace(create.columns_list->indices, new_indices);
     else if (new_indices)
         create.columns_list->set(create.columns_list->indices, new_indices);
-
-    if (new_constraints && create.columns_list->constraints)
-        create.columns_list->replace(create.columns_list->constraints, new_constraints);
-    else if (new_constraints)
-        create.columns_list->set(create.columns_list->constraints, new_constraints);
 
     /// Check for duplicates
     std::set<String> all_columns;
@@ -465,7 +440,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.temporary && !create.is_live_view)
+    if (create.temporary)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -488,11 +463,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
 
-        if (as_create.is_live_view)
-            throw Exception(
-                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a Live View",
-                ErrorCodes::INCORRECT_QUERY);
-
         create.set(create.storage, as_create.storage->ptr());
     }
 }
@@ -510,7 +480,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.database.empty() && !create.is_live_view)
+    if (create.temporary && !create.database.empty())
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
@@ -533,7 +503,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.to_database.empty())
         create.to_database = current_database;
 
-    if (create.select && (create.is_view || create.is_materialized_view || create.is_live_view))
+    if (create.select && (create.is_view || create.is_materialized_view))
     {
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
@@ -548,44 +518,33 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     StoragePtr as_storage;
     TableStructureReadLockHolder as_storage_lock;
-
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
         as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
     }
 
-    ColumnsDescription columns;
-    StoragePtr res;
+    /// Set and retrieve list of columns.
+    ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
 
-    if (create.as_table_function)
+    /// Check low cardinality types in creating table if it was not allowed in setting
+    if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types)
     {
-        const auto & table_function = create.as_table_function->as<ASTFunction &>();
-        const auto & factory = TableFunctionFactory::instance();
-        res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
-    }
-    else
-    {
-        /// Set and retrieve list of columns.
-        columns = setColumns(create, as_select_sample, as_storage);
-
-        /// Check low cardinality types in creating table if it was not allowed in setting
-        if (!create.attach && !context.getSettingsRef().allow_suspicious_low_cardinality_types && !create.is_materialized_view)
+        for (const auto & name_and_type_pair : columns.getAllPhysical())
         {
-            for (const auto & name_and_type_pair : columns.getAllPhysical())
+            if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
             {
-                if (const auto * current_type_ptr = typeid_cast<const DataTypeLowCardinality *>(name_and_type_pair.type.get()))
-                {
-                    if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
-                        throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
-                            ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
-                }
+                if (!isStringOrFixedString(*removeNullable(current_type_ptr->getDictionaryType())))
+                    throw Exception("Creating columns of type " + current_type_ptr->getName() + " is prohibited by default due to expected negative impact on performance. It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
+                        ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
             }
         }
-
-        /// Set the table engine if it was not specified explicitly.
-        setEngine(create);
     }
+
+    /// Set the table engine if it was not specified explicitly.
+    setEngine(create);
+
+    StoragePtr res;
 
     {
         std::unique_ptr<DDLGuard> guard;
@@ -593,7 +552,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         String data_path;
         DatabasePtr database;
 
-        if (!create.temporary || create.is_live_view)
+        if (!create.temporary)
         {
             database = context.getDatabase(database_name);
             data_path = database->getDataPath();
@@ -626,20 +585,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
              return {};
 
-        if (!create.as_table_function)
-        {
-            res = StorageFactory::instance().get(create,
-                data_path,
-                table_name,
-                database_name,
-                context,
-                context.getGlobalContext(),
-                columns,
-                create.attach,
-                false);
-        }
+        res = StorageFactory::instance().get(create,
+            data_path,
+            table_name,
+            database_name,
+            context,
+            context.getGlobalContext(),
+            columns,
+            create.attach,
+            false);
 
-        if (create.temporary && !create.is_live_view)
+        if (create.temporary)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
@@ -658,7 +614,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
+        && !create.is_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
 

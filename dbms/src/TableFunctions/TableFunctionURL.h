@@ -2,6 +2,7 @@
 
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <Interpreters/Context.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -19,6 +20,6 @@ public:
 
 private:
     StoragePtr getStorage(
-        const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name) const override;
+        const String & source, const String & format, const Block & sample_block, Context & global_context) const override;
 };
 }

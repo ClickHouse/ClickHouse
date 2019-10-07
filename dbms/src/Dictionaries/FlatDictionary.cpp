@@ -21,19 +21,19 @@ static const auto max_array_size = 500000;
 
 
 FlatDictionary::FlatDictionary(
-    const std::string & name_,
-    const DictionaryStructure & dict_struct_,
-    DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_,
-    BlockPtr saved_block_)
-    : name{name_}
-    , dict_struct(dict_struct_)
-    , source_ptr{std::move(source_ptr_)}
-    , dict_lifetime(dict_lifetime_)
-    , require_nonempty(require_nonempty_)
+    const std::string & name,
+    const DictionaryStructure & dict_struct,
+    DictionarySourcePtr source_ptr,
+    const DictionaryLifetime dict_lifetime,
+    bool require_nonempty,
+    BlockPtr saved_block)
+    : name{name}
+    , dict_struct(dict_struct)
+    , source_ptr{std::move(source_ptr)}
+    , dict_lifetime(dict_lifetime)
+    , require_nonempty(require_nonempty)
     , loaded_ids(initial_array_size, false)
-    , saved_block{std::move(saved_block_)}
+    , saved_block{std::move(saved_block)}
 {
     createAttributes();
     loadData();
@@ -107,7 +107,7 @@ void FlatDictionary::isInConstantVector(const Key child_id, const PaddedPODArray
     void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -133,7 +133,7 @@ DECLARE(Decimal128)
 void FlatDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     const auto & null_value = std::get<StringRef>(attribute.null_values);
 
@@ -152,7 +152,7 @@ void FlatDictionary::getString(const std::string & attribute_name, const PaddedP
         ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -177,7 +177,7 @@ void FlatDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -191,7 +191,7 @@ void FlatDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -216,7 +216,7 @@ void FlatDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::String);
 
     FlatDictionary::getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -232,50 +232,50 @@ void FlatDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> 
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::utUInt8:
+        case AttributeUnderlyingType::UInt8:
             has<UInt8>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utUInt16:
+        case AttributeUnderlyingType::UInt16:
             has<UInt16>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utUInt32:
+        case AttributeUnderlyingType::UInt32:
             has<UInt32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utUInt64:
+        case AttributeUnderlyingType::UInt64:
             has<UInt64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utUInt128:
+        case AttributeUnderlyingType::UInt128:
             has<UInt128>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utInt8:
+        case AttributeUnderlyingType::Int8:
             has<Int8>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utInt16:
+        case AttributeUnderlyingType::Int16:
             has<Int16>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utInt32:
+        case AttributeUnderlyingType::Int32:
             has<Int32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utInt64:
+        case AttributeUnderlyingType::Int64:
             has<Int64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utFloat32:
+        case AttributeUnderlyingType::Float32:
             has<Float32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utFloat64:
+        case AttributeUnderlyingType::Float64:
             has<Float64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
             has<String>(attribute, ids, out);
             break;
 
-        case AttributeUnderlyingType::utDecimal32:
+        case AttributeUnderlyingType::Decimal32:
             has<Decimal32>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utDecimal64:
+        case AttributeUnderlyingType::Decimal64:
             has<Decimal64>(attribute, ids, out);
             break;
-        case AttributeUnderlyingType::utDecimal128:
+        case AttributeUnderlyingType::Decimal128:
             has<Decimal128>(attribute, ids, out);
             break;
     }
@@ -296,7 +296,7 @@ void FlatDictionary::createAttributes()
         {
             hierarchical_attribute = &attributes.back();
 
-            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
+            if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
                 throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
@@ -425,51 +425,51 @@ void FlatDictionary::calculateBytesAllocated()
     {
         switch (attribute.type)
         {
-            case AttributeUnderlyingType::utUInt8:
+            case AttributeUnderlyingType::UInt8:
                 addAttributeSize<UInt8>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt16:
+            case AttributeUnderlyingType::UInt16:
                 addAttributeSize<UInt16>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt32:
+            case AttributeUnderlyingType::UInt32:
                 addAttributeSize<UInt32>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt64:
+            case AttributeUnderlyingType::UInt64:
                 addAttributeSize<UInt64>(attribute);
                 break;
-            case AttributeUnderlyingType::utUInt128:
+            case AttributeUnderlyingType::UInt128:
                 addAttributeSize<UInt128>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt8:
+            case AttributeUnderlyingType::Int8:
                 addAttributeSize<Int8>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt16:
+            case AttributeUnderlyingType::Int16:
                 addAttributeSize<Int16>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt32:
+            case AttributeUnderlyingType::Int32:
                 addAttributeSize<Int32>(attribute);
                 break;
-            case AttributeUnderlyingType::utInt64:
+            case AttributeUnderlyingType::Int64:
                 addAttributeSize<Int64>(attribute);
                 break;
-            case AttributeUnderlyingType::utFloat32:
+            case AttributeUnderlyingType::Float32:
                 addAttributeSize<Float32>(attribute);
                 break;
-            case AttributeUnderlyingType::utFloat64:
+            case AttributeUnderlyingType::Float64:
                 addAttributeSize<Float64>(attribute);
                 break;
 
-            case AttributeUnderlyingType::utDecimal32:
+            case AttributeUnderlyingType::Decimal32:
                 addAttributeSize<Decimal32>(attribute);
                 break;
-            case AttributeUnderlyingType::utDecimal64:
+            case AttributeUnderlyingType::Decimal64:
                 addAttributeSize<Decimal64>(attribute);
                 break;
-            case AttributeUnderlyingType::utDecimal128:
+            case AttributeUnderlyingType::Decimal128:
                 addAttributeSize<Decimal128>(attribute);
                 break;
 
-            case AttributeUnderlyingType::utString:
+            case AttributeUnderlyingType::String:
             {
                 addAttributeSize<StringRef>(attribute);
                 bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
@@ -506,50 +506,50 @@ FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const Attribut
 
     switch (type)
     {
-        case AttributeUnderlyingType::utUInt8:
+        case AttributeUnderlyingType::UInt8:
             createAttributeImpl<UInt8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt16:
+        case AttributeUnderlyingType::UInt16:
             createAttributeImpl<UInt16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt32:
+        case AttributeUnderlyingType::UInt32:
             createAttributeImpl<UInt32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt64:
+        case AttributeUnderlyingType::UInt64:
             createAttributeImpl<UInt64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utUInt128:
+        case AttributeUnderlyingType::UInt128:
             createAttributeImpl<UInt128>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt8:
+        case AttributeUnderlyingType::Int8:
             createAttributeImpl<Int8>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt16:
+        case AttributeUnderlyingType::Int16:
             createAttributeImpl<Int16>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt32:
+        case AttributeUnderlyingType::Int32:
             createAttributeImpl<Int32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utInt64:
+        case AttributeUnderlyingType::Int64:
             createAttributeImpl<Int64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utFloat32:
+        case AttributeUnderlyingType::Float32:
             createAttributeImpl<Float32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utFloat64:
+        case AttributeUnderlyingType::Float64:
             createAttributeImpl<Float64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
             createAttributeImpl<String>(attr, null_value);
             break;
 
-        case AttributeUnderlyingType::utDecimal32:
+        case AttributeUnderlyingType::Decimal32:
             createAttributeImpl<Decimal32>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utDecimal64:
+        case AttributeUnderlyingType::Decimal64:
             createAttributeImpl<Decimal64>(attr, null_value);
             break;
-        case AttributeUnderlyingType::utDecimal128:
+        case AttributeUnderlyingType::Decimal128:
             createAttributeImpl<Decimal128>(attr, null_value);
             break;
     }
@@ -612,50 +612,50 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::utUInt8:
+        case AttributeUnderlyingType::UInt8:
             setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt16:
+        case AttributeUnderlyingType::UInt16:
             setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt32:
+        case AttributeUnderlyingType::UInt32:
             setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt64:
+        case AttributeUnderlyingType::UInt64:
             setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
             break;
-        case AttributeUnderlyingType::utUInt128:
+        case AttributeUnderlyingType::UInt128:
             setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
             break;
-        case AttributeUnderlyingType::utInt8:
+        case AttributeUnderlyingType::Int8:
             setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utInt16:
+        case AttributeUnderlyingType::Int16:
             setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utInt32:
+        case AttributeUnderlyingType::Int32:
             setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utInt64:
+        case AttributeUnderlyingType::Int64:
             setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
             break;
-        case AttributeUnderlyingType::utFloat32:
+        case AttributeUnderlyingType::Float32:
             setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
             break;
-        case AttributeUnderlyingType::utFloat64:
+        case AttributeUnderlyingType::Float64:
             setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
             break;
-        case AttributeUnderlyingType::utString:
+        case AttributeUnderlyingType::String:
             setAttributeValueImpl<String>(attribute, id, value.get<String>());
             break;
 
-        case AttributeUnderlyingType::utDecimal32:
+        case AttributeUnderlyingType::Decimal32:
             setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
             break;
-        case AttributeUnderlyingType::utDecimal64:
+        case AttributeUnderlyingType::Decimal64:
             setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
             break;
-        case AttributeUnderlyingType::utDecimal128:
+        case AttributeUnderlyingType::Decimal128:
             setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
             break;
     }

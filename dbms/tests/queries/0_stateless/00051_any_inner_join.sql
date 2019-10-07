@@ -1,5 +1,3 @@
-SET any_join_distinct_right_table_keys = 1;
-
 SELECT a.*, b.* FROM
 (
     SELECT number AS k FROM system.numbers LIMIT 10

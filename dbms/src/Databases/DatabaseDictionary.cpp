@@ -27,7 +27,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_)
 {
 }
 
-void DatabaseDictionary::loadTables(Context &, bool)
+void DatabaseDictionary::loadTables(Context &, ThreadPool *, bool)
 {
 }
 
@@ -129,7 +129,6 @@ void DatabaseDictionary::alterTable(
     const String &,
     const ColumnsDescription &,
     const IndicesDescription &,
-    const ConstraintsDescription &,
     const ASTModifier &)
 {
     throw Exception("DatabaseDictionary: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);

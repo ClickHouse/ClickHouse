@@ -30,8 +30,8 @@ static bool parseDatabaseAndTable(
     }
 
     db_and_table.database.clear();
-    tryGetIdentifierNameInto(database, db_and_table.database);
-    tryGetIdentifierNameInto(table, db_and_table.table);
+    getIdentifierName(database, db_and_table.database);
+    getIdentifierName(table, db_and_table.table);
 
     return true;
 }

@@ -17,8 +17,7 @@ namespace DB
 
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
-using ConstArenaPtr = std::shared_ptr<const Arena>;
-using ConstArenas = std::vector<ConstArenaPtr>;
+using Arenas = std::vector<ArenaPtr>;
 
 
 /** Column of states of aggregate functions.
@@ -53,15 +52,8 @@ public:
 private:
     friend class COWHelper<IColumn, ColumnAggregateFunction>;
 
-    /// Arenas used by function states that are created elsewhere. We own these
-    /// arenas in the sense of extending their lifetime, but do not modify them.
-    /// Even reading these arenas is unsafe, because they may be shared with
-    /// other data blocks and modified by other threads concurrently.
-    ConstArenas foreign_arenas;
-
-    /// Arena for allocating the internals of function states created by current
-    /// column (e.g., when inserting new states).
-    ArenaPtr my_arena;
+    /// Memory pools. Aggregate states are allocated from them.
+    Arenas arenas;
 
     /// Used for destroying states and for finalization of values.
     AggregateFunctionPtr func;
@@ -76,7 +68,12 @@ private:
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
-    MutablePtr createView() const;
+    MutablePtr createView() const
+    {
+        MutablePtr res = create(func, arenas);
+        res->src = getPtr();
+        return res;
+    }
 
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     /// This is needed before inserting new elements, because we must own these elements (to destroy them in destructor),
@@ -88,14 +85,15 @@ private:
     {
     }
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_,
-                            const ConstArenas & arenas_)
-        : foreign_arenas(arenas_), func(func_)
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const Arenas & arenas_)
+        : arenas(arenas_), func(func_)
     {
     }
 
-
-    ColumnAggregateFunction(const ColumnAggregateFunction & src_);
+    ColumnAggregateFunction(const ColumnAggregateFunction & src_)
+        : arenas(src_.arenas), func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    {
+    }
 
     String getTypeString() const;
 
@@ -111,7 +109,7 @@ public:
     AggregateFunctionPtr getAggregateFunction() const { return func; }
 
     /// Take shared ownership of Arena, that holds memory for states of aggregate functions.
-    void addArena(ConstArenaPtr arena_);
+    void addArena(ArenaPtr arena_);
 
     /** Transform column with states of aggregate functions to column with final result values.
       */

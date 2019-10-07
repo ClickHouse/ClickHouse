@@ -3,7 +3,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -34,18 +33,18 @@ private:
 
 public:
     AggregateFunctionResample(
-        AggregateFunctionPtr nested_function_,
-        Key begin_,
-        Key end_,
-        size_t step_,
+        AggregateFunctionPtr nested_function,
+        Key begin,
+        Key end,
+        size_t step,
         const DataTypes & arguments,
         const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params}
-        , nested_function{nested_function_}
+        , nested_function{nested_function}
         , last_col{arguments.size() - 1}
-        , begin{begin_}
-        , end{end_}
-        , step{step_}
+        , begin{begin}
+        , end{end}
+        , step{step}
         , total{0}
         , aod{nested_function->alignOfData()}
         , sod{(nested_function->sizeOfData() + aod - 1) / aod * aod}
@@ -170,8 +169,8 @@ public:
         ConstAggregateDataPtr place,
         IColumn & to) const override
     {
-        auto & col = assert_cast<ColumnArray &>(to);
-        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+        auto & col = static_cast<ColumnArray &>(to);
+        auto & col_offsets = static_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
             nested_function->insertResultInto(place + i * sod, col.getData());

@@ -25,6 +25,7 @@ public:
 
     void loadTables(
         Context & context,
+        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
     void createTable(
@@ -48,7 +49,6 @@ public:
         const String & name,
         const ColumnsDescription & columns,
         const IndicesDescription & indices,
-        const ConstraintsDescription & constraints,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/config.h>
-
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>

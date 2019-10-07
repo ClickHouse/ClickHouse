@@ -8,7 +8,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
 #include <memory>
 
 
@@ -88,7 +87,7 @@ public:
         const IColumn * tuple_col = first_arg.column.get();
         while (const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(tuple_type))
         {
-            const ColumnArray * array_col = assert_cast<const ColumnArray *>(tuple_col);
+            const ColumnArray * array_col = static_cast<const ColumnArray *>(tuple_col);
 
             tuple_type = array_type->getNestedType().get();
             tuple_col = &array_col->getData();

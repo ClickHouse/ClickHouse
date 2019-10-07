@@ -1,29 +1,26 @@
-# Enum
 
-Enumerated type storing pairs of the `'string' = integer` format.
+# Enum8, Enum16
 
-ClickHouse supports:
+Includes the `Enum8` and `Enum16` types. `Enum` saves the finite set of pairs of `'string' = integer`. In ClickHouse, all operations with the `Enum` data type are performed as if value contains integers, although the user is working with string constants. This is more effective in terms of performance than working with the `String` data type.
 
-- 8-bit `Enum`. It can contain up to 256 values with enumeration of `[-128, 127]`.
-- 16-bit `Enum`. It can contain up to 65536 values with enumeration of `[-32768, 32767]`.
-
-ClickHouse automatically chooses a type for `Enum` at data insertion. Also, you can use `Enum8` or `Enum16` types to be sure in size of storage.
+- `Enum8` is described by pairs of `'String' = Int8`.
+- `Enum16` is described by pairs of `'String' = Int16`.
 
 ## Usage examples
 
 Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
 
-```sql
+```
 CREATE TABLE t_enum
 (
-    x Enum('hello' = 1, 'world' = 2)
+    x Enum8('hello' = 1, 'world' = 2)
 )
 ENGINE = TinyLog
 ```
 
-This column `x` can only store the values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will generate an exception. ClickHouse automatically chooses the 8-bit size for enumeration of this `Enum`.
+This column `x` can only store the values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will generate an exception.
 
-```sql
+```
 :) INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
 
 INSERT INTO t_enum VALUES
@@ -38,12 +35,12 @@ INSERT INTO t_enum VALUES
 
 
 Exception on client:
-Code: 49. DB::Exception: Unknown element 'a' for type Enum('hello' = 1, 'world' = 2)
+Code: 49. DB::Exception: Unknown element 'a' for type Enum8('hello' = 1, 'world' = 2)
 ```
 
 When you query data from the table, ClickHouse outputs the string values from `Enum`.
 
-```sql
+```
 SELECT * FROM t_enum
 
 ┌─x─────┐
@@ -55,7 +52,7 @@ SELECT * FROM t_enum
 
 If you need to see the numeric equivalents of the rows, you must cast the `Enum` value to integer type.
 
-```sql
+```
 SELECT CAST(x, 'Int8') FROM t_enum
 
 ┌─CAST(x, 'Int8')─┐
@@ -67,12 +64,12 @@ SELECT CAST(x, 'Int8') FROM t_enum
 
 To create an Enum value in a query, you also need to use `CAST`.
 
-```sql
-SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
+```
+SELECT toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))
 
-┌─toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))─┐
-│ Enum8('a' = 1, 'b' = 2)                             │
-└─────────────────────────────────────────────────────┘
+┌─toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))─┐
+│ Enum8('a' = 1, 'b' = 2)                              │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## General rules and usage
@@ -94,7 +91,7 @@ ENGINE = TinyLog
 it can store not only `'hello'` and `'world'`, but `NULL`, as well.
 
 ```
-INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
+INSERT INTO t_enum_null Values('hello'),('world'),(NULL)
 ```
 
 In RAM, an `Enum` column is stored in the same way as `Int8` or `Int16` of the corresponding numerical values.

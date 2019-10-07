@@ -21,16 +21,16 @@ namespace ErrorCodes
 const Field UNKNOWN_FIELD(3u);
 
 
-MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_)
+MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index)
     : IMergeTreeIndexGranule()
-    , index(index_)
+    , index(index)
     , block(index.header.cloneEmpty()) {}
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
-    const MergeTreeIndexSet & index_, MutableColumns && mutable_columns_)
+    const MergeTreeIndexSet & index, MutableColumns && mutable_columns)
     : IMergeTreeIndexGranule()
-    , index(index_)
-    , block(index.header.cloneWithColumns(std::move(mutable_columns_))) {}
+    , index(index)
+    , block(index.header.cloneWithColumns(std::move(mutable_columns))) {}
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 {
@@ -94,8 +94,8 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index_)
-    : index(index_), columns(index.header.cloneEmptyColumns())
+MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const MergeTreeIndexSet & index)
+    : index(index), columns(index.header.cloneEmptyColumns())
 {
     ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(index.columns.size());
@@ -215,8 +215,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         const SelectQueryInfo & query,
         const Context & context,
-        const MergeTreeIndexSet &index_)
-        : IMergeTreeIndexCondition(), index(index_)
+        const MergeTreeIndexSet &index)
+        : IMergeTreeIndexCondition(), index(index)
 {
     for (size_t i = 0, size = index.columns.size(); i < size; ++i)
     {
@@ -227,6 +227,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
 
     const auto & select = query.query->as<ASTSelectQuery &>();
 
+    /// Replace logical functions with bit functions.
+    /// Working with UInt8: last bit = can be true, previous = can be false.
     if (select.where() && select.prewhere())
         expression_ast = makeASTFunction(
                 "and",
@@ -244,8 +246,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     if (useless)
         return;
 
-    /// Replace logical functions with bit functions.
-    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
     auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
@@ -305,12 +305,7 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
         return;
     }
 
-    if (atomFromAST(node))
-    {
-        if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-            node = makeASTFunction("__bitWrapperFunc", node);
-    }
-    else
+    if (!atomFromAST(node))
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 }
 
@@ -369,12 +364,12 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
         ASTPtr new_func;
         if (args.size() > 1)
             new_func = makeASTFunction(
-                    "__bitBoolMaskAnd",
+                    "bitAnd",
                     node,
                     last_arg);
         else
             new_func = makeASTFunction(
-                    "__bitBoolMaskAnd",
+                    "bitAnd",
                     args.back(),
                     last_arg);
 
@@ -388,12 +383,12 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
         ASTPtr new_func;
         if (args.size() > 1)
             new_func = makeASTFunction(
-                    "__bitBoolMaskOr",
+                    "bitOr",
                     node,
                     last_arg);
         else
             new_func = makeASTFunction(
-                    "__bitBoolMaskOr",
+                    "bitOr",
                     args.back(),
                     last_arg);
 
@@ -403,6 +398,25 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
         return false;
 
     return true;
+}
+
+static bool checkAtomName(const String & name)
+{
+    static std::set<String> atoms = {
+            "notEquals",
+            "equals",
+            "less",
+            "greater",
+            "lessOrEquals",
+            "greaterOrEquals",
+            "in",
+            "notIn",
+            "like",
+            "startsWith",
+            "endsWith",
+            "multiSearchAny"
+            };
+    return atoms.find(name) != atoms.end();
 }
 
 bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic) const
@@ -420,14 +434,16 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
         else if (func->name == "not")
             return checkASTUseless(args[0], atomic);
+        else if (!atomic && checkAtomName(func->name))
+            return checkASTUseless(node, true);
         else
             return std::any_of(args.begin(), args.end(),
-                    [this](const auto & arg) { return checkASTUseless(arg, true); });
+                    [this, &atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
     }
     else if (const auto * literal = node->as<ASTLiteral>())
         return !atomic && literal->value.get<bool>();
     else if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.find(identifier->getColumnName()) == std::end(key_columns);
+        return key_columns.find(identifier->getColumnName()) == key_columns.end();
     else
         return true;
 }

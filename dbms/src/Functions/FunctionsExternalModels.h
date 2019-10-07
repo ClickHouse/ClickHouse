@@ -17,7 +17,7 @@ public:
 
     static FunctionPtr create(const Context & context);
 
-    explicit FunctionModelEvaluate(const ExternalModels & models_) : models(models_) {}
+    explicit FunctionModelEvaluate(const ExternalModels & models) : models(models) {}
 
     String getName() const override { return name; }
 

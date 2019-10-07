@@ -1,9 +1,11 @@
 #pragma once
 
-#include "config_formats.h"
+#include <Common/config.h>
 #if USE_PARQUET
-
-#include <Processors/Formats/IInputFormat.h>
+#    include <Processors/Formats/IInputFormat.h>
+//#    include <parquet/file_reader.h>
+//#    include <parquet/arrow/reader.h>
+//#    include <arrow/buffer.h>
 
 
 namespace parquet { namespace arrow { class FileReader; } }
@@ -16,7 +18,7 @@ class Context;
 class ParquetBlockInputFormat: public IInputFormat
 {
 public:
-    ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const Context & context_);
+    ParquetBlockInputFormat(ReadBuffer & in_, Block header, const Context & context);
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 

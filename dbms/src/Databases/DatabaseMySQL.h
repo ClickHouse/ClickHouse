@@ -46,7 +46,7 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void loadTables(Context &, bool) override
+    void loadTables(Context &, ThreadPool *, bool) override
     {
         /// do nothing
     }
@@ -71,7 +71,7 @@ public:
         throw Exception("MySQL database engine does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void alterTable(const Context &, const String &, const ColumnsDescription &, const IndicesDescription &, const ConstraintsDescription &, const ASTModifier &) override
+    void alterTable(const Context &, const String &, const ColumnsDescription &, const IndicesDescription &, const ASTModifier &) override
     {
         throw Exception("MySQL database engine does not support alter table.", ErrorCodes::NOT_IMPLEMENTED);
     }

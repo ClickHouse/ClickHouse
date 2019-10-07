@@ -39,7 +39,7 @@ struct ColumnNamesContext
         std::optional<String> name() const
         {
             if (expr)
-                return tryGetIdentifierName(expr->database_and_table_name);
+                return getIdentifierName(expr->database_and_table_name);
             return {};
         }
 

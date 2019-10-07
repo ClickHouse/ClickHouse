@@ -9,7 +9,7 @@
 #include "00825_protobuf_format_syntax2.pb.h"
 
 
-void writeInsertDataQueryForInputTest(std::stringstream & delimited_messages, const std::string & table_name, const std::string & format_schema, std::ostream & out)
+void writeInsertQueryCommand(std::ostream & out, const std::string & format_schema, std::stringstream & delimited_messages)
 {
     out << "echo -ne '";
     std::string bytes = delimited_messages.str();
@@ -20,12 +20,12 @@ void writeInsertDataQueryForInputTest(std::stringstream & delimited_messages, co
         sprintf(buf, "\\x%02x", static_cast<unsigned char>(c));
         out << buf;
     }
-    out << "' | $CLICKHOUSE_CLIENT --query=\"INSERT INTO " << table_name << " FORMAT Protobuf"
+    out << "' | $CLICKHOUSE_CLIENT --query=\"INSERT INTO test.table FORMAT Protobuf"
            " SETTINGS format_schema = '$CURDIR/"
         << format_schema << "'\"" << std::endl;
 }
 
-void writeInsertDataQueriesForInputTest(std::ostream & out)
+void writeInputInsertQueries(std::ostream & out)
 {
     std::stringstream ss;
     {
@@ -125,7 +125,7 @@ void writeInsertDataQueriesForInputTest(std::ostream & out)
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertDataQueryForInputTest(ss, "in_persons_00825", "00825_protobuf_format:Person", out);
+    writeInsertQueryCommand(out, "00825_protobuf_format:Person", ss);
 
     {
         AltPerson person;
@@ -189,7 +189,7 @@ void writeInsertDataQueriesForInputTest(std::ostream & out)
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertDataQueryForInputTest(ss, "in_persons_00825", "00825_protobuf_format:AltPerson", out);
+    writeInsertQueryCommand(out, "00825_protobuf_format:AltPerson", ss);
 
     {
         StrPerson person;
@@ -225,7 +225,7 @@ void writeInsertDataQueriesForInputTest(std::ostream & out)
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertDataQueryForInputTest(ss, "in_persons_00825", "00825_protobuf_format:StrPerson", out);
+    writeInsertQueryCommand(out, "00825_protobuf_format:StrPerson", ss);
 
     {
         Syntax2Person person;
@@ -262,34 +262,11 @@ void writeInsertDataQueriesForInputTest(std::ostream & out)
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertDataQueryForInputTest(ss, "in_persons_00825", "00825_protobuf_format_syntax2:Syntax2Person", out);
-
-    {
-        NumberAndSquare ns;
-        ns.set_number(2);
-        ns.set_square(4);
-        google::protobuf::util::SerializeDelimitedToOstream(ns, &ss);
-    }
-
-    {
-        NumberAndSquare ns;
-        ns.set_number(0);
-        ns.set_square(0);
-        google::protobuf::util::SerializeDelimitedToOstream(ns, &ss);
-    }
-
-    {
-        NumberAndSquare ns;
-        ns.set_number(3);
-        ns.set_square(9);
-        google::protobuf::util::SerializeDelimitedToOstream(ns, &ss);
-    }
-
-    writeInsertDataQueryForInputTest(ss, "in_squares_00825", "00825_protobuf_format:NumberAndSquare", out);
+    writeInsertQueryCommand(out, "00825_protobuf_format_syntax2:Syntax2Person", ss);
 }
 
 
-void writeReferenceForOutputTest(std::ostream & out)
+void writeOutputReference(std::ostream & out)
 {
     {
         Person person;
@@ -660,29 +637,6 @@ void writeReferenceForOutputTest(std::ostream & out)
         person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(503);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
-
-    out << "SQUARES->" << std::endl;
-
-    {
-        NumberAndSquare ns;
-        ns.set_number(0);
-        ns.set_square(0);
-        google::protobuf::util::SerializeDelimitedToOstream(ns, &out);
-    }
-
-    {
-        NumberAndSquare ns;
-        ns.set_number(2);
-        ns.set_square(4);
-        google::protobuf::util::SerializeDelimitedToOstream(ns, &out);
-    }
-
-    {
-        NumberAndSquare ns;
-        ns.set_number(3);
-        ns.set_square(9);
-        google::protobuf::util::SerializeDelimitedToOstream(ns, &out);
-    }
 }
 
 
@@ -722,7 +676,7 @@ int main(int argc, char ** argv)
 {
     std::string output_dir;
     parseCommandLine(argc, argv, output_dir);
-    writeFile(output_dir + "/00825_protobuf_format_input.insh", writeInsertDataQueriesForInputTest);
-    writeFile(output_dir + "/00825_protobuf_format_output.reference", writeReferenceForOutputTest);
+    writeFile(output_dir + "/00825_protobuf_format_input.insh", writeInputInsertQueries);
+    writeFile(output_dir + "/00825_protobuf_format_output.reference", writeOutputReference);
     return 0;
 }

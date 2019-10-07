@@ -15,9 +15,8 @@ struct IndicesDescription
     IndicesDescription() = default;
 
     bool empty() const { return indices.empty(); }
-    bool has(const String & name) const;
-
     String toString() const;
+
     static IndicesDescription parse(const String & str);
 };
 

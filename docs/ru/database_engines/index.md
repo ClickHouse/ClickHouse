@@ -1,10 +1,9 @@
-# Движки баз данных
+# Database Engines
 
-Движки баз данных обеспечивают работу с таблицами.
+Database engines provide working with tables.
 
-По умолчанию ClickHouse использует собственный движок баз данных, который поддерживает конфигурируемые [движки таблиц](../operations/table_engines/index.md) и [диалект SQL](../query_language/syntax.md).
+By default, ClickHouse uses its native database engine which provides configurable [table engines](../operations/table_engines/index.md) and [SQL dialect](../query_language/syntax.md).
 
-Также можно использовать следующие движки баз данных:
+Also you can use the following database engines:
 
 - [MySQL](mysql.md)
-

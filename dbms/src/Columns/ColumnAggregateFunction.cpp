@@ -1,6 +1,5 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/assert_cast.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
@@ -31,9 +30,9 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
             func->destroy(val);
 }
 
-void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
+void ColumnAggregateFunction::addArena(ArenaPtr arena_)
 {
-    foreign_arenas.push_back(arena_);
+    arenas.push_back(arena_);
 }
 
 MutableColumnPtr ColumnAggregateFunction::convertToValues() const
@@ -159,7 +158,7 @@ void ColumnAggregateFunction::ensureOwnership()
 
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
 {
-    const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
+    const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);
 
     if (start + length > from_concrete.data.size())
         throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length)
@@ -266,21 +265,27 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-/// The returned size is less than real size. The reason is that some parts of
-/// aggregate function data may be allocated on shared arenas. These arenas are
-/// used for several blocks, and also may be updated concurrently from other
-/// threads, so we can't know the size of these data.
+/// NOTE: Highly overestimates size of a column if it was produced in AggregatingBlockInputStream (it contains size of other columns)
 size_t ColumnAggregateFunction::byteSize() const
 {
-    return data.size() * sizeof(data[0])
-            + (my_arena ? my_arena->size() : 0);
+    size_t res = data.size() * sizeof(data[0]);
+
+    for (const auto & arena : arenas)
+        res += arena->size();
+
+    return res;
 }
 
-/// Like in byteSize(), the size is underestimated.
+
+/// Like byteSize(), highly overestimates size
 size_t ColumnAggregateFunction::allocatedBytes() const
 {
-    return data.allocated_bytes()
-            + (my_arena ? my_arena->size() : 0);
+    size_t res = data.allocated_bytes();
+
+    for (const auto & arena : arenas)
+        res += arena->size();
+
+    return res;
 }
 
 void ColumnAggregateFunction::protect()
@@ -290,7 +295,7 @@ void ColumnAggregateFunction::protect()
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return create(func);
+    return create(func, Arenas(1, std::make_shared<Arena>()));
 }
 
 String ColumnAggregateFunction::getTypeString() const
@@ -354,15 +359,14 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 
 void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
 {
-    insertMergeFrom(assert_cast<const ColumnAggregateFunction &>(from).data[n]);
+    insertMergeFrom(static_cast<const ColumnAggregateFunction &>(from).data[n]);
 }
 
 Arena & ColumnAggregateFunction::createOrGetArena()
 {
-    if (unlikely(!my_arena))
-        my_arena = std::make_shared<Arena>();
-
-    return *my_arena.get();
+    if (unlikely(arenas.empty()))
+        arenas.emplace_back(std::make_shared<Arena>());
+    return *arenas.back().get();
 }
 
 
@@ -493,7 +497,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     }
 
     for (size_t i = 0; i < num_rows; ++i)
-        assert_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
+        static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
 
     return columns;
 }
@@ -536,33 +540,6 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 
     min = serialized;
     max = serialized;
-}
-
-namespace
-{
-
-ConstArenas concatArenas(const ConstArenas & array, ConstArenaPtr arena)
-{
-    ConstArenas result = array;
-    if (arena)
-        result.push_back(std::move(arena));
-
-    return result;
-}
-
-}
-
-ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
-{
-    auto res = create(func, concatArenas(foreign_arenas, my_arena));
-    res->src = getPtr();
-    return res;
-}
-
-ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-    : foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-      func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
-{
 }
 
 }

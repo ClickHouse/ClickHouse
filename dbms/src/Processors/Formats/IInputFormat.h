@@ -23,15 +23,9 @@ protected:
 #pragma GCC diagnostic pop
 
 public:
-    IInputFormat(Block header, ReadBuffer & in_)
-        : ISource(std::move(header)), in(in_)
+    IInputFormat(Block header, ReadBuffer & in)
+        : ISource(std::move(header)), in(in)
     {
-    }
-
-    virtual const BlockMissingValues & getMissingValues() const
-    {
-        static const BlockMissingValues none;
-        return none;
     }
 };
 

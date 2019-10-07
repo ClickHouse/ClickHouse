@@ -137,7 +137,7 @@ create table summing_merge_tree_null (
 ) engine=Null;
 
 create materialized view summing_merge_tree_aggregate_function (
-    d Date,
+    d materialized today(),
     k UInt64,
     c UInt64,
     u AggregateFunction(uniq, UInt64)

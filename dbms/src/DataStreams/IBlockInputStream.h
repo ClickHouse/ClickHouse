@@ -128,7 +128,7 @@ public:
     virtual Block getTotals();
 
     /// The same for minimums and maximums.
-    virtual Block getExtremes();
+    Block getExtremes();
 
 
     /** Set the execution progress bar callback.

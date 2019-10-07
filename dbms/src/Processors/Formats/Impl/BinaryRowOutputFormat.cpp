@@ -9,8 +9,8 @@
 namespace DB
 {
 
-BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, FormatFactory::WriteCallback callback)
-    : IRowOutputFormat(header, out_, callback), with_names(with_names_), with_types(with_types_)
+BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_)
+    : IRowOutputFormat(header, out_), with_names(with_names_), with_types(with_types_)
 {
 }
 
@@ -53,20 +53,18 @@ void registerOutputFormatProcessorRowBinary(FormatFactory & factory)
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
-        FormatFactory::WriteCallback callback,
         const FormatSettings &)
     {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, false, false, callback);
+        return std::make_shared<BinaryRowOutputFormat>(buf, sample, false, false);
     });
 
     factory.registerOutputFormatProcessor("RowBinaryWithNamesAndTypes", [](
         WriteBuffer & buf,
         const Block & sample,
         const Context &,
-        FormatFactory::WriteCallback callback,
         const FormatSettings &)
     {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, true, true, callback);
+        return std::make_shared<BinaryRowOutputFormat>(buf, sample, true, true);
     });
 }
 

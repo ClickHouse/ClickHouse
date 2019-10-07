@@ -585,8 +585,8 @@ struct NullableArraySource : public ArraySource
 
     const NullMap & null_map;
 
-    NullableArraySource(const ColumnArray & arr, const NullMap & null_map_)
-            : ArraySource(arr), null_map(null_map_)
+    NullableArraySource(const ColumnArray & arr, const NullMap & null_map)
+            : ArraySource(arr), null_map(null_map)
     {
     }
 
@@ -743,7 +743,7 @@ struct NullableValueSource : public ValueSource
     const NullMap & null_map;
 
     template <typename Column>
-    explicit NullableValueSource(const Column & col, const NullMap & null_map_) : ValueSource(col), null_map(null_map_) {}
+    explicit NullableValueSource(const Column & col, const NullMap & null_map) : ValueSource(col), null_map(null_map) {}
 
     void accept(ValueSourceVisitor & visitor) override { visitor.visit(*this); }
 

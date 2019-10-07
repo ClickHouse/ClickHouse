@@ -21,7 +21,7 @@ public:
     ExternalDictionaries(
         std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
         const Poco::Util::AbstractConfiguration & config,
-        Context & context_);
+        Context & context);
 
     DictPtr getDictionary(const std::string & name) const
     {

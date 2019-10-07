@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 
-#include <common/likely.h>
 #include <common/StringRef.h>
 #include <Common/ThreadStatus.h>
 
@@ -33,9 +32,6 @@ class InternalTextLogsQueue;
 class CurrentThread
 {
 public:
-    /// Return true in case of successful initializaiton
-    static bool isInitialized();
-
     /// Handler to current thread
     static ThreadStatus & get();
 
@@ -52,12 +48,7 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
-
-    static inline Int64 & getUntrackedMemory()
-    {
-        /// It assumes that (current_thread != nullptr) is already checked with getMemoryTracker()
-        return current_thread->untracked_memory;
-    }
+    static Int64 & getUntrackedMemory();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -81,12 +72,7 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static StringRef getQueryId()
-    {
-        if (unlikely(!current_thread))
-            return {};
-        return current_thread->getQueryId();
-    }
+    static StringRef getQueryId();
 
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();

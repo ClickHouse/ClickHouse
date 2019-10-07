@@ -19,24 +19,21 @@ class Context;
 class MySQLOutputFormat: public IOutputFormat
 {
 public:
-    MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const Context & context_, const FormatSettings & settings_);
+    MySQLOutputFormat(WriteBuffer & out_, const Block & header, const Context & context, const FormatSettings & settings);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
     void consume(Chunk) override;
     void finalize() override;
-    void flush() override;
-    void doWritePrefix() override { initialize(); }
-
-    void initialize();
 
 private:
 
     bool initialized = false;
 
     const Context & context;
-    MySQLProtocol::PacketSender packet_sender;
+    std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
     FormatSettings format_settings;
 };
 
 }
+

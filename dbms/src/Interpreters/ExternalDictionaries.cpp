@@ -9,11 +9,11 @@ namespace DB
 ExternalDictionaries::ExternalDictionaries(
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
     const Poco::Util::AbstractConfiguration & config,
-    Context & context_)
+    Context & context)
         : ExternalLoader(config,
                          "external dictionary",
                          &Logger::get("ExternalDictionaries")),
-        context(context_)
+        context(context)
 {
     addConfigRepository(std::move(config_repository), {"dictionary", "name", "dictionaries_config"});
     enableAsyncLoading(true);

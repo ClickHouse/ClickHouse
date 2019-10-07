@@ -1,5 +1,3 @@
-SET any_join_distinct_right_table_keys = 1;
-
 DROP TABLE IF EXISTS test.filtered_table1;
 DROP TABLE IF EXISTS test.filtered_table2;
 DROP TABLE IF EXISTS test.filtered_table3;

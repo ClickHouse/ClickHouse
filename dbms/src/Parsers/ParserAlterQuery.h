@@ -19,8 +19,6 @@ namespace DB
   *     [FREEZE [PARTITION] [WITH NAME name]]
   *     [DELETE WHERE ...]
   *     [UPDATE col_name = expr, ... WHERE ...]
-  * ALTER LIVE VIEW [db.name]
-  *     [REFRESH]
   */
 
 class ParserAlterQuery : public IParserBase
@@ -36,11 +34,6 @@ class ParserAlterCommandList : public IParserBase
 protected:
     const char * getName() const { return "a list of ALTER commands"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-
-public:
-    bool is_live_view;
-
-    ParserAlterCommandList(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
 };
 
 
@@ -49,11 +42,6 @@ class ParserAlterCommand : public IParserBase
 protected:
     const char * getName() const { return "ALTER command"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-
-public:
-    bool is_live_view;
-
-    ParserAlterCommand(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
 };
 
 

@@ -10,7 +10,6 @@
 #include "config_core.h"
 #include <unordered_map>
 #include <unordered_set>
-#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -105,9 +104,7 @@ public:
 
     /// For JOIN
     std::shared_ptr<const Join> join;
-    ASTTableJoin::Kind join_kind;
     Names join_key_names_left;
-    Names join_key_names_right;
     NamesAndTypesList columns_added_by_join;
 
     /// For PROJECT.
@@ -124,8 +121,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(const ASTTableJoin & join_params, std::shared_ptr<const Join> join_,
-                                         const Names & join_key_names_left, const Names & join_key_names_right,
+    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
                                          const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
@@ -143,7 +139,7 @@ public:
 private:
     friend class ExpressionActions;
 
-    void prepare(Block & sample_block, const Settings & settings, NameSet & names_not_for_constant_folding);
+    void prepare(Block & sample_block, const Settings & settings);
     void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
 };
@@ -261,15 +257,9 @@ public:
     };
 
 private:
-    /// These columns have to be in input blocks (arguments of execute* methods)
     NamesAndTypesList input_columns;
-    /// These actions will be executed on input blocks
     Actions actions;
-    /// The example of result (output) block.
     Block sample_block;
-    /// Columns which can't be used for constant folding.
-    NameSet names_not_for_constant_folding;
-
     Settings settings;
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compilation_cache;

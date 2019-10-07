@@ -62,7 +62,6 @@ struct Less
     }
 };
 
-
 Block FinishSortingBlockInputStream::readImpl()
 {
     if (limit && total_rows_processed >= limit)
@@ -99,9 +98,12 @@ Block FinishSortingBlockInputStream::readImpl()
             if (description_to_sort.empty())
                 return block;
 
-            if (block.rows() == 0)
+            size_t size = block.rows();
+            if (size == 0)
                 continue;
 
+            /// We need to sort each block separately before merging.
+            sortBlock(block, description_to_sort);
 
             removeConstantsFromBlock(block);
 
@@ -114,7 +116,6 @@ Block FinishSortingBlockInputStream::readImpl()
 
                 Less less(last_columns, current_columns);
 
-                size_t size = block.rows();
                 IColumn::Permutation perm(size);
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
@@ -147,11 +148,8 @@ Block FinishSortingBlockInputStream::readImpl()
             blocks.push_back(block);
         }
 
-        if (!blocks.empty())
-        {
-            impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
-            res = impl->read();
-        }
+        impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
+        res = impl->read();
     }
 
     if (res)

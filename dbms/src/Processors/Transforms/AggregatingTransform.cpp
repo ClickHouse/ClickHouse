@@ -61,8 +61,8 @@ namespace
     class ConvertingAggregatedToBlocksTransform : public ISource
     {
     public:
-        ConvertingAggregatedToBlocksTransform(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream_)
-            : ISource(std::move(header)), params(std::move(params_)), stream(std::move(stream_)) {}
+        ConvertingAggregatedToBlocksTransform(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream)
+            : ISource(std::move(header)), params(std::move(params_)), stream(std::move(stream)) {}
 
         String getName() const override { return "ConvertingAggregatedToBlocksTransform"; }
 
@@ -99,14 +99,15 @@ AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformPar
 
 AggregatingTransform::AggregatingTransform(
     Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_,
-    size_t current_variant, size_t temporary_data_merge_threads_, size_t max_threads_)
+    size_t current_variant, size_t temporary_data_merge_threads, size_t max_threads)
     : IProcessor({std::move(header)}, {params_->getHeader()}), params(std::move(params_))
+    , key(params->params.keys_size)
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
-    , max_threads(std::min(many_data->variants.size(), max_threads_))
-    , temporary_data_merge_threads(temporary_data_merge_threads_)
+    , max_threads(std::min(many_data->variants.size(), max_threads))
+    , temporary_data_merge_threads(temporary_data_merge_threads)
 {
 }
 
@@ -211,7 +212,7 @@ void AggregatingTransform::consume(Chunk chunk)
 
     auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    if (!params->aggregator.executeOnBlock(block, variants, key_columns, aggregate_columns, no_more_keys))
+    if (!params->aggregator.executeOnBlock(block, variants, key_columns, aggregate_columns, key, no_more_keys))
         is_consume_finished = true;
 }
 
@@ -225,7 +226,7 @@ void AggregatingTransform::initGenerate()
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
-        params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+        params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, key, no_more_keys);
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();

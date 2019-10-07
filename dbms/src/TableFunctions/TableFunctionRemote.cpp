@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = ast_function->children;
 
@@ -67,7 +67,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
-        if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
+        if (!getIdentifierName(args[arg_num], cluster_name))
             cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
@@ -162,13 +162,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            table_name,
+            getName(),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            table_name,
+            getName(),
             structure_remote_table,
             remote_database,
             remote_table,
@@ -180,8 +180,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 }
 
 
-TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)
-    : name{name_}, secure{secure_}
+TableFunctionRemote::TableFunctionRemote(const std::string & name, bool secure)
+    : name{name}, secure{secure}
 {
     is_cluster_function = name == "cluster";
 

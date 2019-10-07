@@ -30,7 +30,7 @@ private:
     friend class COWHelper<IColumn, ConcreteColumn>;
 
     int data;
-    ConcreteColumn(int data_) : data(data_) {}
+    ConcreteColumn(int data) : data(data) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
 public:

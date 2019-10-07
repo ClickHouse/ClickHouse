@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
@@ -29,7 +28,7 @@ const ColumnConst * checkAndGetColumnConst(const IColumn * column)
     if (!column || !isColumnConst(*column))
         return {};
 
-    const ColumnConst * res = assert_cast<const ColumnConst *>(column);
+    const ColumnConst * res = static_cast<const ColumnConst *>(column);
 
     if (!checkColumn<Type>(&res->getDataColumn()))
         return {};

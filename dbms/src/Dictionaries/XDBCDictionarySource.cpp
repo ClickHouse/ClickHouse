@@ -40,8 +40,8 @@ namespace
             const Context & context,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
-            const String name_)
-            : name(name_)
+            const String name)
+            : name(name)
         {
             read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
             reader
@@ -127,7 +127,8 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
     else
     {
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeLoadAllQuery();
+        std::string str_time("0000-00-00 00:00:00"); ///for initial load
+        return query_builder.composeUpdateQuery(update_field, str_time);
     }
 }
 

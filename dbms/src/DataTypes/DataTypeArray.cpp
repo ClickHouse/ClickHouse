@@ -14,7 +14,6 @@
 #include <Parsers/IAST.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -58,7 +57,7 @@ void DataTypeArray::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeArray::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = offsets[row_num - 1];
@@ -75,7 +74,7 @@ void DataTypeArray::serializeBinary(const IColumn & column, size_t row_num, Writ
 
 void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    ColumnArray & column_array = assert_cast<ColumnArray &>(column);
+    ColumnArray & column_array = static_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t size;
@@ -279,7 +278,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
 template <typename Writer>
 static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested)
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = offsets[row_num - 1];
@@ -301,7 +300,7 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffe
 template <typename Reader>
 static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && read_nested)
 {
-    ColumnArray & column_array = assert_cast<ColumnArray &>(column);
+    ColumnArray & column_array = static_cast<ColumnArray &>(column);
     ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     IColumn & nested_column = column_array.getData();
@@ -368,7 +367,7 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const F
 
 void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = offsets[row_num - 1];
@@ -395,7 +394,7 @@ void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, con
 
 void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
     size_t offset = offsets[row_num - 1];
@@ -434,7 +433,7 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
     size_t offset = offsets[row_num - 1] + value_index;
     size_t next_offset = offsets[row_num];
@@ -454,7 +453,7 @@ void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, Pr
 void DataTypeArray::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     row_added = false;
-    ColumnArray & column_array = assert_cast<ColumnArray &>(column);
+    ColumnArray & column_array = static_cast<ColumnArray &>(column);
     IColumn & nested_column = column_array.getData();
     ColumnArray::Offsets & offsets = column_array.getOffsets();
     size_t old_size = offsets.size();
@@ -463,7 +462,7 @@ void DataTypeArray::deserializeProtobuf(IColumn & column, ProtobufReader & proto
         bool nested_row_added;
         do
             nested->deserializeProtobuf(nested_column, protobuf, true, nested_row_added);
-        while (nested_row_added && protobuf.canReadMoreValues());
+        while (nested_row_added && protobuf.maybeCanReadValue());
         if (allow_add_row)
         {
             offsets.emplace_back(nested_column.size());

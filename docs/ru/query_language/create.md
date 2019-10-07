@@ -1,30 +1,13 @@
-## CREATE DATABASE {#query_language-create-database}
+## CREATE DATABASE
 
-Создает базу данных.
+Создание базы данных db\_name.
 
 ```sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ```
 
-### Секции
-
-- `IF NOT EXISTS`
-
-    Если база данных с именем `db_name` уже существует, то ClickHouse не создаёт базу данных и:
-    - Не генерирует исключение, если секция указана.
-    - Генерирует исключение, если секция не указана.
-
-- `ON CLUSTER`
-
-    ClickHouse создаёт базу данных `db_name` на всех серверах указанного кластера.
-
-- `ENGINE`
-
-    - [MySQL](../database_engines/mysql.md)
-
-        Позволяет получать данные с удаленного сервера MySQL.
-
-    По умолчанию ClickHouse использует собственный [движок баз данных](../database_engines/index.md).
+`База данных` - это просто директория для таблиц.
+Если написано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если база данных уже существует.
 
 ## CREATE TABLE {#create-table-query}
 
@@ -51,12 +34,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 
 Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы `db2.name2`.
 
-``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
-```
-
-Создаёт таблицу с такой же структурой и данными, как результат соотвествующей табличной функцией.
-
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
@@ -65,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
 
-После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../operations/table_engines/index.md#table_engines).
+После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков](../operations/table_engines/index.md#table_engines).
 
 ### Значения по умолчанию {#create-default-values}
 
@@ -103,29 +80,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Отсутствует возможность задать значения по умолчанию для элементов вложенных структур данных.
 
-### Ограничения (constraints) {#constraints}
-
-WARNING: Находится в экспериментальном режиме, поддержано в MergeTree (работоспособность на других типах движков таблиц не гарантируется).
-
-Наряду с объявлением столбцов можно объявить ограчения на значения в столбцах таблицы:
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-(
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
-    ...
-    CONSTRAINT constraint_name_1 CHECK boolean_expr_1,
-    ...
-) ENGINE = engine
-```
-
-`boolean_expr_1` может быть любым булевым выражением, состоящим из операторов сравнения или функций. При наличии одного или нескольких ограничений в момент вставки данных выражения ограничений будут проверяться на истинность для каждой вставляемой строки данных. В случае, если в теле INSERT запроса придут некорректные данные — клиентов будет выкинуто исключение с нарушенным ограничением.
-
-Добавление большого числа ограничений может негативно повлиять на производительность объёмных `INSERT` запросов.
-
 ### Выражение для TTL
 
-Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
+Может быть указано только для таблиц семейства MergeTree. Выражение для указания времени хранения значений. Оно должно зависеть от стобца типа `Date` или `DateTime` и в качестве результата вычислять столбец типа `Date` или `DateTime`. Пример:
+    `TTL date + INTERVAL 1 DAY`
+
+Нельзя указывать TTL для ключевых столбцов. Подробнее смотрите в [TTL для стоблцов и таблиц](../operations/table_engines/mergetree.md)
+
 
 ## Форматы сжатия для колонок
 

@@ -1,11 +1,11 @@
-#include <Functions/FunctionMathUnary.h>
+#include <Functions/FunctionMathUnaryFloat64.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
 {
 
 struct SinName { static constexpr auto name = "sin"; };
-using FunctionSin = FunctionMathUnary<UnaryFunctionVectorized<SinName, sin>>;
+using FunctionSin = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SinName, sin>>;
 
 void registerFunctionSin(FunctionFactory & factory)
 {

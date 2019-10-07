@@ -4,7 +4,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Common/ThreadPool.h>
 
 
@@ -31,7 +30,11 @@ public:
     static ASTPtr formatColumns(const ColumnsDescription & columns);
 
     static ASTPtr formatIndices(const IndicesDescription & indices);
-    static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
+
+    void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
+    {
+        thread_pool = &thread_pool_;
+    }
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {
@@ -57,6 +60,9 @@ private:
 
     ASTPtr query_ptr;
     Context & context;
+
+    /// Using while loading database.
+    ThreadPool * thread_pool = nullptr;
 
     /// Skip safety threshold when loading tables.
     bool has_force_restore_data_flag = false;

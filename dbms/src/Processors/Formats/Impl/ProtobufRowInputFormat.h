@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include <Common/config.h>
 #if USE_PROTOBUF
 
 #include <DataTypes/IDataType.h>
@@ -13,18 +13,12 @@ class Block;
 class FormatSchemaInfo;
 
 
-/** Stream designed to deserialize data from the google protobuf format.
-  * Each row is read as a separated message.
-  * These messages are delimited according to documentation
-  * https://github.com/protocolbuffers/protobuf/blob/master/src/google/protobuf/util/delimited_message_util.h
-  * Serializing in the protobuf format requires the 'format_schema' setting to be set, e.g.
-  * INSERT INTO table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
-  * where schema is the name of "schema.proto" file specifying protobuf schema.
+/** Interface of stream, that allows to read data by rows.
   */
 class ProtobufRowInputFormat : public IRowInputFormat
 {
 public:
-    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_);
+    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header, Params params, const FormatSchemaInfo & info);
     ~ProtobufRowInputFormat() override;
 
     String getName() const override { return "ProtobufRowInputFormat"; }

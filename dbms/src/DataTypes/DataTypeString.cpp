@@ -5,7 +5,6 @@
 #include <Columns/ColumnConst.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
@@ -46,7 +45,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+    const StringRef & s = static_cast<const ColumnString &>(column).getDataAt(row_num);
     writeVarUInt(s.size, ostr);
     writeString(s, ostr);
 }
@@ -54,7 +53,7 @@ void DataTypeString::serializeBinary(const IColumn & column, size_t row_num, Wri
 
 void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    ColumnString & column_string = assert_cast<ColumnString &>(column);
+    ColumnString & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
@@ -212,20 +211,20 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
 
 void DataTypeString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
 void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
 template <typename Reader>
 static inline void read(IColumn & column, Reader && reader)
 {
-    ColumnString & column_string = assert_cast<ColumnString &>(column);
+    ColumnString & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
     size_t old_chars_size = data.size();
@@ -259,7 +258,7 @@ void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr,
 
 void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeQuotedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -271,7 +270,7 @@ void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, 
 
 void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
+    writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 
@@ -283,13 +282,13 @@ void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, co
 
 void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
 void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeCSVString<>(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeCSVString<>(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -303,14 +302,14 @@ void DataTypeString::serializeProtobuf(const IColumn & column, size_t row_num, P
 {
     if (value_index)
         return;
-    value_index = static_cast<bool>(protobuf.writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num)));
+    value_index = static_cast<bool>(protobuf.writeString(static_cast<const ColumnString &>(column).getDataAt(row_num)));
 }
 
 
 void DataTypeString::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     row_added = false;
-    auto & column_string = assert_cast<ColumnString &>(column);
+    auto & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
     size_t old_size = offsets.size();

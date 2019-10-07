@@ -1,5 +1,4 @@
 SET join_use_nulls = 0;
-SET any_join_distinct_right_table_keys = 1;
 
 SELECT k, a, b
 FROM

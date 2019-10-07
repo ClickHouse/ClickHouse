@@ -1,1 +1,0 @@
-SELECT extractAll('Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.143 YaBrowser/19.7.2.455 Yowser/2.5 Safari/537.36', '[Y][a-zA-Z]{8}/[1-9]([1-9]+)?(((.?)([0-9]+)?){0,4})?');

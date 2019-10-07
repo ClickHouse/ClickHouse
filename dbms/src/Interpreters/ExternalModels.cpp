@@ -12,11 +12,11 @@ namespace ErrorCodes
 
 ExternalModels::ExternalModels(
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
-    Context & context_)
-        : ExternalLoader(context_.getConfigRef(),
+    Context & context)
+        : ExternalLoader(context.getConfigRef(),
                          "external model",
                          &Logger::get("ExternalModels")),
-          context(context_)
+          context(context)
 {
     addConfigRepository(std::move(config_repository), {"model", "name", "models_config"});
     enablePeriodicUpdates(true);

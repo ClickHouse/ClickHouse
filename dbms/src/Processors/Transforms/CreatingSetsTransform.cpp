@@ -21,15 +21,15 @@ namespace ErrorCodes
 
 
 CreatingSetsTransform::CreatingSetsTransform(
-    Block out_header_,
+    Block out_header,
     const SubqueriesForSets & subqueries_for_sets_,
-    const SizeLimits & network_transfer_limits_,
-    const Context & context_)
-    : IProcessor({}, {std::move(out_header_)})
+    const SizeLimits & network_transfer_limits,
+    const Context & context)
+    : IProcessor({}, {std::move(out_header)})
     , subqueries_for_sets(subqueries_for_sets_)
     , cur_subquery(subqueries_for_sets.begin())
-    , network_transfer_limits(network_transfer_limits_)
-    , context(context_)
+    , network_transfer_limits(network_transfer_limits)
+    , context(context)
 {
 }
 

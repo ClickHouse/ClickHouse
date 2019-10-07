@@ -73,7 +73,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
         && type_parser.parse(pos, type, expected))
     {
         auto name_type_pair = std::make_shared<ASTNameTypePair>();
-        tryGetIdentifierNameInto(name, name_type_pair->name);
+        getIdentifierName(name, name_type_pair->name);
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
         node = name_type_pair;
@@ -88,14 +88,6 @@ class ParserNameTypePairList : public IParserBase
 {
 protected:
     const char * getName() const { return "name and type pair list"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
-/** List of table names. */
-class ParserNameList : public IParserBase
-{
-protected:
-    const char * getName() const { return "name list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
@@ -197,7 +189,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
-    tryGetIdentifierNameInto(name, column_declaration->name);
+    getIdentifierName(name, column_declaration->name);
 
     if (type)
     {
@@ -252,17 +244,11 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserConstraintDeclaration : public IParserBase
-{
-protected:
-    const char * getName() const override { return "constraint declaration"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
-class ParserTablePropertyDeclaration : public IParserBase
+class ParserColumnAndIndexDeclaraion : public IParserBase
 {
 protected:
-    const char * getName() const override { return "table propery (column, index, constraint) declaration"; }
+    const char * getName() const override { return "column or index declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -274,17 +260,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserConstraintDeclarationList : public IParserBase
-{
-protected:
-    const char * getName() const override { return "constraint declaration list"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
-
-class ParserTablePropertiesDeclarationList : public IParserBase
+class ParserColumnsOrIndicesDeclarationList : public IParserBase
 {
-protected:
+    protected:
     const char * getName() const override { return "columns or indices declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -321,7 +300,7 @@ protected:
   * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
   * Or:
-  * CREATE[OR REPLACE]|ATTACH [[MATERIALIZED] VIEW] | [VIEW]] [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+  * CREATE [OR REPLACE]|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {
