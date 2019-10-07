@@ -185,7 +185,7 @@ set(SRCS
 # target
 add_library(hdfs3 ${SRCS} ${PROTO_SOURCES} ${PROTO_HEADERS})
 
-if (USE_INTERNAL_PROTOBUF_LIBRARY)
+if(USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(hdfs3 protoc)
 endif()
 

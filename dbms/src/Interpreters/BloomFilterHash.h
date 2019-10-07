@@ -1,11 +1,15 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/bit_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -47,9 +51,28 @@ struct BloomFilterHash
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
+        const IColumn * actual_col = column.get();
+        const IDataType * actual_type = data_type.get();
+
+        WhichDataType which(data_type);
+        if (which.isArray())
+        {
+            const ColumnArray * array_col = typeid_cast<const ColumnArray *>(column.get());
+
+            if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+            actual_col = array_col->getDataPtr().get();
+            actual_type = static_cast<const DataTypeArray *>(data_type.get())->getNestedType().get();
+
+            const auto & offsets = array_col->getOffsets();
+            size_t offset = (pos == 0) ? 0 : offsets[pos - 1];
+            limit = std::max(actual_col->size() - offset, limit);
+        }
+
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();
-        getAnyTypeHash<true>(&*data_type, &*column, index_column_vec, pos);
+        getAnyTypeHash<true>(actual_type, actual_col, index_column_vec, pos);
         return index_column;
     }
 
@@ -58,7 +81,7 @@ struct BloomFilterHash
     {
         WhichDataType which(data_type);
 
-        if      (which.isUInt8()) getNumberTypeHash<UInt8, is_first>(column, vec, pos);
+        if (which.isUInt8()) getNumberTypeHash<UInt8, is_first>(column, vec, pos);
         else if (which.isUInt16()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);
         else if (which.isUInt32()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isUInt64()) getNumberTypeHash<UInt64, is_first>(column, vec, pos);

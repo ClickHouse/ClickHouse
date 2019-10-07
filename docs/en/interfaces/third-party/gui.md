@@ -48,6 +48,19 @@ Features:
 - Table preview with filtering and sorting.
 - Read-only queries execution.
 
+### Redash
+
+[Redash](https://github.com/getredash/redash) is an insights platform.
+
+Features:
+
+- Connect with multiple sources (including ClickHouse).
+- Autocompletion query editor.
+- Schema/Database explorer.
+- Data plotting.
+- Create snippets for elements you frequently use.
+- Use query results as data sources to join different databases.
+
 ### DBeaver
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.

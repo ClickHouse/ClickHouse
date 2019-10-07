@@ -7,6 +7,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int POSITION_OUT_OF_BOUND;
 }
 

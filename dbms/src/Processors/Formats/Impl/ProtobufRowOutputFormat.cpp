@@ -54,7 +54,8 @@ void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
            FormatFactory::WriteCallback callback,
            const FormatSettings &)
         {
-            return std::make_shared<ProtobufRowOutputFormat>(buf, header, callback, FormatSchemaInfo(context, "Protobuf"));
+            return std::make_shared<ProtobufRowOutputFormat>(buf, header, callback,
+                                                             FormatSchemaInfo(context, context.getSettingsRef().format_schema, "Protobuf", true));
         });
 }
 
