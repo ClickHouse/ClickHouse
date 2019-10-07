@@ -12,4 +12,3 @@
 #cmakedefine01 USE_POCO_REDIS
 #cmakedefine01 USE_INTERNAL_LLVM_LIBRARY
 #cmakedefine01 USE_SSL
-

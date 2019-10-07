@@ -110,6 +110,7 @@ nav:
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
   - 'SYSTEM': 'query_language/system.md'
+  - 'SYSTEM': 'query_language/show.md'
   - 'Other Kinds of Queries': 'query_language/misc.md'
   - 'Functions':
     - 'Introduction': 'query_language/functions/index.md'

@@ -13,7 +13,7 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -315,7 +315,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 }
 
                 const auto & dict_name = function->arguments->children[0]->as<ASTLiteral &>().value.safeGet<String>();
-                const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name);
                 const auto & attr_name = function->arguments->children[1]->as<ASTLiteral &>().value.safeGet<String>();
 
                 if (!dict_ptr->isInjective(attr_name))

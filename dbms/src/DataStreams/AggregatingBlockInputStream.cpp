@@ -74,9 +74,4 @@ Block AggregatingBlockInputStream::readImpl()
     return impl->read();
 }
 
-
-AggregatingBlockInputStream::TemporaryFileStream::TemporaryFileStream(const std::string & path)
-    : file_in(path), compressed_in(file_in),
-    block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
-
 }

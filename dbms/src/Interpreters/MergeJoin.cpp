@@ -330,7 +330,7 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     , is_all(table_join->strictness() == ASTTableJoin::Strictness::All)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
-    , skip_not_intersected(table_join->enablePartialMergeJoinOptimisations())
+    , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
         throw Exception("Partial merge supported for LEFT and INNER JOINs only", ErrorCodes::NOT_IMPLEMENTED);
