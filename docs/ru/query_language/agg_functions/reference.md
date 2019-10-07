@@ -556,6 +556,7 @@ uniq(x[, ...])
 **Смотрите также**
 
 - [uniqCombined](#agg_function-uniqcombined)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
@@ -583,13 +584,16 @@ uniqCombined(HLL_precision)(x[, ...])
 
 Функция:
 
-- Вычисляет хэш для всех параметров агрегации, а затем использует его в вычислениях.
+- Вычисляет хэш (64-битный для `String` и 32-битный для всех остальных типов) для всех параметров агрегации, а затем использует его в вычислениях.
 
 - Используется комбинация трёх алгоритмов: массив, хэш-таблица и HyperLogLog с таблицей коррекции погрешности.
 
     Для небольшого количества различных значений используется массив. Если размер набора больше, используется хэш-таблица. При дальнейшем увеличении количества значений, используется структура HyperLogLog, имеющая фиксированный размер в памяти.
 
 - Результат детерминирован (не зависит от порядка выполнения запроса).
+
+!! note "Note"
+    Так как используется 32-битный хэш для не-`String` типов, результат будет иметь очень очень большую ошибку для количества элементов > `UINT_MAX`, таким образом в этом случае нужно использовать [uniqCombined64](#agg_function-uniqcombined64)
 
 По сравнению с функцией [uniq](#agg_function-uniq), `uniqCombined`:
 
@@ -600,8 +604,13 @@ uniqCombined(HLL_precision)(x[, ...])
 **Смотрите также**
 
 - [uniq](#agg_function-uniq)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
+
+## uniqCombined64 {#agg_function-uniqcombined64}
+
+Использует 64-битный хэш для всех типов, в отличие от [uniqCombined](#agg_function-uniqcombined).
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 

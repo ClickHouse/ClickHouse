@@ -546,6 +546,7 @@ We recommend using this function in almost all scenarios.
 **See Also**
 
 - [uniqCombined](#agg_function-uniqcombined)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
@@ -573,12 +574,15 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 Function:
 
-- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
 - Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
 
     For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
 - Provides the result deterministically (it doesn't depend on the query processing order).
+
+!! note "Note"
+    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities > `UINT_MAX`, hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
@@ -589,9 +593,13 @@ Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 **See Also**
 
 - [uniq](#agg_function-uniq)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
+## uniqCombined64 {#agg_function-uniqcombined64}
+
+Same as [uniqCombined](#agg_function-uniqcombined), but uses 64-bit hash for all data types.
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
