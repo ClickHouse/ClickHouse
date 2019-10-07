@@ -4,6 +4,7 @@
 #include <cassert>
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
