@@ -22,12 +22,12 @@ namespace ErrorCodes
 ///
 inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
-    if (isDecimal(left_type))
+    if (isColumnedAsDecimal(left_type))
     {
-        if (isDecimal(right_type) || isNotDecimalButComparableToDecimal(right_type))
+        if (isColumnedAsDecimal(right_type) || isNotDecimalButComparableToDecimal(right_type))
             return true;
     }
-    else if (isNotDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
+    else if (isNotDecimalButComparableToDecimal(left_type) && isColumnedAsDecimal(right_type))
         return true;
     return false;
 }
