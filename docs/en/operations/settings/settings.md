@@ -130,30 +130,30 @@ Possible values:
 
 Default value: 0.
 
-## input_format_allow_errors_num
+## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_ratio`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_ratio`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_num`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_num` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
-## input_format_allow_errors_ratio
+## input_format_allow_errors_ratio {#settings-input_format_allow_errors_ratio}
 
 Sets the maximum percentage of errors allowed when reading from text formats (CSV, TSV, etc.).
 The percentage of errors is set as a floating-point number between 0 and 1.
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_num`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_num`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
 
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
