@@ -65,20 +65,4 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "IS_OBJECT_ID";
 }
 
-//ASTPtr ASTDictionaryAttributesDeclarations::clone() const
-//{
-//    auto res = std::make_shared<ASTDictionaryAttributesDeclarations>();
-//
-//    if (attributes)
-//        res->set(res->attributes, attributes->clone());
-//
-//    return res;
-//}
-//
-//void ASTDictionaryAttributesDeclarations::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
-//{
-//    if (attributes)
-//        attributes->IAST::formatImpl(s, state, frame);
-//}
-
 }

@@ -31,17 +31,4 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-
-//class ASTDictionaryAttributesDeclarations : public IAST
-//{
-//public:
-//    ASTExpressionList * attributes = nullptr;
-//
-//    String getID(char) const override { return "Dictionary attributes definition"; }
-//
-//    ASTPtr clone() const override;
-//
-//    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-//};
-
 }

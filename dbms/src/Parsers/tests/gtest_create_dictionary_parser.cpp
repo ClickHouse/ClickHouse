@@ -35,7 +35,7 @@ TEST(ParserCreateDictionary, SimpleDictionary)
                    " LIFETIME(MIN 1 MAX 10)"
                    " RANGE(MIN second_column MAX third_column)";
 
-        ParserCreateDictionaryQuery parser;
+    ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     EXPECT_EQ(create->table, "dict1");
@@ -117,4 +117,52 @@ TEST(ParserCreateDictionary, SimpleDictionary)
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+}
+
+
+TEST(ParserCreateDictionary, AttributesWithMultipleProperties)
+{
+    String input = " CREATE DICTIONARY dict2"
+                   " ("
+                   "    key_column UInt64 IS_OBJECT_ID,"
+                   "    second_column UInt8 DEFAULT 1 HIERARCHICAL INJECTIVE,"
+                   "    third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77"
+                   " )"
+                   " PRIMARY KEY key_column"
+                   " SOURCE(CLICKHOUSE(HOST 'localhost'))";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+    EXPECT_EQ(create->table, "dict2");
+    EXPECT_EQ(create->database, "");
+
+    /// test attributes
+    EXPECT_NE(create->dictionary_attributes_list, nullptr);
+
+    auto attributes_children = create->dictionary_attributes_list->children;
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value, nullptr);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->injective, true);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, true);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+
 }

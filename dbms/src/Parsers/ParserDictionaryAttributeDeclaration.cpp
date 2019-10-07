@@ -77,6 +77,12 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
         attribute_declaration->children.push_back(std::move(default_value));
     }
 
+    if (expression)
+    {
+        attribute_declaration->expression = expression;
+        attribute_declaration->children.push_back(std::move(expression));
+    }
+
     if (hierarchical)
         attribute_declaration->hierarchical = true;
 
