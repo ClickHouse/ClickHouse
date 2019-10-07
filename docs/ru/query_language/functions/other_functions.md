@@ -705,34 +705,101 @@ SELECT replicate(1, ['a', 'b', 'c']);
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable {#function-filesystemavailable}
+## filesystemAvailable {#filesystemavailable}
 
-Возвращает объем оставшегося места в файловой системе, в которой расположены файлы баз данных. Смотрите описание конфигурационного параметра сервера  [path](../../operations/server_settings/settings.md#server_settings-path).
+Возвращает объем оставшегося места на файловой системе, где расположены файлы баз данных. Он всегда меньше общего свободного места ([filesystemFree](#filesystemfree)), потому что некоторое пространство зарезервировано для пользователя `root`.
+
+**Синтаксис**
 
 ```sql
-filesystemAvailable()
+filesystemAvailable();
 ```
 
 **Возвращаемое значение**
 
-- Объем свободного места.
+- Объем оставшего места для записи данных в байтах.
 
-Тип — [UInt64](../../data_types/int_uint.md).
+Тип: [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
+Запрос:
+
 ```sql
-SELECT filesystemAvailable() AS "Free space", toTypeName(filesystemAvailable()) AS "Type"
+SELECT filesystemAvailable() AS "Available space", toTypeName(filesystemAvailable()) AS "Type";
 ```
+
+Ответ:
+
+```text
+┌─Available space─┬─Type───┐
+│     34966368256 │ UInt64 │
+└─────────────────┴────────┘
+```
+
+## filesystemFree {#filesystemfree}
+
+Возвращает общий объем свободного места на файловой системе, в которой находятся файлы баз данных. Состоит из пространства, зарезервированного для пользователя `root`, и пространства, которое доступно для данных.
+
+**Синтаксис**
+
+```sql
+filesystemFree();
+```
+
+**Возвращаемое значение**
+
+- Объем свободного места в байтах.
+
+Тип: [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT filesystemFree() AS "Free space", toTypeName(filesystemFree()) AS "Type";
+```
+
+Ответ:
+
 ```text
 ┌──Free space─┬─Type───┐
-│ 18152624128 │ UInt64 │
+│ 36732297216 │ UInt64 │
 └─────────────┴────────┘
 ```
 
-## filesystemCapacity
+## filesystemCapacity {#filesystemcapacity}
 
-Возвращает данные о ёмкости диска.
+Возвращает информацию о емкости файловой системы в байтах. Эта информация оценивается с использованием настроенного пути. См. описание конфигурационного параметра сервера [path](../../operations/server_settings/settings.md#server_settings-path).
+
+**Синтаксис**
+
+```sql
+filesystemcapacity();
+```
+
+**Возвращаемое значение**
+
+- Информация о емкости файловой системы в байтах.
+
+Тип: [UInt64](../../data_types/int_uint.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT filesystemCapacity() AS "Capacity", toTypeName(filesystemCapacity()) AS "Type";
+```
+
+Ответ:
+
+```text
+┌────Capacity─┬─Type───┐
+│ 42223218688 │ UInt64 │
+└─────────────┴────────┘
+```
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
