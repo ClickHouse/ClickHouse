@@ -70,6 +70,10 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
             column_in_format[col_idx] = true;
         }
     }
+
+    for (size_t i = 0; i < header_.columns(); ++i)
+        if (!column_in_format[i])
+            always_default_columns.push_back(i);
 }
 
 void TemplateRowInputFormat::readPrefix()
@@ -178,9 +182,8 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     skipSpaces();
     assertString(row_format.delimiters.back(), buf);
 
-    for (size_t i = 0; i < columns.size(); ++i)
-        if (!extra.read_columns[i])
-            data_types[i]->insertDefaultInto(*columns[i]);
+    for (const auto & idx : always_default_columns)
+        data_types[idx]->insertDefaultInto(*columns[idx]);
 
     return true;
 }

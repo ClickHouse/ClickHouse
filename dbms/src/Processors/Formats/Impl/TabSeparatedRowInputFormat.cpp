@@ -176,7 +176,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
     updateDiagnosticInfo();
 
-    ext.read_columns.assign(column_indexes_for_input_fields.size(), true);
+    ext.read_columns.assign(read_columns.size(), true);
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
         const auto & column_index = column_indexes_for_input_fields[file_column];
@@ -214,7 +214,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
 bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
 {
-    const bool at_delimiter = !in.eof() && *in.position() == '\t';
+    const bool at_delimiter = !is_last_file_column && !in.eof() && *in.position() == '\t';
     const bool at_last_column_line_end = is_last_file_column && (in.eof() || *in.position() == '\n');
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
@@ -222,8 +222,8 @@ bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr &
         return false;
     }
     else if (format_settings.null_as_default && !type->isNullable())
-        return DataTypeNullable::deserializeTextCSV(column, in, format_settings, type);
-    type->deserializeAsTextCSV(column, in, format_settings);
+        return DataTypeNullable::deserializeTextEscaped(column, in, format_settings, type);
+    type->deserializeAsTextEscaped(column, in, format_settings);
     return true;
 }
 
