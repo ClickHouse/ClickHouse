@@ -553,24 +553,13 @@ bool KeyCondition::tryPrepareSetIndex(
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
-        for (size_t i = 0; i < tuple_elements.size(); ++i)
-        {
-            if (!get_key_tuple_position_mapping(tuple_elements[i], i))
-            {
-                return false;
-            }
-        }
-//        left_args_count = tuple_elements.size();
-//        for (size_t i = 0; i < left_args_count; ++i)
-//            get_key_tuple_position_mapping(tuple_elements[i], i);
-//>>>>>>> master
+        left_args_count = tuple_elements.size();
+        for (size_t i = 0; i < left_args_count; ++i)
+            get_key_tuple_position_mapping(tuple_elements[i], i);
     }
     else
     {
-        if (!get_key_tuple_position_mapping(left_arg, 0))
-        {
-            return false;
-        }
+        get_key_tuple_position_mapping(left_arg, 0);
     }
 
     if (indexes_mapping.empty())

@@ -51,7 +51,7 @@ namespace DB
     bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
     bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
-    RangeSet::RangeSet(const std::vector<DB::Range> & data): data(data)
+    RangeSet::RangeSet(const std::vector<DB::Range> & data_): data(data_)
     {
         normalize();
     }
