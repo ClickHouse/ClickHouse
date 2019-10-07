@@ -139,7 +139,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     if (format_settings.null_as_default && !type->isNullable())
-                        read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+                        read_columns[index] = DataTypeNullable::deserializeTextEscaped(*columns[index], in, format_settings, type);
                     else
                         header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], in, format_settings);
                 }
@@ -181,7 +181,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
     /// Fill in the not met columns with default values.
     for (size_t i = 0; i < num_columns; ++i)
-        if (!read_columns[i])
+        if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set

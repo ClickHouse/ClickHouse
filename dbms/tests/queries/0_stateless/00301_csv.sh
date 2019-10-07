@@ -17,17 +17,6 @@ Hello "world", 789 ,2016-01-03
 $CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY d";
 $CLICKHOUSE_CLIENT --query="DROP TABLE csv";
 
-
-$CLICKHOUSE_CLIENT --query="CREATE TABLE csv (i Int8, s String DEFAULT 'Hello', n UInt64 DEFAULT 42, d Date DEFAULT '2019-06-19') ENGINE = Memory";
-echo '\N, 1, \N, "2019-07-22"
-1, world, 3, "2019-07-23"
-2, \N, 123, \N
-3, \N, \N, \N' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --query="INSERT INTO csv FORMAT CSV";
-
-$CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY i";
-$CLICKHOUSE_CLIENT --query="DROP TABLE csv";
-
-
 $CLICKHOUSE_CLIENT --query="CREATE TABLE csv (t DateTime('Europe/Moscow'), s String) ENGINE = Memory";
 
 echo '"2016-01-01 01:02:03","1"

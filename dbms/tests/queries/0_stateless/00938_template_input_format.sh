@@ -50,3 +50,4 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM template2 ORDER BY n FORMAT CSV";
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE template1";
 $CLICKHOUSE_CLIENT --query="DROP TABLE template2";
+rm $CURDIR/00938_template_input_format_resultset.tmp $CURDIR/00938_template_input_format_row.tmp

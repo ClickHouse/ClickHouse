@@ -20,3 +20,4 @@ format_template_row = '$CURDIR/00937_template_output_format_row.tmp', \
 format_template_rows_between_delimiter = ';\n'";
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE template";
+rm $CURDIR/00937_template_output_format_resultset.tmp $CURDIR/00937_template_output_format_row.tmp

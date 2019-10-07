@@ -209,7 +209,7 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
     /// it doesn't have to check it.
     bool have_default_columns = have_always_default_columns;
 
-    ext.read_columns.assign(column_indexes_for_input_fields.size(), true);
+    ext.read_columns.assign(read_columns.size(), true);
     const auto delimiter = format_settings.csv.delimiter;
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
@@ -372,6 +372,8 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
     const bool at_last_column_line_end = is_last_file_column
                                          && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
 
+    /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
+    /// only one empty or NULL column will be expected
     if (format_settings.csv.empty_as_default
         && (at_delimiter || at_last_column_line_end))
     {

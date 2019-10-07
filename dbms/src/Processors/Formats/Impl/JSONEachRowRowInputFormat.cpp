@@ -242,7 +242,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     auto & header = getPort().getHeader();
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
-        if (!read_columns[i])
+        if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set

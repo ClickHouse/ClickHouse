@@ -57,6 +57,7 @@ private:
 
     size_t format_data_idx;
     bool end_of_stream = false;
+    std::vector<size_t> always_default_columns;
     char default_csv_delimiter;
 };
 
