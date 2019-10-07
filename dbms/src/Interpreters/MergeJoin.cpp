@@ -380,6 +380,9 @@ void flushStreamToFiles(const String & tmp_path, const Block & header, IBlockInp
 {
     while (Block block = stream.read())
     {
+        if (!block.rows())
+            continue;
+
         callback(block);
         auto tmp_file = flushBlockToFile(tmp_path, header, block);
         files.emplace_back(std::move(tmp_file));
@@ -457,6 +460,9 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     while (Block block = sorted_input.read())
     {
+        if (!block.rows())
+            continue;
+
         if (skip_not_intersected)
             min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
         countBlockSize(block);
