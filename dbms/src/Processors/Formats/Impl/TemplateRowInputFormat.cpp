@@ -24,7 +24,8 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
                                                ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_)
     : RowInputFormatWithDiagnosticInfo(header_, buf, params_), buf(in_), data_types(header_.getDataTypes()),
       settings(settings_), ignore_spaces(ignore_spaces_),
-      format(std::move(format_)), row_format(std::move(row_format_))
+      format(std::move(format_)), row_format(std::move(row_format_)),
+      default_csv_delimiter(settings.csv.delimiter)
 {
     /// Validate format string for result set
     bool has_data = false;
@@ -167,7 +168,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
         if (row_format.format_idx_to_column_idx[i])
         {
             size_t col_idx = *row_format.format_idx_to_column_idx[i];
-            extra.read_columns[col_idx] = deserializeField(data_types[col_idx], *columns[col_idx], row_format.formats[i]);
+            extra.read_columns[col_idx] = deserializeField(data_types[col_idx], *columns[col_idx], i);
         }
         else
             skipField(row_format.formats[i]);
@@ -184,8 +185,9 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     return true;
 }
 
-bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn & column, ColumnFormat col_format)
+bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
+    ColumnFormat col_format = row_format.formats[file_column];
     bool read = true;
     bool parse_as_nullable = settings.null_as_default && !type->isNullable();
     try
@@ -205,6 +207,9 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn 
                     type->deserializeAsTextQuoted(column, buf, settings);
                 break;
             case ColumnFormat::Csv:
+                /// Will read unquoted string until settings.csv.delimiter
+                settings.csv.delimiter = row_format.delimiters[file_column + 1].empty() ? default_csv_delimiter :
+                                                                                          row_format.delimiters[file_column + 1].front();
                 if (parse_as_nullable)
                     read = DataTypeNullable::deserializeTextCSV(column, buf, settings, type);
                 else
@@ -406,7 +411,7 @@ void TemplateRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColu
 {
     prev_pos = buf.position();
     if (row_format.format_idx_to_column_idx[file_column])
-        deserializeField(type, column, row_format.formats[file_column]);
+        deserializeField(type, column, file_column);
     else
         skipField(row_format.formats[file_column]);
     curr_pos = buf.position();
