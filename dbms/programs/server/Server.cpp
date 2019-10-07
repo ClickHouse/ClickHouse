@@ -13,7 +13,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <common/phdr_cache.h>
 #include <common/config_common.h>
 #include <common/ErrorHandlers.h>

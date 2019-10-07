@@ -44,7 +44,7 @@ public:
 
     /// A logs queue used by TCPHandler to pass logs to a client
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
-                                            LogsLevel client_logs_level);
+                                            Logger::Level client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
@@ -107,4 +107,3 @@ private:
 };
 
 }
-

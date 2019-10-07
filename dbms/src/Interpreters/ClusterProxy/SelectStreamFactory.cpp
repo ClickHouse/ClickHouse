@@ -9,7 +9,7 @@
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace ProfileEvents

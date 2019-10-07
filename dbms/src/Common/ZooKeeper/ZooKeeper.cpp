@@ -7,7 +7,7 @@
 #include <functional>
 #include <boost/algorithm/string.hpp>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/thread_local_rng.h>

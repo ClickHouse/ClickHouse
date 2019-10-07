@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 #include <typeinfo>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <common/ErrorHandlers.h>
 #include <common/Pipe.h>
 #include <Common/StackTrace.h>
@@ -54,25 +54,96 @@
 #include <ucontext.h>
 
 
-Pipe signal_pipe;
+using ThreadNumber = decltype(getThreadNumber());
+using signal_function = void(int, siginfo_t*, void*);
 
+constexpr size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(ThreadNumber);
+
+/** The thread that read info about signal or std::terminate from pipe.
+  * On HUP / USR1, close log files (for new files to be opened later).
+  * On information about std::terminate, write it to log.
+  * On other signals, write info to log.
+  */
+class SignalListener : public Poco::Runnable, WithLogger<BaseDaemon>
+{
+public:
+    enum Signals : int
+    {
+        StdTerminate = -1,
+        StopThread = -2
+    };
+
+    explicit SignalListener(BaseDaemon & daemon_)
+        : daemon(daemon_)
+    {
+    }
+
+    void run();
+
+private:
+    BaseDaemon & daemon;
+
+private:
+    void onTerminate(const std::string & message, ThreadNumber thread_num) const
+    {
+        LOG(FATAL) << "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message;
+    }
+
+    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
+    {
+        auto & log = LOG(FATAL) << "########################################" << std::endl
+                                << "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
+                                << "Received signal " << strsignal(sig) << " (" << sig << ")"
+                                << "." << std::endl
+                                << signalToErrorMessage(sig, info, context);
+
+        if (stack_trace.getSize())
+        {
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+
+            std::stringstream bare_stacktrace;
+            bare_stacktrace << "Stack trace:";
+            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+
+            log << bare_stacktrace.rdbuf();
+        }
+
+        /// Write symbolized stack trace line by line for better grep-ability.
+        stack_trace.toStringEveryLine([&](const std::string & s) { log << s; });
+    }
+};
+
+
+namespace
+{
+
+Pipe signal_pipe;
+sigjmp_buf jmpbuf;
+
+enum class InstructionFail
+{
+    NONE = 0,
+    SSE3 = 1,
+    SSSE3 = 2,
+    SSE4_1 = 3,
+    SSE4_2 = 4,
+    AVX = 5,
+    AVX2 = 6,
+    AVX512 = 7
+};
 
 /** Reset signal handler to the default and send signal to itself.
   * It's called from user signal handler to write core dump.
   */
-static void call_default_signal_handler(int sig)
+void call_default_signal_handler(int sig)
 {
     signal(sig, SIG_DFL);
     raise(sig);
 }
 
-
-using ThreadNumber = decltype(getThreadNumber());
-static const size_t buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t) + sizeof(StackTrace) + sizeof(ThreadNumber);
-
-using signal_function = void(int, siginfo_t*, void*);
-
-static void writeSignalIDtoSignalPipe(int sig)
+void writeSignalIDtoSignalPipe(int sig)
 {
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
@@ -80,21 +151,19 @@ static void writeSignalIDtoSignalPipe(int sig)
     out.next();
 }
 
-/** Signal handler for HUP / USR1 */
-static void closeLogsSignalHandler(int sig, siginfo_t * info, void * context)
+/// Signal handler for HUP / USR1
+void closeLogsSignalHandler(int sig, siginfo_t * info, void * context)
 {
     writeSignalIDtoSignalPipe(sig);
 }
 
-static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * context)
+void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * context)
 {
     writeSignalIDtoSignalPipe(sig);
 }
 
-
-/** Handler for "fault" signals. Send data about fault to separate thread to write into log.
-  */
-static void faultSignalHandler(int sig, siginfo_t * info, void * context)
+/// Handler for "fault" signals. Send data about fault to separate thread to write into log.
+void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
@@ -118,133 +187,16 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     }
 }
 
-
-/** The thread that read info about signal or std::terminate from pipe.
-  * On HUP / USR1, close log files (for new files to be opened later).
-  * On information about std::terminate, write it to log.
-  * On other signals, write info to log.
-  */
-class SignalListener : public Poco::Runnable
-{
-public:
-    enum Signals : int
-    {
-        StdTerminate = -1,
-        StopThread = -2
-    };
-
-    explicit SignalListener(BaseDaemon & daemon_)
-        : log(&Logger::get("BaseDaemon"))
-        , daemon(daemon_)
-    {
-    }
-
-    void run()
-    {
-        char buf[buf_size];
-        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
-
-        while (!in.eof())
-        {
-            int sig = 0;
-            DB::readBinary(sig, in);
-
-            if (sig == Signals::StopThread)
-            {
-                LOG_INFO(log, "Stop SignalListener thread");
-                break;
-            }
-            else if (sig == SIGHUP || sig == SIGUSR1)
-            {
-                LOG_DEBUG(log, "Received signal to close logs.");
-                BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
-                LOG_INFO(log, "Opened new log file after received signal.");
-            }
-            else if (sig == Signals::StdTerminate)
-            {
-                ThreadNumber thread_num;
-                std::string message;
-
-                DB::readBinary(thread_num, in);
-                DB::readBinary(message, in);
-
-                onTerminate(message, thread_num);
-            }
-            else if (sig == SIGINT ||
-                sig == SIGQUIT ||
-                sig == SIGTERM)
-            {
-                daemon.handleSignal(sig);
-            }
-            else
-            {
-                siginfo_t info;
-                ucontext_t context;
-                StackTrace stack_trace(NoCapture{});
-                ThreadNumber thread_num;
-
-                DB::readPODBinary(info, in);
-                DB::readPODBinary(context, in);
-                DB::readPODBinary(stack_trace, in);
-                DB::readBinary(thread_num, in);
-
-                /// This allows to receive more signals if failure happens inside onFault function.
-                /// Example: segfault while symbolizing stack trace.
-                std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
-            }
-        }
-    }
-
-private:
-    Logger * log;
-    BaseDaemon & daemon;
-
-private:
-    void onTerminate(const std::string & message, ThreadNumber thread_num) const
-    {
-        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
-    }
-
-    void onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace, ThreadNumber thread_num) const
-    {
-        LOG_FATAL(log, "########################################");
-        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
-            << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
-
-        LOG_FATAL(log, signalToErrorMessage(sig, info, context));
-
-        if (stack_trace.getSize())
-        {
-            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
-
-            std::stringstream bare_stacktrace;
-            bare_stacktrace << "Stack trace:";
-            for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
-
-            LOG_FATAL(log, bare_stacktrace.rdbuf());
-        }
-
-        /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
-    }
-};
-
-
 /** To use with std::set_terminate.
   * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
   *  and send it to pipe. Other thread will read this info from pipe and asynchronously write it to log.
   * Look at libstdc++-v3/libsupc++/vterminate.cc for example.
   */
-static void terminate_handler()
+[[noreturn]] void terminate_handler()
 {
     static thread_local bool terminating = false;
     if (terminating)
-    {
         abort();
-        return; /// Just for convenience.
-    }
 
     terminating = true;
 
@@ -271,8 +223,7 @@ static void terminate_handler()
     abort();
 }
 
-
-static std::string createDirectory(const std::string & file)
+String createDirectory(const std::string & file)
 {
     auto path = Poco::Path(file).makeParent();
     if (path.toString().empty())
@@ -281,69 +232,7 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
-
-static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
-{
-    try
-    {
-        Poco::File(path).createDirectories();
-        return true;
-    }
-    catch (...)
-    {
-        LOG_WARNING(logger, __PRETTY_FUNCTION__ << ": when creating " << path << ", " << DB::getCurrentExceptionMessage(true));
-    }
-    return false;
-}
-
-
-void BaseDaemon::reloadConfiguration()
-{
-    /** If the program is not run in daemon mode and 'config-file' is not specified,
-      *  then we use config from 'config.xml' file in current directory,
-      *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
-      *  instead of using files specified in config.xml.
-      * (It's convenient to log in console when you start server without any command line parameters.)
-      */
-    config_path = config().getString("config-file", "config.xml");
-    DB::ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
-    loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
-
-    if (last_configuration != nullptr)
-        config().removeConfiguration(last_configuration);
-    last_configuration = loaded_config.configuration.duplicate();
-    config().add(last_configuration, PRIO_DEFAULT, false);
-}
-
-
-BaseDaemon::BaseDaemon()
-{
-    checkRequiredInstructions();
-}
-
-
-BaseDaemon::~BaseDaemon()
-{
-    writeSignalIDtoSignalPipe(SignalListener::StopThread);
-    signal_listener_thread.join();
-    signal_pipe.close();
-}
-
-
-enum class InstructionFail
-{
-    NONE = 0,
-    SSE3 = 1,
-    SSSE3 = 2,
-    SSE4_1 = 3,
-    SSE4_2 = 4,
-    AVX = 5,
-    AVX2 = 6,
-    AVX512 = 7
-};
-
-static std::string instructionFailToString(InstructionFail fail)
+String instructionFailToString(InstructionFail fail)
 {
     switch(fail)
     {
@@ -363,21 +252,19 @@ static std::string instructionFailToString(InstructionFail fail)
             return "AVX2";
         case InstructionFail::AVX512:
             return "AVX512";
+        default:
+            __builtin_unreachable();
     }
-    __builtin_unreachable();
 }
 
-
-static sigjmp_buf jmpbuf;
-
-static void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
+void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
 {
     siglongjmp(jmpbuf, 1);
 }
 
 /// Check if necessary sse extensions are available by trying to execute some sse instructions.
 /// If instruction is unavailable, SIGILL will be sent by kernel.
-static void checkRequiredInstructions(volatile InstructionFail & fail)
+void checkRequiredInstructions(volatile InstructionFail & fail)
 {
 #if __SSE3__
     fail = InstructionFail::SSE3;
@@ -416,6 +303,131 @@ static void checkRequiredInstructions(volatile InstructionFail & fail)
 #endif
 
     fail = InstructionFail::NONE;
+}
+
+/// In debug version on Linux, increase oom score so that clickhouse is killed
+/// first, instead of some service. Use a carefully chosen random score of 555:
+/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+/// whatever errors that occur, because it's just a debugging aid and we don't
+/// care if it breaks.
+#if defined(OS_LINUX) && !defined(NDEBUG)
+void debugIncreaseOOMScore()
+{
+    const std::string new_score = "555";
+    try
+    {
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(new_score.c_str(), new_score.size());
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_ROOT(WARN) << "Failed to adjust OOM score: '" << e.displayText() << "'.";
+        return;
+    }
+    LOG_ROOT(INFO) << "Set OOM score adjustment to " << new_score;
+}
+#else
+void debugIncreaseOOMScore() {}
+#endif
+
+bool isPidRunning(pid_t pid)
+{
+    if (getpgid(pid) >= 0)
+        return 1;
+    return 0;
+}
+
+}  // namespace
+
+
+void SignalListener::run()
+{
+    char buf[buf_size];
+    DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
+
+    while (!in.eof())
+    {
+        int sig = 0;
+        DB::readBinary(sig, in);
+
+        if (sig == Signals::StopThread)
+        {
+            LOG(INFO) << "Stop SignalListener thread";
+            break;
+        }
+        else if (sig == SIGHUP || sig == SIGUSR1)
+        {
+            LOG(DEBUG) << "Received signal to close logs.";
+            BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
+            LOG(INFO) << "Opened new log file after received signal.";
+        }
+        else if (sig == Signals::StdTerminate)
+        {
+            ThreadNumber thread_num;
+            std::string message;
+
+            DB::readBinary(thread_num, in);
+            DB::readBinary(message, in);
+
+            onTerminate(message, thread_num);
+        }
+        else if (sig == SIGINT ||
+            sig == SIGQUIT ||
+            sig == SIGTERM)
+        {
+            daemon.handleSignal(sig);
+        }
+        else
+        {
+            siginfo_t info;
+            ucontext_t context;
+            StackTrace stack_trace(NoCapture{});
+            ThreadNumber thread_num;
+
+            DB::readPODBinary(info, in);
+            DB::readPODBinary(context, in);
+            DB::readPODBinary(stack_trace, in);
+            DB::readBinary(thread_num, in);
+
+            /// This allows to receive more signals if failure happens inside onFault function.
+            /// Example: segfault while symbolizing stack trace.
+            std::thread([=] { onFault(sig, info, context, stack_trace, thread_num); }).detach();
+        }
+    }
+}
+
+
+BaseDaemon::BaseDaemon()
+{
+    checkRequiredInstructions();
+}
+
+
+BaseDaemon::~BaseDaemon()
+{
+    writeSignalIDtoSignalPipe(SignalListener::StopThread);
+    signal_listener_thread.join();
+    signal_pipe.close();
+}
+
+
+void BaseDaemon::reloadConfiguration()
+{
+    /** If the program is not run in daemon mode and 'config-file' is not specified,
+      *  then we use config from 'config.xml' file in current directory,
+      *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
+      *  instead of using files specified in config.xml.
+      * (It's convenient to log in console when you start server without any command line parameters.)
+      */
+    config_path = config().getString("config-file", "config.xml");
+    DB::ConfigProcessor config_processor(config_path, false, true);
+    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+
+    if (last_configuration != nullptr)
+        config().removeConfiguration(last_configuration);
+    last_configuration = loaded_config.configuration.duplicate();
+    config().add(last_configuration, PRIO_DEFAULT, false);
 }
 
 
@@ -459,6 +471,7 @@ void BaseDaemon::terminate()
         throw Poco::SystemException("cannot terminate process");
 }
 
+
 void BaseDaemon::kill()
 {
     pid.clear();
@@ -466,21 +479,25 @@ void BaseDaemon::kill()
         throw Poco::SystemException("cannot kill process");
 }
 
+
 void BaseDaemon::sleep(double seconds)
 {
     wakeup_event.reset();
     wakeup_event.tryWait(seconds * 1000);
 }
 
+
 void BaseDaemon::wakeup()
 {
     wakeup_event.set();
 }
 
-std::string BaseDaemon::getDefaultCorePath() const
+
+String BaseDaemon::getDefaultCorePath() const
 {
     return "/opt/cores/";
 }
+
 
 void BaseDaemon::closeFDs()
 {
@@ -515,34 +532,6 @@ void BaseDaemon::closeFDs()
     }
 }
 
-namespace
-{
-/// In debug version on Linux, increase oom score so that clickhouse is killed
-/// first, instead of some service. Use a carefully chosen random score of 555:
-/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
-/// whatever errors that occur, because it's just a debugging aid and we don't
-/// care if it breaks.
-#if defined(__linux__) && !defined(NDEBUG)
-void debugIncreaseOOMScore()
-{
-    const std::string new_score = "555";
-    try
-    {
-        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
-        buf.write(new_score.c_str(), new_score.size());
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" +
-                    e.displayText() + "'.");
-        return;
-    }
-    LOG_INFO(&Logger::root(), "Set OOM score adjustment to " + new_score);
-}
-#else
-void debugIncreaseOOMScore() {}
-#endif
-}
 
 void BaseDaemon::initialize(Application & self)
 {
@@ -661,13 +650,28 @@ void BaseDaemon::initialize(Application & self)
         if (core_path.empty())
             core_path = getDefaultCorePath();
 
-        tryCreateDirectories(&logger(), core_path);
+        auto tryCreateCorePath = [this, &core_path]
+        {
+            try
+            {
+                Poco::File(core_path).createDirectories();
+                return true;
+            }
+            catch (...)
+            {
+                LOG(WARN) << "Failed to create directories: " << core_path << " with error: " << DB::getCurrentExceptionMessage(true);
+            }
+
+            return false;
+        };
+
+        tryCreateCorePath();
 
         Poco::File cores = core_path;
         if (!(cores.exists() && cores.isDirectory()))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
-            tryCreateDirectories(&logger(), core_path);
+            tryCreateCorePath();
         }
 
         if (0 != chdir(core_path.c_str()))
@@ -734,10 +738,12 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 }
 
+
 void BaseDaemon::logRevision() const
 {
-    Logger::root().information("Starting " + std::string{VERSION_FULL} + " with revision " + std::to_string(ClickHouseRevision::get()));
+    LOG(INFO) << "Starting " << VERSION_FULL << " with revision " << ClickHouseRevision::get();
 }
+
 
 /// Makes server shutdown if at least one Poco::Task have failed.
 void BaseDaemon::exitOnTaskError()
@@ -746,15 +752,16 @@ void BaseDaemon::exitOnTaskError()
     getTaskManager().addObserver(obs);
 }
 
+
 /// Used for exitOnTaskError()
 void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 {
     task_failed = true;
     Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
-    Logger *lg = &(logger());
-    LOG_ERROR(lg, "Task '" << fn->task()->name() << "' failed. Daemon is shutting down. Reason - " << fn->reason().displayText());
+    LOG(ERROR) << "Task '" << fn->task()->name() << "' failed. Daemon is shutting down. Reason - " << fn->reason().displayText();
     ServerApplication::terminate();
 }
+
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
 {
@@ -789,12 +796,6 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
             .binding("pid"));
 }
 
-bool isPidRunning(pid_t pid)
-{
-    if (getpgid(pid) >= 0)
-        return 1;
-    return 0;
-}
 
 void BaseDaemon::PID::seed(const std::string & file_)
 {
@@ -845,6 +846,7 @@ void BaseDaemon::PID::seed(const std::string & file_)
     close(fd);
 }
 
+
 void BaseDaemon::PID::clear()
 {
     if (!file.empty())
@@ -853,6 +855,7 @@ void BaseDaemon::PID::clear()
         file.clear();
     }
 }
+
 
 void BaseDaemon::handleSignal(int signal_id)
 {
@@ -873,14 +876,15 @@ void BaseDaemon::handleSignal(int signal_id)
         throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
+
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal (" << strsignal(signal_id) << ")");
+    LOG(INFO) << "Received termination signal (" << strsignal(signal_id) << ")";
 
     if (sigint_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG(INFO) << "Received second signal Interrupt. Immediately terminate.";
         kill();
     }
 }
@@ -891,4 +895,3 @@ void BaseDaemon::waitForTerminationRequest()
     std::unique_lock<std::mutex> lock(signal_handler_mutex);
     signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
-

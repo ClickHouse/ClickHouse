@@ -1,7 +1,7 @@
 #pragma once
 
 #include <sstream>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Poco/Util/Application.h>
 
 #include <Parsers/IAST.h>

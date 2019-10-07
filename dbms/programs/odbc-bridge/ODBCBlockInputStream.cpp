@@ -1,14 +1,14 @@
 #include "ODBCBlockInputStream.h"
-#include <vector>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
+#include <Common/assert_cast.h>
 #include <ext/range.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -25,7 +25,6 @@ ODBCBlockInputStream::ODBCBlockInputStream(
     , result{statement}
     , iterator{result.begin()}
     , max_block_size{max_block_size_}
-    , log(&Logger::get("ODBCBlockInputStream"))
 {
     if (sample_block.columns() != result.columnCount())
         throw Exception{"RecordSet contains " + toString(result.columnCount()) + " columns while " + toString(sample_block.columns())

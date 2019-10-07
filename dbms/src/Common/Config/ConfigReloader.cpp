@@ -2,7 +2,7 @@
 
 #include <Poco/Util/Application.h>
 #include <Poco/File.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/setThreadName.h>
 #include "ConfigProcessor.h"
 

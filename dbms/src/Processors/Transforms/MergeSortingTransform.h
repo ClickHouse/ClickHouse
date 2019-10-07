@@ -7,7 +7,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <queue>
 

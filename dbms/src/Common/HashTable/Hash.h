@@ -20,7 +20,7 @@
 /** Taken from MurmurHash. This is Murmur finalizer.
   * Faster than intHash32 when inserting into the hash table UInt64 -> UInt64, where the key is the visitor ID.
   */
-inline DB::UInt64 intHash64(DB::UInt64 x)
+inline UInt64 intHash64(UInt64 x)
 {
     x ^= x >> 33;
     x *= 0xff51afd7ed558ccdULL;
@@ -46,7 +46,7 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #include <arm_neon.h>
 #endif
 
-inline DB::UInt64 intHashCRC32(DB::UInt64 x)
+inline UInt64 intHashCRC32(UInt64 x)
 {
 #ifdef __SSE4_2__
     return _mm_crc32_u64(-1ULL, x);
@@ -65,7 +65,7 @@ inline size_t DefaultHash64(T key)
     union
     {
         T in;
-        DB::UInt64 out;
+        UInt64 out;
     } u;
     u.out = 0;
     u.in = key;
@@ -93,7 +93,7 @@ inline size_t hashCRC32(T key)
     union
     {
         T in;
-        DB::UInt64 out;
+        UInt64 out;
     } u;
     u.out = 0;
     u.in = key;
@@ -109,17 +109,17 @@ template <> struct HashCRC32<T>\
     }\
 };
 
-DEFINE_HASH(DB::UInt8)
-DEFINE_HASH(DB::UInt16)
-DEFINE_HASH(DB::UInt32)
-DEFINE_HASH(DB::UInt64)
+DEFINE_HASH(UInt8)
+DEFINE_HASH(UInt16)
+DEFINE_HASH(UInt32)
+DEFINE_HASH(UInt64)
 DEFINE_HASH(DB::UInt128)
-DEFINE_HASH(DB::Int8)
-DEFINE_HASH(DB::Int16)
-DEFINE_HASH(DB::Int32)
-DEFINE_HASH(DB::Int64)
-DEFINE_HASH(DB::Float32)
-DEFINE_HASH(DB::Float64)
+DEFINE_HASH(Int8)
+DEFINE_HASH(Int16)
+DEFINE_HASH(Int32)
+DEFINE_HASH(Int64)
+DEFINE_HASH(Float32)
+DEFINE_HASH(Float64)
 
 #undef DEFINE_HASH
 
@@ -152,8 +152,8 @@ struct TrivialHash
   * NOTE As mentioned, this function is slower than intHash64.
   * But occasionally, it is faster, when written in a loop and loop is vectorized.
   */
-template <DB::UInt64 salt>
-inline DB::UInt32 intHash32(DB::UInt64 key)
+template <UInt64 salt>
+inline UInt32 intHash32(UInt64 key)
 {
     key ^= salt;
 
@@ -169,7 +169,7 @@ inline DB::UInt32 intHash32(DB::UInt64 key)
 
 
 /// For containers.
-template <typename T, DB::UInt64 salt = 0>
+template <typename T, UInt64 salt = 0>
 struct IntHash32
 {
     size_t operator() (const T & key) const

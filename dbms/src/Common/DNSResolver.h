@@ -1,11 +1,13 @@
 #pragma once
+
+#include <Core/Names.h>
+#include <Core/Types.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
-#include <memory>
-#include <Core/Types.h>
-#include <Core/Names.h>
-#include <boost/noncopyable.hpp>
+#include <common/Logger.h>
 
+#include <boost/noncopyable.hpp>
+#include <memory>
 
 namespace DB
 {
@@ -13,7 +15,7 @@ namespace DB
 /// A singleton implementing DNS names resolving with optional DNS cache
 /// The cache is being updated asynchronous in separate thread (see DNSCacheUpdater)
 /// or it could be updated manually via drop() method.
-class DNSResolver : private boost::noncopyable
+class DNSResolver : boost::noncopyable, WithLogger<DNSResolver>
 {
 public:
     static DNSResolver & instance();

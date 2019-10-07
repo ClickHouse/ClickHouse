@@ -11,7 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/XDBCBridgeHelper.h>
 #include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"

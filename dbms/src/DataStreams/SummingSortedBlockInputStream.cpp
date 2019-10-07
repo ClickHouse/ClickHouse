@@ -8,7 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/FieldVisitors.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 

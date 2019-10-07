@@ -4,7 +4,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/randomSeed.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/DNSCacheUpdater.h>

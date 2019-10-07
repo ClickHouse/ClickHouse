@@ -4,7 +4,7 @@
 #include <Poco/Logger.h>
 #include <common/Pipe.h>
 #include <Common/StackTrace.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -28,9 +28,7 @@ namespace ErrorCodes
     extern const int CANNOT_FCNTL;
 }
 
-TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log_)
-    : log(&Poco::Logger::get("TraceCollector"))
-    , trace_log(trace_log_)
+TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log_) : trace_log(trace_log_)
 {
     if (trace_log == nullptr)
         throw Exception("Invalid trace log pointer passed", ErrorCodes::NULL_POINTER_DEREFERENCE);
@@ -54,7 +52,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log_)
     {
         if (errno == EINVAL)
         {
-            LOG_INFO(log, "Cannot get pipe capacity, " << errnoToString(ErrorCodes::CANNOT_FCNTL) << ". Very old Linux kernels have no support for this fcntl.");
+            LOG(INFO) << "Cannot get pipe capacity, " << errnoToString(ErrorCodes::CANNOT_FCNTL) << ". Very old Linux kernels have no support for this fcntl.";
             /// It will work nevertheless.
         }
         else
@@ -67,7 +65,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log_)
             if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETPIPE_SZ, pipe_size * 2) && errno != EPERM)
                 throwFromErrno("Cannot increase pipe capacity to " + toString(pipe_size * 2), ErrorCodes::CANNOT_FCNTL);
 
-        LOG_TRACE(log, "Pipe capacity is " << formatReadableSizeWithBinarySuffix(std::min(pipe_size, max_pipe_capacity_to_set)));
+        LOG(TRACE) << "Pipe capacity is " << formatReadableSizeWithBinarySuffix(std::min(pipe_size, max_pipe_capacity_to_set));
     }
 #endif
 
@@ -77,7 +75,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log_)
 TraceCollector::~TraceCollector()
 {
     if (!thread.joinable())
-        LOG_ERROR(log, "TraceCollector thread is malformed and cannot be joined");
+        LOG(ERROR) << "TraceCollector thread is malformed and cannot be joined";
     else
     {
         TraceCollector::notifyToStop();

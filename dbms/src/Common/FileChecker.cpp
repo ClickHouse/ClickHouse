@@ -13,7 +13,6 @@
 namespace DB
 {
 
-
 FileChecker::FileChecker(const std::string & file_info_path_)
 {
     setPath(file_info_path_);

@@ -10,7 +10,7 @@
 #include <capnp/common.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB

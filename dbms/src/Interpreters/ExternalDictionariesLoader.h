@@ -2,7 +2,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/ExternalLoader.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <memory>
 
 

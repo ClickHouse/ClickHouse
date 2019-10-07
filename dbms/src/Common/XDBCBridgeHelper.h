@@ -13,7 +13,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <Common/config.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/range.h>
 
 namespace DB

@@ -17,7 +17,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace zkutil

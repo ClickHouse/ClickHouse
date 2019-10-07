@@ -2,7 +2,6 @@
 
 #include "MemoryTracker.h"
 #include <common/likely.h>
-#include <common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
@@ -54,17 +53,9 @@ MemoryTracker::~MemoryTracker()
 
 void MemoryTracker::logPeakMemoryUsage() const
 {
-    LOG_DEBUG(&Logger::get("MemoryTracker"),
-        "Peak memory usage" << (description ? " " + std::string(description) : "")
-        << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
+    LOG(DEBUG) << "Peak memory usage" << (description ? " " + std::string(description) : "") << ": "
+               << formatReadableSizeWithBinarySuffix(peak) << ".";
 }
-
-static void logMemoryUsage(Int64 amount)
-{
-    LOG_DEBUG(&Logger::get("MemoryTracker"),
-        "Current memory usage: " << formatReadableSizeWithBinarySuffix(amount) << ".");
-}
-
 
 
 void MemoryTracker::alloc(Int64 size)
@@ -127,7 +118,7 @@ void MemoryTracker::alloc(Int64 size)
         peak.store(will_be, std::memory_order_relaxed);
 
         if (level == VariableContext::Process && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
-            logMemoryUsage(will_be);
+            LOG(DEBUG) << "Current memory usage: " << formatReadableSizeWithBinarySuffix(will_be) << ".";
     }
 
     if (auto loaded_next = parent.load(std::memory_order_relaxed))

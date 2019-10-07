@@ -3,7 +3,7 @@
 #include <Core/Defines.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/bit_cast.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>

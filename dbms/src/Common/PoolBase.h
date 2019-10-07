@@ -5,7 +5,7 @@
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/Exception.h>
 
 
@@ -22,7 +22,7 @@ namespace DB
   */
 
 template <typename TObject>
-class PoolBase : private boost::noncopyable
+class PoolBase : boost::noncopyable
 {
 public:
     using Object = TObject;
@@ -122,7 +122,7 @@ public:
                 return Entry(*items.back());
             }
 
-            LOG_INFO(log, "No free connections in pool. Waiting.");
+            LOG(INFO) << "No free connections in pool. Waiting.";
 
             if (timeout < 0)
                 available.wait(lock);
@@ -151,16 +151,8 @@ private:
     std::condition_variable available;
 
 protected:
-
-    Logger * log;
-
-    PoolBase(unsigned max_items_, Logger * log_)
-       : max_items(max_items_), log(log_)
-    {
-        items.reserve(max_items);
-    }
+    explicit PoolBase(unsigned max_items_) : max_items(max_items_) { items.reserve(max_items); }
 
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
 };
-

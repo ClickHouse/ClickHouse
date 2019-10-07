@@ -234,7 +234,7 @@ WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG(EXCEPT);
     }
 }
 

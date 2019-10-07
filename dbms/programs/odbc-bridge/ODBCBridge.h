@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Poco/Logger.h>
+#include <common/Logger.h>
 #include <daemon/BaseDaemon.h>
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
   * Has two handlers '/' for all incoming POST requests to ODBC driver
   * and /ping for GET request about service status
   */
-class ODBCBridge : public BaseDaemon
+class ODBCBridge : public BaseDaemon, WithLogger<ODBCBridge>
 {
 public:
     void defineOptions(Poco::Util::OptionSet & options) override;
@@ -23,7 +23,10 @@ protected:
 
     int main(const std::vector<std::string> & args) override;
 
+    using WithLogger<ODBCBridge>::getLogger;
+
 private:
+    Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket);
     void handleHelp(const std::string &, const std::string &);
 
     bool is_help;
@@ -33,8 +36,6 @@ private:
     std::string log_level;
     size_t max_server_connections;
     size_t keep_alive_timeout;
-
-    Poco::Logger * log;
 
     std::shared_ptr<Context> context; /// need for settings only
 };

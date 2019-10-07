@@ -127,9 +127,9 @@ try
         return 1;
     }
 
-    auto part_path = options.at("part").as<DB::String>();
-    auto date_column = options.at("date-column").as<DB::String>();
-    auto dest_path = options.at("to").as<DB::String>();
+    auto part_path = options.at("part").as<String>();
+    auto date_column = options.at("date-column").as<String>();
+    auto dest_path = options.at("to").as<String>();
 
     DB::run(part_path, date_column, dest_path);
 

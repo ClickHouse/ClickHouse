@@ -327,3 +327,5 @@ endif()
 #if (USE_INTERNAL_ORC_LIBRARY)
 #    add_subdirectory(orc-cmake)
 #endif ()
+
+add_subdirectory (fmtlib-cmake)

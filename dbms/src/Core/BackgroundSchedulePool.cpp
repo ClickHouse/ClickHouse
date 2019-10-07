@@ -5,7 +5,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <chrono>
 #include <ext/scope_guard.h>
 
@@ -116,7 +116,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
     static const int32_t slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
-        LOG_TRACE(&Logger::get(log_name), "Execution took " << milliseconds << " ms.");
+        LOG(TRACE) << "Execution took " << milliseconds << " ms.";
 
     {
         std::lock_guard lock_schedule(schedule_mutex);
@@ -158,7 +158,7 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size_)
     : size(size_)
 {
-    LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
+    LOG(INFO) << "Create BackgroundSchedulePool with " << size << " threads";
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -181,13 +181,13 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         queue.wakeUpAll();
         delayed_thread.join();
 
-        LOG_TRACE(&Logger::get("BackgroundSchedulePool"), "Waiting for threads to finish.");
+        LOG(TRACE) << "Waiting for threads to finish.";
         for (auto & thread : threads)
             thread.join();
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG(EXCEPT);
     }
 }
 

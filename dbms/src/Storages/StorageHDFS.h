@@ -4,7 +4,7 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/shared_ptr_helper.h>
 
 namespace DB

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnectionFactory.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include "IServer.h"
 #include "TCPHandler.h"
 

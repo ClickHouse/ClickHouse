@@ -3,7 +3,7 @@
 #include <string.h>
 #include <cxxabi.h>
 #include <Poco/String.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -58,22 +58,6 @@ void throwFromErrno(const std::string & s, int code, int e)
 void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
 {
     throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno, path);
-}
-
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
-{
-    tryLogCurrentException(&Logger::get(log_name), start_of_message);
-}
-
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
-{
-    try
-    {
-        LOG_ERROR(logger, start_of_message << (start_of_message.empty() ? "" : ": ") << getCurrentExceptionMessage(true));
-    }
-    catch (...)
-    {
-    }
 }
 
 void getNoSpaceLeftInfoMessage(std::filesystem::path path, std::string & msg)
@@ -213,30 +197,6 @@ void rethrowFirstException(const Exceptions & exceptions)
             std::rethrow_exception(exceptions[i]);
 }
 
-
-void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message)
-{
-    try
-    {
-        std::rethrow_exception(std::move(e));
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log_name, start_of_message);
-    }
-}
-
-void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message)
-{
-    try
-    {
-        std::rethrow_exception(std::move(e));
-    }
-    catch (...)
-    {
-        tryLogCurrentException(logger, start_of_message);
-    }
-}
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {

@@ -2,7 +2,7 @@
 
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <IO/ConnectionTimeouts.h>

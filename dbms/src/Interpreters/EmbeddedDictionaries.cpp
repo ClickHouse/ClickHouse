@@ -5,7 +5,7 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Poco/Util/Application.h>
 
 

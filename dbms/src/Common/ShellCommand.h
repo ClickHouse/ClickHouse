@@ -1,8 +1,10 @@
 #pragma once
 
-#include <memory>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <common/Logger.h>
+
+#include <memory>
 
 
 namespace DB
@@ -23,14 +25,12 @@ namespace DB
   * The second difference - allows to work simultaneously with stdin, and with stdout, and with stderr of running process,
   *  and also to obtain the return code and completion status.
   */
-class ShellCommand
+class ShellCommand : WithLogger<ShellCommand>
 {
 private:
     pid_t pid;
     bool wait_called = false;
     bool terminate_in_destructor;
-
-    Poco::Logger * log;
 
     ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_);
 

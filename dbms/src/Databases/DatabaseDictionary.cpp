@@ -2,7 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Storages/StorageDictionary.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/ParserCreateQuery.h>

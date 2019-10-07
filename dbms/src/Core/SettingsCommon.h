@@ -1,13 +1,16 @@
 #pragma once
 
-#include <Poco/Timespan.h>
+#include <Core/Types.h>
 #include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
-#include <common/StringRef.h>
+#include <Poco/Timespan.h>
+#include <common/Logger.h>
 #include <Common/SettingsChanges.h>
-#include <Core/Types.h>
-#include <unordered_map>
+#include <common/StringRef.h>
+
 #include <boost/noncopyable.hpp>
+
+#include <unordered_map>
 
 
 namespace DB
@@ -256,16 +259,7 @@ using SettingDistributedProductMode = SettingEnum<DistributedProductMode>;
 using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputFormat>;
 
 
-enum class LogsLevel
-{
-    none = 0,    /// Disable
-    error,
-    warning,
-    information,
-    debug,
-    trace,
-};
-using SettingLogsLevel = SettingEnum<LogsLevel>;
+using SettingLogsLevel = SettingEnum<Logger::Level>;
 
 
 namespace details

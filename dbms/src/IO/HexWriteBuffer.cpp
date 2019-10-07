@@ -1,7 +1,9 @@
-#include <Core/Types.h>
-#include <Common/hex.h>
-#include <Common/Exception.h>
 #include <IO/HexWriteBuffer.h>
+
+#include <Core/Types.h>
+#include <Common/Exception.h>
+#include <Common/hex.h>
+#include <common/Logger.h>
 
 
 namespace DB
@@ -28,7 +30,7 @@ HexWriteBuffer::~HexWriteBuffer()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG(EXCEPT) << __PRETTY_FUNCTION__;
     }
 }
 

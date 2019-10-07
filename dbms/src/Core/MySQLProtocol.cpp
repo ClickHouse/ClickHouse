@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <random>
 #include <sstream>

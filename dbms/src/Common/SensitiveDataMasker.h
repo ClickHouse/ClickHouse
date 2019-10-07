@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/Logger.h>
+
 #include <memory>
 #include <vector>
 #include <cstdint>
@@ -40,7 +42,8 @@ namespace Util
 
 namespace DB
 {
-class SensitiveDataMasker
+
+class SensitiveDataMasker : WithLogger<SensitiveDataMasker>
 {
 private:
     class MaskingRule;

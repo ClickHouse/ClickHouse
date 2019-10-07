@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class AIOContextPool : private boost::noncopyable
+class AIOContextPool : boost::noncopyable, WithLogger<AIOContextPool>
 {
     static const auto max_concurrent_events = 128;
     static const auto timeout_sec = 1;

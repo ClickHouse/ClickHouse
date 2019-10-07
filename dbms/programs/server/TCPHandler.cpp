@@ -28,7 +28,7 @@
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <Processors/Formats/LazyOutputFormat.h>
 
@@ -182,7 +182,7 @@ void TCPHandler::runImpl()
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && client_logs_level != LogsLevel::none)
+                && client_logs_level != Logger::NONE)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());

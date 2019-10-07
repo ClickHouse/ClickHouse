@@ -1,7 +1,7 @@
 #if defined(__linux__) || defined(__FreeBSD__)
 
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/MemorySanitizer.h>
 #include <Poco/Logger.h>
 #include <boost/range/iterator_range.hpp>
@@ -54,7 +54,7 @@ void AIOContextPool::waitForCompletion()
     {
         /// there was an error, log it, return to any producer and continue
         reportExceptionToAnyProducer();
-        tryLogCurrentException("AIOContextPool::waitForCompletion()");
+        LOG(EXCEPT) << "AIOContextPool::waitForCompletion()";
     }
 }
 
@@ -98,7 +98,7 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
         const auto it = promises.find(completed_id);
         if (it == std::end(promises))
         {
-            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << completed_id);
+            LOG(ERROR) << "Found io_event with unknown id " << completed_id;
             continue;
         }
 

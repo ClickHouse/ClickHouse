@@ -1,14 +1,16 @@
+#include <Common/ShellCommand.h>
+
+#include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
+#include <common/Pipe.h>
+
+#include <csignal>
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <port/unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <fcntl.h>
-#include <dlfcn.h>
-#include <Common/Exception.h>
-#include <Common/ShellCommand.h>
-#include <common/logger_useful.h>
-#include <IO/WriteHelpers.h>
-#include <port/unistd.h>
-#include <csignal>
-#include <common/Pipe.h>
+
 
 namespace
 {
@@ -35,12 +37,9 @@ namespace ErrorCodes
 }
 
 ShellCommand::ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_)
-    : pid(pid_)
-    , terminate_in_destructor(terminate_in_destructor_)
-    , log(&Poco::Logger::get("ShellCommand"))
-    , in(in_fd_)
-    , out(out_fd_)
-    , err(err_fd_) {}
+    : pid(pid_), terminate_in_destructor(terminate_in_destructor_), in(in_fd_), out(out_fd_), err(err_fd_)
+{
+}
 
 ShellCommand::~ShellCommand()
 {
@@ -48,7 +47,7 @@ ShellCommand::~ShellCommand()
     {
         int retcode = kill(pid, SIGTERM);
         if (retcode != 0)
-            LOG_WARNING(log, "Cannot kill pid " << pid << " errno '" << errnoToString(retcode) << "'");
+            LOG(WARN) << "Cannot kill pid " << pid << " errno '" << errnoToString(retcode) << "'";
     }
     else if (!wait_called)
         tryWait();

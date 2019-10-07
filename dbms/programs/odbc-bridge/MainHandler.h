@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
+#include <common/Logger.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -16,7 +16,7 @@ namespace DB
   * and also query in request body
   * response in RowBinary format
   */
-class ODBCHandler : public Poco::Net::HTTPRequestHandler
+class ODBCHandler : public Poco::Net::HTTPRequestHandler, WithLogger<ODBCHandler>
 {
 public:
     using PoolPtr = std::shared_ptr<Poco::Data::SessionPool>;
@@ -25,8 +25,7 @@ public:
     ODBCHandler(std::shared_ptr<PoolMap> pool_map_,
         size_t keep_alive_timeout_,
         std::shared_ptr<Context> context_)
-        : log(&Poco::Logger::get("ODBCHandler"))
-        , pool_map(pool_map_)
+        : pool_map(pool_map_)
         , keep_alive_timeout(keep_alive_timeout_)
         , context(context_)
     {
@@ -35,8 +34,6 @@ public:
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 private:
-    Poco::Logger * log;
-
     std::shared_ptr<PoolMap> pool_map;
     size_t keep_alive_timeout;
     std::shared_ptr<Context> context;

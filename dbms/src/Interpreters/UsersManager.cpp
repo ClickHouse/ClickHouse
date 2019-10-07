@@ -2,7 +2,7 @@
 
 #include "config_core.h"
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

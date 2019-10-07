@@ -8,7 +8,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <common/StringRef.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"

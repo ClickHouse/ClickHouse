@@ -8,7 +8,7 @@
 #include <Poco/DOM/NodeList.h>
 #include <Poco/SAX/InputSource.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB
@@ -88,7 +88,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG(EXCEPT);
     }
 }
 
@@ -121,7 +121,7 @@ void WriteBufferFromS3::initiate()
 
         request_ptr->setContentLength(0);
 
-        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << initiate_uri.toString());
+        LOG(TRACE) << "Sending request to " << initiate_uri.toString();
 
         session->sendRequest(*request_ptr);
 
@@ -170,7 +170,7 @@ void WriteBufferFromS3::writePart(const String & data)
     if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
         // Don't throw exception here by ourselves but leave the decision to take by S3 server.
-        LOG_WARNING(&Logger::get("WriteBufferFromS3"), "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
+        LOG(WARN) << "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.";
     }
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
@@ -189,7 +189,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
         request_ptr->setContentLength(data.size());
 
-        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << part_uri.toString());
+        LOG(TRACE) << "Sending request to " << part_uri.toString();
 
         std::ostream & ostr = session->sendRequest(*request_ptr);
         if (session->peekResponse(response))
@@ -262,7 +262,7 @@ void WriteBufferFromS3::complete()
 
         request_ptr->setContentLength(data.size());
 
-        LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << complete_uri.toString());
+        LOG(TRACE) << "Sending request to " << complete_uri.toString();
 
         std::ostream & ostr = session->sendRequest(*request_ptr);
         if (session->peekResponse(response))

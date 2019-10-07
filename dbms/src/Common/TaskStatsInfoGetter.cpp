@@ -1,5 +1,7 @@
 #include "TaskStatsInfoGetter.h"
+
 #include <Common/Exception.h>
+#include <common/Logger.h>
 #include <Core/Types.h>
 
 #include <unistd.h>
@@ -205,7 +207,7 @@ bool checkPermissionsImpl()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG(EXCEPT) << __PRETTY_FUNCTION__;
         return false;
     }
 

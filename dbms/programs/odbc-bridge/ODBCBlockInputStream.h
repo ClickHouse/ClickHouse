@@ -1,12 +1,13 @@
 #pragma once
 
-#include <string>
 #include <Core/Block.h>
+#include <Core/ExternalResultDescription.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Poco/Data/RecordSet.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
-#include <Core/ExternalResultDescription.h>
+
+#include <string>
 
 
 namespace DB
@@ -32,8 +33,6 @@ private:
 
     const UInt64 max_block_size;
     ExternalResultDescription description;
-
-    Poco::Logger * log;
 };
 
 }

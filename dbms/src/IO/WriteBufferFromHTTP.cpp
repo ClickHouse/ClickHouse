@@ -1,6 +1,6 @@
 #include <IO/WriteBufferFromHTTP.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     request.setHost(uri.getHost());
     request.setChunkedTransferEncoding(true);
 
-    LOG_TRACE((&Logger::get("WriteBufferToHTTP")), "Sending request to " << uri.toString());
+    LOG(TRACE) << "Sending request to " << uri.toString();
 
     ostr = &session->sendRequest(request);
 }

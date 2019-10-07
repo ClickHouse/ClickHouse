@@ -18,7 +18,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Version.h>
 #include <common/Types.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <loggers/Loggers.h>
@@ -39,7 +39,7 @@ namespace Poco { class TaskManager; }
 ///
 /// You can configure different log options for different loggers used inside program
 ///  by providing subsections to "logger" in configuration file.
-class BaseDaemon : public Poco::Util::ServerApplication, public Loggers
+class BaseDaemon : public Poco::Util::ServerApplication, public Loggers, WithLogger<BaseDaemon>
 {
     friend class SignalListener;
 

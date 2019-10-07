@@ -1,7 +1,7 @@
 #include <memory>
 
 #include "CurrentThread.h"
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <common/likely.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TaskStatsInfoGetter.h>
@@ -66,7 +66,7 @@ void CurrentThread::updateProgressOut(const Progress & value)
 }
 
 void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
-                                                LogsLevel client_logs_level)
+                                                Logger::Level client_logs_level)
 {
     if (unlikely(!current_thread))
         return;

@@ -10,7 +10,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/ActionBlocker.h>
 
 

@@ -14,7 +14,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <boost/algorithm/string.hpp>
 #include <pcg_random.hpp>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -725,7 +725,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
 } // end of an anonymous namespace
 
 
-class ClusterCopier
+class ClusterCopier : public WITH_LOGGER(ClusterCopier)
 {
 public:
 
@@ -2073,7 +2073,6 @@ private:
     double copy_fault_probability = 0.0;
 
     Context & context;
-    Poco::Logger * log;
 
     std::chrono::milliseconds default_sleep_time{1000};
 };

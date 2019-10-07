@@ -5,7 +5,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Core/Types.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB

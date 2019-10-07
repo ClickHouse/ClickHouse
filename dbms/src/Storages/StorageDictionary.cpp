@@ -9,7 +9,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTLiteral.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/typeid_cast.h>
 
 

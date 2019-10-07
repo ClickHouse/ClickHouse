@@ -5,7 +5,7 @@
 #include <Storages/StorageXDBC.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>

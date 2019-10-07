@@ -19,7 +19,7 @@
 #include <Poco/PatternFormatter.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Client/Connection.h>
 #include <Core/Types.h>
 #include <Interpreters/Context.h>

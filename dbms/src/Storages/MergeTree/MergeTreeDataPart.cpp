@@ -19,7 +19,7 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <common/JSON.h>
 
 namespace DB

@@ -4,7 +4,7 @@
 #include <memory>
 #include <functional>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <common/StringRef.h>
 #include <Common/Arena.h>

@@ -5,7 +5,7 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <atomic>
 #include <shared_mutex>

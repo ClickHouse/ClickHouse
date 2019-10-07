@@ -14,7 +14,7 @@
 #include <common/SimpleCache.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Users.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/scope_guard.h>
 #include <Common/config.h>
 

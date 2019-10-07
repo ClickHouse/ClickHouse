@@ -3,7 +3,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/HTMLForm.h>
 #include <Common/setThreadName.h>
 #include <Compression/CompressedWriteBuffer.h>

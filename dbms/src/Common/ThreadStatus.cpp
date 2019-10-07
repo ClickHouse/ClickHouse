@@ -98,7 +98,7 @@ void ThreadStatus::initPerformanceCounters()
     catch (...)
     {
         taskstats_getter.reset();
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG(EXCEPT) << __PRETTY_FUNCTION__;
     }
 }
 
@@ -112,7 +112,7 @@ void ThreadStatus::updatePerformanceCounters()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        LOG(EXCEPT);
     }
 }
 
@@ -132,7 +132,7 @@ void ThreadStatus::assertState(const std::initializer_list<int> & permitted_stat
 }
 
 void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
-                                               LogsLevel client_logs_level)
+                                               Logger::Level client_logs_level)
 {
     logs_queue_ptr = logs_queue;
 

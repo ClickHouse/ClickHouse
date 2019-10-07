@@ -3,6 +3,8 @@
 #include <Core/Types.h>
 #include <Common/config.h>
 #include <common/config_common.h>
+#include <common/Logger.h>
+
 #include <signal.h>
 #include <time.h>
 
@@ -33,7 +35,7 @@ enum class TimerType : UInt8
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCpu.
   */
 template <typename ProfilerImpl>
-class QueryProfilerBase
+class QueryProfilerBase : WithLogger<>
 {
 public:
     QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_);
@@ -41,8 +43,6 @@ public:
 
 private:
     void tryCleanup();
-
-    Poco::Logger * log;
 
 #if USE_UNWIND
     /// Timer id from timer_create(2)

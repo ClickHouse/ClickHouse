@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <Common/ConcurrentBoundedQueue.h>
 #include <DataStreams/IBlockInputStream.h>
@@ -79,7 +79,7 @@ public:
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG(EXCEPT);
         }
     }
 
@@ -107,7 +107,7 @@ protected:
         if (!started)
             return;
 
-        LOG_TRACE(log, "Waiting for threads to finish");
+        LOG(TRACE) << "Waiting for threads to finish";
 
         std::exception_ptr exception;
         if (!all_read)
@@ -137,7 +137,7 @@ protected:
 
         processor.wait();
 
-        LOG_TRACE(log, "Waited for threads to finish");
+        LOG(TRACE) << "Waited for threads to finish";
 
         if (exception)
             std::rethrow_exception(exception);
@@ -252,8 +252,6 @@ private:
 
     bool started = false;
     bool all_read = false;
-
-    Logger * log = &Logger::get("UnionBlockInputStream");
 };
 
 }

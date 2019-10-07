@@ -9,7 +9,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB
@@ -24,18 +24,14 @@ using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 /** Data structure for implementation of IN expression.
   */
-class Set
+class Set : WithLogger<Set>
 {
 public:
     /// 'fill_set_elements': in addition to hash table
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_)
-        : log(&Logger::get("Set")),
-        limits(limits_), fill_set_elements(fill_set_elements_)
-    {
-    }
+    Set(const SizeLimits & limits_, bool fill_set_elements_) : limits(limits_), fill_set_elements(fill_set_elements_) {}
 
     bool empty() const { return data.empty(); }
 

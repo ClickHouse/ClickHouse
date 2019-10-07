@@ -50,7 +50,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace ProfileEvents

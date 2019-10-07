@@ -1,29 +1,31 @@
 #pragma once
 
-#include <iostream>
-#include <memory>
-#include <mutex>
-
+#include <IO/ConnectionTimeouts.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
-#include <Common/PoolBase.h>
 #include <Poco/URIStreamFactory.h>
+#include <Common/PoolBase.h>
 
-#include <IO/ConnectionTimeouts.h>
+#include <iostream>
+#include <memory>
+#include <mutex>
 
 namespace Poco
 {
+
 namespace Net
 {
     class HTTPServerResponse;
 }
+
 }
 
 
 namespace DB
 {
+
 constexpr int HTTP_TOO_MANY_REQUESTS = 429;
 
 class SingleEndpointHTTPSessionPool : public PoolBase<Poco::Net::HTTPClientSession>
@@ -60,4 +62,5 @@ bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status);
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects = false);
+
 }

@@ -5,14 +5,13 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketStream.h>
 #include <Poco/Util/Application.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
-/// пишет в Graphite данные в формате
-/// path value timestamp\n
-/// path может иметь любую вложенность. Директории разделяются с помощью "."
-/// у нас принят следующий формат path - root_path.server_name.sub_path.key
-class GraphiteWriter
+/// Writes data into Graphite in format: path value timestamp\n
+/// |path| may have arbitrary depth - the delimiter between directories is "."
+/// We decided to use the following path format: root_path.server_name.sub_path.key
+class GraphiteWriter : WithLogger<GraphiteWriter>
 {
 public:
     GraphiteWriter(const std::string & config_name, const std::string & sub_path = "");
@@ -52,8 +51,7 @@ private:
         }
         catch (const Poco::Exception & e)
         {
-            LOG_WARNING(&Poco::Util::Application::instance().logger(),
-                        "Fail to write to Graphite " << host << ":" << port << ". e.what() = " << e.what() << ", e.message() = " << e.message());
+            LOG(WARN) << "Fail to write to Graphite " << host << ":" << port << ". e.what() = " << e.what() << ", e.message() = " << e.message();
         }
     }
 

@@ -2,20 +2,14 @@
 
 #include <Common/ThreadPool.h>
 
-namespace Poco
-{
-    class Logger;
-}
-
 namespace DB
 {
 
 class TraceLog;
 
-class TraceCollector
+class TraceCollector :  WithLogger<TraceCollector>
 {
 private:
-    Poco::Logger * log;
     std::shared_ptr<TraceLog> trace_log;
     ThreadFromGlobalPool thread;
 

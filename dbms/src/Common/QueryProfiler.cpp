@@ -6,7 +6,7 @@
 #include <common/config_common.h>
 #include <Common/StackTrace.h>
 #include <common/StringRef.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -103,8 +103,7 @@ namespace ErrorCodes
 
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const Int32 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
-    : log(&Logger::get("QueryProfiler"))
-    , pause_signal(pause_signal_)
+    : WithLogger("QueryProfiler"), pause_signal(pause_signal_)
 {
 #if USE_UNWIND
     /// Sanity check.
@@ -181,10 +180,10 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
     if (timer_id != nullptr && timer_delete(timer_id))
-        LOG_ERROR(log, "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+        LOG(ERROR) << "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER);
 
     if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
-        LOG_ERROR(log, "Failed to restore signal handler after query profiler " + errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+        LOG(ERROR) << "Failed to restore signal handler after query profiler " + errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 #endif
 }
 

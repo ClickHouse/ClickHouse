@@ -28,7 +28,7 @@
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB
@@ -93,6 +93,7 @@ StorageKafka::StorageKafka(
                             {"_offset", std::make_shared<DataTypeUInt64>()},
                             {"_partition", std::make_shared<DataTypeUInt64>()},
                             {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
+    , WithLogger("StorageKafka (" + table_name_ + ")")
     , table_name(table_name_)
     , database_name(database_name_)
     , global_context(context_)
@@ -104,7 +105,6 @@ StorageKafka::StorageKafka(
     , schema_name(global_context.getMacros()->expand(schema_name_))
     , num_consumers(num_consumers_)
     , max_block_size(max_block_size_)
-    , log(&Logger::get("StorageKafka (" + table_name_ + ")"))
     , semaphore(0, num_consumers_)
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)
@@ -139,7 +139,7 @@ BlockInputStreams StorageKafka::read(
         streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1));
     }
 
-    LOG_DEBUG(log, "Starting reading " << streams.size() << " streams");
+    LOG(DEBUG) << "Starting reading " << streams.size() << " streams";
     return streams;
 }
 
@@ -163,7 +163,7 @@ void StorageKafka::startup()
         }
         catch (const cppkafka::Exception &)
         {
-            tryLogCurrentException(log);
+            LOG(EXCEPT);
         }
     }
 
@@ -184,7 +184,7 @@ void StorageKafka::shutdown()
         // FIXME: not sure if we really close consumers here, and if we really need to close them here.
     }
 
-    LOG_TRACE(log, "Waiting for cleanup");
+    LOG(TRACE) << "Waiting for cleanup";
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
 
     task->deactivate();
@@ -338,7 +338,7 @@ void StorageKafka::threadFunc()
             if (!checkDependencies(database_name, table_name))
                 break;
 
-            LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
+            LOG(DEBUG) << "Started streaming to " << dependencies.size() << " attached views";
 
             // Reschedule if not limited
             if (!streamToViews())
@@ -347,7 +347,7 @@ void StorageKafka::threadFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG(EXCEPT);
     }
 
     // Wait for attached views

@@ -8,7 +8,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <arpa/inet.h>
 #include <atomic>
 #include <optional>
@@ -104,7 +104,9 @@ struct DNSResolver::Impl
 };
 
 
-DNSResolver::DNSResolver() : impl(std::make_unique<DNSResolver::Impl>()) {}
+DNSResolver::DNSResolver() : impl(std::make_unique<DNSResolver::Impl>())
+{
+}
 
 Poco::Net::IPAddress DNSResolver::resolveHost(const std::string & host)
 {
@@ -197,12 +199,12 @@ bool DNSResolver::updateCache()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG(EXCEPT) << __PRETTY_FUNCTION__;
         }
     }
 
     if (!lost_hosts.empty())
-        LOG_INFO(&Logger::get("DNSResolver"), "Cached hosts not found: " << lost_hosts);
+        LOG(INFO) << "Cached hosts not found: " << lost_hosts;
 
     return updated;
 }

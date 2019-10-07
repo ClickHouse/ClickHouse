@@ -1,30 +1,30 @@
 #include <IO/HTTPCommon.h>
 
-#include <Common/config.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-
-#include <Poco/Version.h>
+#include <Common/config.h>
+#include <common/Logger.h>
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/AcceptCertificateHandler.h>
-#include <Poco/Net/Context.h>
-#include <Poco/Net/HTTPSClientSession.h>
-#include <Poco/Net/InvalidCertificateHandler.h>
-#include <Poco/Net/PrivateKeyPassphraseHandler.h>
-#include <Poco/Net/RejectCertificateHandler.h>
-#include <Poco/Net/SSLManager.h>
+#    include <Poco/Net/AcceptCertificateHandler.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/HTTPSClientSession.h>
+#    include <Poco/Net/InvalidCertificateHandler.h>
+#    include <Poco/Net/PrivateKeyPassphraseHandler.h>
+#    include <Poco/Net/RejectCertificateHandler.h>
+#    include <Poco/Net/SSLManager.h>
 #endif
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Version.h>
 
+#include <sstream>
 #include <tuple>
 #include <unordered_map>
-#include <sstream>
 
 
 namespace ProfileEvents
@@ -108,12 +108,12 @@ namespace
 
     public:
         SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_)
-            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool")), host(host_), port(port_), https(https_)
+            : Base(max_pool_size_), host(host_), port(port_), https(https_)
         {
         }
     };
 
-    class HTTPSessionPool : private boost::noncopyable
+    class HTTPSessionPool : boost::noncopyable, WithLogger<HTTPSessionPool>
     {
     private:
         using Key = std::tuple<std::string, UInt16, bool>;
@@ -171,9 +171,8 @@ namespace
                 auto msg = Poco::AnyCast<std::string>(sessionData);
                 if (!msg.empty())
                 {
-                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session");
-                    /// Host can change IP
-                    const auto ip = DNSResolver::instance().resolveHost(host).toString();
+                    LOG(TRACE) << "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session";
+                    const auto ip = DNSResolver::instance().resolveHost(host).toString(); /// Host can change IP
                     if (ip != session->getHost())
                     {
                         session->reset();

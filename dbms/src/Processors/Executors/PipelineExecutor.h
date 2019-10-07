@@ -4,7 +4,7 @@
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <queue>
 #include <stack>

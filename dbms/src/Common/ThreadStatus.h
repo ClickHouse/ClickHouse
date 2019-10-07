@@ -1,18 +1,17 @@
 #pragma once
 
-#include <common/StringRef.h>
-#include <Common/ProfileEvents.h>
-#include <Common/MemoryTracker.h>
-
 #include <Core/SettingsCommon.h>
-
 #include <IO/Progress.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <common/Logger.h>
+#include <common/StringRef.h>
 
-#include <memory>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <functional>
 #include <boost/noncopyable.hpp>
 
 
@@ -67,7 +66,7 @@ public:
     UInt32 master_thread_number = 0;
     Int32 master_thread_os_id = -1;
 
-    LogsLevel client_logs_level = LogsLevel::none;
+    Logger::Level client_logs_level = Logger::NONE;
 
     String query;
 };
@@ -143,7 +142,7 @@ public:
     }
 
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
-                                     LogsLevel client_logs_level);
+                                     Logger::Level client_logs_level);
 
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called

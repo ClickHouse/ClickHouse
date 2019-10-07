@@ -1,6 +1,6 @@
 #include "TimeoutSetter.h"
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 namespace DB
 {

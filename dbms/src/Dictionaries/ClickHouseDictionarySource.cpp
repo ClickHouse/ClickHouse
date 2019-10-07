@@ -6,7 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
 #include <ext/range.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"

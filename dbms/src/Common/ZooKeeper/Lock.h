@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ZooKeeperHolder.h"
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/Exception.h>
 
 namespace zkutil

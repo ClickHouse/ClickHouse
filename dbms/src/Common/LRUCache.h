@@ -7,7 +7,7 @@
 #include <mutex>
 #include <atomic>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB
@@ -30,7 +30,7 @@ struct TrivialWeightFunction
 /// entries is due.
 /// Value weight should not change after insertion.
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
-class LRUCache
+class LRUCache : WithLogger<>
 {
 public:
     using Key = TKey;
@@ -44,7 +44,9 @@ private:
 
 public:
     LRUCache(size_t max_size_, const Delay & expiration_delay_ = Delay::zero())
-        : max_size(std::max(static_cast<size_t>(1), max_size_)), expiration_delay(expiration_delay_) {}
+        : WithLogger("LRUCache"), max_size(std::max(static_cast<size_t>(1), max_size_)), expiration_delay(expiration_delay_)
+    {
+    }
 
     MappedPtr get(const Key & key)
     {
@@ -324,10 +326,7 @@ private:
 
             auto it = cells.find(key);
             if (it == cells.end())
-            {
-                LOG_ERROR(&Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
-                abort();
-            }
+                LOG(ABORT) << "LRUCache became inconsistent. There must be a bug in it.";
 
             const auto & cell = it->second;
             if (!cell.expired(last_timestamp, expiration_delay))
@@ -344,10 +343,7 @@ private:
         onRemoveOverflowWeightLoss(current_weight_lost);
 
         if (current_size > (1ull << 63))
-        {
-            LOG_ERROR(&Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
-            abort();
-        }
+            LOG(ABORT) << "LRUCache became inconsistent. There must be a bug in it.";
     }
 
     /// Override this method if you want to track how much weight was lost in removeOverflow method.

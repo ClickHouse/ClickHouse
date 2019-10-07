@@ -2,7 +2,7 @@
 
 #include <IO/ReadBufferFromIStream.h>
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB
@@ -10,14 +10,9 @@ namespace DB
 
 const int DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT = 2;
 
-ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
-    const ConnectionTimeouts & timeouts,
-    const Poco::Net::HTTPBasicCredentials & credentials,
-    size_t buffer_size_)
-    : ReadBuffer(nullptr, 0)
-    , uri {uri_}
-    , method {Poco::Net::HTTPRequest::HTTP_GET}
-    , session {makeHTTPSession(uri_, timeouts)}
+ReadBufferFromS3::ReadBufferFromS3(
+    Poco::URI uri_, const ConnectionTimeouts & timeouts, const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_)
+    : ReadBuffer(nullptr, 0), uri{uri_}, method{Poco::Net::HTTPRequest::HTTP_GET}, session{makeHTTPSession(uri_, timeouts)}
 {
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
@@ -34,7 +29,7 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
         if (!credentials.getUsername().empty())
             credentials.authenticate(*request);
 
-        LOG_TRACE((&Logger::get("ReadBufferFromS3")), "Sending request to " << uri.toString());
+        LOG(TRACE) << "Sending request to " << uri.toString();
 
         session->sendRequest(*request);
 

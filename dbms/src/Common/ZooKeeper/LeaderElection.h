@@ -4,7 +4,7 @@
 #include "KeeperException.h"
 #include <functional>
 #include <memory>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/BackgroundSchedulePool.h>
 

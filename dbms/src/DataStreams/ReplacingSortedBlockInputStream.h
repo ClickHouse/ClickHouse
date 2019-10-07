@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>

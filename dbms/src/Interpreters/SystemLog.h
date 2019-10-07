@@ -4,7 +4,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Storages/IStorage.h>
@@ -84,7 +84,7 @@ struct SystemLogs
 
 
 template <typename LogElement>
-class SystemLog : private boost::noncopyable
+class SystemLog : boost::noncopyable, WithLogger<>
 {
 public:
     using Self = SystemLog;
@@ -145,8 +145,6 @@ protected:
       */
     std::vector<LogElement> data;
 
-    Logger * log;
-
     /** In this thread, data is pulled from 'queue' and stored in 'data', and then written into table.
       */
     ThreadFromGlobalPool saving_thread;
@@ -176,12 +174,10 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     const String & table_name_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_)
-    : context(context_),
+    : WithLogger("SystemLog (" + database_name_ + "." + table_name_ + ")"), context(context_),
     database_name(database_name_), table_name(table_name_), storage_def(storage_def_),
     flush_interval_milliseconds(flush_interval_milliseconds_)
 {
-    log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
-
     data.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
     saving_thread = ThreadFromGlobalPool([this] { threadFunction(); });
 }
@@ -195,7 +191,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
     /// Without try we could block here in case of queue overflow.
     if (!queue.tryPush({EntryType::LOG_ELEMENT, element}))
-        LOG_ERROR(log, "SystemLog queue is full");
+        LOG(ERROR) << "SystemLog queue is full";
 }
 
 
@@ -318,7 +314,7 @@ void SystemLog<LogElement>::flushImpl(EntryType reason)
         if ((reason == EntryType::AUTO_FLUSH || reason == EntryType::SHUTDOWN) && data.empty())
             return;
 
-        LOG_TRACE(log, "Flushing system log");
+        LOG(TRACE) << "Flushing system log";
 
         /// We check for existence of the table and create it as needed at every flush.
         /// This is done to allow user to drop the table at any moment (new empty table will be created automatically).
@@ -398,8 +394,8 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."
-            " Renaming it to " << backQuoteIfNeed(to.table));
+            LOG(DEBUG) << "Existing table " << description << " for system log has obsolete or different structure."
+                       << " Renaming it to " << backQuoteIfNeed(to.table);
 
             InterpreterRenameQuery(rename, context).execute();
 
@@ -407,13 +403,13 @@ void SystemLog<LogElement>::prepareTable()
             table = nullptr;
         }
         else if (!is_prepared)
-            LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
+            LOG(DEBUG) << "Will use existing table " << description << " for " << LogElement::name();
     }
 
     if (!table)
     {
         /// Create the table.
-        LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
+        LOG(DEBUG) << "Creating new table " << description << " for " + LogElement::name();
 
         auto create = std::make_shared<ASTCreateQuery>();
 

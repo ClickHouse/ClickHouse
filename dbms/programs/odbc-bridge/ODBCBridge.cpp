@@ -1,8 +1,5 @@
 #include "ODBCBridge.h"
-#include "HandlerFactory.h"
 
-#include <string>
-#include <errno.h>
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
 #include <Poco/Net/HTTPServer.h>
@@ -10,64 +7,58 @@
 #include <Poco/String.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Common/Exception.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/config.h>
-#include <common/logger_useful.h>
-#include <ext/scope_guard.h>
 #include <ext/range.h>
-#include <Common/SensitiveDataMasker.h>
+#include <ext/scope_guard.h>
+#include "HandlerFactory.h"
+
+#include <string>
+
+#include <errno.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-namespace
+Poco::Net::SocketAddress ODBCBridge::socketBindListen(Poco::Net::ServerSocket & socket)
 {
-    Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port, Poco::Logger * log)
+    Poco::Net::SocketAddress address;
+    try
     {
-        Poco::Net::SocketAddress socket_address;
-        try
-        {
-            socket_address = Poco::Net::SocketAddress(host, port);
-        }
-        catch (const Poco::Net::DNSException & e)
-        {
-            const auto code = e.code();
-            if (code == EAI_FAMILY
+        address = Poco::Net::SocketAddress(hostname, port);
+    }
+    catch (const Poco::Net::DNSException & e)
+    {
+        const auto code = e.code();
+        if (code == EAI_FAMILY
 #if defined(EAI_ADDRFAMILY)
-                || code == EAI_ADDRFAMILY
+            || code == EAI_ADDRFAMILY
 #endif
-            )
-            {
-                LOG_ERROR(log,
-                    "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message()
-                                                   << ". "
-                                                      "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                                                      "specify IPv4 address to listen in <listen_host> element of configuration "
-                                                      "file. Example: <listen_host>0.0.0.0</listen_host>");
-            }
-
-            throw;
+        )
+        {
+            LOG(ERROR) << "Cannot resolve listen_host (" << hostname << "), error " << e.code() << ": " << e.message() << ". "
+                        << "If it is an IPv6 address and your host has disabled IPv6, then consider to "
+                            "specify IPv4 address to listen in <listen_host> element of configuration "
+                            "file. Example: <listen_host>0.0.0.0</listen_host>";
         }
-        return socket_address;
-    }
 
-    Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, Poco::Logger * log)
-    {
-        auto address = makeSocketAddress(host, port, log);
+        throw;
+    }
 #if POCO_VERSION < 0x01080000
-        socket.bind(address, /* reuseAddress = */ true);
+    socket.bind(address, /* reuseAddress = */ true);
 #else
-        socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ false);
+    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ false);
 #endif
 
-        socket.listen(/* backlog = */ 64);
+    socket.listen(/* backlog = */ 64);
 
-        return address;
-    }
+    return address;
 }
 
 void ODBCBridge::handleHelp(const std::string &, const std::string &)
@@ -126,7 +117,6 @@ void ODBCBridge::initialize(Application & self)
 
     buildLoggers(config(), logger());
 
-    log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
     if (port > 0xFFFF)
@@ -151,9 +141,9 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     if (is_help)
         return Application::EXIT_OK;
 
-    LOG_INFO(log, "Starting up");
+    LOG(INFO) << "Starting up";
     Poco::Net::ServerSocket socket;
-    auto address = socketBindListen(socket, hostname, port, log);
+    auto address = socketBindListen(socket);
     socket.setReceiveTimeout(http_timeout);
     socket.setSendTimeout(http_timeout);
     Poco::ThreadPool server_pool(3, max_server_connections);
@@ -173,17 +163,16 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
         new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
     server.start();
 
-    LOG_INFO(log, "Listening http://" + address.toString());
+    LOG(INFO) << "Listening http://" << address.toString();
 
     SCOPE_EXIT({
-        LOG_DEBUG(log, "Received termination signal.");
-        LOG_DEBUG(log, "Waiting for current connections to close.");
+        LOG(DEBUG) << "Received termination signal." << std::endl << "Waiting for current connections to close.";
         server.stop();
         for (size_t count : ext::range(1, 6))
         {
             if (server.currentConnections() == 0)
                 break;
-            LOG_DEBUG(log, "Waiting for " << server.currentConnections() << " connections, try " << count);
+            LOG(DEBUG) << "Waiting for " << server.currentConnections() << " connections, try " << count;
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     });

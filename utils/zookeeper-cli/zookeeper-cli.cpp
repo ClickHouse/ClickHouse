@@ -3,7 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <common/readline_use.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -65,8 +65,8 @@ int main(int argc, char ** argv)
         }
 
         Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-        Logger::root().setChannel(channel);
-        Logger::root().setLevel("trace");
+        Poco::Logger::root().setChannel(channel);
+        Poco::Logger::root().setLevel("trace");
 
         zkutil::ZooKeeper zk(argv[1]);
 

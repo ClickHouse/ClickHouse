@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -12,11 +11,13 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
+#include <Poco/URIStreamFactory.h>
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/config.h>
-#include <common/logger_useful.h>
-#include <Poco/URIStreamFactory.h>
+#include <common/Logger.h>
+
+#include <functional>
 
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
@@ -45,12 +46,8 @@ protected:
 public:
     virtual void buildNewSession(const Poco::URI & uri) = 0;
 
-    explicit UpdatableSessionBase(const Poco::URI uri,
-        const ConnectionTimeouts & timeouts_,
-        SettingUInt64 max_redirects_)
-        : initial_uri { uri }
-        , timeouts { timeouts_ }
-        , max_redirects { max_redirects_ }
+    UpdatableSessionBase(const Poco::URI uri, const ConnectionTimeouts & timeouts_, SettingUInt64 max_redirects_)
+        : initial_uri{uri}, timeouts{timeouts_}, max_redirects{max_redirects_}
     {
     }
 
@@ -84,7 +81,7 @@ public:
 namespace detail
 {
     template <typename UpdatableSessionPtr>
-    class ReadWriteBufferFromHTTPBase : public ReadBuffer
+    class ReadWriteBufferFromHTTPBase : public ReadBuffer, WithLogger<>
     {
     public:
         using HTTPHeaderEntry = std::tuple<std::string, std::string>;
@@ -122,7 +119,7 @@ namespace detail
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
-            LOG_TRACE((&Logger::get("ReadWriteBufferFromHTTP")), "Sending request to " << uri.toString());
+            LOG(TRACE) << "Sending request to " << uri.toString();
 
             auto sess = session->getSession();
 
@@ -151,7 +148,7 @@ namespace detail
     public:
         using OutStreamCallback = std::function<void(std::ostream &)>;
 
-        explicit ReadWriteBufferFromHTTPBase(UpdatableSessionPtr session_,
+        ReadWriteBufferFromHTTPBase(UpdatableSessionPtr session_,
             Poco::URI uri_,
             const std::string & method_ = {},
             OutStreamCallback out_stream_callback_ = {},
@@ -159,6 +156,7 @@ namespace detail
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
             HTTPHeaderEntries http_header_entries_ = {})
             : ReadBuffer(nullptr, 0)
+            , WithLogger("ReadWriteFromHTTPBase")
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
             , session {session_}
@@ -297,4 +295,3 @@ public:
 };
 
 }
-

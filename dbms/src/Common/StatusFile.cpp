@@ -1,20 +1,18 @@
 #include "StatusFile.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/file.h>
-#include <fcntl.h>
-#include <errno.h>
-
+#include <IO/LimitReadBuffer.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <Poco/File.h>
-#include <common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/Operators.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 
 namespace DB
@@ -43,9 +41,9 @@ StatusFile::StatusFile(const std::string & path_)
         }
 
         if (!contents.empty())
-            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
+            LOG(INFO) << "Status file " << path << " already exists - unclean restart. Contents:\n" << contents;
         else
-            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
+            LOG(INFO) << "Status file " << path << " already exists and is empty - probably unclean hardware restart.";
     }
 
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT, 0666);
@@ -90,10 +88,10 @@ StatusFile::StatusFile(const std::string & path_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG(ERROR) << "Cannot close file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE);
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG(ERROR) << "Cannot unlink file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE);
 }
 
 }

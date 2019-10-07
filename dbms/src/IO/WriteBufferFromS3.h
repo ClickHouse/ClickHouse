@@ -17,7 +17,7 @@ namespace DB
 {
 /* Perform S3 HTTP PUT request.
  */
-class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>, WithLogger<WriteBufferFromS3>
 {
 private:
     Poco::URI uri;
@@ -34,7 +34,7 @@ private:
     std::vector<String> part_tags;
 
 public:
-    explicit WriteBufferFromS3(const Poco::URI & uri,
+    WriteBufferFromS3(const Poco::URI & uri,
         size_t minimum_upload_part_size_,
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},

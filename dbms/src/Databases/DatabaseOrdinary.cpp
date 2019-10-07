@@ -22,7 +22,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/scope_guard.h>
 
 

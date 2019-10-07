@@ -17,7 +17,7 @@ namespace DB
 }
 
 
-DB::UInt64 randomSeed()
+UInt64 randomSeed()
 {
     struct timespec times;
     if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))

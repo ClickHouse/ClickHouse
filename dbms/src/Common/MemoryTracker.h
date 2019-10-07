@@ -1,17 +1,19 @@
 #pragma once
 
-#include <atomic>
-#include <common/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SimpleActionBlocker.h>
 #include <Common/VariableContext.h>
+#include <common/Logger.h>
+#include <common/Types.h>
+
+#include <atomic>
 
 
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
   */
-class MemoryTracker
+class MemoryTracker : WithLogger<MemoryTracker>
 {
     std::atomic<Int64> amount {0};
     std::atomic<Int64> peak {0};

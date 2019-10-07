@@ -1,6 +1,6 @@
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB

@@ -4,7 +4,7 @@
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Storages/IStorage.h>
 
 #include <atomic>

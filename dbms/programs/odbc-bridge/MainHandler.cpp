@@ -1,24 +1,26 @@
 #include "MainHandler.h"
 
-#include "validateODBCConnectionString.h"
-#include <memory>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
-#include "ODBCBlockInputStream.h"
 #include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTMLForm.h>
-#include <common/logger_useful.h>
-#include <mutex>
 #include <Poco/ThreadPool.h>
+#include "ODBCBlockInputStream.h"
+#include "validateODBCConnectionString.h"
+
+#include <memory>
+#include <mutex>
+
 
 namespace DB
 {
+
 namespace
 {
     std::unique_ptr<Block> parseColumns(std::string && column_string)
@@ -66,14 +68,14 @@ ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
 void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
-    LOG_TRACE(log, "Request URI: " + request.getURI());
+    LOG(TRACE) << "Request URI: " << request.getURI();
 
     auto process_error = [&response, this](const std::string & message)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             response.send() << message << std::endl;
-        LOG_WARNING(log, message);
+        LOG(WARN) << message;
     };
 
     if (!params.has("query"))
@@ -115,16 +117,16 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     catch (const Exception & ex)
     {
         process_error("Invalid 'columns' parameter in request body '" + ex.message() + "'");
-        LOG_WARNING(log, ex.getStackTrace().toString());
+        LOG(WARN) << ex.getStackTrace().toString();
         return;
     }
 
     std::string format = params.get("format", "RowBinary");
     std::string query = params.get("query");
-    LOG_TRACE(log, "Query: " << query);
+    LOG(TRACE) << "Query: " << query;
 
     std::string connection_string = params.get("connection_string");
-    LOG_TRACE(log, "Connection string: '" << connection_string << "'");
+    LOG(TRACE) << "Connection string: '" << connection_string << "'";
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
     try
@@ -140,7 +142,8 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         response.setStatusAndReason(
             Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, bacause of too soon response sending
         writeStringBinary(message, out);
-        tryLogCurrentException(log);
+        LOG(EXCEPT);
     }
 }
+
 }

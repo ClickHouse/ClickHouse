@@ -7,7 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -269,13 +269,13 @@ using ZooKeeperPtr = ZooKeeper::Ptr;
 
 
 /// Creates an ephemeral node in the constructor, removes it in the destructor.
-class EphemeralNodeHolder
+class EphemeralNodeHolder : WithLogger<EphemeralNodeHolder>
 {
 public:
     using Ptr = std::shared_ptr<EphemeralNodeHolder>;
 
     EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool sequential, const std::string & data)
-            : path(path_), zookeeper(zookeeper_)
+        : path(path_), zookeeper(zookeeper_)
     {
         if (create)
             path = zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
@@ -310,7 +310,7 @@ public:
         catch (...)
         {
             ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG(EXCEPT) << __PRETTY_FUNCTION__;
         }
     }
 

@@ -445,7 +445,7 @@ IMPLEMENT_SETTING_ENUM(FormatSettings::DateTimeInputFormat, DATE_TIME_INPUT_FORM
     M(information, "information") \
     M(debug, "debug") \
     M(trace, "trace")
-IMPLEMENT_SETTING_ENUM(LogsLevel, LOGS_LEVEL_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
+IMPLEMENT_SETTING_ENUM(Logger::Level, LOGS_LEVEL_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
 
 
 namespace details

@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <Core/Types.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/CheckResults.h>
 

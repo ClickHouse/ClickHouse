@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <common/LocalDateTime.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"

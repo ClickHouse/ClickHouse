@@ -22,7 +22,7 @@ namespace CurrentMetrics
 {
     /// Metric identifier (index in array).
     using Metric = size_t;
-    using Value = DB::Int64;
+    using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
     const char * getName(Metric event);

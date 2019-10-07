@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 #include <Poco/Message.h>
 

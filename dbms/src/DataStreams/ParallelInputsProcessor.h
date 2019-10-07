@@ -1,18 +1,17 @@
 #pragma once
 
-#include <list>
-#include <queue>
-#include <atomic>
-#include <thread>
-#include <mutex>
-
-#include <common/logger_useful.h>
-
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
+#include <common/Logger.h>
+
+#include <atomic>
+#include <list>
+#include <mutex>
+#include <queue>
+#include <thread>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -86,7 +85,7 @@ public:
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG(EXCEPT);
         }
     }
 
@@ -134,7 +133,7 @@ public:
                   * (for example, the connection is broken for distributed query processing)
                   * - then do not care.
                   */
-                LOG_ERROR(log, "Exception while cancelling " << input->getName());
+                LOG(ERROR) << "Exception while cancelling " << input->getName();
             }
         }
     }
@@ -346,8 +345,6 @@ private:
     std::atomic<bool> finish { false };
     /// Wait for the completion of all threads.
     std::atomic<bool> joined_threads { false };
-
-    Logger * log = &Logger::get("ParallelInputsProcessor");
 };
 
 

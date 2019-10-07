@@ -1,5 +1,17 @@
 #pragma once
 
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Common/ArenaWithFreeLists.h>
+#include <Common/CurrentMetrics.h>
+#include <common/Logger.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+
+#include <pcg_random.hpp>
+#include <ext/bit_cast.h>
+
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -7,21 +19,11 @@
 #include <shared_mutex>
 #include <variant>
 #include <vector>
-#include <common/logger_useful.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <pcg_random.hpp>
-#include <Common/ArenaWithFreeLists.h>
-#include <Common/CurrentMetrics.h>
-#include <ext/bit_cast.h>
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
 
 
 namespace DB
 {
-class CacheDictionary final : public IDictionary
+class CacheDictionary final : public IDictionary, public WithLogger
 {
 public:
     CacheDictionary(
@@ -258,7 +260,6 @@ private:
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
-    Logger * const log;
 
     mutable std::shared_mutex rw_lock;
 

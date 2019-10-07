@@ -8,7 +8,7 @@
 #include <Core/Names.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/range.h>
 #include "DictionaryBlockInputStreamBase.h"
 #include "DictionaryStructure.h"

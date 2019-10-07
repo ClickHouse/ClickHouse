@@ -24,7 +24,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
 

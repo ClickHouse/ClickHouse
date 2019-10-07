@@ -48,12 +48,12 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 }
 
 /// Returns name of filesystem mounted to mount_point
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 std::string getFilesystemName([[maybe_unused]] const std::string & mount_point)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     auto mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
         throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
@@ -84,7 +84,7 @@ bool Disk::tryReserve(UInt64 bytes) const
     std::lock_guard lock(mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Reserving 0 bytes on disk " << backQuote(name));
+        LOG(DEBUG) << "Reserving 0 bytes on disk " << backQuote(name);
         ++reservation_count;
         return true;
     }
@@ -93,10 +93,8 @@ bool Disk::tryReserve(UInt64 bytes) const
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(
-            &Logger::get("DiskSpaceMonitor"),
-            "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name)
-                << ", having unreserved " << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
+        LOG(DEBUG) << "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name) << ", having unreserved "
+                   << formatReadableSizeWithBinarySuffix(unreserved_space) << ".";
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
@@ -138,7 +136,7 @@ Reservation::~Reservation()
         if (disk_ptr->reserved_bytes < size)
         {
             disk_ptr->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size for disk '" + disk_ptr->getName() + "'.");
+            LOG(ERROR) << "Unbalanced reservations size for disk '" << disk_ptr->getName() << "'.";
         }
         else
         {
@@ -146,13 +144,13 @@ Reservation::~Reservation()
         }
 
         if (disk_ptr->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count for disk '" + disk_ptr->getName() + "'.");
+            LOG(ERROR) << "Unbalanced reservation count for disk '" << disk_ptr->getName() << "'.";
         else
             --disk_ptr->reservation_count;
     }
     catch (...)
     {
-        tryLogCurrentException("~DiskSpaceMonitor");
+        LOG(EXCEPT) << "~DiskSpaceMonitor";
     }
 }
 
@@ -237,16 +235,11 @@ const DiskPtr & DiskSelector::operator[](const String & name) const
 
 
 Volume::Volume(
-    String name_,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    const DiskSelector & disk_selector)
-    : name(std::move(name_))
+    String name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
+    : WithLogger("StorageConfiguration"), name(std::move(name_))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-
-    Logger * logger = &Logger::get("StorageConfiguration");
 
     for (const auto & disk : keys)
     {
@@ -286,16 +279,16 @@ Volume::Volume(
         max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
         for (size_t i = 0; i < disks.size(); ++i)
             if (sizes[i] < max_data_part_size)
-                LOG_WARNING(logger, "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) <<
-                                    " have not enough space (" << formatReadableSizeWithBinarySuffix(sizes[i]) <<
-                                    ") for containing part the size of max_data_part_size (" <<
-                                    formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
+                LOG(WARN) << "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix)
+                          << " have not enough space (" << formatReadableSizeWithBinarySuffix(sizes[i])
+                          << ") for containing part the size of max_data_part_size ("
+                          << formatReadableSizeWithBinarySuffix(max_data_part_size) << ")";
     }
     constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(logger, "Volume " << backQuote(name) << " max_data_part_size is too low ("
-            << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < "
-            << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
+        LOG(WARN) << "Volume " << backQuote(name) << " max_data_part_size is too low ("
+                  << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE)
+                  << ")";
 }
 
 
@@ -494,9 +487,8 @@ size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
 
 
 StoragePolicySelector::StoragePolicySelector(
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    const DiskSelector & disks)
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DiskSelector & disks)
+    : WithLogger("StoragePolicySelector")
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -508,7 +500,7 @@ StoragePolicySelector::StoragePolicySelector(
                 ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy " << backQuote(name) << " loaded");
+        LOG(INFO) << "Storage policy " << backQuote(name) << " loaded";
     }
 
     constexpr auto default_storage_policy_name = "default";

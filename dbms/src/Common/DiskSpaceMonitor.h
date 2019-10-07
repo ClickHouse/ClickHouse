@@ -1,23 +1,27 @@
 #pragma once
 
+#include <IO/WriteHelpers.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
+#include <Common/formatReadable.h>
+#include <common/Logger.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <filesystem>
+#include <memory>
 #include <mutex>
+
+#include <unistd.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#if defined(__linux__)
-#include <cstdio>
-#include <mntent.h>
+
+#if defined(OS_LINUX)
+#    include <cstdio>
+#    include <mntent.h>
 #endif
-#include <memory>
-#include <filesystem>
-#include <boost/noncopyable.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
-#include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
-#include <Common/formatReadable.h>
-#include <Common/CurrentMetrics.h>
 
 
 namespace CurrentMetrics
@@ -51,7 +55,7 @@ using ReservationPtr = std::unique_ptr<Reservation>;
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 
 /// Returns name of filesystem mounted to mount_point
-#if !defined(__linux__)
+#if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 std::string getFilesystemName([[maybe_unused]] const std::string & mount_point);
@@ -85,7 +89,7 @@ using SpacePtr = std::shared_ptr<const Space>;
  *  path - Path to space. Ends with /
  *  name - Unique key using for disk space reservation.
  */
-class Disk : public Space
+class Disk : public Space, WithLogger<>
 {
 public:
     friend class Reservation;
@@ -112,7 +116,8 @@ public:
     };
 
     Disk(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
-        : name(name_)
+        : WithLogger("DiskSpaceMonitor")
+        , name(name_)
         , path(path_)
         , keep_free_space_bytes(keep_free_space_bytes_)
     {
@@ -171,11 +176,12 @@ using Disks = std::vector<DiskPtr>;
 /** Information about reserved size on concrete disk.
  *  Unreserve on destroy. Doesn't reserve bytes in constructor.
  */
-class Reservation final : private boost::noncopyable
+class Reservation final : private boost::noncopyable, WithLogger<>
 {
 public:
     Reservation(UInt64 size_, DiskPtr disk_ptr_)
-        : size(size_)
+        : WithLogger("DiskSpaceMonitor")
+        , size(size_)
         , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size)
         , disk_ptr(disk_ptr_)
     {
@@ -224,13 +230,14 @@ private:
  * - Volume("fast_disks", [d3, d4], 200)
  * Cannot store parts larger than max_data_part_size.
  */
-class Volume : public Space
+class Volume : public Space, WithLogger<>
 {
     friend class StoragePolicy;
 
 public:
     Volume(String name_, std::vector<DiskPtr> disks_, UInt64 max_data_part_size_)
-        : max_data_part_size(max_data_part_size_)
+        : WithLogger("StorageConfiguration")
+        , max_data_part_size(max_data_part_size_)
         , disks(std::move(disks_))
         , name(std::move(name_))
     {
@@ -338,11 +345,10 @@ using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
 /// Parse .xml configuration and store information about policies
 /// Mostly used for introspection.
-class StoragePolicySelector
+class StoragePolicySelector : WithLogger<>
 {
 public:
-    StoragePolicySelector(const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix, const DiskSelector & disks);
+    StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DiskSelector & disks);
 
     /// Policy by name
     const StoragePolicyPtr & operator[](const String & name) const;

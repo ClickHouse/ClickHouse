@@ -5,7 +5,7 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <ext/scope_guard.h>
 #include "IServer.h"
 #include "MySQLHandler.h"

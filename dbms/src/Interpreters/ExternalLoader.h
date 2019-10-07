@@ -6,7 +6,7 @@
 #include <Core/Types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/ExternalLoaderConfigRepository.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 
 
 namespace DB

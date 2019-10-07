@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"

@@ -21,7 +21,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <common/getThreadNumber.h>
 #include <ext/range.h>
 #include <DataStreams/FilterBlockInputStream.h>

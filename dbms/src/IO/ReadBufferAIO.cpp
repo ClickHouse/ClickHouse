@@ -68,7 +68,7 @@ ReadBufferAIO::~ReadBufferAIO()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            LOG(EXCEPT) << __PRETTY_FUNCTION__;
         }
     }
 

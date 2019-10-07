@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/ErrorHandler.h>
-#include <common/logger_useful.h>
+#include <common/Logger.h>
 #include <Common/Exception.h>
 
 
@@ -20,7 +20,7 @@ public:
 
 /** Log exception message.
   */
-class ServerErrorHandler : public Poco::ErrorHandler
+class ServerErrorHandler : public Poco::ErrorHandler, WithLogger<ServerErrorHandler>
 {
 public:
     void exception(const Poco::Exception &) { logException(); }
@@ -28,10 +28,8 @@ public:
     void exception()                        { logException(); }
 
 private:
-    Logger * log = &Logger::get("ServerErrorHandler");
-
     void logException()
     {
-        DB::tryLogCurrentException(log);
+        LOG(EXCEPT);
     }
 };

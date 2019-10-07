@@ -13,7 +13,7 @@ namespace DB
 {
 /** Perform S3 HTTP GET request and provide response to read.
   */
-class ReadBufferFromS3 : public ReadBuffer
+class ReadBufferFromS3 : public ReadBuffer, WithLogger<ReadBufferFromS3>
 {
 protected:
     Poco::URI uri;

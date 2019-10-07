@@ -1,9 +1,10 @@
 #pragma once
 
-#include <string>
-#include <common/logger_useful.h>
-#include <Poco/File.h>
 #include <Storages/CheckResults.h>
+#include <Poco/File.h>
+
+#include <map>
+#include <string>
 
 
 namespace DB
@@ -39,8 +40,6 @@ private:
     /// The data from the file is read lazily.
     Map map;
     bool initialized = false;
-
-    Logger * log = &Logger::get("FileChecker");
 };
 
 }
