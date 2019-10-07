@@ -422,7 +422,7 @@ if __name__ == '__main__':
     parser.add_argument('--token', help='Github token. Use it to increase github api query limit.')
     parser.add_argument('--directory', help='ClickHouse repo directory. Script dir by default.')
     parser.add_argument('--state', help='File to dump inner states result.', default='changelog_state.json')
-    parser.add_argument('--repo', help='ClickHouse repo on GitHub.', default='yandex/ClickHouse')
+    parser.add_argument('--repo', help='ClickHouse repo on GitHub.', default='ClickHouse/ClickHouse')
     parser.add_argument('--max_retry', default=100, type=int,
                         help='Max number of retries pre api query in case of API rate limit exceeded error.')
     parser.add_argument('--retry_timeout', help='Timeout after retry in seconds.', type=int, default=5)

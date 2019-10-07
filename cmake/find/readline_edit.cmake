@@ -1,7 +1,7 @@
 include (CMakePushCheckState)
 cmake_push_check_state ()
 
-option (ENABLE_READLINE "Enable readline" 1)
+option (ENABLE_READLINE "Enable readline" ${ENABLE_LIBRARIES})
 if (ENABLE_READLINE)
 
 set (READLINE_PATHS "/usr/local/opt/readline/lib")

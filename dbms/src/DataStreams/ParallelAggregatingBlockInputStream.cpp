@@ -101,12 +101,6 @@ Block ParallelAggregatingBlockInputStream::readImpl()
 }
 
 
-ParallelAggregatingBlockInputStream::TemporaryFileStream::TemporaryFileStream(const std::string & path)
-    : file_in(path), compressed_in(file_in),
-    block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get())) {}
-
-
-
 void ParallelAggregatingBlockInputStream::Handler::onBlock(Block & block, size_t thread_num)
 {
     parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],

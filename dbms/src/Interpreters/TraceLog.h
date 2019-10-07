@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Common/QueryProfiler.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
