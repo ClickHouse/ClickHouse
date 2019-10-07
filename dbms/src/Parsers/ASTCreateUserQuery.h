@@ -13,14 +13,15 @@ namespace DB
   *     [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH}] BY password/hash]
   *     [HOST {NAME 'hostname' [,...] | REGEXP 'hostname' [,...]} | IP 'address/subnet' [,...] | ANY}]
   *     [DEFAULT ROLE {role[,...] | NONE}]
-  *     [SETTINGS varname [= value] [MIN min] [MAX max] [READONLY] [,...]]
+  *     [SET varname [= value] [MIN min] [MAX max] [READONLY] [,...]]
   *     [ACCOUNT {LOCK | UNLOCK}]
   *
   * ALTER USER name
   *     [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH}] BY password/hash]
   *     [HOST {NAME 'hostname' [,...] | REGEXP 'hostname' [,...]} | IP 'address/subnet' [,...] | ANY}]
-  *     [DEFAULT ROLE {role[,...] | NONE}]
-  *     [SETTINGS varname [= value] [MIN min] [MAX max] [READONLY] [,...]]
+  *     [DEFAULT ROLE {role[,...] | NONE | ALL}]
+  *     [SET varname [= value] [MIN min] [MAX max] [READONLY] [,...]]
+  *     [UNSET {varname [,...] | ALL}]
   *     [ACCOUNT {LOCK | UNLOCK}]
   */
 class ASTCreateUserQuery : public IAST
@@ -40,8 +41,10 @@ public:
     };
     std::optional<DefaultRoles> default_roles;
 
-    std::optional<SettingsChanges> settings;
-    std::optional<SettingsConstraints> settings_constraints;
+    SettingsChanges settings;
+    SettingsConstraints settings_constraints;
+    Strings unset;
+    bool unset_all = false;
 
     struct AccountLock
     {
@@ -57,7 +60,8 @@ private:
     void formatAuthentication(const FormatSettings & settings) const;
     void formatAllowedHosts(const FormatSettings & settings) const;
     void formatDefaultRoles(const FormatSettings & settings) const;
-    void formatSettings(const FormatSettings & settings) const;
+    void formatSet(const FormatSettings & settings) const;
+    void formatUnset(const FormatSettings & settings) const;
     void formatAccountLock(const FormatSettings & settings) const;
 };
 }

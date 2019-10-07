@@ -23,6 +23,15 @@ void ASTDropAccessQuery::formatImpl(const FormatSettings & settings, FormatState
 
 const char * ASTDropAccessQuery::getSQLTypeName() const
 {
-    return kind == Kind::ROLE ? "ROLE" : "USER";
+    switch (kind)
+    {
+        case Kind::ROLE: return "ROLE";
+        case Kind::USER: return "USER";
+        case Kind::SETTINGS_PROFILE: return "SETTINGS PROFILE";
+        case Kind::QUOTA: return "QUOTA";
+        case Kind::ROW_POLICY: return "ROW POLICY";
+        default:
+            throw Exception("Unknown kind of the drop query: " + std::to_string(static_cast<int>(kind)), ErrorCodes::LOGICAL_ERROR);
+    }
 }
 }

@@ -32,7 +32,7 @@ namespace DB
 struct User2 : public Role
 {
     Authentication authentication;
-    AllowedHosts allowed_hosts;
+    AllowedHosts allowed_hosts{AllowedHosts::AllAddressesTag{}};
 
     std::unordered_set<UUID> default_roles;
 

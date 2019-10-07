@@ -20,6 +20,8 @@ namespace
 {
     using IPAddress = Poco::Net::IPAddress;
 
+    const AllowedHosts::IPSubnet ALL_ADDRESSES = AllowedHosts::IPSubnet{IPAddress{IPAddress::IPv6}, IPAddress{IPAddress::IPv6}};
+
     IPAddress toIPv6(const IPAddress & addr)
     {
         if (addr.family() == IPAddress::IPv6)
@@ -117,6 +119,12 @@ namespace
         static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
         return cache(address);
     }
+
+
+    bool operator<(const AllowedHosts::IPSubnet & lhs, const AllowedHosts::IPSubnet & rhs)
+    {
+        return (lhs.prefix < rhs.prefix) || ((lhs.prefix == rhs.prefix) && (lhs.mask < rhs.mask));
+    }
 }
 
 
@@ -136,16 +144,17 @@ bool operator==(const AllowedHosts::IPSubnet & lhs, const AllowedHosts::IPSubnet
 }
 
 
-bool operator<(const AllowedHosts::IPSubnet & lhs, const AllowedHosts::IPSubnet & rhs)
+AllowedHosts::AllowedHosts()
 {
-    return (lhs.prefix < rhs.prefix) || ((lhs.prefix == rhs.prefix) && (lhs.mask < rhs.mask));
 }
 
 
-const AllowedHosts::IPSubnet AllowedHosts::IPSubnet::ALL_ADDRESSES = IPSubnet{IPAddress{IPAddress::IPv6}, IPAddress{IPAddress::IPv6}};
+AllowedHosts::AllowedHosts(AllAddressesTag)
+{
+    addAllAddresses();
+}
 
 
-AllowedHosts::AllowedHosts() = default;
 AllowedHosts::~AllowedHosts() = default;
 
 
@@ -166,6 +175,23 @@ AllowedHosts & AllowedHosts::operator =(const AllowedHosts & src)
 }
 
 
+AllowedHosts::AllowedHosts(AllowedHosts && src)
+{
+    *this = src;
+}
+
+
+AllowedHosts & AllowedHosts::operator =(AllowedHosts && src)
+{
+    ip_addresses = std::move(src.ip_addresses);
+    ip_subnets = std::move(src.ip_subnets);
+    host_names = std::move(src.host_names);
+    host_regexps = std::move(src.host_regexps);
+    host_regexps_compiled = std::move(src.host_regexps_compiled);
+    return *this;
+}
+
+
 void AllowedHosts::clear()
 {
     ip_addresses.clear();
@@ -176,22 +202,29 @@ void AllowedHosts::clear()
 }
 
 
-void AllowedHosts::addIPAddress(const IPAddress & address)
+bool AllowedHosts::empty() const
+{
+    return ip_addresses.empty() && ip_subnets.empty() && host_names.empty() && host_regexps.empty();
+}
+
+
+void AllowedHosts::addAddress(const IPAddress & address)
 {
     IPAddress addr_v6 = toIPv6(address);
 
     /// The vector `ip_addresses` is sorted to simplify the comparison.
+    if (std::binary_search(ip_addresses.begin(), ip_addresses.end()
     ip_addresses.insert(std::upper_bound(ip_addresses.begin(), ip_addresses.end(), addr_v6), addr_v6);
 }
 
 
-void AllowedHosts::addIPAddress(const String & address)
+void AllowedHosts::addAddress(const String & address)
 {
-    addIPAddress(IPAddress{address});
+    addAddress(IPAddress{address});
 }
 
 
-void AllowedHosts::addIPSubnet(const IPSubnet & subnet)
+void AllowedHosts::addSubnet(const IPSubnet & subnet)
 {
     IPSubnet subnet_v6;
     subnet_v6.prefix = toIPv6(subnet.prefix);
@@ -199,7 +232,7 @@ void AllowedHosts::addIPSubnet(const IPSubnet & subnet)
 
     if (subnet_v6.mask == IPAddress(128, IPAddress::IPv6))
     {
-        addIPAddress(subnet_v6.prefix);
+        addAddress(subnet_v6.prefix);
         return;
     }
 
@@ -210,33 +243,33 @@ void AllowedHosts::addIPSubnet(const IPSubnet & subnet)
 }
 
 
-void AllowedHosts::addIPSubnet(const IPAddress & prefix, const IPAddress & mask)
+void AllowedHosts::addSubnet(const IPAddress & prefix, const IPAddress & mask)
 {
-    addIPSubnet(IPSubnet{prefix, mask});
+    addSubnet(IPSubnet{prefix, mask});
 }
 
 
-void AllowedHosts::addIPSubnet(const IPAddress & prefix, size_t num_prefix_bits)
+void AllowedHosts::addSubnet(const IPAddress & prefix, size_t num_prefix_bits)
 {
-    addIPSubnet(prefix, IPAddress(num_prefix_bits, prefix.family()));
+    addSubnet(prefix, IPAddress(num_prefix_bits, prefix.family()));
 }
 
 
-void AllowedHosts::addIPSubnet(const String & subnet)
+void AllowedHosts::addSubnet(const String & subnet)
 {
     size_t slash = subnet.find('/');
     if (slash == String::npos)
     {
-        addIPAddress(subnet);
+        addAddress(subnet);
         return;
     }
 
     IPAddress prefix{String{subnet, 0, slash}};
     String mask(subnet, slash + 1, subnet.length() - slash - 1);
     if (std::all_of(mask.begin(), mask.end(), isNumericASCII))
-        addIPSubnet(prefix, parseFromString<UInt8>(mask));
+        addSubnet(prefix, parseFromString<UInt8>(mask));
     else
-        addIPSubnet(prefix, IPAddress{mask});
+        addSubnet(prefix, IPAddress{mask});
 }
 
 
@@ -255,6 +288,20 @@ void AllowedHosts::addHostRegexp(const String & host_regexp)
     size_t new_pos = new_pos_it - host_regexps.begin();
     host_regexps.insert(new_pos_it, host_regexp);
     host_regexps_compiled.insert(host_regexps_compiled.begin() + new_pos, std::move(compiled_regexp));
+}
+
+
+void AllowedHosts::addAllAddresses()
+{
+    addSubnet(ALL_ADDRESSES);
+}
+
+
+bool AllowedHosts::containsAllAddresses() const
+{
+    return std::count(ip_subnets.begin(), ip_subnets.end(), ALL_ADDRESSES)
+        || std::count(host_regexps.begin(), host_regexps.end(), ".*")
+        || std::count(host_regexps.begin(), host_regexps.end(), "$");
 }
 
 

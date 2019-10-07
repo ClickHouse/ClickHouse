@@ -591,7 +591,7 @@ bool AccessPrivileges::grant(Type access, const String & database, const String 
 }
 
 
-bool AccessPrivileges::revoke(Type access)
+bool AccessPrivileges::revoke(Type access, bool)
 {
     return root.revoke(access);
 }

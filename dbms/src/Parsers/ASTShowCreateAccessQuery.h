@@ -6,10 +6,17 @@
 namespace DB
 {
 /// SHOW CREATE USER user
-class ASTShowCreateUserQuery : public ASTQueryWithOutput
+class ASTShowCreateAccessQuery : public ASTQueryWithOutput
 {
 public:
-    String user_name;
+    enum class Kind
+    {
+        USER,
+        SETTINGS_PROFILE,
+    };
+
+    Kind kind = Kind::USER;
+    String name;
 
     String getID(char) const override;
     ASTPtr clone() const override;

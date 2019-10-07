@@ -28,44 +28,54 @@ public:
         String toString() const;
         friend bool operator ==(const IPSubnet & lhs, const IPSubnet & rhs);
         friend bool operator !=(const IPSubnet & lhs, const IPSubnet & rhs) { return !(lhs == rhs); }
-        static const IPSubnet ALL_ADDRESSES;
     };
 
+    struct AllAddressesTag {};
+
     AllowedHosts();
-    AllowedHosts(const AllowedHosts & src);
-    AllowedHosts & operator =(const AllowedHosts & src);
+    AllowedHosts(AllAddressesTag);
     ~AllowedHosts();
 
-    /// Removes all contained hosts.
+    AllowedHosts(const AllowedHosts & src);
+    AllowedHosts & operator =(const AllowedHosts & src);
+    AllowedHosts(AllowedHosts && src);
+    AllowedHosts & operator =(AllowedHosts && src);
+
+    /// Removes all contained hosts. This will allow all hosts.
     void clear();
+    bool empty() const;
 
-    /// Adds exact IP address.
+    /// Allows exact IP address.
     /// For example, 213.180.204.3 or 2a02:6b8::3
-    void addIPAddress(const IPAddress & address);
-    void addIPAddress(const String & address);
+    void addAddress(const IPAddress & address);
+    void addAddress(const String & address);
 
-    /// Adds an IP subnet.
-    void addIPSubnet(const IPSubnet & subnet);
-    void addIPSubnet(const String & subnet);
+    /// Allows an IP subnet.
+    void addSubnet(const IPSubnet & subnet);
+    void addSubnet(const String & subnet);
 
-    /// Adds an IP subnet.
+    /// Allows an IP subnet.
     /// For example, 312.234.1.1/255.255.255.0 or 2a02:6b8::3/FFFF:FFFF:FFFF:FFFF::
-    void addIPSubnet(const IPAddress & prefix, const IPAddress & mask);
+    void addSubnet(const IPAddress & prefix, const IPAddress & mask);
 
-    /// Adds an IP subnet.
+    /// Allows an IP subnet.
     /// For example, 10.0.0.1/8 or 2a02:6b8::3/64
-    void addIPSubnet(const IPAddress & prefix, size_t num_prefix_bits);
+    void addSubnet(const IPAddress & prefix, size_t num_prefix_bits);
 
-    /// Adds an exact host. The `contains()` function will check that the provided address equals to one of that host's addresses.
+    /// Allows an exact host. The `contains()` function will check that the provided address equals to one of that host's addresses.
     void addHostName(const String & host_name);
 
-    /// Adds a regular expression for the host.
+    /// Allows a regular expression for the host.
     void addHostRegexp(const String & host_regexp);
 
-    const std::vector<IPAddress> & getIPAddresses() const { return ip_addresses; }
-    const std::vector<IPSubnet> & getIPSubnets() const { return ip_subnets; }
-    const std::vector<String> & getHostNames() const { return host_names; }
-    const std::vector<String> & getHostRegexps() const { return host_regexps; }
+    /// Allows all addresses.
+    void addAllAddresses();
+    bool containsAllAddresses() const;
+
+    const std::unordered_set<IPAddress> & getIPAddresses() const { return ip_addresses; }
+    const std::unordered_set<IPSubnet> & getIPSubnets() const { return ip_subnets; }
+    const std::unordered_set<String> & getHostNames() const { return host_names; }
+    const std::unordered_set<String> & getHostRegexps() const { return host_regexps; }
 
     /// Checks if the provided address is in the list. Returns false if not.
     bool contains(const IPAddress & address) const;
@@ -81,10 +91,10 @@ private:
     bool containsImpl(const IPAddress & address, const String & user_name, String * error) const;
     void ensureRegexpsCompiled() const;
 
-    std::vector<IPAddress> ip_addresses;
-    std::vector<IPSubnet> ip_subnets;
-    std::vector<String> host_names;
-    std::vector<String> host_regexps;
-    mutable std::vector<std::unique_ptr<Poco::RegularExpression>> host_regexps_compiled;
+    std::unordered_set<IPAddress> ip_addresses;
+    std::unordered_set<IPSubnet> ip_subnets;
+    std::unordered_set<String> host_names;
+    std::unordered_set<String> host_regexps;
+    mutable std::vector<std::unique_ptr<Poco::RegularExpression>> compiled_host_regexps;
 };
 }

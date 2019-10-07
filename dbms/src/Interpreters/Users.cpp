@@ -62,7 +62,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         {
             String value = config.getString(config_networks + "." + *it);
             if (startsWith(*it, "ip"))
-                allowed_hosts.addIPSubnet(value);
+                allowed_hosts.addSubnet(value);
             else if (startsWith(*it, "host_regexp"))
                 allowed_hosts.addHostRegexp(value);
             else if (startsWith(*it, "host"))

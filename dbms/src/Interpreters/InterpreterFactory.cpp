@@ -13,7 +13,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTShowCreateUserQuery.h>
+#include <Parsers/ASTShowCreateAccessQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
@@ -41,7 +41,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
-#include <Interpreters/InterpreterShowCreateUserQuery.h>
+#include <Interpreters/InterpreterShowCreateAccessQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>

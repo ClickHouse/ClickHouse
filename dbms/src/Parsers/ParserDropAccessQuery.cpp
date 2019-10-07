@@ -2,6 +2,7 @@
 #include <Parsers/ASTDropAccessQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseUserName.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
 namespace DB
@@ -18,6 +19,12 @@ bool ParserDropAccessQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         kind = Kind::ROLE;
     else if (ParserKeyword{"USER"}.ignore(pos, expected))
         kind = Kind::USER;
+    else if (ParserKeyword{"SETTINGS PROFILE"}.ignore(pos, expected))
+        kind = Kind::SETTINGS_PROFILE;
+    else if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
+        kind = Kind::QUOTA;
+    else if (ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
+        kind = Kind::ROW_POLICY;
     else
         return false;
 
@@ -26,18 +33,23 @@ bool ParserDropAccessQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if_exists = true;
 
     Strings names;
-    if ((kind == Kind::ROLE) || (kind == Kind::USER))
+    ParserToken comma{TokenType::Comma};
+    do
     {
-        ParserToken comma{TokenType::Comma};
-        do
+        String name;
+        if ((kind == Kind::ROLE) || (kind == Kind::USER))
         {
-            String name;
             if (!parseRoleName(pos, expected, name))
                 return false;
-            names.emplace_back(std::move(name));
         }
-        while (comma.ignore(pos, expected));
+        else
+        {
+            if (!parseIdentifierOrStringLiteral(pos, expected, name))
+                return false;
+        }
+        names.emplace_back(std::move(name));
     }
+    while (comma.ignore(pos, expected));
 
     auto query = std::make_shared<ASTDropAccessQuery>();
     node = query;

@@ -33,7 +33,8 @@ private:
     bool parseAuthentication(Pos & pos, Expected & expected, ASTCreateUserQuery & query);
     bool parseAllowedHosts(Pos & pos, Expected & expected, ASTCreateUserQuery & query);
     bool parseDefaultRoles(Pos & pos, Expected & expected, ASTCreateUserQuery & query);
-    bool parseSettings(Pos & pos, Expected & expected, ASTCreateUserQuery & query);
+    bool parseSet(Pos & pos, Expected & expected, ASTCreateUserQuery & query);
+    bool parseUnset(Pos & pos, Expected & expected, ASTCreateUserQuery & query);
     bool parseAccountLock(Pos & pos, Expected & expected, ASTCreateUserQuery & query);
 };
 }

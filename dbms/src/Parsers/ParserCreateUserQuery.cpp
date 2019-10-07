@@ -55,9 +55,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (!parseDefaultRoles(pos, expected, *query))
                 return false;
         }
-        else if (!query->settings && ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+        else if (!ParserKeyword{"SET"}.ignore(pos, expected))
         {
-            if (!parseSettings(pos, expected, *query))
+            if (!parseSet(pos, expected, *query))
+                return false;
+        }
+        else if (query.alter && !ParserKeyword{"UNSET"}.ignore(pos, expected))
+        {
+            if (!parseUnset(pos, expected, *query))
                 return false;
         }
         else if (!query->account_lock && ParserKeyword{"ACCOUNT"}.ignore(pos, expected))
@@ -68,7 +73,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             break;
     }
 
-    if (!query->allowed_hosts && !alter)
+    if (!query->allowed_hosts && !alter && !allowed_hosts_from_user_name.containsAllAddresses())
         query->allowed_hosts.emplace(allowed_hosts_from_user_name);
 
     node = query;
@@ -140,7 +145,7 @@ bool ParserCreateUserQuery::parseAllowedHosts(Pos & pos, Expected & expected, AS
     }
     else if (ParserKeyword{"ANY"}.ignore(pos, expected))
     {
-        allowed_hosts.addIPSubnet(AllowedHosts::IPSubnet::ALL_ADDRESSES);
+        allowed_hosts.addAllAddresses();
     }
     else
     {
@@ -169,7 +174,7 @@ bool ParserCreateUserQuery::parseAllowedHosts(Pos & pos, Expected & expected, AS
                 if (!ParserStringLiteral().parse(pos, ip_address, expected))
                     return false;
 
-                allowed_hosts.addIPSubnet(ip_address->as<ASTLiteral &>().value.safeGet<String>());
+                allowed_hosts.addSubnet(ip_address->as<ASTLiteral &>().value.safeGet<String>());
             }
             else
                 break;
@@ -212,7 +217,7 @@ bool ParserCreateUserQuery::parseDefaultRoles(Pos & pos, Expected & expected, AS
 }
 
 
-bool ParserCreateUserQuery::parseSettings(Pos & pos, Expected & expected, ASTCreateUserQuery & query)
+bool ParserCreateUserQuery::parseSet(Pos & pos, Expected & expected, ASTCreateUserQuery & query)
 {
     ParserIdentifier name_p;
     ParserLiteral value_p;
@@ -222,67 +227,86 @@ bool ParserCreateUserQuery::parseSettings(Pos & pos, Expected & expected, ASTCre
     ParserKeyword readonly_p("READONLY");
     ParserToken comma_p(TokenType::Comma);
 
-    SettingsChanges settings;
-    SettingsConstraints settings_constraints;
+    do
+    {
+        ASTPtr name_ast;
+        if (!name_p.parse(pos, name_ast, expected))
+            return false;
 
-    if (ParserKeyword{"NONE"}.ignore(pos, expected))
-    {
-    }
-    else
-    {
-        do
+        String name = getIdentifierName(name_ast);
+        bool value_or_constraint_used = false;
+
+        while (true)
         {
-            ASTPtr name_ast;
-            if (!name_p.parse(pos, name_ast, expected))
-                return false;
-
-            String name = getIdentifierName(name_ast);
-            bool value_or_constraint_used = false;
-
-            while (true)
+            if (eq_p.ignore(pos, expected))
             {
-                if (eq_p.ignore(pos, expected))
-                {
-                    ASTPtr value;
-                    if (!value_p.parse(pos, value, expected))
-                        return false;
-                    Settings::findIndexStrict(name); /// Check existence of the setting.
-                    settings.push_back({name, value->as<const ASTLiteral &>().value});
-                    value_or_constraint_used = true;
-                }
-                else if (min_p.ignore(pos, expected))
-                {
-                    ASTPtr min;
-                    if (!value_p.parse(pos, min, expected))
-                        return false;
-                    settings_constraints.setMinValue(name, min->as<const ASTLiteral &>().value);
-                    value_or_constraint_used = true;
-                }
-                else if (max_p.ignore(pos, expected))
-                {
-                    ASTPtr max;
-                    if (!value_p.parse(pos, max, expected))
-                        return false;
-                    settings_constraints.setMaxValue(name, max->as<const ASTLiteral &>().value);
-                    value_or_constraint_used = true;
-                }
-                else if (readonly_p.ignore(pos, expected))
-                {
-                    settings_constraints.setReadOnly(name, true);
-                    value_or_constraint_used = true;
-                }
-                else
-                    break;
-            }
+                ASTPtr value;
+                if (!value_p.parse(pos, value, expected))
+                    return false;
+                Settings::findIndexStrict(name); /// Check existence of the setting.
 
-            if (!value_or_constraint_used)
-                return false;
+                auto it = std::upper_bound
+                return vec.insert
+                    (
+                        std::upper_bound( vec.begin(), vec.end(), item ),
+                        item
+                    );
+                query.settings.push_back({name, value->as<const ASTLiteral &>().value});
+                value_or_constraint_used = true;
+            }
+            else if (min_p.ignore(pos, expected))
+            {
+                ASTPtr min;
+                if (!value_p.parse(pos, min, expected))
+                    return false;
+                query.settings_constraints.setMinValue(name, min->as<const ASTLiteral &>().value);
+                value_or_constraint_used = true;
+            }
+            else if (max_p.ignore(pos, expected))
+            {
+                ASTPtr max;
+                if (!value_p.parse(pos, max, expected))
+                    return false;
+                query.settings_constraints.setMaxValue(name, max->as<const ASTLiteral &>().value);
+                value_or_constraint_used = true;
+            }
+            else if (readonly_p.ignore(pos, expected))
+            {
+                query.settings_constraints.setReadOnly(name, true);
+                value_or_constraint_used = true;
+            }
+            else
+                break;
         }
-        while (comma_p.ignore(pos, expected));
+
+        if (!value_or_constraint_used)
+            return false;
+    }
+    while (comma_p.ignore(pos, expected));
+    return true;
+}
+
+
+bool ParserCreateUserQuery::parseUnset(Pos & pos, Expected & expected, ASTCreateUserQuery & query)
+{
+    if (ParserKeyword{"ALL"}.ignore(pos, expected))
+    {
+        query.unset_all = true;
+        return true;
     }
 
-    query.settings.emplace(std::move(settings));
-    query.settings_constraints.emplace(std::move(settings_constraints));
+    ParserIdentifier name_p;
+    ParserToken comma_p(TokenType::Comma);
+    do
+    {
+        ASTPtr name_ast;
+        if (!name_p.parse(pos, name_ast, expected))
+            return false;
+
+        String name = getIdentifierName(name_ast);
+        query.unset_names.emplace_back(name);
+    }
+    while (comma_p.ignore(pos, expected));
     return true;
 }
 

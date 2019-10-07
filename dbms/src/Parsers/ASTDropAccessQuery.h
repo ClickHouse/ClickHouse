@@ -17,6 +17,9 @@ public:
     {
         ROLE,
         USER,
+        SETTINGS_PROFILE,
+        QUOTA,
+        ROW_POLICY,
     };
     Kind kind = Kind::ROLE;
     Strings names;

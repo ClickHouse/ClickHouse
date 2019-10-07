@@ -26,35 +26,6 @@ const char * IAST::hilite_substitution = "\033[1;36m";
 const char * IAST::hilite_none         = "\033[0m";
 
 
-String backQuoteIfNeed(const String & x)
-{
-    String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeProbablyBackQuotedString(x, wb);
-    }
-    return res;
-}
-
-String backQuote(const String & x)
-{
-    String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeBackQuotedString(x, wb);
-    }
-    return res;
-}
-
-
-String quoteString(const String & x)
-{
-    String res(x.size(), '\0');
-    WriteBufferFromString wb(res);
-    writeQuotedString(x, wb);
-    return res;
-}
-
 size_t IAST::checkSize(size_t max_size) const
 {
     size_t res = 1;

@@ -1,0 +1,21 @@
+1)
+GRANT SELECT ON *.* TO r1
+2)
+GRANT SELECT ON *.* TO r1
+3)
+GRANT SELECT ON *.* TO r1
+REVOKE SELECT ON testdb.* FROM r1
+4)
+GRANT SELECT ON testdb.* TO r2
+5)
+GRANT SELECT ON testdb.* TO r2
+6)
+GRANT SELECT ON testdb.* TO r2
+REVOKE SELECT ON testdb.testtable FROM r2
+7)
+GRANT SELECT ON testdb.testtable TO r3
+8)
+GRANT SELECT ON testdb.testtable TO r3
+9)
+GRANT SELECT ON testdb.testtable TO r3
+REVOKE SELECT(x) ON testdb.testtable FROM r3

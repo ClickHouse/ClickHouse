@@ -13,6 +13,7 @@ BlockIO InterpreterGrantQuery::execute()
     bool is_grant = (query.kind == ASTGrantQuery::Kind::GRANT);
     String database = query.use_current_database ? context.getCurrentDatabase() : query.database;
     AccessControlManager & manager = context.getAccessControlManager();
+    bool partial_revokes = context.getSettings().partial_revokes;
 
     std::vector<UUID> role_ids;
     role_ids.reserve(query.roles.size());
@@ -31,9 +32,9 @@ BlockIO InterpreterGrantQuery::execute()
                 }
                 else
                 {
-                    role.privileges[true].revoke(params...);
+                    role.privileges[true].revoke(params..., partial_revokes);
                     if (!query.grant_option)
-                        role.privileges[false].revoke(params...);
+                        role.privileges[false].revoke(params..., partial_revokes);
                 }
             };
 

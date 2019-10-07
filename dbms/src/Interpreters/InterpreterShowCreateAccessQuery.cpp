@@ -1,7 +1,7 @@
-#include <Interpreters/InterpreterShowCreateUserQuery.h>
+#include <Interpreters/InterpreterShowCreateAccessQuery.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTShowCreateUserQuery.h>
+#include <Parsers/ASTCreateAccessQuery.h>
+#include <Parsers/ASTShowCreateAccessQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
 #include <Access/AccessControlManager.h>
@@ -14,7 +14,7 @@
 
 namespace DB
 {
-BlockIO InterpreterShowCreateUserQuery::execute()
+BlockIO InterpreterShowCreateAccessQuery::execute()
 {
     BlockIO res;
     res.in = executeImpl();
@@ -22,9 +22,13 @@ BlockIO InterpreterShowCreateUserQuery::execute()
 }
 
 
-BlockInputStreamPtr InterpreterShowCreateUserQuery::executeImpl()
+BlockInputStreamPtr InterpreterShowCreateAccessQuery::executeImpl()
 {
-    auto create_query = getCreateUserQuery();
+    ASTPtr create_query;
+    using Kind = ASTShowCreateAccessQuery::Kind;
+    if (kind == Kind::USER)
+        create_query = getCreateUserQuery();
+
     std::stringstream stream;
     formatAST(*create_query, stream, false, true);
 
@@ -37,7 +41,7 @@ BlockInputStreamPtr InterpreterShowCreateUserQuery::executeImpl()
 }
 
 
-ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
+ASTPtr InterpreterShowCreateAccessQuery::getCreateUserQuery() const
 {
     auto & manager = context.getAccessControlManager();
     auto user = manager.read<User2>(query_ptr->as<ASTShowCreateUserQuery &>().user_name);
@@ -49,7 +53,8 @@ ASTPtr InterpreterShowCreateUserQuery::getCreateUserQuery() const
     if (user->authentication.getType() != Authentication::NO_PASSWORD)
         query.authentication.emplace(user->authentication);
 
-    query.allowed_hosts.emplace(user->allowed_hosts);
+    if (!user->allowed_hosts.containsAllAddresses())
+        query.allowed_hosts.emplace(user->allowed_hosts);
 
     {
         Strings default_roles;

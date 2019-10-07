@@ -64,7 +64,7 @@ public:
 
     /// Revokes privileges.
     /// Returns false if there is nothing to revoke.
-    bool revoke(Type access);
+    bool revoke(Type access, bool partial_revokes = false);
     bool revoke(Type access, const String & database, bool partial_revokes = false);
     bool revoke(Type access, const String & database, const String & table, bool partial_revokes = false);
     bool revoke(Type access, const String & database, const String & table, const String & column, bool partial_revokes = false);

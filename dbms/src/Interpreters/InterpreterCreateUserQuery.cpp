@@ -116,6 +116,41 @@ void InterpreterCreateUserQuery::extractDefaultRolesFromQuery(User2 & user, cons
 
 void InterpreterCreateUserQuery::extractSettingsFromQuery(User2 & user, const ASTCreateUserQuery & query) const
 {
+    if (query.alter)
+    {
+        if (query.unset_all)
+        {
+            user.settings.clear();
+            user.settings_constraints.clear();
+        }
+        else
+        {
+            for (const String & name : query.unset_names)
+            {
+                user.settings.erase(
+                    std::remove_if(
+                        user.settings.begin(), user_settings.end(), [](const SettingChange & change) { return change.name == name; }),
+                    user.settings.end());
+                user.settings_constraints.remove(name);
+            }
+        }
+
+        for (const String & name : query.settings)
+        {
+            auto it = std::find_
+            user.settings_constraints.remove(name);
+        }
+
+        for (const auto & constraint : query.settings_constraints.getInfo())
+        {
+
+        }
+    }
+    else
+    {
+        user.settings = query.settings;
+        user.settings_constraints = query.settings_constraints;
+    }
     if (query.settings)
         user.settings = *query.settings;
 

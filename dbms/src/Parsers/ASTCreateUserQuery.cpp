@@ -26,7 +26,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & s, FormatState &, For
     formatAuthentication(s);
     formatAllowedHosts(s);
     formatDefaultRoles(s);
-    formatSettings(s);
+    formatSet(s);
+    formatUnset(s);
     formatAccountLock(s);
 }
 
@@ -59,24 +60,20 @@ void ASTCreateUserQuery::formatAllowedHosts(const FormatSettings & s) const
         return;
 
     const auto & ah = *allowed_hosts;
+    s.ostr << (s.hilite ? hilite_keyword : "") << " HOST" << (s.hilite ? hilite_none : "");
+    if (ah.containsAllAddresses())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << " ANY" << (s.hilite ? hilite_none : "");
+        return;
+    }
+
     const auto & ip_addresses = ah.getIPAddresses();
     const auto & ip_subnets = ah.getIPSubnets();
     const auto & host_names = ah.getHostNames();
     const auto & host_regexps = ah.getHostRegexps();
-
-    s.ostr << (s.hilite ? hilite_keyword : "") << " HOST" << (s.hilite ? hilite_none : "");
-
     if (ip_addresses.empty() && ip_subnets.empty() && host_names.empty() && host_regexps.empty())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << " NONE" << (s.hilite ? hilite_none : "");
-        return;
-    }
-
-    if (std::count(ip_subnets.begin(), ip_subnets.end(), AllowedHosts::IPSubnet::ALL_ADDRESSES)
-        || std::count(host_regexps.begin(), host_regexps.end(), ".*")
-        || std::count(host_regexps.begin(), host_regexps.end(), "$"))
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << " ANY" << (s.hilite ? hilite_none : "");
         return;
     }
 
@@ -123,15 +120,17 @@ void ASTCreateUserQuery::formatDefaultRoles(const FormatSettings & s) const
     }
     else
     {
+        Strings role_names = dr.role_names;
+        std::sort(role_names);
         for (size_t i = 0; i != dr.role_names.size(); ++i)
             s.ostr << (i ? ", " : "") << backQuoteIfNeed(dr.role_names[i]);
     }
 }
 
 
-void ASTCreateUserQuery::formatSettings(const FormatSettings & s) const
+void ASTCreateUserQuery::formatSet(const FormatSettings & s) const
 {
-    if (!settings && !settings_constraints)
+    if (settings.empty() && settings_constraints.empty())
         return;
 
     struct Entry
@@ -143,49 +142,55 @@ void ASTCreateUserQuery::formatSettings(const FormatSettings & s) const
     };
     std::map<String, Entry> entries;
 
-    if (settings)
+    for (const auto & setting : *settings)
+        entries[setting.name].value = setting.value;
+
+    for (const auto & constraint : settings_constraints->getInfo())
     {
-        for (const auto & setting : *settings)
-            entries[setting.name].value = setting.value;
+        auto & out = entries[constraint.name.toString()];
+        out.min = constraint.min;
+        out.max = constraint.max;
+        out.read_only = constraint.read_only;
     }
 
-    if (settings_constraints)
+    s.ostr << (s.hilite ? hilite_keyword : "") << " SET" << (s.hilite ? hilite_none : "");
+    size_t index = 0;
+    for (const auto & [name, entry] : entries)
     {
-        for (const auto & constraint : settings_constraints->getInfo())
-        {
-            auto & out = entries[constraint.name.toString()];
-            out.min = constraint.min;
-            out.max = constraint.max;
-            out.read_only = constraint.read_only;
-        }
+        s.ostr << (index++ ? ", " : " ") << backQuoteIfNeed(name);
+        if (!entry.value.isNull())
+            s.ostr << " = " << applyVisitor(FieldVisitorToString(), entry.value);
+
+        if (!entry.min.isNull())
+            s.ostr << (s.hilite ? hilite_keyword : "") << " MIN " << (s.hilite ? hilite_none : "")
+                   << applyVisitor(FieldVisitorToString(), entry.min);
+
+        if (!entry.max.isNull())
+            s.ostr << (s.hilite ? hilite_keyword : "") << " MAX " << (s.hilite ? hilite_none : "")
+                   << applyVisitor(FieldVisitorToString(), entry.max);
+
+        if (entry.read_only)
+            s.ostr << (s.hilite ? hilite_keyword : "") << " READONLY" << (s.hilite ? hilite_none : "");
+    }
+}
+
+
+void ASTCreateUserQuery::formatUnset(const FormatSettings & s) const
+{
+    if (unset_names.empty() && !unset_all)
+        return;
+
+    s.ostr << (s.hilite ? hilite_keyword : "") << " UNSET " << (s.hilite ? hilite_none : "");
+
+    if (unset_all)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << "ALL" << (s.hilite ? hilite_none : "");
+        return;
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << " SETTINGS" << (s.hilite ? hilite_none : "");
-    if (entries.empty())
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << " NONE" << (s.hilite ? hilite_none : "");
-    }
-    else
-    {
-        size_t index = 0;
-        for (const auto & [name, entry] : entries)
-        {
-            s.ostr << (index++ ? ", " : " ") << backQuoteIfNeed(name);
-            if (!entry.value.isNull())
-                s.ostr << " = " << applyVisitor(FieldVisitorToString(), entry.value);
+    for (size_t i = 0; i != unset_names.size(); ++i)
+        s.ostr << (i ? ", " : "") << backQuoteIfNeed(unset_names[i]);
 
-            if (!entry.min.isNull())
-                s.ostr << (s.hilite ? hilite_keyword : "") << " MIN " << (s.hilite ? hilite_none : "")
-                       << applyVisitor(FieldVisitorToString(), entry.min);
-
-            if (!entry.max.isNull())
-                s.ostr << (s.hilite ? hilite_keyword : "") << " MAX " << (s.hilite ? hilite_none : "")
-                       << applyVisitor(FieldVisitorToString(), entry.max);
-
-            if (entry.read_only)
-                s.ostr << (s.hilite ? hilite_keyword : "") << " READONLY" << (s.hilite ? hilite_none : "");
-        }
-    }
 }
 
 

@@ -20,7 +20,7 @@ namespace
         if (slash != String::npos)
         {
             /// IP subnet, e.g. "192.168.0.0/16" or "192.168.0.0/255.255.0.0".
-            result.addIPSubnet(pattern);
+            result.addSubnet(pattern);
             return;
         }
 
@@ -45,12 +45,12 @@ namespace
 
             IPAddress prefix{wildcard_replaced_with_zero_bits};
             IPAddress mask = ~(prefix ^ IPAddress{wildcard_replaced_with_one_bits});
-            result.addIPSubnet(prefix, mask);
+            result.addSubnet(prefix, mask);
             return;
         }
 
         /// Exact IP address.
-        result.addIPAddress(pattern);
+        result.addAddress(pattern);
         return;
     }
 
@@ -72,12 +72,6 @@ namespace
     AllowedHosts extractAllowedHostsFromPattern(const String & pattern)
     {
         AllowedHosts result;
-
-        if (pattern.empty())
-        {
-            result.addIPSubnet(AllowedHosts::IPSubnet::ALL_ADDRESSES);
-            return result;
-        }
 
         /// If `host` starts with digits and a dot then it's an IP pattern, otherwise it's a hostname pattern.
         size_t first_not_digit = pattern.find_first_not_of("0123456789");
@@ -110,7 +104,7 @@ namespace
         if (allowed_hosts)
         {
             allowed_hosts->clear();
-            allowed_hosts->addIPSubnet(AllowedHosts::IPSubnet::ALL_ADDRESSES);
+            allowed_hosts->addAllAddresses();
         }
 
         if (ParserToken{TokenType::At}.ignore(pos, expected))
@@ -120,7 +114,7 @@ namespace
                 return false;
 
             boost::algorithm::trim(host);
-            if (host != "%")
+            if (!host.empty() && (host != "%"))
             {
                 result += "@" + host;
                 if (allowed_hosts)

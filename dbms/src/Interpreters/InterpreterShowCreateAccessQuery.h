@@ -11,10 +11,10 @@ class Context;
 
 /** Returns a single item containing a statement which could be used to create a specified role.
   */
-class InterpreterShowCreateUserQuery : public IInterpreter
+class InterpreterShowCreateAccessQuery : public IInterpreter
 {
 public:
-    InterpreterShowCreateUserQuery(const ASTPtr & query_ptr_, const Context & context_)
+    InterpreterShowCreateAccessQuery(const ASTPtr & query_ptr_, const Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
