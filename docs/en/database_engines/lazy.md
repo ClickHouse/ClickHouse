@@ -2,7 +2,7 @@
 
 Works like `Ordinary`, but keeps tables in RAM only `expiration_time_in_seconds` seconds after last access. Can be used only with *Log tables.
 
-It's optimized for storing many small *Log tables, for which there are a long time interval between accesses.
+It's optimized for storing many small *Log tables, for which there is a long time interval between accesses.
 
 ## Creating a Database
 
