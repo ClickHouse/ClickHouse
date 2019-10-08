@@ -6,6 +6,7 @@
 #include <ext/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 
 
 namespace DB

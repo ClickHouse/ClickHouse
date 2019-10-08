@@ -2,7 +2,6 @@
 
 #include <Core/Field.h>
 #include <Core/Types.h>
-#include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>

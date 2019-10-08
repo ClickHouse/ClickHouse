@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -416,6 +417,10 @@ MutableColumnPtr DataTypeNullable::createColumn() const
     return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
 }
 
+Field DataTypeNullable::getDefault() const
+{
+    return Null();
+}
 
 size_t DataTypeNullable::getSizeOfValueInMemory() const
 {

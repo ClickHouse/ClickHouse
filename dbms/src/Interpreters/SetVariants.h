@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>

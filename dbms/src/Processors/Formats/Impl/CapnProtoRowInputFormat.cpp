@@ -1,6 +1,7 @@
 #include "CapnProtoRowInputFormat.h"
 #if USE_CAPNP
 
+#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
