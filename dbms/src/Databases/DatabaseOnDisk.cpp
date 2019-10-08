@@ -107,7 +107,7 @@ void DatabaseOnDisk::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
     if (database.isTableExist(context, table_name))
-        throw Exception("Table " + database.getDatabaseName() + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + backQuote(database.getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     String table_metadata_path = database.getTableMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -187,7 +187,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const IDatabase & database, const
                    ? "There is no CREATE TABLE query for table "
                    : "There is no metadata file for table ";
 
-        throw Exception(msg + table_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+        throw Exception(msg + backQuote(table_name), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
     }
 
     return ast;

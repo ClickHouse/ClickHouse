@@ -96,7 +96,7 @@ private:
         time_t last_touched;
         String table_name;
 
-        CacheExpirationQueueElement(time_t last_touched_, String table_name_)
+        CacheExpirationQueueElement(time_t last_touched_, const String & table_name_)
             : last_touched(last_touched_), table_name(table_name_) {}
     };
 
