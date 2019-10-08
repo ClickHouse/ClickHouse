@@ -18,7 +18,7 @@ namespace detail
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, bool throw_on_error);
 }
 
-/* Class to provide basic operations with tables stored on disk.
+/* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
  */
 class DatabaseOnDisk
 {
