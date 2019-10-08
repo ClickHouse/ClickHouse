@@ -4,7 +4,6 @@
 #include <Interpreters/ExternalLoader.h>
 #include <memory>
 
-
 namespace DB
 {
 class Context;
@@ -28,6 +27,14 @@ public:
     {
         return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
     }
+
+    /// Override ExternalLoader::reload to reset mysqlxx::PoolFactory.h
+    /// since connection parameters might have changed. Inherited method is called afterward
+    void reload(const String & name, bool load_never_loading = false);
+
+    /// Override ExternalLoader::reload to reset mysqlxx::PoolFactory.h
+    /// since connection parameters might have changed. Inherited method is called afterward
+    void reload(bool load_never_loading = false);
 
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,

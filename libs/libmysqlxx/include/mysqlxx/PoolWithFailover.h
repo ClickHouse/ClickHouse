@@ -77,6 +77,10 @@ namespace mysqlxx
         size_t max_tries;
         /// Mutex for set of replicas.
         std::mutex mutex;
+        std::string config_name;
+
+        /// Can the Pool be shared
+        bool shareable;
 
     public:
         using Entry = Pool::Entry;

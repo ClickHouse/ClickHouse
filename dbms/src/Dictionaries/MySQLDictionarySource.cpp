@@ -46,6 +46,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <common/logger_useful.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include "readInvalidateQuery.h"
+#    include <mysqlxx/PoolFactory.h>
 
 namespace DB
 {
@@ -66,7 +67,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)}
     , sample_block{sample_block_}
-    , pool{config, config_prefix}
+    , pool{mysqlxx::PoolFactory::instance().Get(config, config_prefix)}
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}

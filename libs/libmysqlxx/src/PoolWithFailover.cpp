@@ -48,15 +48,22 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, const unsign
 {}
 
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-    : max_tries{other.max_tries}
+    : max_tries{other.max_tries}, config_name{other.config_name}
 {
-    for (const auto & priority_replicas : other.replicas_by_priority)
+    if (shareable)
     {
-        Replicas replicas;
-        replicas.reserve(priority_replicas.second.size());
-        for (const auto & pool : priority_replicas.second)
-            replicas.emplace_back(std::make_shared<Pool>(*pool));
-        replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
+        replicas_by_priority = other.replicas_by_priority;
+    }
+    else
+    {
+        for (const auto & priority_replicas : other.replicas_by_priority)
+        {
+            Replicas replicas;
+            replicas.reserve(priority_replicas.second.size());
+            for (const auto & pool : priority_replicas.second)
+                replicas.emplace_back(std::make_shared<Pool>(*pool));
+            replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
+        }
     }
 }
 
