@@ -106,7 +106,7 @@ void DatabaseOnDisk::renameTable(
     StoragePtr table = database.tryGetTable(context, table_name);
 
     if (!table)
-        throw Exception("Table " + database.getDatabaseName() + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("Table " + backQuote(database.getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
@@ -127,7 +127,7 @@ void DatabaseOnDisk::renameTable(
 
     ASTPtr ast = detail::getQueryFromMetadata(detail::getTableMetadataPath(database.getMetadataPath(), table_name));
     if (!ast)
-        throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
     ast->as<ASTCreateQuery &>().table = to_table_name;
 
     /// NOTE Non-atomic.
