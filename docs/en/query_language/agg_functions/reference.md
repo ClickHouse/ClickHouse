@@ -558,7 +558,7 @@ Calculates the approximate number of different argument values.
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will be larger than the theoretical value due to the poor hash function choice.
+The `uniqCombined` function is a good choice for calculating the number of different values.
 
 **Parameters**
 
