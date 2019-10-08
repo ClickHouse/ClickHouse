@@ -299,7 +299,7 @@ protected:
 };
 
 /** Parser for function with arguments like KEY VALUE (space separated)
-  * no commas alowed, just space-separated pairs of keys and values
+  * no commas alowed, just space-separated pairs.
   */
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {

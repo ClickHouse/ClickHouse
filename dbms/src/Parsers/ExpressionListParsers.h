@@ -375,6 +375,7 @@ protected:
 };
 
 
+/// Parser for key-value pair, where value can be list of pairs.
 class ParserKeyValuePair : public IParserBase
 {
 protected:
@@ -382,9 +383,9 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// Parser for list of key-value pairs.
 class ParserKeyValuePairsList : public IParserBase
 {
-
 protected:
     const char * getName() const override { return "list of pairs"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

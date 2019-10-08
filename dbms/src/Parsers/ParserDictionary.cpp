@@ -43,6 +43,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     bool initialized_max = false;
+    /// should contain both min and max
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
@@ -115,20 +116,20 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     const ASTFunctionWithKeyValueArguments & func = ast_func->as<const ASTFunctionWithKeyValueArguments &>();
     auto res = std::make_shared<ASTDictionaryLayout>();
-    // here must be exactly one argument - layout_type
+    /// here must be exactly one argument - layout_type
     if (func.children.size() > 1)
         return false;
 
     res->layout_type = func.name;
     const ASTExpressionList & type_expr_list = func.elements->as<const ASTExpressionList &>();
-    // there doesn't exist a layout with more than 1 parameter
+
+    /// there are no layout with more than 1 parameter
     if (type_expr_list.children.size() > 1)
         return false;
 
     if (type_expr_list.children.size() == 1)
     {
         const ASTPair * pair = dynamic_cast<const ASTPair *>(type_expr_list.children.at(0).get());
-        // here only a pair is allowed
         if (pair == nullptr)
             return false;
 
@@ -165,13 +166,11 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_layout;
     ASTPtr ast_range;
 
+    /// Primary is required to be the first in dictionary definition
     if (primary_key_keyword.ignore(pos) && !expression_list_p.parse(pos, primary_key, expected))
         return false;
 
-    /// Exactly one of two keys should be defined
-    if (!primary_key)
-        return false;
-
+    /// Loop is used to avoid strict order of dictionary properties
     while (true)
     {
         if (!ast_source && source_keyword.ignore(pos, expected))
@@ -311,9 +310,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->is_dictionary = true;
 
     if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
+        query->database = typeid_cast<const ASTIdentifier &>(*database).name;
 
-    query->table = typeid_cast<ASTIdentifier &>(*name).name;
+    query->table = typeid_cast<const ASTIdentifier &>(*name).name;
 
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);

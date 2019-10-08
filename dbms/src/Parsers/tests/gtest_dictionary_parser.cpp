@@ -24,6 +24,7 @@ String astToString(IAST * ast)
     return oss.str();
 }
 
+/// Tests for external dictionaries DDL parser
 
 TEST(ParserDictionaryDDL, SimpleDictionary)
 {

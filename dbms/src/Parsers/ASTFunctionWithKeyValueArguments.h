@@ -6,12 +6,17 @@
 namespace DB
 {
 
-/// Pair of values where second can also be list of pairs
+/// Pair with name and value in lisp programming langugate style. It contain
+/// string as key, but value either can be literal or list of
+/// pairs.
 class ASTPair : public IAST
 {
 public:
+    /// Name or key of pair
     String first;
+    /// Value of pair, which can be also list of pairs
     ASTPtr second;
+    /// Value is closed in brackets (HOST '127.0.0.1')
     bool second_with_brackets;
 
 public:
@@ -28,13 +33,16 @@ public:
 };
 
 
-/// key-value just a pair "key value" separated by space, where key just a word (USER, PASSWORD, HOST etc) and value is just a literal.
-/// KeyValueFunction is a function which arguments consist of either key-value pairs or another KeyValueFunction
-/// For example: SOURCE(USER 'clickhouse' PASSWORD 'qwerty123' PORT 9000 REPLICA(HOST '127.0.0.1' PRIORITY 1) TABLE 'some_table')
+/// Function with key-value arguments is a function which arguments consist of
+/// pairs (see above). For example:
+///                                    ->Pair with list of pairs as value<-
+/// SOURCE(USER 'clickhouse' PORT 9000 REPLICA(HOST '127.0.0.1' PRIORITY 1) TABLE 'some_table')
 class ASTFunctionWithKeyValueArguments : public IAST
 {
 public:
+    /// Name of function
     String name;
+    /// Expression list
     ASTPtr elements;
 
 public:
