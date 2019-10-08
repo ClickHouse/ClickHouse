@@ -101,6 +101,10 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 String database_name = (*database_column_)[i].get<String>();
                 const DatabasePtr database = databases.at(database_name);
 
+                /// Lazy database can not contain MergeTree tables
+                if (database->getEngineName() == "Lazy")
+                    continue;
+
                 offsets[i] = i ? offsets[i - 1] : 0;
                 for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
                 {
