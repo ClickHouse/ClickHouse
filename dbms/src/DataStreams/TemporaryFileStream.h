@@ -42,4 +42,36 @@ struct TemporaryFileStream
     }
 };
 
+/// It gets ownership of TemporaryFileStream object. It used for early object destruction.
+class TemporaryFileInputStream : public IBlockInputStream
+{
+public:
+    TemporaryFileInputStream(const std::string & path, const Block & header_)
+        : impl(std::make_unique<TemporaryFileStream>(path, header_))
+        , header(header_)
+    {}
+
+    String getName() const override { return "TemporaryFile"; }
+    Block getHeader() const override { return header; }
+
+    void readSuffix() override
+    {
+        if (impl)
+            impl->block_in->readSuffix();
+        impl.reset();
+    }
+
+protected:
+    Block readImpl() override
+    {
+        if (impl)
+            return impl->block_in->read();
+        return {};
+    }
+
+private:
+    std::unique_ptr<TemporaryFileStream> impl;
+    Block header;
+};
+
 }

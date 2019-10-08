@@ -363,28 +363,20 @@ void flushStreamToFiles(const String & tmp_path, const Block & header, IBlockInp
     }
 }
 
-struct SortedFilesMerger
+BlockInputStreams makeSortedInputStreams(std::vector<MiniLSM::SortedFiles> & sorted_files, const Block & header)
 {
-    using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
-
-    std::vector<std::unique_ptr<TemporaryFile>> files;
-    std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
     BlockInputStreams inputs;
 
-    SortedFilesMerger(std::vector<SortedFiles> & sorted_files, const Block & header)
+    for (const auto & track : sorted_files)
     {
-        for (const auto & track : sorted_files)
-        {
-            BlockInputStreams sequence;
-            for (const auto & file : track)
-            {
-                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path(), header));
-                sequence.emplace_back(temporary_inputs.back()->block_in);
-            }
-            inputs.emplace_back(std::make_shared<ConcatBlockInputStream>(sequence));
-        }
+        BlockInputStreams sequence;
+        for (const auto & file : track)
+            sequence.emplace_back(std::make_shared<TemporaryFileInputStream>(file->path(), header));
+        inputs.emplace_back(std::make_shared<ConcatBlockInputStream>(sequence));
     }
-};
+
+    return inputs;
+}
 
 }
 
@@ -419,8 +411,8 @@ void MiniLSM::insert(const BlocksList & blocks)
 /// TODO: better merge strategy
 void MiniLSM::merge(std::function<void(const Block &)> callback)
 {
-    SortedFilesMerger merger(sorted_files, sample_block);
-    MergingSortedBlockInputStream sorted_stream(merger.inputs, sort_description, rows_in_block);
+    BlockInputStreams inputs = makeSortedInputStreams(sorted_files, sample_block);
+    MergingSortedBlockInputStream sorted_stream(inputs, sort_description, rows_in_block);
 
     SortedFiles out;
     flushStreamToFiles(path, sample_block, sorted_stream, out, callback);

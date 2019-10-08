@@ -28,7 +28,7 @@ struct MiniLSM
     std::vector<SortedFiles> sorted_files;
 
     MiniLSM(const String & path_, const Block & sample_block_, const SortDescription & description,
-            size_t rows_in_block_, size_t max_size_ = 64)
+            size_t rows_in_block_, size_t max_size_ = 16)
         : path(path_)
         , sample_block(sample_block_)
         , sort_description(description)
