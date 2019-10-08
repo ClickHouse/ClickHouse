@@ -44,7 +44,12 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (temporary)
         settings.ostr << "TEMPORARY ";
 
-    settings.ostr << ((table.empty() && !database.empty()) ? "DATABASE " : "TABLE ");
+    if (table.empty() && !database.empty())
+        settings.ostr << "DATABASE ";
+    else if (!is_dictionary)
+        settings.ostr << "TABLE ";
+    else
+        settings.ostr << "DICTIONARY ";
 
     if (if_exists)
         settings.ostr << "IF EXISTS ";
@@ -60,4 +65,3 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 }
 
 }
-
