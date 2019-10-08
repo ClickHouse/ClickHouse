@@ -39,7 +39,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto which_type = WhichDataType(arguments[0].type);
-        if (!which_type.isDateTime() || !which_type.isDateTime64())
+        if (!which_type.isDateTime() && !which_type.isDateTime64())
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                 ". Should be DateTime or DateTime64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -47,7 +47,7 @@ public:
         if (which_type.isDateTime())
             return std::make_shared<DataTypeDateTime>(time_zone_name);
 
-        const auto * date_time64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type);
+        const auto * date_time64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
         return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name);
     }
 
