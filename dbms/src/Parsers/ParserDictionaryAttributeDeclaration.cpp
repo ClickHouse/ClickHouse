@@ -37,7 +37,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     if (!type_parser.parse(pos, type, expected))
         return false;
 
-    while(true)
+    while (true)
     {
         if (!default_value && s_default.ignore(pos, expected))
         {
