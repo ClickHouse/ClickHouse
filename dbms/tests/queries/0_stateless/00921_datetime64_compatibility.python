@@ -98,7 +98,7 @@ extra_ops =\
             [
                 '- ', # does not work, but should it?
                 '+ ', # does not work, but should it?
-                '!=', '==', # how do we expect this to work?
+                '!=', '==', # equality and inequality supposed to take sub-second part in account
                 '< ',
                 '<=',
                 '> ',
@@ -116,7 +116,7 @@ extra_ops =\
             'op':
             [
                 '-', # does not work, but should it?
-                '!=', '==', # how do we expect this to work?
+                '!=', '==',
                 # these are naturally expected to work, but they don't:
                 '< ',
                 '<=',
@@ -158,8 +158,8 @@ extra_ops =\
 # Expand extra_ops here
 for funcs, args in extra_ops:
     args_keys = args.keys()
-    for func in funcs:
-        for args_vals in itertools.product(*args.values()):
+    for args_vals in itertools.product(*args.values()):
+        for func in funcs:
             result_func = func.format(**dict(zip(args_keys, args_vals)))
             functions.append(result_func)
 
@@ -177,11 +177,11 @@ def escape_string(s):
 # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
 for func in functions:
     for dt in datetime64_args:
-        f32 = func.format(datetime='now()')
-        f64 = func.format(datetime=dt)
-        f = "({f32}) == ({f64})".format(f32=f32, f64=f64)
-        print("""SELECT '{f64}';""".format(f64=escape_string(f64)))
-        print("""SELECT {f32};""".format(f32=f32))
-        print("""SELECT {f64};""".format(f64=f64))
-#        print("""SELECT {f};""".format(f=f))
-        print("""SELECT '-----------------------------------------------------------------------------------';""")
+        dt32 = func.format(datetime='now()')
+        dt64 = func.format(datetime=dt)
+        f = "'values match:', ({dt32}) == ({dt64}), 'types match:', toTypeName({dt32}) == toTypeName({dt64})".format(dt32=dt32, dt64=dt64)
+        print("""SELECT 'SELECT {dt64}';""".format(dt64=escape_string(dt64)))    # for debug only
+        print("""SELECT toTypeName({dt32}), {dt32};""".format(dt32=dt32)) # for debug only
+        print("""SELECT toTypeName({dt64}), {dt64};""".format(dt64=dt64)) # for debug only
+        print("""SELECT {f};""".format(f=f))
+        print("""SELECT '------------------------------------------';""") # for debug only
