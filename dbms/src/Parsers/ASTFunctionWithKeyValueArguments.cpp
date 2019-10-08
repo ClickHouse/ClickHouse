@@ -29,7 +29,15 @@ ASTPtr ASTPair::clone() const
 void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
+
+    if (second_with_brackets)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "(";
+
     second->formatImpl(settings, state, frame);
+
+    if (second_with_brackets)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << ")";
+
     settings.ostr << (settings.hilite ? hilite_none : "");
 }
 

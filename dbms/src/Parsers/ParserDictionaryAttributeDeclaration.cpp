@@ -34,6 +34,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     bool injective = false;
     bool is_object_id = false;
 
+    /// TODO(alesapin) Loop here to avoid strict order
     if (!s_default.check_without_moving(pos, expected) &&
         !s_expression.check_without_moving(pos, expected) &&
         !s_hierarchical.check_without_moving(pos, expected) &&
