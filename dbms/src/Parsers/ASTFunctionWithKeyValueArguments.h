@@ -6,14 +6,20 @@
 namespace DB
 {
 
-/// Pair of values where second can also be pair
+/// Pair of values where second can also be list of pairs
 class ASTPair : public IAST
 {
 public:
     String first;
     ASTPtr second;
+    bool second_with_brackets;
 
 public:
+    ASTPair(bool second_with_brackets_)
+        : second_with_brackets(second_with_brackets_)
+    {
+    }
+
     String getID(char delim) const override;
 
     ASTPtr clone() const override;

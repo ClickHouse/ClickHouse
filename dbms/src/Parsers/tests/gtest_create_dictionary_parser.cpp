@@ -164,5 +164,51 @@ TEST(ParserCreateDictionary, AttributesWithMultipleProperties)
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, true);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+}
 
+
+TEST(ParserCreateDictionary, NestedSource)
+{
+    String input = " CREATE DICTIONARY dict3"
+                   " ("
+                   "    key_column UInt64,"
+                   "    second_column UInt8,"
+                   "    third_column UInt8"
+                   " )"
+                   " PRIMARY KEY key_column"
+                   " SOURCE(MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA(HOST '127.0.0.1' PRIORITY 1) PASSWORD ''))"
+                   " LAYOUT(CACHE(size_in_cells 50))"
+                   " LIFETIME(MIN 1 MAX 10)"
+                   " RANGE(MIN second_column MAX third_column)";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+    EXPECT_EQ(create->table, "dict3");
+    EXPECT_EQ(create->database, "");
+
+    /// source test
+    EXPECT_EQ(create->dictionary->source->name, "mysql");
+    auto children = create->dictionary->source->elements->children;
+
+    EXPECT_EQ(children[0]->as<ASTPair>()->first, "host");
+    EXPECT_EQ(children[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "localhost");
+
+    EXPECT_EQ(children[1]->as<ASTPair>()->first, "port");
+    EXPECT_EQ(children[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 9000);
+
+    EXPECT_EQ(children[2]->as<ASTPair>()->first, "user");
+    EXPECT_EQ(children[2]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "default");
+
+    EXPECT_EQ(children[3]->as<ASTPair>()->first, "replica");
+    auto replica = children[3]->as<ASTPair>()->second->children;
+
+    EXPECT_EQ(replica[0]->as<ASTPair>()->first, "host");
+    EXPECT_EQ(replica[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "127.0.0.1");
+
+    EXPECT_EQ(replica[1]->as<ASTPair>()->first, "priority");
+    EXPECT_EQ(replica[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 1);
+
+    EXPECT_EQ(children[4]->as<ASTPair>()->first, "password");
+    EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
 }
