@@ -61,13 +61,13 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     return block.getByPosition(0).column;
 }
 
-static bool needLockStructure(const DatabasePtr& database, const Block& header)
+static bool needLockStructure(const DatabasePtr & database, const Block & header)
 {
     if (database->getEngineName() != "Lazy")
         return true;
 
     static const std::set<std::string> columns_without_lock = { "database", "name", "metadata_modification_time" };
-    for (const auto& column : header.getColumnsWithTypeAndName())
+    for (const auto & column : header.getColumnsWithTypeAndName())
     {
         if (columns_without_lock.find(column.name) == columns_without_lock.end())
             return true;
