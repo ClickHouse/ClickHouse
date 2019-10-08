@@ -2,8 +2,10 @@
 
 #include <Core/Types.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDropQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/DumpASTNode.h>
@@ -21,7 +23,7 @@ String astToString(IAST * ast)
 }
 
 
-TEST(ParserCreateDictionary, SimpleDictionary)
+TEST(ParserDictionaryDDL, SimpleDictionary)
 {
     String input = " CREATE DICTIONARY test.dict1"
                    " ("
@@ -120,7 +122,7 @@ TEST(ParserCreateDictionary, SimpleDictionary)
 }
 
 
-TEST(ParserCreateDictionary, AttributesWithMultipleProperties)
+TEST(ParserDictionaryDDL, AttributesWithMultipleProperties)
 {
     String input = " CREATE DICTIONARY dict2"
                    " ("
@@ -166,7 +168,7 @@ TEST(ParserCreateDictionary, AttributesWithMultipleProperties)
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
 }
 
-TEST(ParserCreateDictionary, CustomAttributePropertiesOrder)
+TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
 {
     String input = " CREATE DICTIONARY dict3"
                    " ("
@@ -219,7 +221,7 @@ TEST(ParserCreateDictionary, CustomAttributePropertiesOrder)
 }
 
 
-TEST(ParserCreateDictionary, NestedSource)
+TEST(ParserDictionaryDDL, NestedSource)
 {
     String input = " CREATE DICTIONARY dict4"
                    " ("
@@ -267,7 +269,7 @@ TEST(ParserCreateDictionary, NestedSource)
 
 
 
-TEST(ParserCreateDictionary, Formatting)
+TEST(ParserDictionaryDDL, Formatting)
 {
     String input = " CREATE DICTIONARY test.dict5"
                    " ("
@@ -287,4 +289,30 @@ TEST(ParserCreateDictionary, Formatting)
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
     auto str = serializeAST(*create, true);
     EXPECT_EQ(str, "CREATE DICTIONARY test.dict5 (`key_column1` UInt64 DEFAULT 1 HIERARCHICAL INJECTIVE, `key_column2` String DEFAULT '', `second_column` UInt8 EXPRESSION intDiv(50, rand() % 1000), `third_column` UInt8) PRIMARY KEY key_column1, key_column2 MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA (HOST '127.0.0.1' PRIORITY 1) PASSWORD '') LIFETIME(MIN 1, MAX 10) LAYOUT(CACHE(SIZE_IN_CELLS 50)) RANGE(MIN second_column, MAX third_column)");
+}
+
+TEST(ParserDictionaryDDL, ParseDropQuery)
+{
+    String input1 = "DROP DICTIONARY test.dict1";
+
+    ParserDropQuery parser;
+    ASTPtr ast1 = parseQuery(parser, input1.data(), input1.data() + input1.size(), "", 0);
+    ASTDropQuery * drop1 = ast1->as<ASTDropQuery>();
+
+    EXPECT_TRUE(drop1->is_dictionary);
+    EXPECT_EQ(drop1->database, "test");
+    EXPECT_EQ(drop1->table, "dict1");
+    auto str1 = serializeAST(*drop1, true);
+    EXPECT_EQ(input1, str1);
+
+    String input2 = "DROP DICTIONARY IF EXISTS dict2";
+
+    ASTPtr ast2 = parseQuery(parser, input2.data(), input2.data() + input2.size(), "", 0);
+    ASTDropQuery * drop2 = ast2->as<ASTDropQuery>();
+
+    EXPECT_TRUE(drop2->is_dictionary);
+    EXPECT_EQ(drop2->database, "");
+    EXPECT_EQ(drop2->table, "dict2");
+    auto str2 = serializeAST(*drop2, true);
+    EXPECT_EQ(input2, str2);
 }
