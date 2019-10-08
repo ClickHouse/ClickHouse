@@ -1,7 +1,6 @@
 #include <Interpreters/UsersManager.h>
 
 #include <Common/Exception.h>
-#include <Poco/Net/IPAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -11,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_USER;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
 }
 
 using UserPtr = UsersManager::UserPtr;
@@ -42,9 +40,7 @@ UserPtr UsersManager::authorizeAndGetUser(
     if (users.end() == it)
         throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
 
-    if (!it->second->addresses.contains(address))
-        throw Exception("User " + user_name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-
+    it->second->allowed_client_hosts.checkContains(address, user_name);
     it->second->authentication.checkPassword(password, user_name);
     return it->second;
 }

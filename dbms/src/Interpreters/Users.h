@@ -2,20 +2,15 @@
 
 #include <Core/Types.h>
 #include <Access/Authentication.h>
+#include <Access/AllowedClientHosts.h>
 
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 
 
 namespace Poco
 {
-    namespace Net
-    {
-        class IPAddress;
-    }
-
     namespace Util
     {
         class AbstractConfiguration;
@@ -25,29 +20,6 @@ namespace Poco
 
 namespace DB
 {
-
-
-/// Allow to check that address matches a pattern.
-class IAddressPattern
-{
-public:
-    virtual bool contains(const Poco::Net::IPAddress & addr) const = 0;
-    virtual ~IAddressPattern() {}
-};
-
-
-class AddressPatterns
-{
-private:
-    using Container = std::vector<std::shared_ptr<IAddressPattern>>;
-    Container patterns;
-
-public:
-    bool contains(const Poco::Net::IPAddress & addr) const;
-    void addFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
-};
-
-
 /** User and ACL.
   */
 struct User
@@ -60,7 +32,7 @@ struct User
     String profile;
     String quota;
 
-    AddressPatterns addresses;
+    AllowedClientHosts allowed_client_hosts;
 
     /// List of allowed databases.
     using DatabaseSet = std::unordered_set<std::string>;
