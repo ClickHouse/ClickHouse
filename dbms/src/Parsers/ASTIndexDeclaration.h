@@ -2,7 +2,8 @@
 
 #include <Core/Field.h>
 #include <Core/Types.h>
-#include <IO/WriteHelpers.h>
+#include <Common/FieldVisitors.h>
+#include <Common/quoteString.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
@@ -52,7 +53,7 @@ public:
         s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
         type->formatImpl(s, state, frame);
         s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
-        s.ostr << toString(granularity);
+        s.ostr << granularity;
     }
 };
 

@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
