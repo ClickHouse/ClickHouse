@@ -9,6 +9,8 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ParserTablePropertiesQuery.h>
 #include <sstream>
 
 #include <gtest/gtest.h>
@@ -315,4 +317,26 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     EXPECT_EQ(drop2->table, "dict2");
     auto str2 = serializeAST(*drop2, true);
     EXPECT_EQ(input2, str2);
+}
+
+TEST(ParserDictionaryDDL, ParsePropertiesQueries)
+{
+    String input1 = "SHOW CREATE DICTIONARY test.dict1";
+
+    ParserTablePropertiesQuery parser;
+    ASTPtr ast1 = parseQuery(parser, input1.data(), input1.data() + input1.size(), "", 0);
+    ASTShowCreateDictionaryQuery * show1 = ast1->as<ASTShowCreateDictionaryQuery>();
+
+    EXPECT_EQ(show1->table, "dict1");
+    EXPECT_EQ(show1->database, "test");
+    EXPECT_EQ(serializeAST(*show1), input1);
+
+    String input2 = "EXISTS DICTIONARY dict2";
+
+    ASTPtr ast2 = parseQuery(parser, input2.data(), input2.data() + input2.size(), "", 0);
+    ASTExistsDictionaryQuery * show2 = ast2->as<ASTExistsDictionaryQuery>();
+
+    EXPECT_EQ(show2->table, "dict2");
+    EXPECT_EQ(show2->database, "");
+    EXPECT_EQ(serializeAST(*show2), input2);
 }

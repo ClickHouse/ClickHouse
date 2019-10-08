@@ -21,6 +21,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_create("CREATE");
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_table("TABLE");
+    ParserKeyword s_dictionary("DICTIONARY");
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
 
@@ -32,7 +33,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     if (s_exists.ignore(pos, expected))
     {
-        query = std::make_shared<ASTExistsQuery>();
+        if (s_table.check_without_moving(pos, expected))
+            query = std::make_shared<ASTExistsTableQuery>();
+        else if (s_dictionary.check_without_moving(pos, expected))
+            query = std::make_shared<ASTExistsDictionaryQuery>();
     }
     else if (s_show.ignore(pos, expected))
     {
@@ -44,8 +48,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             parse_only_database_name = true;
             query = std::make_shared<ASTShowCreateDatabaseQuery>();
         }
-        else
+        else if (s_table.check_without_moving(pos, expected))
             query = std::make_shared<ASTShowCreateTableQuery>();
+        else
+            query = std::make_shared<ASTShowCreateDictionaryQuery>();
     }
     else
     {
@@ -62,7 +68,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (s_temporary.ignore(pos, expected))
             query->temporary = true;
 
-        s_table.ignore(pos, expected);
+        if (!s_table.ignore(pos, expected) && !s_dictionary.ignore(pos, expected))
+            return false;
 
         if (!name_p.parse(pos, table, expected))
             return false;
