@@ -8,6 +8,7 @@ add_library (mysqlxx
     src/Row.cpp
     src/Value.cpp
     src/Pool.cpp
+    src/PoolFactory.cpp
     src/PoolWithFailover.cpp
 
     include/mysqlxx/Connection.h
@@ -15,6 +16,7 @@ add_library (mysqlxx
     include/mysqlxx/mysqlxx.h
     include/mysqlxx/Null.h
     include/mysqlxx/Pool.h
+    include/mysqlxx/PoolFactory.h
     include/mysqlxx/PoolWithFailover.h
     include/mysqlxx/Query.h
     include/mysqlxx/ResultBase.h
