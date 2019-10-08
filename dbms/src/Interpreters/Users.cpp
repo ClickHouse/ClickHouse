@@ -3,20 +3,13 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Net/DNS.h>
-#include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
-#include <IO/HexWriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <common/SimpleCache.h>
-#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Users.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
-#include <Common/config.h>
 
 
 namespace DB
@@ -27,8 +20,6 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
     extern const int UNKNOWN_USER;
-    extern const int REQUIRED_PASSWORD;
-    extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int BAD_ARGUMENTS;
 }
@@ -288,22 +279,21 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' must be specified for user " + name + ".", ErrorCodes::BAD_ARGUMENTS);
 
     if (has_password)
-        password     = config.getString(config_elem + ".password");
+    {
+        authentication.setType(Authentication::PLAINTEXT_PASSWORD);
+        authentication.setPassword(config.getString(config_elem + ".password"));
+    }
 
     if (has_password_sha256_hex)
     {
-        password_sha256_hex = Poco::toLower(config.getString(config_elem + ".password_sha256_hex"));
-
-        if (password_sha256_hex.size() != 64)
-            throw Exception("password_sha256_hex for user " + name + " has length " + toString(password_sha256_hex.size()) + " but must be exactly 64 symbols.", ErrorCodes::BAD_ARGUMENTS);
+        authentication.setType(Authentication::SHA256_PASSWORD);
+        authentication.setPasswordHashHex(config.getString(config_elem + ".password_sha256_hex"));
     }
 
     if (has_password_double_sha1_hex)
     {
-        password_double_sha1_hex = Poco::toLower(config.getString(config_elem + ".password_double_sha1_hex"));
-
-        if (password_double_sha1_hex.size() != 40)
-            throw Exception("password_double_sha1_hex for user " + name + " has length " + toString(password_double_sha1_hex.size()) + " but must be exactly 40 symbols.", ErrorCodes::BAD_ARGUMENTS);
+        authentication.setType(Authentication::DOUBLE_SHA1_PASSWORD);
+        authentication.setPasswordHashHex(config.getString(config_elem + ".password_double_sha1_hex"));
     }
 
     profile = config.getString(config_elem + ".profile");
