@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/Stopwatch.h>
 #include <common/Types.h>
