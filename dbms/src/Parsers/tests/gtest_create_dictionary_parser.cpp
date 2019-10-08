@@ -166,10 +166,62 @@ TEST(ParserCreateDictionary, AttributesWithMultipleProperties)
     EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
 }
 
+TEST(ParserCreateDictionary, CustomAttributePropertiesOrder)
+{
+    String input = " CREATE DICTIONARY dict3"
+                   " ("
+                   "    key_column UInt64 IS_OBJECT_ID DEFAULT 100,"
+                   "    second_column UInt8 INJECTIVE HIERARCHICAL DEFAULT 1,"
+                   "    third_column UInt8 EXPRESSION rand() % 100 * 77 DEFAULT 2 INJECTIVE HIERARCHICAL"
+                   " )"
+                   " PRIMARY KEY key_column"
+                   " SOURCE(CLICKHOUSE(REPLICA(HOST '127.0.0.1' PRIORITY 1)))"
+                   " LIFETIME(300)";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+
+    /// test attributes
+    EXPECT_NE(create->dictionary_attributes_list, nullptr);
+
+    auto attributes_children = create->dictionary_attributes_list->children;
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 100);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->injective, true);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->injective, true);
+
+    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, true);
+    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+
+    /// lifetime test
+    auto lifetime = create->dictionary->lifetime;
+
+    EXPECT_EQ(lifetime->min_sec, 0);
+    EXPECT_EQ(lifetime->max_sec, 300);
+}
+
 
 TEST(ParserCreateDictionary, NestedSource)
 {
-    String input = " CREATE DICTIONARY dict3"
+    String input = " CREATE DICTIONARY dict4"
                    " ("
                    "    key_column UInt64,"
                    "    second_column UInt8,"
@@ -184,7 +236,7 @@ TEST(ParserCreateDictionary, NestedSource)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    EXPECT_EQ(create->table, "dict3");
+    EXPECT_EQ(create->table, "dict4");
     EXPECT_EQ(create->database, "");
 
     /// source test
@@ -211,4 +263,28 @@ TEST(ParserCreateDictionary, NestedSource)
 
     EXPECT_EQ(children[4]->as<ASTPair>()->first, "password");
     EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
+}
+
+
+
+TEST(ParserCreateDictionary, Formatting)
+{
+    String input = " CREATE DICTIONARY test.dict5"
+                   " ("
+                   "    key_column1 UInt64 DEFAULT 1 HIERARCHICAL INJECTIVE,"
+                   "    key_column2 String DEFAULT '',"
+                   "    second_column UInt8 EXPRESSION intDiv(50, rand() % 1000),"
+                   "    third_column UInt8"
+                   " )"
+                   " PRIMARY KEY key_column1, key_column2"
+                   " SOURCE(MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA(HOST '127.0.0.1' PRIORITY 1) PASSWORD ''))"
+                   " LAYOUT(CACHE(size_in_cells 50))"
+                   " LIFETIME(MIN 1 MAX 10)"
+                   " RANGE(MIN second_column MAX third_column)";
+
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTCreateQuery * create = ast->as<ASTCreateQuery>();
+    auto str = serializeAST(*create, true);
+    EXPECT_EQ(str, "CREATE DICTIONARY test.dict5 (`key_column1` UInt64 DEFAULT 1 HIERARCHICAL INJECTIVE, `key_column2` String DEFAULT '', `second_column` UInt8 EXPRESSION intDiv(50, rand() % 1000), `third_column` UInt8) PRIMARY KEY key_column1, key_column2 MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA (HOST '127.0.0.1' PRIORITY 1) PASSWORD '') LIFETIME(MIN 1, MAX 10) LAYOUT(CACHE(SIZE_IN_CELLS 50)) RANGE(MIN second_column, MAX third_column)");
 }

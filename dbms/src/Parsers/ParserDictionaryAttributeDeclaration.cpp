@@ -34,33 +34,45 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     bool injective = false;
     bool is_object_id = false;
 
-    /// TODO(alesapin) Loop here to avoid strict order
-    if (!s_default.check_without_moving(pos, expected) &&
-        !s_expression.check_without_moving(pos, expected) &&
-        !s_hierarchical.check_without_moving(pos, expected) &&
-        !s_injective.check_without_moving(pos, expected) &&
-        !s_is_object_id.check_without_moving(pos, expected))
+    if (!type_parser.parse(pos, type, expected))
+        return false;
+
+    while(true)
     {
-        if (!type_parser.parse(pos, type, expected))
-            return false;
+        if (!default_value && s_default.ignore(pos, expected))
+        {
+            if (!default_parser.parse(pos, default_value, expected))
+                return false;
+            continue;
+        }
+
+        if (!expression && s_expression.ignore(pos, expected))
+        {
+            if (!expression_parser.parse(pos, expression, expected))
+                return false;
+            continue;
+        }
+
+        if (!hierarchical && s_hierarchical.ignore(pos, expected))
+        {
+            hierarchical = true;
+            continue;
+        }
+
+        if (!injective && s_injective.ignore(pos, expected))
+        {
+            injective = true;
+            continue;
+        }
+
+        if (!is_object_id && s_is_object_id.ignore(pos, expected))
+        {
+            is_object_id = true;
+            continue;
+        }
+
+        break;
     }
-
-    if (s_default.ignore(pos, expected))
-        if (!default_parser.parse(pos, default_value, expected))
-            return false;
-
-    if (s_expression.ignore(pos, expected))
-        if (!expression_parser.parse(pos, expression, expected))
-            return false;
-
-    if (s_hierarchical.ignore(pos, expected))
-        hierarchical = true;
-
-    if (s_injective.ignore(pos, expected))
-        injective = true;
-
-    if (s_is_object_id.ignore(pos, expected))
-        is_object_id = true;
 
     auto attribute_declaration = std::make_shared<ASTDictionaryAttributeDeclaration>();
     node = attribute_declaration;

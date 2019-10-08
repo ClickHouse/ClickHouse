@@ -17,8 +17,24 @@ namespace DB
 
 bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserLiteral literal_p;
     ParserKeyValuePairsList key_value_pairs_p;
     ASTPtr ast_lifetime;
+    auto res = std::make_shared<ASTDictionaryLifetime>();
+
+    /// simple lifetime with only maximum value e.g. LIFETIME(300)
+    if (literal_p.parse(pos, ast_lifetime, expected))
+    {
+        auto literal = ast_lifetime->as<const ASTLiteral &>();
+
+        if (literal.value.getType() != Field::Types::UInt64)
+            return false;
+
+        res->max_sec = literal.value.get<UInt64>();
+        node = res;
+        return true;
+    }
+
     if (!key_value_pairs_p.parse(pos, ast_lifetime, expected))
         return false;
 
@@ -26,7 +42,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (expr_list.children.size() != 2)
         return false;
 
-    auto res = std::make_shared<ASTDictionaryLifetime>();
+    bool initialized_max = false;
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
@@ -40,12 +56,15 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         if (pair.first == "min")
             res->min_sec = literal->value.get<UInt64>();
         else if (pair.first == "max")
+        {
             res->max_sec = literal->value.get<UInt64>();
+            initialized_max = true;
+        }
         else
             return false;
     }
 
-    if (!res->max_sec || !res->min_sec)
+    if (!initialized_max)
         return false;
 
     node = res;
