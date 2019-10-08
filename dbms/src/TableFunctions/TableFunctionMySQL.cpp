@@ -18,9 +18,9 @@
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/convertMySQLDataType.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 #include <mysqlxx/Pool.h>
