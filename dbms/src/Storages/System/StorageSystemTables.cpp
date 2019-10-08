@@ -61,6 +61,8 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     return block.getByPosition(0).column;
 }
 
+/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
+/// Otherwise it will require table initialization for Lazy database.
 static bool needLockStructure(const DatabasePtr & database, const Block & header)
 {
     if (database->getEngineName() != "Lazy")
