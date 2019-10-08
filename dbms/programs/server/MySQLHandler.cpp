@@ -46,7 +46,7 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     , connection_id(connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)
-    , auth_plugin(new Authentication::Native41())
+    , auth_plugin(new MySQLProtocol::Authentication::Native41())
 {
     server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
@@ -231,8 +231,8 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
     auto user = connection_context.getUser(user_name);
-    if (user->password_double_sha1_hex.empty())
-        auth_plugin = std::make_unique<Authentication::Sha256Password>(public_key, private_key, log);
+    if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
+        auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
 
     try {
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;

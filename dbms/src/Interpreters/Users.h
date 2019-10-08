@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Access/Authentication.h>
 
 #include <memory>
 #include <unordered_map>
@@ -53,10 +54,8 @@ struct User
 {
     String name;
 
-    /// Required password. Could be stored in plaintext or in SHA256.
-    String password;
-    String password_sha256_hex;
-    String password_double_sha1_hex;
+    /// Required password.
+    Authentication authentication;
 
     String profile;
     String quota;
