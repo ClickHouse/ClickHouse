@@ -32,7 +32,7 @@ void registerFunctionArrayUniq(FunctionFactory &);
 void registerFunctionArrayDistinct(FunctionFactory &);
 void registerFunctionArrayFlatten(FunctionFactory &);
 void registerFunctionArrayWithConstant(FunctionFactory &);
-void registerFunctionMapAccumulate(FunctionFactory &);
+void registerFunctionFillSortedArraysCumulative(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
 {
@@ -65,7 +65,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayDistinct(factory);
     registerFunctionArrayFlatten(factory);
     registerFunctionArrayWithConstant(factory);
-    registerFunctionMapAccumulate(factory);
+    registerFunctionFillSortedArraysCumulative(factory);
 }
 
 }

@@ -40,11 +40,11 @@ struct floatOrIntValue<Float64>
     static inline Float64 getValue(const IColumn & col, size_t i) { return col.getFloat64(i); }
 };
 
-class FunctionMapAccumulate : public IFunction
+class FunctionFillSortedArraysCumulative : public IFunction
 {
 public:
-    static constexpr auto name = "mapAccumulate";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapAccumulate>(); }
+    static constexpr auto name = "fillSortedArraysCumulative";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFillSortedArraysCumulative>(); }
 
 private:
     String getName() const override { return name; }
@@ -155,7 +155,7 @@ private:
 
                 /*
                  * if there is gap, fill by generated keys and last sum,
-                 * prevKey at first is not initialized, so start when i > 0
+                 * prev_key at first is not initialized, so start when i > 0
                  */
                 for (; i > 0 && !done && prev_key < key; ++prev_key)
                 {
@@ -289,9 +289,9 @@ private:
 };
 
 
-void registerFunctionMapAccumulate(FunctionFactory & factory)
+void registerFunctionFillSortedArraysCumulative(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionMapAccumulate>();
+    factory.registerFunction<FunctionFillSortedArraysCumulative>();
 }
 
 }
