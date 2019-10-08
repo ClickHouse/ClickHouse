@@ -217,7 +217,12 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_z
 
 std::string DataTypeDateTime64::doGetName() const
 {
-    return std::string(getFamilyName()) + "(" + std::to_string(this->scale) + ")";
+    if (!has_explicit_time_zone)
+        return std::string(getFamilyName()) + "(" + std::to_string(this->scale) + ")";
+
+    WriteBufferFromOwnString out;
+    out << "DateTime64(" << this->scale << ", " << quote << time_zone.getTimeZone() << ")";
+    return out.str();
 }
 
 void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & /*settings*/) const
