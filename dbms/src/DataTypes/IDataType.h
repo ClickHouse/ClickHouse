@@ -566,6 +566,14 @@ inline bool isFloat(const T & data_type)
 }
 
 template <typename T>
+inline bool isNativeInteger(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNativeInt() || which.isNativeUInt();
+}
+
+
+template <typename T>
 inline bool isNativeNumber(const T & data_type)
 {
     WhichDataType which(data_type);

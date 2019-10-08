@@ -828,20 +828,21 @@ public:
         else
         {
             UInt8 max_args = 2;
-//            UInt8 scale = 3;
-//            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-//            {
-//                max_args += 1;
-//                if (arguments.size() == max_args - 1)
-//                {
+            UInt32 scale = DataTypeDateTime64::default_scale;
+            // DateTime64 requires more arguments: scale and timezone. Since timezone is optional, scale should be first.
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            {
+                max_args += 1;
+                if (isNativeInteger(*arguments[max_args - 1].type))
+                {
+                    scale = static_cast<UInt32>(arguments[max_args - 1].column->get64(0));
+                }
+            }
 
-//                }
-//            }
-            /** Optional second argument with time zone is supported:
+            /** Optional (could be first or second) argument with time zone is supported:
               * - for functions toDateTime, toUnixTimestamp, toDate;
               * - for function toString of DateTime argument.
               */
-
             if (arguments.size() == max_args)
             {
                 if (!checkAndGetDataType<DataTypeString>(arguments[max_args - 1].type.get()))
@@ -856,15 +857,15 @@ public:
                     || (std::is_same_v<Name, NameToString> && (WhichDataType(arguments[0].type).isDateTime() || WhichDataType(arguments[0].type).isDateTime64()))))
                 {
                     throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(arguments.size()) + ", should be 1.",
+                        + toString(arguments.size()) + ", should be " + std::to_string(max_args) + ".",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
                 }
             }
 
             if (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-//            else if (std::is_same_v<ToDataType, DataTypeDateTime64>)
-//                return std::make_shared<DataTypeDateTime64>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, max_args - 1, 0));
+            else if (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, max_args - 1, 0));
             else
                 return std::make_shared<ToDataType>();
         }
@@ -1408,6 +1409,8 @@ using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumb
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToNumberMonotonicity<UInt16>>;
 using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToNumberMonotonicity<UInt32>>;
+// TODO (vnemkov): enable and test toDateTime64 function
+//using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime, NameToDateTime, UnknownMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
