@@ -633,13 +633,13 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
 
-
     ASTPtr identifier;
     ASTPtr value;
     bool with_brackets = false;
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
+    /// If it's not literal or identifier, than it's possible list of pairs
     if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;

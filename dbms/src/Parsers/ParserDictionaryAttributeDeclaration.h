@@ -9,7 +9,9 @@
 
 namespace DB
 {
-
+/// Parser for dictionary attribute declaration, similar with parser for table
+/// column, but attributes has less parameters. Produces
+/// ASTDictionaryAttributeDeclaration.
 class ParserDictionaryAttributeDeclaration : public IParserBase
 {
 protected:
@@ -19,6 +21,7 @@ protected:
 };
 
 
+/// Creates ASTExpressionList consists of dictionary attributes declaration.
 class ParserDictionaryAttributeDeclarationList : public IParserBase
 {
 protected:

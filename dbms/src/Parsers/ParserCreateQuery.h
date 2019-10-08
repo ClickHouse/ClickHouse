@@ -140,11 +140,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr codec_expression;
     ASTPtr ttl_expression;
 
-    if (!s_default.check_without_moving(pos, expected) &&
-        !s_materialized.check_without_moving(pos, expected) &&
-        !s_alias.check_without_moving(pos, expected) &&
-        !s_comment.check_without_moving(pos, expected) &&
-        !s_codec.check_without_moving(pos, expected))
+    if (!s_default.checkWithoutMoving(pos, expected) &&
+        !s_materialized.checkWithoutMoving(pos, expected) &&
+        !s_alias.checkWithoutMoving(pos, expected) &&
+        !s_comment.checkWithoutMoving(pos, expected) &&
+        !s_codec.checkWithoutMoving(pos, expected))
     {
         if (!type_parser.parse(pos, type, expected))
             return false;

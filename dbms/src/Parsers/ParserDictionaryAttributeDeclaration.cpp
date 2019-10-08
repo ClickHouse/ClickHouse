@@ -18,15 +18,11 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     ParserLiteral default_parser;
     ParserTernaryOperatorExpression expression_parser;
 
-    /// mandatory column name
+    /// mandatory attribute name
     ASTPtr name;
     if (!name_parser.parse(pos, name, expected))
         return false;
 
-
-    /** column name should be followed by type name if it
-      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
-      */
     ASTPtr type;
     ASTPtr default_value;
     ASTPtr expression;
@@ -34,9 +30,11 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     bool injective = false;
     bool is_object_id = false;
 
+    /// attribute name should be followed by type name if it
     if (!type_parser.parse(pos, type, expected))
         return false;
 
+    /// loop to avoid strict order of attribute properties
     while (true)
     {
         if (!default_value && s_default.ignore(pos, expected))
@@ -53,6 +51,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
             continue;
         }
 
+        /// just single keyword, we don't use "true" or "1" for value
         if (!hierarchical && s_hierarchical.ignore(pos, expected))
         {
             hierarchical = true;
@@ -96,14 +95,9 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
         attribute_declaration->children.push_back(std::move(expression));
     }
 
-    if (hierarchical)
-        attribute_declaration->hierarchical = true;
-
-    if (injective)
-        attribute_declaration->injective = true;
-
-    if (is_object_id)
-        attribute_declaration->is_object_id = true;
+    attribute_declaration->hierarchical = hierarchical;
+    attribute_declaration->injective = injective;
+    attribute_declaration->is_object_id = is_object_id;
 
     return true;
 }
@@ -111,7 +105,8 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
 
 bool ParserDictionaryAttributeDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserDictionaryAttributeDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserDictionaryAttributeDeclaration>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 

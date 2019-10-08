@@ -17,6 +17,7 @@ struct ASTExistsDictionaryQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsDictionaryQuery";
     static constexpr auto Query = "EXISTS DICTIONARY";
+    /// No temporary dictionaries are supported, just for parsing
     static constexpr auto QueryTemporary = "EXISTS TEMPORARY DICTIONARY";
 };
 
@@ -38,6 +39,7 @@ struct ASTShowCreateDictionaryQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateDictionaryQuery";
     static constexpr auto Query = "SHOW CREATE DICTIONARY";
+    /// No temporary dictionaries are supported, just for parsing
     static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY DICTIONARY";
 };
 

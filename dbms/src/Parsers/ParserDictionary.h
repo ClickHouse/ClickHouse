@@ -5,9 +5,10 @@
 
 namespace DB
 {
-/*
- * LIFETIME(MIN 10, MAX 100)
- */
+
+/// Parser for dictionary lifetime part. It should contain "lifetime" keyword,
+/// opening bracket, literal value or two pairs and closing bracket:
+/// lifetime(300), lifetime(min 100 max 200). Produces ASTDictionaryLifetime.
 class ParserDictionaryLifetime : public IParserBase
 {
 protected:
@@ -15,9 +16,9 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/*
- * RANGE(MIN startDate, MAX endDate)
- */
+/// Parser for dictionary range part. It should contain "range" keyword opening
+/// bracket, two pairs and closing bracket: range(min attr1 max attr2). Produces
+/// ASTDictionaryRange.
 class ParserDictionaryRange : public IParserBase
 {
 protected:
@@ -26,7 +27,9 @@ protected:
 };
 
 
-// LAYOUT(TYPE()) or LAYOUT(TYPE(PARAM value))
+/// Parser for dictionary layout part. It should contain "layout" keyword,
+/// opening bracket, possible pair with param value and closing bracket:
+/// layout(type()) or layout(type(param value)). Produces ASTDictionaryLayout.
 class ParserDictionaryLayout : public IParserBase
 {
 protected:
@@ -35,6 +38,16 @@ protected:
 };
 
 
+/// Combines together all parsers from above and also parses primary key and
+/// dictionary source, which consists of custom key-value pairs:
+///
+/// PRIMARY KEY key_column1, key_column2
+/// SOURCE(MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA(HOST '127.0.0.1' PRIORITY 1) PASSWORD ''))
+/// LAYOUT(CACHE(size_in_cells 50))
+/// LIFETIME(MIN 1 MAX 10)
+/// RANGE(MIN second_column MAX third_column)
+///
+/// Produces ASTDictionary.
 class ParserDictionary : public IParserBase
 {
 protected:
@@ -43,9 +56,8 @@ protected:
 };
 
 
-/**
-  * CREATE DICTIONARY db.name
-  */
+/// Parses complete dictionary create query. Uses ParserDictionary and
+/// ParserDictionaryAttributeDeclaration. Produces ASTCreateQuery.
 class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:
