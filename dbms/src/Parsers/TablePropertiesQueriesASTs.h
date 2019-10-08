@@ -6,11 +6,18 @@
 namespace DB
 {
 
-struct ASTExistsQueryIDAndQueryNames
+struct ASTExistsTableQueryIDAndQueryNames
 {
-    static constexpr auto ID = "ExistsQuery";
+    static constexpr auto ID = "ExistsTableQuery";
     static constexpr auto Query = "EXISTS TABLE";
     static constexpr auto QueryTemporary = "EXISTS TEMPORARY TABLE";
+};
+
+struct ASTExistsDictionaryQueryIDAndQueryNames
+{
+    static constexpr auto ID = "ExistsDictionaryQuery";
+    static constexpr auto Query = "EXISTS DICTIONARY";
+    static constexpr auto QueryTemporary = "EXISTS TEMPORARY DICTIONARY";
 };
 
 struct ASTShowCreateTableQueryIDAndQueryNames
@@ -27,6 +34,13 @@ struct ASTShowCreateDatabaseQueryIDAndQueryNames
     static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY DATABASE";
 };
 
+struct ASTShowCreateDictionaryQueryIDAndQueryNames
+{
+    static constexpr auto ID = "ShowCreateDictionaryQuery";
+    static constexpr auto Query = "SHOW CREATE DICTIONARY";
+    static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY DICTIONARY";
+};
+
 struct ASTDescribeQueryExistsQueryIDAndQueryNames
 {
     static constexpr auto ID = "DescribeQuery";
@@ -34,8 +48,10 @@ struct ASTDescribeQueryExistsQueryIDAndQueryNames
     static constexpr auto QueryTemporary = "DESCRIBE TEMPORARY TABLE";
 };
 
-using ASTExistsQuery = ASTQueryWithTableAndOutputImpl<ASTExistsQueryIDAndQueryNames>;
+using ASTExistsTableQuery = ASTQueryWithTableAndOutputImpl<ASTExistsTableQueryIDAndQueryNames>;
+using ASTExistsDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTExistsDictionaryQueryIDAndQueryNames>;
 using ASTShowCreateTableQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateTableQueryIDAndQueryNames>;
+using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateDictionaryQueryIDAndQueryNames>;
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {
