@@ -16,6 +16,22 @@ CREATE TABLE kafka (x UInt8)
              kafka_format = 'CSV';
 CREATE TABLE as_kafka AS kafka ENGINE = Memory;
 
+ALTER TABLE kafka ADD COLUMN (y UInt8);
+SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'kafka';
+
+ALTER TABLE kafka DROP COLUMN _key;
+SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'kafka';
+
+ALTER TABLE kafka MODIFY COLUMN y UInt16;
+SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'kafka';
+
+ALTER TABLE kafka DROP COLUMN y;
+SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'kafka';
+
+ALTER TABLE kafka ADD COLUMN (_key UInt8);
+ALTER TABLE kafka DROP COLUMN _key;
+SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'kafka';
+
 SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'merge_ab';
 SELECT * FROM system.columns WHERE database = currentDatabase() AND table = 'as_kafka';
 
