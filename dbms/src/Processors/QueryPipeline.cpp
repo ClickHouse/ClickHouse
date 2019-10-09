@@ -515,7 +515,7 @@ void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     for (auto & processor : processors)
     {
-        if (auto * source = typeid_cast<ISourceWithProgress *>(processor.get()))
+        if (auto * source = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source->setProgressCallback(callback);
 
         if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
