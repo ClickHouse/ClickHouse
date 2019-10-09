@@ -367,6 +367,7 @@ def main(args):
             all_tests = filter(lambda case: is_test_from_dir(suite_dir, case), all_tests)
             if args.test:
                 all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
+            all_tests.sort(key=key_func)
 
             run_n, run_total = args.parallel.split('/')
             run_n = float(run_n)
