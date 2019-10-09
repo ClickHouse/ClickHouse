@@ -1540,6 +1540,9 @@ public:
 
     String getName() const override { return name; }
 
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+
     bool hasInformationAboutMonotonicity() const override
     {
         return static_cast<bool>(monotonicity_for_range);
