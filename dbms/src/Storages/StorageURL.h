@@ -67,9 +67,8 @@ private:
 
     virtual Block getHeaderBlock(const Names & column_names) const = 0;
 
-    bool checkHost(const std::string & host); ///return true if host allowed
-
-    void throwUnacceptableURLException();
+    /// Return true if host allowed
+    bool checkHost(const std::string & host);
 };
 
 
