@@ -1,6 +1,6 @@
 #pragma once
 #include <Common/config.h>
-#if USE_POCO_NETSSL
+#if USE_SSL
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Poco/Net/SecureStreamSocket.h>

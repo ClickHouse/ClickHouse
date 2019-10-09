@@ -25,6 +25,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
+#include <DataStreams/CheckNonEmptySetBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
@@ -47,6 +48,7 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/Join.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -114,7 +116,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Assumes `storage` is set and the table filter is not empty.
+/// Assumes `storage` is set and the table filter (row-level security) is not empty.
 String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & storage, const Context & context, const Names & prerequisite_columns = {})
 {
     const auto & db_name = storage->getDatabaseName();
@@ -351,7 +353,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     required_columns = syntax_analyzer_result->requiredSourceColumns();
 
     if (storage)
+    {
         source_header = storage->getSampleBlockForColumns(required_columns);
+
+        /// Fix source_header for filter actions.
+        if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        {
+            filter_info = std::make_shared<FilterInfo>();
+            filter_info->column_name = generateFilterActions(filter_info->actions, storage, context, required_columns);
+            source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
+        }
+    }
 
     /// Calculate structure of the result.
     result_header = getSampleBlockImpl();
@@ -420,19 +432,47 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
-    /// Need to create sets before analyzeExpressions(). Otherwise some sets for index won't be created.
-    query_analyzer->makeSetsForIndex(getSelectQuery().where());
-    query_analyzer->makeSetsForIndex(getSelectQuery().prewhere());
+    auto & query = getSelectQuery();
+    const Settings & settings = context.getSettingsRef();
 
-    auto analysis_result = analyzeExpressions(
+    /// Do all AST changes here, because actions from analysis_result will be used later in readImpl.
+
+    /// PREWHERE optimization.
+    /// Turn off, if the table filter (row-level security) is applied.
+    if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+    {
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
+
+        auto optimize_prewhere = [&](auto & merge_tree)
+        {
+            SelectQueryInfo current_info;
+            current_info.query = query_ptr;
+            current_info.syntax_analyzer_result = syntax_analyzer_result;
+            current_info.sets = query_analyzer->getPreparedSets();
+
+            /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
+            if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
+                MergeTreeWhereOptimizer{current_info, context, merge_tree,
+                                        syntax_analyzer_result->requiredSourceColumns(), log};
+        };
+
+        if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
+            optimize_prewhere(*merge_tree_data);
+    }
+
+    if (storage && !options.only_analyze)
+        from_stage = storage->getQueryProcessingStage(context);
+
+    analysis_result = analyzeExpressions(
             getSelectQuery(),
             *query_analyzer,
-            QueryProcessingStage::Enum::FetchColumns,
+            from_stage,
             options.to_stage,
             context,
             storage,
-            true,  // only_types
-            {}     // filter_info
+            options.only_analyze,
+            filter_info
         );
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
@@ -575,21 +615,8 @@ InterpreterSelectQuery::analyzeExpressions(
         if (storage && filter_info)
         {
             has_filter = true;
-
-            /// XXX: aggregated copy-paste from ExpressionAnalyzer::appendSmth()
-            if (chain.steps.empty())
-            {
-                chain.steps.emplace_back(std::make_shared<ExpressionActions>(NamesAndTypesList(), context));
-            }
-            ExpressionActionsChain::Step & step = chain.steps.back();
-
-            // FIXME: assert(filter_info);
             res.filter_info = filter_info;
-            step.actions = filter_info->actions;
-            step.required_output.push_back(res.filter_info->column_name);
-            step.can_remove_required_output = {true};
-
-            chain.addStep();
+            query_analyzer.appendPreliminaryFilter(chain, filter_info->actions, filter_info->column_name);
         }
 
         if (query_analyzer.appendPrewhere(chain, !res.first_stage, additional_required_columns_after_prewhere))
@@ -686,6 +713,35 @@ InterpreterSelectQuery::analyzeExpressions(
 
     return res;
 }
+
+
+BlockInputStreamPtr InterpreterSelectQuery::createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const
+{
+    for (const auto & action : expression->getActions())
+    {
+        if (action.type == ExpressionAction::JOIN)
+        {
+            const auto * join = dynamic_cast<Join *>(action.join.get());
+            if (!join)
+                continue;
+            if (isInnerOrRight(join->getKind()))
+            {
+                stream = std::make_shared<CheckNonEmptySetBlockInputStream>(stream, expression, syntax_analyzer_result->need_check_empty_sets);
+                break;
+            }
+        }
+        else if (action.type == ExpressionAction::ADD_COLUMN)
+        {
+            if (syntax_analyzer_result->need_check_empty_sets.count(action.result_name))
+            {
+                stream = std::make_shared<CheckNonEmptySetBlockInputStream>(stream, expression, syntax_analyzer_result->need_check_empty_sets);
+                break;
+            }
+        }
+    }
+    return stream;
+}
+
 
 static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
 {
@@ -910,50 +966,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     /// Now we will compose block streams that perform the necessary actions.
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
-
-    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-
-    /// PREWHERE optimization
-    /// Turn off, if the table filter is applied.
-    if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
-    {
-        if (!options.only_analyze)
-            from_stage = storage->getQueryProcessingStage(context);
-
-        query_analyzer->makeSetsForIndex(query.where());
-        query_analyzer->makeSetsForIndex(query.prewhere());
-
-        auto optimize_prewhere = [&](auto & merge_tree)
-        {
-            SelectQueryInfo current_info;
-            current_info.query = query_ptr;
-            current_info.syntax_analyzer_result = syntax_analyzer_result;
-            current_info.sets = query_analyzer->getPreparedSets();
-
-            /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-            if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                MergeTreeWhereOptimizer{current_info, context, merge_tree, syntax_analyzer_result->requiredSourceColumns(), log};
-        };
-
-        if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-            optimize_prewhere(*merge_tree_data);
-    }
-
-    AnalysisResult expressions;
-    FilterInfoPtr filter_info;
-
-    /// We need proper `source_header` for `NullBlockInputStream` in dry-run.
-    if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
-    {
-        filter_info = std::make_shared<FilterInfo>();
-        filter_info->column_name = generateFilterActions(filter_info->actions, storage, context, required_columns);
-        source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
-    }
+    auto & expressions = analysis_result;
 
     SortingInfoPtr sorting_info;
     if (settings.optimize_read_in_order && storage && query.orderBy() && !query_analyzer->hasAggregation() && !query.final() && !query.join())
     {
-        if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
+        if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
             sorting_info = optimizeReadInOrder(*merge_tree_data, query, context, syntax_analyzer_result);
     }
 
@@ -963,16 +981,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             pipeline.init({std::make_shared<NullSource>(source_header)});
         else
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
-
-        expressions = analyzeExpressions(
-                getSelectQuery(),
-                *query_analyzer,
-                QueryProcessingStage::FetchColumns,
-                options.to_stage,
-                context,
-                storage,
-                true,
-                filter_info);
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
@@ -990,7 +998,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 });
             else
                 pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
-                    pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
+                    createCheckNonEmptySetIfNeed(pipeline.streams.back(), expressions.prewhere_info->prewhere_actions), expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
 
             // To remove additional columns in dry run
@@ -1018,16 +1026,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             else
                 pipeline.streams.push_back(prepared_input);
         }
-
-        expressions = analyzeExpressions(
-                getSelectQuery(),
-                *query_analyzer,
-                from_stage,
-                options.to_stage,
-                context,
-                storage,
-                false,
-                filter_info);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             options.to_stage == QueryProcessingStage::WithMergeableState)
@@ -1116,7 +1114,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     header_before_join = pipeline.firstStream()->getHeader();
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
-                        stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
+                        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expressions.before_join), expressions.before_join);
 
                     if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
                     {
@@ -1697,7 +1695,7 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        stream = std::make_shared<FilterBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression, getSelectQuery().where()->getColumnName(), remove_fiter);
     });
 }
 
@@ -1713,7 +1711,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
+        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression);
     });
 
     Names key_names;
@@ -2079,7 +2077,7 @@ void InterpreterSelectQuery::executeExpression(Pipeline & pipeline, const Expres
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
+        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression);
     });
 }
 

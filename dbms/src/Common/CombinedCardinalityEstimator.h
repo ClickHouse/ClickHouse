@@ -106,7 +106,7 @@ public:
             getContainer<Large>().insert(value);
     }
 
-    UInt32 size() const
+    UInt64 size() const
     {
         auto container_type = getContainerType();
 
