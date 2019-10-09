@@ -32,7 +32,7 @@ Block InterpreterExistsQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
 {
-    const auto & ast = query_ptr->as<ASTExistsQuery &>();
+    const auto & ast = query_ptr->as<ASTExistsTableQuery &>();
     bool res = ast.temporary ? context.isExternalTableExist(ast.table) : context.isTableExist(ast.database, ast.table);
 
     return std::make_shared<OneBlockInputStream>(Block{{

@@ -62,27 +62,6 @@ bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expecte
     return false;
 }
 
-
-bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserIdentifier non_parametric;
-    ParserIdentifierWithParameters parametric;
-
-    if (parametric.parse(pos, node, expected))
-        return true;
-
-    ASTPtr ident;
-    if (non_parametric.parse(pos, ident, expected))
-    {
-        auto func = std::make_shared<ASTFunction>();
-        tryGetIdentifierNameInto(ident, func->name);
-        node = func;
-        return true;
-    }
-
-    return false;
-}
-
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserNameTypePair>(), std::make_unique<ParserToken>(TokenType::Comma), false)
