@@ -318,6 +318,7 @@ def main(args):
        except ValueError:
            return 99997
 
+    total_tests_run = 0
     for suite in sorted(os.listdir(base_dir), key=sute_key_func):
         if SERVER_DIED:
             break
@@ -364,7 +365,8 @@ def main(args):
 
             all_tests = os.listdir(suite_dir)
             all_tests = filter(lambda case: is_test_from_dir(suite_dir, case), all_tests)
-            all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
+            if args.test:
+                all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
 
             run_n, run_total = args.parallel.split('/')
             run_n = float(run_n)
@@ -394,6 +396,8 @@ def main(args):
             else:
                 run_tests_array(all_tests_array[int(run_n)-1])
 
+            total_tests_run += tests_n
+
     if args.hung_check:
         processlist = get_processlist(args.client_with_database)
         if processlist:
@@ -406,6 +410,10 @@ def main(args):
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
+
+    if total_tests_run == 0:
+        print("No tests were run.")
+        sys.exit(1)
 
     sys.exit(exit_code)
 
