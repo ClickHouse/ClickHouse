@@ -1,5 +1,7 @@
 #include <common/DateLUT.h>
 
+#include <Core/Field.h>
+
 #include <DataTypes/DataTypeDate.h>
 
 #include <Functions/IFunction.h>

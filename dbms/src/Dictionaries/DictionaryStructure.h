@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IExternalLoadable.h>

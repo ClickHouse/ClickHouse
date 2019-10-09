@@ -3,7 +3,6 @@
 #include <memory>
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
-#include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
 
 
@@ -19,6 +18,8 @@ struct FormatSettings;
 class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
+
+class Field;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
