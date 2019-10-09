@@ -565,7 +565,7 @@ public:
     /// All MergeTreeData children have settings.
     void checkSettingCanBeChanged(const String & setting_name) const override;
 
-    /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
+    /// Remove columns, that have been marked as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
     /// Freezes all parts.

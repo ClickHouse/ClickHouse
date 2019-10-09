@@ -87,6 +87,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
     ParserSetQuery parser_settings(true);
     ParserNameList values_p;
+    ParserTTLExpressionList parser_ttl_list;
 
     if (is_live_view)
     {
@@ -236,11 +237,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->part = true;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = ASTAlterCommand::MoveDestinationType::DISK;
+                command->move_destination_type = ASTTTLElement::DestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = ASTAlterCommand::MoveDestinationType::VOLUME;
+                command->move_destination_type = ASTTTLElement::DestinationType::VOLUME;
             else
                 return false;
+
+            // FIXME See ParserTTLElement
 
             ASTPtr ast_space_name;
             if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -256,11 +259,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->type = ASTAlterCommand::MOVE_PARTITION;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = ASTAlterCommand::MoveDestinationType::DISK;
+                command->move_destination_type = ASTTTLElement::DestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = ASTAlterCommand::MoveDestinationType::VOLUME;
+                command->move_destination_type = ASTTTLElement::DestinationType::VOLUME;
             else
                 return false;
+
+            // FIXME See ParserTTLElement
 
             ASTPtr ast_space_name;
             if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -431,7 +436,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else if (s_modify_ttl.ignore(pos, expected))
         {
-            if (!parser_exp_elem.parse(pos, command->ttl, expected))
+            if (!parser_ttl_list.parse(pos, command->ttl, expected))
+// FIXME check if that is fine, can be `toDate(), toDate() TO DISK 'abc'` and that is not tuple TO DISK 'abc'
                 return false;
             command->type = ASTAlterCommand::MODIFY_TTL;
         }
