@@ -22,13 +22,29 @@ struct DecimalComponents
 };
 
 template <typename DecimalType>
+DecimalType decimalFromComponentsWithMultipliers(const typename DecimalType::NativeType & whole,
+                                                 const typename DecimalType::NativeType & fractional,
+                                                 typename DecimalType::NativeType scale_multiplier,
+                                                 typename DecimalType::NativeType fractional_divider)
+{
+    using T = typename DecimalType::NativeType;
+    const T value = whole * scale_multiplier + fractional / fractional_divider;
+    return DecimalType(value);
+}
+
+template <typename DecimalType>
+typename DecimalType::NativeType  decimalFractionalDivider(UInt32 scale)
+{
+    using T = typename DecimalType::NativeType;
+    return decimalScaleMultiplier<T>(std::numeric_limits<T>::digits10 - scale);
+}
+
+template <typename DecimalType>
 DecimalType decimalFromComponents(const typename DecimalType::NativeType & whole, const typename DecimalType::NativeType & fractional, UInt32 scale)
 {
     using T = typename DecimalType::NativeType;
 
-    const auto mul = decimalScaleMultiplier<T>(scale);
-    const T value = whole * mul + fractional / decimalScaleMultiplier<T>(std::numeric_limits<T>::digits10 - scale);
-    return DecimalType(value);
+    return decimalFromComponentsWithMultipliers<DecimalType>(whole, fractional, decimalScaleMultiplier<T>(scale), decimalFractionalDivider<DecimalType>(scale));
 }
 
 template <typename DecimalType>
@@ -38,14 +54,25 @@ DecimalType decimalFromComponents(const DecimalComponents<typename DecimalType::
 }
 
 template <typename DecimalType>
+DecimalComponents<typename DecimalType::NativeType> decimalSplitWithScaleMultiplier(const DecimalType & decimal, typename DecimalType::NativeType scale_multiplier)
+{
+    using T = typename DecimalType::NativeType;
+    const auto whole = decimal.value / scale_multiplier;
+    auto fractional = decimal.value % scale_multiplier;
+    if (fractional < T(0))
+        fractional *= T(-1);
+
+    return {whole, fractional};
+}
+
+template <typename DecimalType>
 DecimalComponents<typename DecimalType::NativeType> decimalSplit(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
     {
         return {decimal.value, 0};
     }
-    const auto scaleMultiplier = decimalScaleMultiplier<typename DecimalType::NativeType>(scale);
-    return {decimal.value / scaleMultiplier, decimal.value % scaleMultiplier};
+    return decimalSplitWithScaleMultiplier(decimal, decimalScaleMultiplier<typename DecimalType::NativeType>(scale));
 }
 
 template <typename DecimalType>

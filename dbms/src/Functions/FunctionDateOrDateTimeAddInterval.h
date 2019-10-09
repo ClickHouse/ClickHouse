@@ -22,6 +22,33 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+// TODO(vnemkov): in order to be overloadable for specific implementation, make this a base class
+template <typename T>
+struct AddOnDateTime64Mixin : public T
+{
+    /*explicit*/ AddOnDateTime64Mixin(UInt32 scale_ = 0)
+        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale_)),
+          fractional_divider(decimalFractionalDivider<DateTime64>(scale_))
+    {}
+
+    using T::execute;
+
+    // Default implementation for add/sub on DateTime64: do math on whole part, leave fractional as it is.
+    inline DateTime64 execute(const DateTime64 & t, Int64 delta, const DateLUTImpl & time_zone) const
+    {
+        const auto components = decimalSplitWithScaleMultiplier(t, scale_multiplier);
+//        const auto components = decimalSplitWithScaleMultiplier(t, scale);
+        // TODO (vnemkov): choose proper overload: UInt64 if available, UInt32 otherwise.
+        const auto whole = T::execute(static_cast<UInt32>(components.whole), delta, time_zone);
+
+        return decimalFromComponentsWithMultipliers<DateTime64>(static_cast<DateTime64::NativeType>(whole), components.fractional, scale_multiplier, fractional_divider);
+//        return decimalFromComponents<DateTime64>(static_cast<DateTime64::NativeType>(whole), components.fractional, scale);
+    }
+
+    UInt32 scale_multiplier = 1;
+    UInt32 fractional_divider = 1;
+};
+
 
 struct AddSecondsImpl
 {
@@ -72,11 +99,11 @@ struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
 
-    static inline UInt32 execute(UInt64 t, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        // TODO (nemkov): LUT does not support out-of range date values for now.
-        return time_zone.addDays(t, delta);
-    }
+//    static inline UInt32 execute(UInt64 t, Int64 delta, const DateLUTImpl & time_zone)
+//    {
+//        // TODO (nemkov): LUT does not support out-of range date values for now.
+//        return time_zone.addDays(t, delta);
+//    }
 
     static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
@@ -153,89 +180,97 @@ struct AddYearsImpl
 template <typename Transform>
 struct SubtractIntervalImpl
 {
-    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    template <typename T>
+    static
+    inline decltype(Transform::execute(T{}, Int64{}, DateLUTImpl{""})) // to preserve return type of Transfor::execute and allow promoting/denoting types.
+    execute(T t, Int64 delta, const DateLUTImpl & time_zone)
     {
-        return Transform::execute(t, -delta, time_zone);
-    }
 
-    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        return Transform::execute(d, -delta, time_zone);
+        return Transform::execute(t, -delta, time_zone);
     }
 };
 
-struct SubtractSecondsImpl : SubtractIntervalImpl<AddSecondsImpl> { static constexpr auto name = "subtractSeconds"; };
-struct SubtractMinutesImpl : SubtractIntervalImpl<AddMinutesImpl> { static constexpr auto name = "subtractMinutes"; };
-struct SubtractHoursImpl : SubtractIntervalImpl<AddHoursImpl> { static constexpr auto name = "subtractHours"; };
-struct SubtractDaysImpl : SubtractIntervalImpl<AddDaysImpl> { static constexpr auto name = "subtractDays"; };
-struct SubtractWeeksImpl : SubtractIntervalImpl<AddWeeksImpl> { static constexpr auto name = "subtractWeeks"; };
-struct SubtractMonthsImpl : SubtractIntervalImpl<AddMonthsImpl> { static constexpr auto name = "subtractMonths"; };
-struct SubtractQuartersImpl : SubtractIntervalImpl<AddQuartersImpl> { static constexpr auto name = "subtractQuarters"; };
-struct SubtractYearsImpl : SubtractIntervalImpl<AddYearsImpl> { static constexpr auto name = "subtractYears"; };
+struct SubtractSecondsImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddSecondsImpl>> { static constexpr auto name = "subtractSeconds"; };
+struct SubtractMinutesImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddMinutesImpl>> { static constexpr auto name = "subtractMinutes"; };
+struct SubtractHoursImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddHoursImpl>> { static constexpr auto name = "subtractHours"; };
+struct SubtractDaysImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddDaysImpl>> { static constexpr auto name = "subtractDays"; };
+struct SubtractWeeksImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddWeeksImpl>> { static constexpr auto name = "subtractWeeks"; };
+struct SubtractMonthsImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddMonthsImpl>> { static constexpr auto name = "subtractMonths"; };
+struct SubtractQuartersImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddQuartersImpl>> { static constexpr auto name = "subtractQuarters"; };
+struct SubtractYearsImpl : AddOnDateTime64Mixin<SubtractIntervalImpl<AddYearsImpl>> { static constexpr auto name = "subtractYears"; };
 
 
-template <typename FromType, typename ToType, typename Transform>
+template <typename Transform>
 struct Adder
 {
-    static void vector_vector(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to, const IColumn & delta, const DateLUTImpl & time_zone)
+    const Transform transform;
+
+    explicit Adder(Transform transform_)
+        : transform(std::move(transform_))
+    {}
+
+    template <typename FromVectorType, typename ToVectorType>
+    void vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone)
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = Transform::execute(vec_from[i], delta.getInt(i), time_zone);
+            vec_to[i] = transform.execute(vec_from[i], delta.getInt(i), time_zone);
     }
 
-    static void vector_constant(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to, Int64 delta, const DateLUTImpl & time_zone)
+    template <typename FromVectorType, typename ToVectorType>
+    void vector_constant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone)
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = Transform::execute(vec_from[i], delta, time_zone);
+            vec_to[i] = transform.execute(vec_from[i], delta, time_zone);
     }
 
-    static void constant_vector(const FromType & from, PaddedPODArray<ToType> & vec_to, const IColumn & delta, const DateLUTImpl & time_zone)
+    template <typename FromType, typename ToVectorType>
+    void constant_vector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone)
     {
         size_t size = delta.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = Transform::execute(from, delta.getInt(i), time_zone);
+            vec_to[i] = transform.execute(from, delta.getInt(i), time_zone);
     }
 };
 
 
-template <typename FromType, typename Transform>
+template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+    static void execute(Transform transform, Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        using ToType = decltype(Transform::execute(FromType(), 0, std::declval<DateLUTImpl>()));
-        using Op = Adder<FromType, ToType, Transform>;
+        using FromValueType = typename FromDataType::FieldType;
+        using FromColumnType = typename FromDataType::ColumnType;
+        using ToColumnType = typename ToDataType::ColumnType;
+
+        auto op = Adder<Transform>{std::move(transform)};
 
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
 
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
 
-        if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
-        {
-            auto col_to = ColumnVector<ToType>::create();
+        auto result_col = block.getByPosition(result).type->createColumn();
+        auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
+        if (const auto * sources = checkAndGetColumn<FromColumnType>(source_col.get()))
+        {
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                Op::vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
+                op.vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
             else
-                Op::vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
-
-            block.getByPosition(result).column = std::move(col_to);
+                op.vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
         }
-        else if (const auto * sources_const = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get()))
+        else if (const auto * sources_const = checkAndGetColumnConst<FromColumnType>(source_col.get()))
         {
-            auto col_to = ColumnVector<ToType>::create();
-            Op::constant_vector(sources_const->template getValue<FromType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
-            block.getByPosition(result).column = std::move(col_to);
+            op.constant_vector(sources_const->template getValue<FromValueType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
         }
         else
         {
@@ -243,6 +278,8 @@ struct DateTimeAddIntervalImpl
                 + " of first argument of function " + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }
+
+        block.getByPosition(result).column = std::move(result_col);
     }
 };
 
@@ -292,20 +329,60 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        if (WhichDataType(arguments[0].type).isDate())
+        switch (arguments[0].type->getTypeId())
         {
-            if (std::is_same_v<decltype(Transform::execute(DataTypeDate::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>)
-                return std::make_shared<DataTypeDate>();
-            else
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            case TypeIndex::Date:
+                return resolveReturnType<typename DataTypeDate::FieldType>(arguments);
+            case TypeIndex::DateTime:
+                return resolveReturnType<typename DataTypeDateTime::FieldType>(arguments);
+            case TypeIndex::DateTime64:
+                return resolveReturnType<typename DataTypeDateTime64::FieldType>(arguments);
+            default:
+            {
+                // TODO (vnemkov): quick and dirty way to check, remove before merging.
+                assert(false);
+                throw Exception("Invalid type of 1st argument of function " + getName() + ": "
+                    + arguments[0].type->getName() + ", expected: Date, DateTime or DateTime64.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
         }
-        else
+    }
+
+    // Helper templates to deduce return type based on argument type, since some function may promote type, e.g. addSeconds(Date, 1) => DateTime
+    template <typename FieldType>
+    using TransformExecuteReturnType = decltype(std::declval<Transform>().execute(FieldType(), 0, std::declval<DateLUTImpl>()));
+
+    template <typename FieldType> struct ResultDataTypeMap {};
+    template <> struct ResultDataTypeMap<UInt16>     { using ResultDataType = DataTypeDate; };
+    template <> struct ResultDataTypeMap<Int16>      { using ResultDataType = DataTypeDate; };
+    template <> struct ResultDataTypeMap<UInt32>     { using ResultDataType = DataTypeDateTime; };
+    template <> struct ResultDataTypeMap<Int32>      { using ResultDataType = DataTypeDateTime; };
+    template <> struct ResultDataTypeMap<DateTime64> { using ResultDataType = DataTypeDateTime64; };
+
+    // Deduces result DataType from argument data type, based on return type of Transform{}.execute(from, UInt64, DateLUTImpl).
+    // e.g. for Transform-type that has execute()-overload with 'UInt16' input and 'UInt32' return,
+    // argument type is expected to be 'Date', and result type is deduced to be 'DateTime'.
+    template <typename FromFieldType>
+    using TransformResultDataType = typename ResultDataTypeMap<TransformExecuteReturnType<FromFieldType>>::ResultDataType;
+
+    template <typename FieldType>
+    DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const
+    {
+        using ResultDataType = TransformResultDataType<FieldType>;
+
+        if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
+            return std::make_shared<DataTypeDate>();
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
-            if (std::is_same_v<decltype(Transform::execute(DataTypeDateTime::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>)
-                return std::make_shared<DataTypeDate>();
-            else
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
+        {
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
+            return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+        }
+
+        assert(false && "Failed to resolve return type.");
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -317,9 +394,17 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            DateTimeAddIntervalImpl<DataTypeDate::FieldType, Transform>::execute(block, arguments, result);
+        {
+            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<typename DataTypeDate::FieldType>, Transform>::execute(Transform{}, block, arguments, result);
+        }
         else if (which.isDateTime())
-            DateTimeAddIntervalImpl<DataTypeDateTime::FieldType, Transform>::execute(block, arguments, result);
+        {
+            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<typename DataTypeDateTime::FieldType>, Transform>::execute(Transform{}, block, arguments, result);
+        }
+        else if (const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type))
+        {
+            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<typename DataTypeDateTime64::FieldType>, Transform>::execute(Transform{datetime64_type->getScale()}, block, arguments, result);
+        }
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
