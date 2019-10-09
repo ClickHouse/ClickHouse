@@ -33,11 +33,11 @@ namespace ErrorCodes
 
 namespace
 {
-struct NonDeterministicFuncData
+struct FirstNonDeterministicFuncData
 {
     using TypeToVisit = ASTFunction;
 
-    explicit NonDeterministicFuncData(const Context & context_)
+    explicit FirstNonDeterministicFuncData(const Context & context_)
         : context{context_}
     {}
 
@@ -55,8 +55,43 @@ struct NonDeterministicFuncData
     }
 };
 
-using NonDeterministicFuncMatcher = OneTypeMatcher<NonDeterministicFuncData>;
-using NonDeterministicFuncFinder = InDepthNodeVisitor<NonDeterministicFuncMatcher, true>;
+using FirstNonDeterministicFuncFinder =
+        InDepthNodeVisitor<OneTypeMatcher<FirstNonDeterministicFuncData>, true>;
+
+std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
+{
+    FirstNonDeterministicFuncData finder_data(context);
+
+    switch (command.type)
+    {
+        case MutationCommand::UPDATE:
+        {
+            auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
+            FirstNonDeterministicFuncFinder(finder_data).visit(update_assignments_ast);
+
+            if (finder_data.nondeterministic_function_name)
+                return finder_data.nondeterministic_function_name;
+
+            [[fallthrough]];
+        }
+
+        case MutationCommand::DELETE:
+        {
+            if (command.predicate == nullptr)
+                break;
+
+            auto predicate_ast = command.predicate->clone();
+            FirstNonDeterministicFuncFinder(finder_data).visit(predicate_ast);
+
+            return finder_data.nondeterministic_function_name;
+        }
+
+        default:
+            break;
+    }
+
+    return {};
+}
 };
 
 
@@ -479,38 +514,12 @@ void MutationsInterpreter::validate(TableStructureReadLockHolder &)
     {
         for (const auto & command : commands)
         {
-            NonDeterministicFuncData finder_data(context);
-
-            switch (command.type)
-            {
-                case MutationCommand::UPDATE:
-                    {
-                        auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
-                        NonDeterministicFuncFinder(finder_data).visit(update_assignments_ast);
-
-                        if (finder_data.nondeterministic_function_name)
-                            throw Exception(
-                                "ALTER UPDATE expressions must use only deterministic functions! "
-                                "Function '" + *finder_data.nondeterministic_function_name + "' is non-deterministic",
-                                ErrorCodes::BAD_ARGUMENTS);
-                    }
-                    [[fallthrough]];
-
-                case MutationCommand::DELETE:
-                    {
-                        auto predicate_ast = command.predicate->clone();
-                        NonDeterministicFuncFinder(finder_data).visit(predicate_ast);
-
-                        if (finder_data.nondeterministic_function_name)
-                            throw Exception(
-                                "Predicate expression in ALTER UPDATE/DELETE must use only deterministic functions! "
-                                "Function '" + *finder_data.nondeterministic_function_name + "' is non-deterministic",
-                                ErrorCodes::BAD_ARGUMENTS);
-                        break;
-                    }
-                default:
-                    break;
-            }
+            const auto nondeterministic_func_name = findFirstNonDeterministicFuncName(command, context);
+            if (nondeterministic_func_name)
+                throw Exception(
+                    "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions! "
+                    "Function '" + *nondeterministic_func_name + "' is non-deterministic",
+                    ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
