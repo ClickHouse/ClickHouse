@@ -21,14 +21,18 @@ ${CLICKHOUSE_CLIENT} -n -q "
 "
 
 # Check that in mutations of replicated tables predicates do not contain non-deterministic functions
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE rand() = 0" 2>&1 \
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE ignore(rand())" 2>&1 \
 | fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
 
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = x + 1 WHERE rand() = 0" 2>&1 \
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = y + rand() % 1 WHERE not ignore()" 2>&1 \
 | fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+
 
 # For regular tables we do not enforce deterministic functions
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $T1 DELETE WHERE rand() = 0" 2>&1 > /dev/null \
+&& echo 'OK' || echo 'FAIL'
+
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $T1 UPDATE y = y + rand() % 1 WHERE not ignore()" 2>&1 > /dev/null \
 && echo 'OK' || echo 'FAIL'
 
 
