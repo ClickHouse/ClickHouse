@@ -16,7 +16,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-DateTime64::NativeType nowSubsecond(UInt32 scale) {
+DateTime64::NativeType nowSubsecond(UInt32 scale)
+{
     timespec spec;
     clock_gettime(CLOCK_REALTIME, &spec);
 
