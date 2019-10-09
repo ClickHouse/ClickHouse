@@ -176,11 +176,13 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << " TO ";
         switch (move_destination_type)
         {
-            case MoveDestinationType::DISK:
+            case ASTTTLElement::DestinationType::DISK:
                 settings.ostr << "DISK ";
                 break;
-            case MoveDestinationType::VOLUME:
+            case ASTTTLElement::DestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
+                break;
+            default:
                 break;
         }
         settings.ostr << quoteString(move_destination_name);

@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTTTLElement.h>
 
 
 namespace DB
@@ -128,13 +129,7 @@ public:
 
     bool if_exists = false;     /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
-    enum MoveDestinationType
-    {
-        DISK,
-        VOLUME,
-    };
-
-    MoveDestinationType move_destination_type;
+    ASTTTLElement::DestinationType move_destination_type;
 
     String move_destination_name;
 
