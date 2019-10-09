@@ -104,7 +104,7 @@ namespace mysqlxx
 
         PoolWithFailover(const PoolWithFailover & other);
 
-        PoolWithFailover & operator=(const PoolWithFailover &) = delete;
+//        PoolWithFailover & operator=(const PoolWithFailover &) = delete;
 
         /** Allocates a connection to use. */
         Entry Get();
