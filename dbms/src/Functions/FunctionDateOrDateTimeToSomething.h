@@ -16,7 +16,8 @@ namespace ErrorCodes
 }
 
 template<class Transform>
-struct WithDateTime64Converter : public Transform {
+struct WithDateTime64Converter : public Transform
+{
     UInt8 scale;
     Transform transform;
 

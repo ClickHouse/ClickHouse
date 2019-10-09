@@ -48,7 +48,8 @@ protected:
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
   *  or system time zone at the moment of server startup.
   */
-class DataTypeDateTime final : public DataTypeNumberBase<UInt32>, public TimezoneMixin {
+class DataTypeDateTime final : public DataTypeNumberBase<UInt32>, public TimezoneMixin
+{
 public:
     explicit DataTypeDateTime(const std::string & time_zone_name = "");
 
@@ -79,7 +80,8 @@ public:
  *
  * `scale` determines number of decimal places for sub-second part of the DateTime64.
   */
-class DataTypeDateTime64 final : public DataTypeDecimalBase<DateTime64>, public TimezoneMixin {
+class DataTypeDateTime64 final : public DataTypeDecimalBase<DateTime64>, public TimezoneMixin
+{
 public:
     static constexpr UInt8 default_scale = 3;
 
