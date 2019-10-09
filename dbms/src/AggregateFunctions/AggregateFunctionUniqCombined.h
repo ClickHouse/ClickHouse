@@ -66,6 +66,11 @@ namespace detail
 
 }
 
+// Unlike HashTableGrower always grows to power of 2.
+struct UniqCombinedHashTableGrower : public HashTableGrower<>
+{
+    void increaseSize() { ++size_degree; }
+};
 
 template <typename Key, UInt8 K>
 struct AggregateFunctionUniqCombinedDataWithKey
@@ -76,7 +81,7 @@ struct AggregateFunctionUniqCombinedDataWithKey
     // We want to migrate from |HashSet| to |HyperLogLogCounter| when the sizes in memory become almost equal.
     // The size per element in |HashSet| is sizeof(Key)*2 bytes, and the overall size of |HyperLogLogCounter| is 2^K * 6 bits.
     // For Key=UInt32 we can calculate: 2^X * 4 * 2 ≤ 2^(K-3) * 6 ⇒ X ≤ K-4.
-    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<>>, 16, K - 4, K, TrivialHash, Key>;
+    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, UniqCombinedHashTableGrower>, 16, K - 5 + (sizeof(Key) == sizeof(UInt32)), K, TrivialHash, Key>;
 
     Set set;
 };
@@ -85,9 +90,9 @@ template <typename Key>
 struct AggregateFunctionUniqCombinedDataWithKey<Key, 17>
 {
     using Set = CombinedCardinalityEstimator<Key,
-        HashSet<Key, TrivialHash, HashTableGrower<>>,
+        HashSet<Key, TrivialHash, UniqCombinedHashTableGrower>,
         16,
-        13,
+        12 + (sizeof(Key) == sizeof(UInt32)),
         17,
         TrivialHash,
         Key,
