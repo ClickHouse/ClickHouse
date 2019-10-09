@@ -141,7 +141,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         /// Use an existing cluster from the main config
         cluster = context.getCluster(cluster_name);
     }
-    else 
+    else
     {
         /// Create new cluster from the scratch
         size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
