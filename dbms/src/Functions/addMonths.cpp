@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionAddMonths = FunctionDateOrDateTimeAddInterval<AddMonthsImpl>;
+using FunctionAddMonths = FunctionDateOrDateTimeAddInterval<AddOnDateTime64Mixin<AddMonthsImpl>>;
 
 void registerFunctionAddMonths(FunctionFactory & factory)
 {
