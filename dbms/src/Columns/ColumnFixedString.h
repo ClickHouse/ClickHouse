@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
+#include <Core/Field.h>
 
 
 namespace DB

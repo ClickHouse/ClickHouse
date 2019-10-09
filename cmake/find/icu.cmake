@@ -1,4 +1,4 @@
-option(ENABLE_ICU "Enable ICU" ON)
+option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
 
 if(ENABLE_ICU)
     if (APPLE)

@@ -1,7 +1,8 @@
-#include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseOrdinary.h>
-#include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseDictionary.h>
+#include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseLazy.h>
+#include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseOrdinary.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -32,7 +33,7 @@ DatabasePtr DatabaseFactory::get(
 {
     String engine_name = engine_define->engine->name;
 
-    if (engine_name != "MySQL" && engine_define->engine->arguments)
+    if (engine_name != "MySQL" && engine_name != "Lazy" && engine_define->engine->arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
@@ -69,6 +70,19 @@ DatabasePtr DatabaseFactory::get(
     }
 
 #endif
+
+    else if (engine_name == "Lazy")
+    {
+        const ASTFunction * engine = engine_define->engine;
+        const auto & arguments = engine->arguments->children;
+
+        if (arguments.size() != 1)
+            throw Exception("Lazy database require cache_expiration_time_seconds argument.",
+                            ErrorCodes::BAD_ARGUMENTS);
+
+        const auto cache_expiration_time_seconds = arguments[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
+        return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
+    }
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }

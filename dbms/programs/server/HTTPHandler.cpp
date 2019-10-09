@@ -16,6 +16,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/config.h>
+#include <Common/SettingsChanges.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>

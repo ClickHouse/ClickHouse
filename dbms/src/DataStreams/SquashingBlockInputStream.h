@@ -12,7 +12,8 @@ namespace DB
 class SquashingBlockInputStream : public IBlockInputStream
 {
 public:
-    SquashingBlockInputStream(const BlockInputStreamPtr & src, size_t min_block_size_rows, size_t min_block_size_bytes);
+    SquashingBlockInputStream(const BlockInputStreamPtr & src, size_t min_block_size_rows, size_t min_block_size_bytes,
+                              bool reserve_memory = false);
 
     String getName() const override { return "Squashing"; }
 

@@ -210,6 +210,7 @@ function make_rpm {
             | grep -vF '%dir "/etc/cron.d/"' \
             | grep -vF '%dir "/etc/systemd/system/"' \
             | grep -vF '%dir "/etc/systemd/"' \
+            | sed -e 's|%config |%config(noreplace) |' \
             > ${PACKAGE}-$VERSION_FULL-2.spec
     }
 

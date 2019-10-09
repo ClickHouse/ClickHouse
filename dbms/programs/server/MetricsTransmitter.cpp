@@ -24,6 +24,8 @@ MetricsTransmitter::MetricsTransmitter(
     send_events_cumulative = config.getBool(config_name + ".events_cumulative", false);
     send_metrics = config.getBool(config_name + ".metrics", true);
     send_asynchronous_metrics = config.getBool(config_name + ".asynchronous_metrics", true);
+
+    thread = ThreadFromGlobalPool{&MetricsTransmitter::run, this};
 }
 
 
@@ -38,7 +40,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
         cond.notify_one();
 
-        thread.join();
+        thread->join();
     }
     catch (...)
     {

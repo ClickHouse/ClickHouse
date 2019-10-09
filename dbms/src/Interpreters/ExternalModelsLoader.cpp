@@ -11,14 +11,11 @@ namespace ErrorCodes
 
 
 ExternalModelsLoader::ExternalModelsLoader(
-    std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
-    Context & context_)
-        : ExternalLoader(context_.getConfigRef(),
-                         "external model",
-                         &Logger::get("ExternalModelsLoader")),
-          context(context_)
+    ExternalLoaderConfigRepositoryPtr config_repository, Context & context_)
+    : ExternalLoader("external model", &Logger::get("ExternalModelsLoader"))
+    , context(context_)
 {
-    addConfigRepository(std::move(config_repository), {"model", "name", "models_config"});
+    addConfigRepository(std::move(config_repository), {"model", "name"});
     enablePeriodicUpdates(true);
 }
 

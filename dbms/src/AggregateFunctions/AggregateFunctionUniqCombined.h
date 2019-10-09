@@ -132,7 +132,7 @@ public:
     {
         if constexpr (!std::is_same_v<T, String>)
         {
-            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
             this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T>::hash(value));
         }
         else

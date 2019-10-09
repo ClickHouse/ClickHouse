@@ -14,7 +14,7 @@ NO_INLINE const void * getAddress()
 
 int main(int argc, char ** argv)
 {
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
     using namespace DB;
 
     if (argc < 2)

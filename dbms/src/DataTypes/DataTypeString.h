@@ -51,10 +51,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override
-    {
-        return String();
-    }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 

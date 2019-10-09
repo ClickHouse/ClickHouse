@@ -9,6 +9,7 @@ Category (leave one):
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
+- Documentation
 - Other
 
 Short description (up to few sentences):

@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
 
 
@@ -80,6 +81,7 @@ protected:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 };
 
 

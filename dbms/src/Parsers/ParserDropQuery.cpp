@@ -56,6 +56,7 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
+    ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
@@ -66,6 +67,7 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     String cluster_str;
     bool if_exists = false;
     bool temporary = false;
+    bool is_dictionary = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -87,7 +89,11 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
             temporary = true;
 
         if (!s_table.ignore(pos, expected))
-            return false;
+        {
+            if (!s_dictionary.ignore(pos, expected))
+                return false;
+            is_dictionary = true;
+        }
 
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
@@ -115,6 +121,7 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     query->kind = ASTDropQuery::Kind::Drop;
     query->if_exists = if_exists;
     query->temporary = temporary;
+    query->is_dictionary = is_dictionary;
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);
