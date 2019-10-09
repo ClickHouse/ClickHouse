@@ -16,7 +16,12 @@ void SourceWithProgress::progress(const Progress & value)
 {
     if (total_rows_approx != 0 && process_list_elem)
     {
-        process_list_elem->updateProgressIn({0, 0, total_rows_approx});
+        Progress total_rows_progress = {0, 0, total_rows_approx};
+
+        if (progress_callback)
+            progress_callback(total_rows_progress);
+
+        process_list_elem->updateProgressIn(total_rows_progress);
         total_rows_approx = 0;
     }
 
