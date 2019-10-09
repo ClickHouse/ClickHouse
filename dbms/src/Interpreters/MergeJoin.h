@@ -8,6 +8,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
+#include <DataStreams/SizeLimits.h>
 
 namespace DB
 {
@@ -65,6 +66,7 @@ private:
 
     mutable std::shared_mutex rwlock;
     std::shared_ptr<AnalyzedJoin> table_join;
+    SizeLimits size_limits;
     SortDescription left_sort_description;
     SortDescription right_sort_description;
     SortDescription left_merge_description;

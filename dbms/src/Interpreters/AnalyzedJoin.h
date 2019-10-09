@@ -38,6 +38,7 @@ class AnalyzedJoin
     friend class SyntaxAnalyzer;
 
     const SizeLimits size_limits;
+    const size_t default_max_bytes;
     const bool join_use_nulls;
     const bool partial_merge_join = false;
     const bool partial_merge_join_optimizations = false;
@@ -68,6 +69,7 @@ public:
     AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
                  const Names & key_names_right_)
         : size_limits(limits)
+        , default_max_bytes(0)
         , join_use_nulls(use_nulls)
         , key_names_right(key_names_right_)
     {
@@ -82,6 +84,7 @@ public:
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
+    size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 

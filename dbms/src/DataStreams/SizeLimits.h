@@ -35,6 +35,8 @@ struct SizeLimits
 
     /// Check limits. No exceptions.
     bool softCheck(UInt64 rows, UInt64 bytes) const;
+
+    bool hasLimits() const { return max_rows || max_bytes; }
 };
 
 }

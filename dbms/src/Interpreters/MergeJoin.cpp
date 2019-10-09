@@ -335,7 +335,7 @@ Blocks blocksListToBlocks(const BlocksList & in_blocks)
     return out_blocks;
 }
 
-std::unique_ptr<TemporaryFile> flushBlockToFile(const String & tmp_path, const Block & header, const Block & block)
+std::unique_ptr<TemporaryFile> flushBlockToFile(const String & tmp_path, const Block & header, Block && block)
 {
     auto tmp_file = createTemporaryFile(tmp_path);
 
@@ -358,7 +358,7 @@ void flushStreamToFiles(const String & tmp_path, const Block & header, IBlockInp
             continue;
 
         callback(block);
-        auto tmp_file = flushBlockToFile(tmp_path, header, block);
+        auto tmp_file = flushBlockToFile(tmp_path, header, std::move(block));
         files.emplace_back(std::move(tmp_file));
     }
 }
@@ -371,7 +371,7 @@ BlockInputStreams makeSortedInputStreams(std::vector<MiniLSM::SortedFiles> & sor
     {
         BlockInputStreams sequence;
         for (const auto & file : track)
-            sequence.emplace_back(std::make_shared<TemporaryFileInputStream>(file->path(), header));
+            sequence.emplace_back(std::make_shared<TemporaryFileLazyInputStream>(file->path(), header));
         inputs.emplace_back(std::make_shared<ConcatBlockInputStream>(sequence));
     }
 
@@ -424,6 +424,7 @@ void MiniLSM::merge(std::function<void(const Block &)> callback)
 
 MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
     : table_join(table_join_)
+    , size_limits(table_join->sizeLimits())
     , right_sample_block(right_sample_block_)
     , nullable_right_side(table_join->forceNullableRight())
     , is_all(table_join->strictness() == ASTTableJoin::Strictness::All)
@@ -437,6 +438,14 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
 
     if (!max_rows_in_right_block)
         throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+    if (!size_limits.hasLimits())
+    {
+        size_limits.max_bytes = table_join->defaultMaxBytes();
+        if (!size_limits.max_bytes)
+            throw Exception("No limit for MergeJoin (max_rows_in_join, max_bytes_in_join or default_max_bytes_in_join have to be set)",
+                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+    }
 
     JoinCommon::extractKeysForJoin(table_join->keyNamesRight(), right_sample_block, right_table_keys, right_columns_to_add);
 
@@ -519,8 +528,8 @@ void MergeJoin::mergeFlushedRightBlocks()
     flushed_right_blocks.swap(lsm->sorted_files.front());
 
     /// Get memory limit or aproximate it from row limit and bytes per row factor
-    UInt64 memory_limit = table_join->sizeLimits().max_bytes;
-    UInt64 rows_limit = table_join->sizeLimits().max_rows;
+    UInt64 memory_limit = size_limits.max_bytes;
+    UInt64 rows_limit = size_limits.max_rows;
     if (!memory_limit && rows_limit)
         memory_limit = right_blocks_bytes * rows_limit / right_blocks_row_count;
 
@@ -543,7 +552,7 @@ bool MergeJoin::saveRightBlock(Block && block)
     countBlockSize(block);
     right_blocks.emplace_back(std::move(block));
 
-    bool has_memory = table_join->sizeLimits().softCheck(right_blocks_row_count, right_blocks_bytes);
+    bool has_memory = size_limits.softCheck(right_blocks_row_count, right_blocks_bytes);
     if (!has_memory)
         flushRightBlocks();
     return true;
