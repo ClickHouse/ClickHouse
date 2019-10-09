@@ -119,6 +119,33 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
 }
 
 
+void DataTypeNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
+{
+    if (field.isNull())
+    {
+        writeBinary(true, ostr);
+    }
+    else
+    {
+        writeBinary(false, ostr);
+        nested_data_type->serializeBinary(field, ostr);
+    }
+}
+
+void DataTypeNullable::deserializeBinary(Field & field, ReadBuffer & istr) const
+{
+    bool is_null = false;
+    readBinary(is_null, istr);
+    if (!is_null)
+    {
+        nested_data_type->deserializeBinary(field, istr);
+    }
+    else
+    {
+        field = Null();
+    }
+}
+
 void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
