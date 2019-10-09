@@ -311,22 +311,56 @@ SELECT
 └──────────────────────────┴───────────────────────────────┘
 ```
 
-## dateDiff('unit', t1, t2, \[timezone\])
+## dateDiff {#date-diff}
 
-Return the difference between two times expressed in 'unit' e.g. `'hours'`. 't1' and 't2' can be Date or DateTime, If 'timezone' is specified, it applied to both arguments. If not, timezones from datatypes 't1' and 't2' are used. If that timezones are not the same, the result is unspecified.
+Returns the difference between two time values.
 
-Supported unit values:
+**Syntax**
 
-| unit   |
-| ------ |
-|second  |
-|minute  |
-|hour    |
-|day     |
-|week    |
-|month   |
-|quarter |
-|year    |
+```sql
+dateDiff('unit', t1, t2, [timezone]);
+```
+
+**Parameters**
+
+- `unit` — Time unit, in which the returned value is expressed. [String](../syntax.md#syntax-string-literal). 
+
+    Supported values:
+
+    | unit   |
+    | ------ |
+    |second  |
+    |minute  |
+    |hour    |
+    |day     |
+    |week    |
+    |month   |
+    |quarter |
+    |year    |
+
+- `t1` — The first time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `t2` — The second time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `timezone` — Optional parameter. If specified, it is applied to both `t1` and `t2`. If not specified, timezones of `t1` and `t2` are used. If they are not the same, the result is unspecified. [Time Zone](../../data_types/datetime.md#time-zones).
+
+**Returned value**
+
+Difference between `t1` and `t2` expressed in `unit`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+Result:
+
+```text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 
