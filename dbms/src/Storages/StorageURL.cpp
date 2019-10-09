@@ -15,9 +15,6 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/NumberFormatter.h>
-
-#include <re2/re2.h>
 
 
 namespace DB
@@ -38,11 +35,7 @@ IStorageURLBase::IStorageURLBase(
     const ConstraintsDescription & constraints_)
     : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
-    if (!checkHost(uri.getHost()) &&
-        !checkHost(uri.getHost() + ":" + toString(uri.getPort())))
-    {
-        throw Exception("URL \"" + uri.toString() + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
-    }
+    context_global.getStorageOfAllowedURL().checkURL(uri);
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -229,23 +222,5 @@ void registerStorageURL(StorageFactory & factory)
 
         return StorageURL::create(uri, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
     });
-}
-
-bool IStorageURLBase::checkHost(const std::string & host)
-{
-    const std::unordered_set<std::string> primary_hosts = context_global.getAllowedPrimaryUrlHosts();
-    const std::vector<std::string> regexp_hosts = context_global.getAllowedRegexpUrlHosts();
-    if (!primary_hosts.empty() || !regexp_hosts.empty())
-    {
-        if (primary_hosts.find(host) == primary_hosts.end())
-        {
-            for (size_t i = 0; i < regexp_hosts.size(); ++i)
-                if (re2::RE2::FullMatch(host, regexp_hosts[i]))
-                    return true;
-            return false;
-        }
-        return true;
-    }
-    return true;
 }
 }

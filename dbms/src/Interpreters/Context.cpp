@@ -51,7 +51,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
-
+#include <Common/StorageOfAllowedURL.h>
 
 namespace ProfileEvents
 {
@@ -155,9 +155,9 @@ struct ContextShared
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
 
+    StorageOfAllowedURL storage_of_allowed_url; /// Allowed URL from config.xml
+
     std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
-    std::unordered_set<std::string> allowed_primary_url_hosts;      /// Allowed primary (<host>) URL from config.xml
-    std::vector<std::string> allowed_regexp_url_hosts;              /// Allowed regexp (<hots_regexp>) URL from config.xml
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
     class SessionKeyHash
@@ -594,27 +594,6 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     shared->users_config = config;
     shared->users_manager->loadFromConfig(*shared->users_config);
     shared->quotas.loadFromConfig(*shared->users_config);
-}
-
-
-std::unordered_set<std::string> & Context::getAllowedPrimaryUrlHosts() const
-{
-    return shared->allowed_primary_url_hosts;
-}
-
-void Context::setAllowedPrimaryUrlHosts(const std::unordered_set<std::string> & url_set)
-{
-    shared->allowed_primary_url_hosts = url_set;
-}
-
-std::vector<std::string> & Context::getAllowedRegexpUrlHosts() const
-{
-    return shared->allowed_regexp_url_hosts;
-}
-
-void Context::setAllowedRegexpUrlHosts(const std::vector<std::string> &url_vec)
-{
-    shared->allowed_regexp_url_hosts = url_vec;
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -1584,6 +1563,16 @@ void Context::setInterserverScheme(const String & scheme)
 String Context::getInterserverScheme() const
 {
     return shared->interserver_scheme;
+}
+
+void Context::setStorageOfAllowedURL(const Poco::Util::AbstractConfiguration & config)
+{
+    shared->storage_of_allowed_url.setValuesFromConfig(config);
+}
+
+StorageOfAllowedURL & Context::getStorageOfAllowedURL() const
+{
+    return shared->storage_of_allowed_url;
 }
 
 UInt16 Context::getTCPPort() const

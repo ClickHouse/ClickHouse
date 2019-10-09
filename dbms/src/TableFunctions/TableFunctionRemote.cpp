@@ -141,8 +141,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         /// Use an existing cluster from the main config
         cluster = context.getCluster(cluster_name);
     }
-    else
-    {
+    else {
         /// Create new cluster from the scratch
         size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
@@ -155,6 +154,20 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
         auto maybe_secure_port = context.getTCPPortSecure();
+
+        /// Check host and port on affiliation allowed hosts.
+        for (auto hosts : names)
+        {
+            for (auto host : hosts)
+            {
+                size_t colon = host.find(':');
+                if (colon == String::npos)
+                    context.getStorageOfAllowedURL().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                else
+                    context.getStorageOfAllowedURL().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+            }
+        }
+
         cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
     }
 
