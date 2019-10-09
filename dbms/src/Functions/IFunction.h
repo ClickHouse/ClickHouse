@@ -282,7 +282,7 @@ public:
         return buildImpl(arguments, getReturnType(arguments));
     }
 
-    bool isDeterministic() const override { return isDeterministicInScopeOfQuery(); }
+    bool isDeterministic() const override { return true; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isStateful() const override { return false; }
     bool isVariadic() const override { return false; }
@@ -367,8 +367,8 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
     bool canBeExecutedOnDefaultArguments() const override { return true; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return isDeterministicInScopeOfQuery(); }
-    bool isDeterministic() const override { return isDeterministicInScopeOfQuery();}
-    bool isDeterministicInScopeOfQuery() const override { return true;}
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     using PreparedFunctionImpl::execute;
     using PreparedFunctionImpl::executeImplDryRun;
