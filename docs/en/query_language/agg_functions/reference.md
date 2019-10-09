@@ -582,7 +582,7 @@ Function:
 - Provides the result deterministically (it doesn't depend on the query processing order).
 
 !! note "Note"
-    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities > `UINT_MAX`, hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
+    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
