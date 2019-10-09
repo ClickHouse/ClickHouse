@@ -604,7 +604,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     tryGetIdentifierNameInto(to_table, query->to_table);
 
     query->set(query->columns_list, columns_list);
-    query->set(query->storage, storage);
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
@@ -698,9 +697,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
-    ASTPtr as_table_function;
     ASTPtr select;
-    ASTPtr tables;
 
     String cluster_str;
     bool attach = false;
@@ -798,9 +795,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
 
-    if (as_table_function)
-        query->as_table_function = as_table_function;
-
     query->attach = attach;
     query->if_not_exists = if_not_exists;
     query->is_view = is_view;
@@ -817,7 +811,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
-    query->set(query->tables, tables);
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
