@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <Core/SettingsCommon.h>
-#include <Core/SortDescription.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
@@ -27,6 +26,8 @@ namespace ErrorCodes
 class ProcessListElement;
 class QuotaForIntervals;
 class QueryStatus;
+struct SortColumnDescription;
+using SortDescription = std::vector<SortColumnDescription>;
 
 /** Callback to track the progress of the query.
   * Used in IBlockInputStream and Context.
@@ -72,10 +73,7 @@ public:
     virtual bool isSortedOutput() const { return false; }
 
     /// In case of isSortedOutput, return corresponding SortDescription
-    virtual const SortDescription & getSortDescription() const
-    {
-        throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
-    }
+    virtual const SortDescription & getSortDescription() const;
 
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).

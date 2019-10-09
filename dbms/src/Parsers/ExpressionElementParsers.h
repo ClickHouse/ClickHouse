@@ -298,4 +298,24 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** Parser for function with arguments like KEY VALUE (space separated)
+  * no commas alowed, just space-separated pairs.
+  */
+class ParserFunctionWithKeyValueArguments : public IParserBase
+{
+protected:
+    const char * getName() const override { return "function with key-value arguments"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
+  * Parse result is ASTFunction, with or without arguments.
+  */
+class ParserIdentifierWithOptionalParameters : public IParserBase
+{
+protected:
+    const char * getName() const { return "identifier with optional parameters"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
 }

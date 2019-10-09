@@ -7,6 +7,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include <Core/Field.h>
+
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -348,6 +350,10 @@ void DataTypeString::deserializeProtobuf(IColumn & column, ProtobufReader & prot
     }
 }
 
+Field DataTypeString::getDefault() const
+{
+    return String();
+}
 
 MutableColumnPtr DataTypeString::createColumn() const
 {
