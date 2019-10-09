@@ -77,9 +77,6 @@ std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & 
 
         case MutationCommand::DELETE:
         {
-            if (command.predicate == nullptr)
-                break;
-
             auto predicate_ast = command.predicate->clone();
             FirstNonDeterministicFuncFinder(finder_data).visit(predicate_ast);
 
