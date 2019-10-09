@@ -5,7 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <string.h>
 #include <boost/program_options/options_description.hpp>
-
+#include <Core/SettingsCollectionImpl.h>
 
 namespace DB
 {

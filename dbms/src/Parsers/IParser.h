@@ -114,9 +114,9 @@ public:
             return true;
     }
 
-    /* The same, but never move the position and do not write the result to node.
+    /** The same, but doesn't move the position even if parsing was successful.
      */
-    bool check_without_moving(Pos pos, Expected & expected)
+    bool checkWithoutMoving(Pos pos, Expected & expected)
     {
         ASTPtr node;
         return parse(pos, node, expected);

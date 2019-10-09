@@ -15,7 +15,6 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
-#include <Common/SettingsChanges.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -36,6 +35,8 @@ using StorageActionBlockType = size_t;
 class ASTCreateQuery;
 
 struct Settings;
+struct SettingChange;
+using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;
