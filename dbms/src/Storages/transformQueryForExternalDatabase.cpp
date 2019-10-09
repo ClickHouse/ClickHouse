@@ -10,10 +10,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
-#include <Core/iostream_debug_helpers.h>
 
 
 namespace DB
@@ -45,12 +44,28 @@ public:
         std::string name = node->getColumnName();
         if (block_with_constants.has(name))
         {
-            auto result_column = block_with_constants.getByName(name).column;
-            if (!isColumnConst(*result_column))
+            auto result = block_with_constants.getByName(name);
+            if (!isColumnConst(*result.column))
                 return;
 
-            node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result_column).getField());
-            /// TODO: Date and DateTime must be represented by 'YYYY-MM-DD...', not as number.
+            if (result.column->isNullAt(0))
+            {
+                node = std::make_shared<ASTLiteral>(Field());
+            }
+            else if (isNumber(result.type))
+            {
+                node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+            }
+            else
+            {
+                /// Everything except numbers is put as string literal. This is important for Date, DateTime, UUID.
+
+                const IColumn & inner_column = assert_cast<const ColumnConst &>(*result.column).getDataColumn();
+
+                WriteBufferFromOwnString out;
+                result.type->serializeAsText(inner_column, 0, out, FormatSettings());
+                node = std::make_shared<ASTLiteral>(out.str());
+            }
         }
     }
 };
