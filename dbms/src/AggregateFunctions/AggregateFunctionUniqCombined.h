@@ -104,6 +104,8 @@ struct AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedD
 };
 
 
+/// For String keys, 64 bit hash is always used (both for uniqCombined and uniqCombined64), 
+///  because of backwards compatibility (64 bit hash was already used for uniqCombined).
 template <UInt8 K, typename HashValueType>
 struct AggregateFunctionUniqCombinedData<String, K, HashValueType> : public AggregateFunctionUniqCombinedDataWithKey<UInt64 /*always*/, K>
 {
