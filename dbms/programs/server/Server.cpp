@@ -373,6 +373,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
+    global_context->setStorageOfAllowedURL(config());
+
     static const auto interserver_tags =
     {
         std::make_tuple("interserver_http_host", "interserver_http_port", "http"),
@@ -506,23 +508,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             << " because the system has low amount of memory");
     }
     global_context->setMarkCache(mark_cache_size);
-
-    if (config().has("remote_url_allow_hosts"))
-    {
-        std::vector<std::string> keys;
-        config().keys("remote_url_allow_hosts", keys);
-        std::unordered_set<std::string> primary_hosts;
-        std::vector<std::string> regexp_hosts;
-        for (auto key : keys)
-        {
-            if (startsWith(key, "host_regexp"))
-                regexp_hosts.push_back(config().getString("remote_url_allow_hosts." + key));
-            else if (startsWith(key, "host"))
-                primary_hosts.insert(config().getString("remote_url_allow_hosts." + key));
-        }
-        global_context->setAllowedPrimaryUrlHosts(primary_hosts);
-        global_context->setAllowedRegexpUrlHosts(regexp_hosts);
-    }
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);

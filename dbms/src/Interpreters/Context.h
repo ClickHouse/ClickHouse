@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <Common/StorageOfAllowedURL.h>
 
 
 namespace Poco
@@ -78,6 +79,7 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class SettingsConstraints;
+class StorageOfAllowedURL;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -180,12 +182,6 @@ public:
     Context(const Context &);
     Context & operator=(const Context &);
     ~Context();
-
-    /// allowed URL from config.xml
-    std::unordered_set<std::string> & getAllowedPrimaryUrlHosts() const;
-    void setAllowedPrimaryUrlHosts(const std::unordered_set<std::string> & url_set);
-    std::vector<std::string> & getAllowedRegexpUrlHosts() const;
-    void setAllowedRegexpUrlHosts(const std::vector<std::string> & url_vec);
 
     String getPath() const;
     String getTemporaryPath() const;
@@ -353,6 +349,10 @@ public:
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
     String getInterserverScheme() const;
+
+    /// Storage of allowed hosts from config.xml
+    void setStorageOfAllowedURL(const Poco::Util::AbstractConfiguration & config);
+    StorageOfAllowedURL & getStorageOfAllowedURL() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
