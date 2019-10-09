@@ -4,6 +4,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
@@ -17,7 +18,13 @@ using namespace DB;
 struct State
 {
     Context context{Context::createGlobal()};
-    NamesAndTypesList columns{{"column", std::make_shared<DataTypeUInt8>()}};
+    NamesAndTypesList columns{
+        {"column", std::make_shared<DataTypeUInt8>()},
+        {"apply_id", std::make_shared<DataTypeUInt64>()},
+        {"apply_type", std::make_shared<DataTypeUInt8>()},
+        {"apply_status", std::make_shared<DataTypeUInt8>()},
+        {"create_time", std::make_shared<DataTypeDateTime>()},
+    };
 
     State()
     {
@@ -85,5 +92,11 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
     check("SELECT column FROM test.table WHERE toString(column) = '42' AND left(column, 10) = RIGHT(column, 10) AND column = 42",
           "SELECT \"column\" FROM \"test\".\"table\" WHERE (\"column\" = 42)",
           state().context, state().columns);
+}
 
+TEST(TransformQueryForExternalDatabase, Issue7245)
+{
+    check("select apply_id from test.table where apply_type = 2 and create_time > addDays(toDateTime('2019-01-01 01:02:03'),-7) and apply_status in (3,4)",
+          "SELECT \"apply_id\", \"apply_type\", \"apply_status\", \"create_time\" FROM \"test\".\"table\" WHERE (\"apply_type\" = 2) AND (\"create_time\" > '2018-12-25 01:02:03') AND (\"apply_status\" IN (3, 4))",
+          state().context, state().columns);
 }
