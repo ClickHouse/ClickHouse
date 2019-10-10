@@ -7,9 +7,9 @@
 Чтобы применить модель CatBoost в ClickHouse:
 
 1. [Создайте таблицу](#create-table).
-2. [Вставьте данные в таблицу](#insert-the-data-to-the-table).
-3. [Настройте конфигурацию модели](#configure-the-model).
-4. [Запустите вывод модели из SQL](#run-the-model-inference).
+2. [Вставьте данные в таблицу](#insert-data-to-table).
+3. [Настройте конфигурацию модели](#configure-model).
+4. [Запустите вывод модели из SQL](#run-model-inference).
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
 
