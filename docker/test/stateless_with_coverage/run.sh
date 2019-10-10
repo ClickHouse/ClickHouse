@@ -55,7 +55,7 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/; \
-    ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/; \
+    ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer
 
 service zookeeper start
