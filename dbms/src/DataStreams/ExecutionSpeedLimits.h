@@ -20,6 +20,7 @@ public:
     /// Verify that the speed is not too low after the specified time has elapsed.
     Poco::Timespan timeout_before_checking_execution_speed = 0;
 
+    /// Pause execution in case if speed limits were exceeded.
     void throttle(size_t read_rows, size_t read_bytes, size_t total_rows, UInt64 total_elapsed_microseconds);
 };
 

@@ -219,11 +219,11 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
 
 bool IBlockInputStream::checkTimeLimit()
 {
-    if (limits.speed_limit.max_execution_time != 0
-        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.speed_limit.max_execution_time.totalMicroseconds()) * 1000)
+    if (limits.speed_limits.max_execution_time != 0
+        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.speed_limits.max_execution_time.totalMicroseconds()) * 1000)
         return handleOverflowMode(limits.timeout_overflow_mode,
             "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
-                + " seconds, maximum: " + toString(limits.speed_limit.max_execution_time.totalMicroseconds() / 1000000.0),
+                + " seconds, maximum: " + toString(limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0),
             ErrorCodes::TIMEOUT_EXCEEDED);
 
     return true;
@@ -289,7 +289,7 @@ void IBlockInputStream::progressImpl(const Progress & value)
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        limits.speed_limit.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
+        limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota != nullptr && limits.mode == LIMITS_TOTAL)
         {

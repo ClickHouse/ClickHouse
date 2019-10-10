@@ -15,7 +15,7 @@ class UncompressedCache;
 class MarkCache;
 
 
-/// Base class for MergeTreeThreadSelectBlockInputStream and MergeTreeSelectBlockInputStream
+/// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
 class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
 public:
@@ -46,8 +46,10 @@ protected:
 
     Chunk readFromPartImpl();
 
+    /// Two versions for header and chunk.
     static void injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns);
     static void injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns);
+
     static Block getHeader(Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns);
 
     void initializeRangeReaders(MergeTreeReadTask & task);
@@ -68,6 +70,7 @@ protected:
     bool save_marks_in_cache;
 
     Names virt_column_names;
+    /// This header is used for chunks from readFromPart().
     Block header_without_virtual_columns;
 
     std::unique_ptr<MergeTreeReadTask> task;
