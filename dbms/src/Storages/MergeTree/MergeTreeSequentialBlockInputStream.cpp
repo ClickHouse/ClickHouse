@@ -114,8 +114,8 @@ try
             auto it = sample.begin();
             for (size_t i = 0; i < num_columns; ++i)
             {
-                if (header.has(it->name))
-                    header.getByName(it->name).column = std::move(columns[i]);
+                if (res.has(it->name))
+                    res.getByName(it->name).column = std::move(columns[i]);
 
                 ++it;
             }
