@@ -126,7 +126,7 @@ MergeTreeData::MergeTreeData(
     , log_name(database_name + "." + table_name)
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
-    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy_name))
+    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
@@ -2967,6 +2967,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
         validateDetachedPartName(part_id);
         renamed_parts.addPart(part_id, "attaching_" + part_id);
+        if (MergeTreePartInfo::tryParsePartName(part_id, nullptr, format_version))
+            name_to_disk[part_id] = getDiskForPart(part_id, source_dir);
     }
     else
     {
@@ -3357,7 +3359,7 @@ try
 
     part_log_elem.event_time = time(nullptr);
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-    part_log_elem.duration_ms = elapsed_ns / 10000000;
+    part_log_elem.duration_ms = elapsed_ns / 1000000;
 
     part_log_elem.database_name = database_name;
     part_log_elem.table_name = table_name;

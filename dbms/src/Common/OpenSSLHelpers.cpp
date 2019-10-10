@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#if USE_POCO_NETSSL
+#if USE_SSL
 #include "OpenSSLHelpers.h"
 #include <ext/scope_guard.h>
 #include <openssl/err.h>

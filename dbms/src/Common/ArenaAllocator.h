@@ -54,7 +54,7 @@ public:
 
         if (data + old_size == arena->head->pos)
         {
-            arena->alignedAllocContinue(new_size - old_size, data, alignment);
+            arena->allocContinue(new_size - old_size, data, alignment);
             return reinterpret_cast<void *>(const_cast<char *>(data));
         }
         else

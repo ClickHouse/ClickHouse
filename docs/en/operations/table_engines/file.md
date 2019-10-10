@@ -11,7 +11,7 @@ Usage examples:
 
 ## Usage in ClickHouse Server
 
-```
+```sql
 File(Format)
 ```
 
@@ -33,7 +33,7 @@ You may manually create this subfolder and file in server filesystem and then [A
 
 **1.** Set up the `file_engine_table` table:
 
-``` sql
+```sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -49,11 +49,11 @@ two	2
 
 **3.** Query the data:
 
-``` sql
+```sql
 SELECT * FROM file_engine_table
 ```
 
-```
+```text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │

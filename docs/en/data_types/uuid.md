@@ -4,13 +4,13 @@ A universally unique identifier (UUID) is a 16-byte number used to identify reco
 
 The example of UUID type value is represented below: 
 
-```
+```text
 61f0c404-5cb3-11e7-907b-a6006ad3dba0
 ```
 
 If you do not specify the UUID column value when inserting a new record, the UUID value is filled with zero:
 
-```
+```text
 00000000-0000-0000-0000-000000000000
 ```
 
@@ -24,13 +24,16 @@ To generate the UUID value, ClickHouse provides the [generateUUIDv4](../query_la
 
 This example demonstrates creating a table with the UUID type column and inserting a value into the table.
 
-``` sql
-:) CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
-
-:) INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
-
-:) SELECT * FROM t_uuid
-
+```sql
+CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
+```
+```sql
+INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
+```
+```sql
+SELECT * FROM t_uuid
+```
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 └──────────────────────────────────────┴───────────┘
@@ -40,11 +43,13 @@ This example demonstrates creating a table with the UUID type column and inserti
 
 In this example, the UUID column value is not specified when inserting a new record.
 
-``` sql
-:) INSERT INTO t_uuid (y) VALUES ('Example 2')
-
-:) SELECT * FROM t_uuid
-
+```sql
+INSERT INTO t_uuid (y) VALUES ('Example 2')
+```
+```sql
+SELECT * FROM t_uuid
+```
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 │ 00000000-0000-0000-0000-000000000000 │ Example 2 │

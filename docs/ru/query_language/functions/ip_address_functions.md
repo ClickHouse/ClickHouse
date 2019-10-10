@@ -24,7 +24,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─k──────────────┬─────c─┐
 │ 83.149.9.xxx   │ 26238 │
 │ 217.118.81.xxx │ 26074 │
@@ -50,7 +50,7 @@ IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.22
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
-```
+```text
 ┌─addr─────────┐
 │ 2a02:6b8::11 │
 └──────────────┘
@@ -67,7 +67,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
 │ 2a02:2168:aaa:bbbb::2                   │ 24695 │
 │ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
@@ -93,7 +93,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```
+```text
 ┌─IPv6NumToString(ClientIP6)─┬──────c─┐
 │ ::ffff:94.26.111.111       │ 747440 │
 │ ::ffff:37.143.222.4        │ 529483 │
@@ -121,7 +121,7 @@ HEX может быть в любом регистре.
 SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 ```
 
-```
+```text
 ┌─addr───────────────┐
 │ ::ffff:192.168.0.1 │
 └────────────────────┘
@@ -140,7 +140,7 @@ SELECT
     cutIPv6(ipv4, 0, 2)
 ```
 
-```
+```text
 ┌─cutIPv6(ipv6, 2, 0)─────────────────┬─cutIPv6(ipv4, 0, 2)─┐
 │ 2001:db8:ac10:fe01:feed:babe:cafe:0 │ ::ffff:192.168.0.0  │
 └─────────────────────────────────────┴─────────────────────┘
@@ -184,7 +184,7 @@ SELECT
     toTypeName(toIPv4(IPv4_string))
 ```
 
-```
+```text
 ┌─toTypeName(IPv4StringToNum(IPv4_string))─┬─toTypeName(toIPv4(IPv4_string))─┐
 │ UInt32                                   │ IPv4                            │
 └──────────────────────────────────────────┴─────────────────────────────────┘
@@ -198,7 +198,7 @@ SELECT
     hex(toIPv4(IPv4_string))
 ```
 
-```
+```text
 ┌─hex(IPv4StringToNum(IPv4_string))─┬─hex(toIPv4(IPv4_string))─┐
 │ ABE1822D                          │ ABE1822D                 │
 └───────────────────────────────────┴──────────────────────────┘
@@ -216,7 +216,7 @@ SELECT
     toTypeName(toIPv6(IPv6_string))
 ```
 
-```
+```text
 ┌─toTypeName(IPv6StringToNum(IPv6_string))─┬─toTypeName(toIPv6(IPv6_string))─┐
 │ FixedString(16)                          │ IPv6                            │
 └──────────────────────────────────────────┴─────────────────────────────────┘
@@ -230,7 +230,7 @@ SELECT
     hex(toIPv6(IPv6_string))
 ```
 
-```
+```text
 ┌─hex(IPv6StringToNum(IPv6_string))─┬─hex(toIPv6(IPv6_string))─────────┐
 │ 20010438FFFF000000000000407D1BC1  │ 20010438FFFF000000000000407D1BC1 │
 └───────────────────────────────────┴──────────────────────────────────┘

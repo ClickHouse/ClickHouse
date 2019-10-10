@@ -95,8 +95,8 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         columns_[i++]->insert(part->getMinDate());
         columns_[i++]->insert(part->getMaxDate());
-        columns_[i++]->insert(part->getMinTime());
-        columns_[i++]->insert(part->getMaxTime());
+        columns_[i++]->insert(static_cast<UInt32>(part->getMinTime()));
+        columns_[i++]->insert(static_cast<UInt32>(part->getMaxTime()));
         columns_[i++]->insert(part->info.partition_id);
         columns_[i++]->insert(part->info.min_block);
         columns_[i++]->insert(part->info.max_block);

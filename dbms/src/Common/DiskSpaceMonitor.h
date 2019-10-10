@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_STATVFS;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int NOT_IMPLEMENTED;
     extern const int SYSTEM_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;

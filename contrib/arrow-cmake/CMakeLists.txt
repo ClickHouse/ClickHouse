@@ -212,7 +212,11 @@ endif()
 
 
 add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
-add_dependencies(${ARROW_LIBRARY} protoc)
+
+if (USE_INTERNAL_PROTOBUF_LIBRARY)
+    add_dependencies(${ARROW_LIBRARY} protoc)
+endif()
+
 target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
 if (ARROW_WITH_LZ4)

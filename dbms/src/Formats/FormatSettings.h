@@ -46,13 +46,15 @@ struct FormatSettings
     struct Values
     {
         bool interpret_expressions = true;
+        bool deduce_templates_of_expressions = true;
+        bool accurate_types_of_literals = true;
     };
 
     Values values;
 
     struct Template
     {
-        String format;
+        String resultset_format;
         String row_format;
         String row_between_delimiter;
     };

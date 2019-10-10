@@ -20,12 +20,17 @@
 '''
 
 from . import local, query
-
-from termcolor import colored  # `pip install termcolor`
+from . import parser as parse_description
 
 import argparse
 import re
 import sys
+
+try:
+    from termcolor import colored  # `pip install termcolor`
+except ImportError:
+    sys.exit("Package 'termcolor' not found. Try run: `pip3 install termcolor`")
+
 
 CHECK_MARK = colored('🗸', 'green')
 CROSS_MARK = colored('🗙', 'red')
@@ -37,13 +42,15 @@ parser = argparse.ArgumentParser(description='Helper for the ClickHouse Release 
 parser.add_argument('--repo', '-r', type=str, default='', metavar='PATH',
     help='path to the root of the ClickHouse repository')
 parser.add_argument('--remote', type=str, default='origin',
-    help='remote name of the "yandex/ClickHouse" upstream')
+    help='remote name of the "ClickHouse/ClickHouse" upstream')
 parser.add_argument('-n', type=int, default=3, dest='number',
     help='number of last stable branches to consider')
 parser.add_argument('--token', type=str, required=True,
     help='token for Github access')
 parser.add_argument('--login', type=str,
     help='filter authorship by login')
+parser.add_argument('--auto-label', action='store_true', dest='autolabel',
+    help='try to automatically parse PR description and put labels')
 
 args = parser.parse_args()
 
@@ -71,7 +78,7 @@ for i in reversed(range(len(stables))):
 
     from_commit = stables[i][1]
 
-members = set(github.get_members("yandex", "clickhouse"))
+members = set(github.get_members("ClickHouse", "ClickHouse"))
 def print_responsible(pull_request):
     if pull_request["author"]["login"] in members:
         return colored(pull_request["author"]["login"], 'green')
@@ -83,14 +90,23 @@ def print_responsible(pull_request):
 bad_pull_requests = []  # collect and print if not empty
 need_backporting = []
 for pull_request in pull_requests:
-    label_found = False
 
-    for label in github.get_labels(pull_request):
-        if label['name'].startswith('pr-'):
-            label_found = True
-            if label['color'] == 'ff0000':
-                need_backporting.append(pull_request)
-            break
+    def find_label():
+        for label in github.get_labels(pull_request):
+            if label['name'].startswith('pr-'):
+                if label['color'] == 'ff0000':
+                    need_backporting.append(pull_request)
+                return True
+        return False
+
+    label_found = find_label()
+
+    if not label_found and args.autolabel:
+        print(f"Trying to auto-label pull-request: {pull_request['number']}")
+        description = parse_description.Description(pull_request)
+        if description.label_name:
+            github.set_label(pull_request, description.label_name)
+            label_found = find_label()
 
     if not label_found:
         bad_pull_requests.append(pull_request)

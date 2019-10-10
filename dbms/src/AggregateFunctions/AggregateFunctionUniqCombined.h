@@ -24,48 +24,53 @@ namespace DB
 {
 namespace detail
 {
-    /** Hash function for uniqCombined.
+    /** Hash function for uniqCombined/uniqCombined64 (based on Ret).
      */
-    template <typename T>
+    template <typename T, typename Ret>
     struct AggregateFunctionUniqCombinedTraits
     {
-        static UInt32 hash(T x)
+        static Ret hash(T x)
         {
-            return static_cast<UInt32>(intHash64(x));
+            return static_cast<Ret>(intHash64(x));
         }
     };
 
-    template <>
-    struct AggregateFunctionUniqCombinedTraits<UInt128>
+    template <typename Ret>
+    struct AggregateFunctionUniqCombinedTraits<UInt128, Ret>
     {
-        static UInt32 hash(UInt128 x)
+        static Ret hash(UInt128 x)
         {
             return sipHash64(x);
         }
     };
 
-    template <>
-    struct AggregateFunctionUniqCombinedTraits<Float32>
+    template <typename Ret>
+    struct AggregateFunctionUniqCombinedTraits<Float32, Ret>
     {
-        static UInt32 hash(Float32 x)
+        static Ret hash(Float32 x)
         {
             UInt64 res = ext::bit_cast<UInt64>(x);
-            return static_cast<UInt32>(intHash64(res));
+            return static_cast<Ret>(intHash64(res));
         }
     };
 
-    template <>
-    struct AggregateFunctionUniqCombinedTraits<Float64>
+    template <typename Ret>
+    struct AggregateFunctionUniqCombinedTraits<Float64, Ret>
     {
-        static UInt32 hash(Float64 x)
+        static Ret hash(Float64 x)
         {
             UInt64 res = ext::bit_cast<UInt64>(x);
-            return static_cast<UInt32>(intHash64(res));
+            return static_cast<Ret>(intHash64(res));
         }
     };
 
 }
 
+// Unlike HashTableGrower always grows to power of 2.
+struct UniqCombinedHashTableGrower : public HashTableGrower<>
+{
+    void increaseSize() { ++size_degree; }
+};
 
 template <typename Key, UInt8 K>
 struct AggregateFunctionUniqCombinedDataWithKey
@@ -76,7 +81,7 @@ struct AggregateFunctionUniqCombinedDataWithKey
     // We want to migrate from |HashSet| to |HyperLogLogCounter| when the sizes in memory become almost equal.
     // The size per element in |HashSet| is sizeof(Key)*2 bytes, and the overall size of |HyperLogLogCounter| is 2^K * 6 bits.
     // For Key=UInt32 we can calculate: 2^X * 4 * 2 ≤ 2^(K-3) * 6 ⇒ X ≤ K-4.
-    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<>>, 16, K - 4, K, TrivialHash, Key>;
+    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, UniqCombinedHashTableGrower>, 16, K - 5 + (sizeof(Key) == sizeof(UInt32)), K, TrivialHash, Key>;
 
     Set set;
 };
@@ -85,9 +90,9 @@ template <typename Key>
 struct AggregateFunctionUniqCombinedDataWithKey<Key, 17>
 {
     using Set = CombinedCardinalityEstimator<Key,
-        HashSet<Key, TrivialHash, HashTableGrower<>>,
+        HashSet<Key, TrivialHash, UniqCombinedHashTableGrower>,
         16,
-        13,
+        12 + (sizeof(Key) == sizeof(UInt32)),
         17,
         TrivialHash,
         Key,
@@ -98,29 +103,34 @@ struct AggregateFunctionUniqCombinedDataWithKey<Key, 17>
 };
 
 
-template <typename T, UInt8 K>
-struct AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedDataWithKey<UInt32, K>
+template <typename T, UInt8 K, typename HashValueType>
+struct AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedDataWithKey<HashValueType, K>
 {
 };
 
 
-template <UInt8 K>
-struct AggregateFunctionUniqCombinedData<String, K> : public AggregateFunctionUniqCombinedDataWithKey<UInt64, K>
+/// For String keys, 64 bit hash is always used (both for uniqCombined and uniqCombined64), 
+///  because of backwards compatibility (64 bit hash was already used for uniqCombined).
+template <UInt8 K, typename HashValueType>
+struct AggregateFunctionUniqCombinedData<String, K, HashValueType> : public AggregateFunctionUniqCombinedDataWithKey<UInt64 /*always*/, K>
 {
 };
 
 
-template <typename T, UInt8 K>
+template <typename T, UInt8 K, typename HashValueType>
 class AggregateFunctionUniqCombined final
-    : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K>, AggregateFunctionUniqCombined<T, K>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>
 {
 public:
     AggregateFunctionUniqCombined(const DataTypes & argument_types_, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K>, AggregateFunctionUniqCombined<T, K>>(argument_types_, params_) {}
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K, HashValueType>, AggregateFunctionUniqCombined<T, K, HashValueType>>(argument_types_, params_) {}
 
     String getName() const override
     {
-        return "uniqCombined";
+        if constexpr (std::is_same_v<HashValueType, UInt64>)
+            return "uniqCombined64";
+        else
+            return "uniqCombined";
     }
 
     DataTypePtr getReturnType() const override
@@ -132,8 +142,8 @@ public:
     {
         if constexpr (!std::is_same_v<T, String>)
         {
-            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
-            this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T>::hash(value));
+            const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
+            this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T, HashValueType>::hash(value));
         }
         else
         {
@@ -172,17 +182,17 @@ public:
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of efficient implementation), you can not pass several arguments, among which there are tuples.
   */
-template <bool is_exact, bool argument_is_tuple, UInt8 K>
-class AggregateFunctionUniqCombinedVariadic final : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K>,
-                                                        AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K>>
+template <bool is_exact, bool argument_is_tuple, UInt8 K, typename HashValueType>
+class AggregateFunctionUniqCombinedVariadic final : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>,
+                                                           AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>>
 {
 private:
     size_t num_args = 0;
 
 public:
     explicit AggregateFunctionUniqCombinedVariadic(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K>,
-            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K>>(arguments, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>,
+            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K, HashValueType>>(arguments, params)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -192,7 +202,10 @@ public:
 
     String getName() const override
     {
-        return "uniqCombined";
+        if constexpr (std::is_same_v<HashValueType, UInt64>)
+            return "uniqCombined64";
+        else
+            return "uniqCombined";
     }
 
     DataTypePtr getReturnType() const override
@@ -202,7 +215,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).set.insert(typename AggregateFunctionUniqCombinedData<UInt64, K>::Set::value_type(
+        this->data(place).set.insert(typename AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>::Set::value_type(
             UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
     }
 

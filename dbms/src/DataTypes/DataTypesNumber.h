@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 
 

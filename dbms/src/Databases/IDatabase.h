@@ -35,7 +35,7 @@ public:
     virtual bool isValid() const = 0;
 
     virtual const String & name() const = 0;
-    virtual StoragePtr & table() const = 0;
+    virtual const StoragePtr & table() const = 0;
 
     virtual ~IDatabaseIterator() {}
 };
