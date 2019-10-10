@@ -36,7 +36,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     {
         if (force || isTTLExpired(ttl_info.min))
         {
-            new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
+            new_ttl_infos.columns_ttl.emplace(name,IMergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
 
             auto it = column_defaults.find(name);
@@ -96,7 +96,7 @@ void TTLBlockInputStream::readSuffixImpl()
     new_ttl_infos.updatePartMinMaxTTL(new_ttl_infos.table_ttl.min, new_ttl_infos.table_ttl.max);
 
     data_part->ttl_infos = std::move(new_ttl_infos);
-    data_part->empty_columns = std::move(empty_columns);
+    data_part->expired_columns = std::move(empty_columns);
 
     if (rows_removed)
         LOG_INFO(log, "Removed " << rows_removed << " rows with expired TTL from part " << data_part->name);

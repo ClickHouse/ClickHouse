@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/MergeTreeReaderSettings.h>
 
 
 namespace DB

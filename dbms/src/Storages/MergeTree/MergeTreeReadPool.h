@@ -81,7 +81,7 @@ public:
     void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info);
 
     /// This method tells which mark ranges we have to read if we start from @from mark range
-    MarkRanges getRestMarks(const MergeTreeDataPart & part, const MarkRange & from) const;
+    MarkRanges getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const;
 
     Block getHeader() const;
 

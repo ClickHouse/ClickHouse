@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Core/Defines.h>
 
@@ -12,11 +12,11 @@ namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFroIMergeTreeDataPart : public ext::shared_ptr_helper<StorageFroIMergeTreeDataPart>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
+    friend struct ext::shared_ptr_helper<StorageFroIMergeTreeDataPart>;
 public:
-    String getName() const override { return "FromMergeTreeDataPart"; }
+    String getName() const override { return "FroIMergeTreeDataPart"; }
     String getTableName() const override { return part->storage.getTableName() + " (part " + part->name + ")"; }
     String getDatabaseName() const override { return part->storage.getDatabaseName(); }
 
@@ -40,7 +40,7 @@ public:
     }
 
 protected:
-    StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    StorageFroIMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(part_->storage.getVirtuals()), part(part_)
     {
         setColumns(part_->storage.getColumns());

@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
@@ -78,7 +78,7 @@ namespace ErrorCodes
 /// The same files as for month-partitioned tables, plus
 /// count.txt - contains total number of rows in this part.
 /// partition.dat - contains the value of the partitioning expression.
-/// minmax_[Column].idx - MinMax indexes (see MergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
+/// minmax_[Column].idx - MinMax indexes (seeIMergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special
@@ -101,14 +101,14 @@ class MergeTreeData : public IStorage
 public:
     /// Function to call if the part is suspected to contain corrupt data.
     using BrokenPartCallback = std::function<void (const String &)>;
-    using DataPart = MergeTreeDataPart;
+    using DataPart = IMergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
     using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
-    using DataPartState = MergeTreeDataPart::State;
+    using DataPartState = IMergeTreeDataPart::State;
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
 
@@ -737,14 +737,15 @@ public:
     /// if we decide to move some part to another disk, than we
     /// assuredly will choose this disk for containing part, which will appear
     /// as result of merge or mutation.
-    DataParts currently_moving_parts;
+    NameSet currently_moving_parts;
 
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
 protected:
 
-    friend struct MergeTreeDataPart;
+    friend class IMergeTreeDataPart;
+    friend class MergeTreeDataPartWide;
     friend class MergeTreeDataMergerMutator;
     friend class ReplicatedMergeTreeAlterThread;
     friend struct ReplicatedMergeTreeTableMetadata;

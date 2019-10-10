@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnArray.h>
@@ -25,10 +26,8 @@ MergeTreeBaseSelectBlockInputStream::MergeTreeBaseSelectBlockInputStream(
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
-    UInt64 min_bytes_to_use_direct_io_,
-    UInt64 max_read_buffer_size_,
+    const ReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
-    bool save_marks_in_cache_,
     const Names & virt_column_names_)
 :
     storage(storage_),
@@ -36,10 +35,8 @@ MergeTreeBaseSelectBlockInputStream::MergeTreeBaseSelectBlockInputStream(
     max_block_size_rows(max_block_size_rows_),
     preferred_block_size_bytes(preferred_block_size_bytes_),
     preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_),
-    min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_),
-    max_read_buffer_size(max_read_buffer_size_),
+    reader_settings(reader_settings_),
     use_uncompressed_cache(use_uncompressed_cache_),
-    save_marks_in_cache(save_marks_in_cache_),
     virt_column_names(virt_column_names_)
 {
 }
