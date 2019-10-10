@@ -12,6 +12,8 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
+/// Aggregated copy-paste from IBlockInputStream::progressImpl.
+/// Most of this must be done in PipelineExecutor outside. Now it's done for compatibility with IBlockInputStream.
 void SourceWithProgress::progress(const Progress & value)
 {
     if (total_rows_approx != 0)
@@ -35,13 +37,17 @@ void SourceWithProgress::progress(const Progress & value)
         if (!process_list_elem->updateProgressIn(value))
             cancel();
 
-        /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
+        /// The total amount of data processed or intended for processing in all sources, possibly on remote servers.
 
         ProgressValues progress = process_list_elem->getProgressIn();
         size_t total_rows_estimate = std::max(progress.read_rows, progress.total_rows_to_read);
 
-        /// Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
+        /// Check the restrictions on the
+        ///  * amount of data to read
+        ///  * speed of the query
+        ///  * quota on the amount of data to read
         /// NOTE: Maybe it makes sense to have them checked directly in ProcessList?
+
         if (limits.mode == LimitsMode::LIMITS_TOTAL)
         {
             if (!limits.size_limits.check(total_rows_estimate, progress.read_bytes, "rows to read",
@@ -64,7 +70,7 @@ void SourceWithProgress::progress(const Progress & value)
 
         /// Should be done in PipelineExecutor.
         /// It is here for compatibility with IBlockInputsStream.
-        limits.speed_limit.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
+        limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota != nullptr && limits.mode == LimitsMode::LIMITS_TOTAL)
         {

@@ -7,9 +7,17 @@ namespace DB
 
 class ISourceWithProgress;
 
+/// It's a wrapper from processors tree-shaped pipeline to block input stream.
+/// Execute all processors in a single thread, by in-order tree traverse.
+/// Also, support fro progress and quotas.
 class TreeExecutor : public IBlockInputStream
 {
 public:
+    /// Last processor in list must be a tree root.
+    /// It is checked that
+    ///  * processors form a tree
+    ///  * all processors are attainable from root
+    ///  * there is no other connected processors
     explicit TreeExecutor(Processors processors_) : processors(std::move(processors_)) { init(); }
 
     String getName() const override { return root->getName(); }
@@ -35,6 +43,7 @@ private:
     std::vector<ISourceWithProgress *> sources_with_progress;
 
     void init();
+    /// Execute tree step-by-step until root returns next chunk or execution is finished.
     void execute();
 };
 

@@ -14,6 +14,8 @@ static void checkProcessorHasSingleOutput(IProcessor * processor)
                         ErrorCodes::LOGICAL_ERROR);
 }
 
+/// Check tree invariants (described in TreeExecutor.h).
+/// Collect sources with progress.
 static void validateTree(const Processors & processors, IProcessor * root, std::vector<ISourceWithProgress *> & sources)
 {
     std::unordered_map<IProcessor *, size_t> index;

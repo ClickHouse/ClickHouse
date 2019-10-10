@@ -202,7 +202,7 @@ public:
 
         SizeLimits size_limits;
 
-        ExecutionSpeedLimits speed_limit;
+        ExecutionSpeedLimits speed_limits;
 
         OverflowMode timeout_overflow_mode = OverflowMode::THROW;
     };

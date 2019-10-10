@@ -20,11 +20,12 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
     const Settings & settings,
     const Names & virt_column_names_)
     :
-        MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
-                                     preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, settings.min_bytes_to_use_direct_io,
-                                     settings.max_read_buffer_size, use_uncompressed_cache_, true, virt_column_names_},
-        thread{thread_},
-        pool{pool_}
+    MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
+                                 preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
+                                 settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size,
+                                 use_uncompressed_cache_, true, virt_column_names_},
+    thread{thread_},
+    pool{pool_}
 {
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense

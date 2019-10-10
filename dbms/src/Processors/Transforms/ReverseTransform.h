@@ -4,6 +4,7 @@
 namespace DB
 {
 
+/// Reverse rows in chunk.
 class ReverseTransform : public ISimpleTransform
 {
 public:

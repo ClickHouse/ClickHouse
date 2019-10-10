@@ -7,6 +7,7 @@ namespace DB
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
+/// Wrapper for IBlockInputStream which implements ISourceWithProgress.
 class SourceFromInputStream : public ISourceWithProgress
 {
 public:
