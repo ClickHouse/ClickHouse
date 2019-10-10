@@ -34,7 +34,7 @@ public:
     struct AllAddressesTag {};
 
     AllowedClientHosts();
-    AllowedClientHosts(AllAddressesTag);
+    explicit AllowedClientHosts(AllAddressesTag);
     ~AllowedClientHosts();
 
     AllowedClientHosts(const AllowedClientHosts & src);
@@ -42,7 +42,7 @@ public:
     AllowedClientHosts(AllowedClientHosts && src);
     AllowedClientHosts & operator =(AllowedClientHosts && src);
 
-    /// Removes all contained hosts. This will allow all hosts.
+    /// Removes all contained addresses. This will disallow all addresses.
     void clear();
     bool empty() const;
 
