@@ -34,19 +34,17 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
 
     if (has_password)
     {
-        authentication.setType(Authentication::PLAINTEXT_PASSWORD);
+        authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
         authentication.setPassword(config.getString(config_elem + ".password"));
     }
-
-    if (has_password_sha256_hex)
+    else if (has_password_sha256_hex)
     {
-        authentication.setType(Authentication::SHA256_PASSWORD);
+        authentication = Authentication{Authentication::SHA256_PASSWORD};
         authentication.setPasswordHashHex(config.getString(config_elem + ".password_sha256_hex"));
     }
-
-    if (has_password_double_sha1_hex)
+    else if (has_password_double_sha1_hex)
     {
-        authentication.setType(Authentication::DOUBLE_SHA1_PASSWORD);
+        authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
         authentication.setPasswordHashHex(config.getString(config_elem + ".password_double_sha1_hex"));
     }
 

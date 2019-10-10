@@ -33,10 +33,9 @@ public:
     Authentication(Authentication && src) = default;
     Authentication & operator =(Authentication && src) = default;
 
-    void setType(Type type_) { type = type_; }
     Type getType() const { return type; }
 
-    /// Sets the password. This function uses the authentication type set with setType() to encode the password.
+    /// Sets the password and encrypt it using the authentication type set in the constructor.
     void setPassword(const String & password);
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
