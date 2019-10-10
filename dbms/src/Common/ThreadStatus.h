@@ -77,6 +77,31 @@ using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
 extern thread_local ThreadStatus * current_thread;
 
+
+/// Helper which allows to temporarily disable memory tracker.
+/// Use parent memory tracker instead of current if can.
+class DisableMemoryTrackerGuard
+{
+public:
+    explicit DisableMemoryTrackerGuard(MemoryTracker *& memory_tracker_ptr_)
+    : memory_tracker_ptr(memory_tracker_ptr_)
+    , prev_value(memory_tracker_ptr ? memory_tracker_ptr->getParent() : nullptr)
+    {
+        if (memory_tracker_ptr)
+            std::swap(memory_tracker_ptr, prev_value);
+    }
+
+    ~DisableMemoryTrackerGuard()
+    {
+        if (prev_value)
+            std::swap(memory_tracker_ptr, prev_value);
+    }
+
+private:
+    MemoryTracker *& memory_tracker_ptr;
+    MemoryTracker * prev_value = nullptr;
+};
+
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
   * It is accessed through thread-local pointer.
@@ -99,6 +124,8 @@ public:
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
     MemoryTracker memory_tracker{VariableContext::Thread};
+    /// Pointer to memory tracker. Is initialized in constructor. May be temporary disabled (set to nullptr).
+    MemoryTracker * memory_tracker_ptr = nullptr;
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
 
