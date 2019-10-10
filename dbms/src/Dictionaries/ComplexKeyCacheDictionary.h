@@ -310,8 +310,10 @@ private:
             return;
 
         std::vector<size_t> required_rows(outdated_keys.size());
-        std::transform(
-            std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
+        {
+            size_t i = 0;
+            hashTableForEach(outdated_keys, [&](auto & pair) { required_rows[i++] = pair.getSecond().front(); });
+        }
 
         /// request new values
         update(
@@ -435,10 +437,10 @@ private:
         if (!outdated_keys.empty())
         {
             std::vector<size_t> required_rows(outdated_keys.size());
-            std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair)
             {
-                return pair.getSecond().front();
-            });
+                size_t i = 0;
+                hashTableForEach(outdated_keys, [&](auto & pair) { required_rows[i++] = pair.getSecond().front(); });
+            }
 
             update(
                 key_columns,
@@ -469,7 +471,7 @@ private:
         {
             const StringRef key = keys_array[row];
             const auto it = map.find(key);
-            const auto string_ref = it ? *lookupResultGetMapped(it) : get_default(row);
+            const auto string_ref = it ? it->getSecond() : get_default(row);
             out->insertData(string_ref.data, string_ref.size);
         }
     }
@@ -574,12 +576,12 @@ private:
         const auto now = std::chrono::system_clock::now();
 
         /// Check which ids have not been found and require setting null_value
-        for (const auto & key_found_pair : remaining_keys)
+        hashTableForEach(remaining_keys, [&](auto & key_found_pair)
         {
             if (key_found_pair.getSecond())
             {
                 ++found_num;
-                continue;
+                return;
             }
 
             ++not_found_num;
@@ -621,7 +623,7 @@ private:
 
             /// inform caller that the cell has not been found
             on_key_not_found(key, cell_idx);
-        }
+        });
 
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, found_num);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);

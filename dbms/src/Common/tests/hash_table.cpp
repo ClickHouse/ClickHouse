@@ -26,8 +26,10 @@ int main(int, char **)
         cont.emplace(key, it, inserted);
         std::cerr << inserted << ", " << key << std::endl;
 
-        for (auto x : cont)
-            std::cerr << x.getValue() << std::endl;
+        cont.forEachCell([&](auto & cell)
+        {
+            std::cerr << cell.getValue() << std::endl;
+        });
 
         DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);

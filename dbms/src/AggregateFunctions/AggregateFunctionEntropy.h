@@ -54,8 +54,10 @@ struct EntropyData
 
     void merge(const EntropyData & rhs)
     {
-        for (const auto & pair : rhs.map)
+        hashTableForEach(rhs.map, [&](const auto & pair)
+        {
             map[pair.getFirst()] += pair.getSecond();
+        });
     }
 
     void serialize(WriteBuffer & buf) const
@@ -76,15 +78,17 @@ struct EntropyData
     Float64 get() const
     {
         UInt64 total_value = 0;
-        for (const auto & pair : map)
+        hashTableForEach(map, [&](const auto & pair)
+        {
             total_value += pair.getSecond();
+        });
 
         Float64 shannon_entropy = 0;
-        for (const auto & pair : map)
+        hashTableForEach(map, [&](const auto & pair)
         {
             Float64 frequency = Float64(pair.getSecond()) / total_value;
             shannon_entropy -= frequency * log2(frequency);
-        }
+        });
 
         return shannon_entropy;
     }

@@ -465,7 +465,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             null_map.push_back(1);
         }
 
-        for (const auto & pair : map)
+        hashTableForEach(map, [&](const auto & pair)
         {
             if (pair.getSecond() == args)
             {
@@ -480,7 +480,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 if (all_nullable)
                     null_map.push_back(0);
             }
-        }
+        });
         result_offsets.getElement(row) = result_offset;
     }
 

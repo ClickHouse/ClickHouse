@@ -127,7 +127,7 @@ void RangeHashedDictionary::getString(
         if (it)
         {
             const auto date = dates[i];
-            const auto & ranges_and_values = *lookupResultGetMapped(it);
+            const auto & ranges_and_values = it->getSecond();
             const auto val_it
                 = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<StringRef> & v)
                   {
@@ -398,7 +398,7 @@ void RangeHashedDictionary::getItemsImpl(
         if (it)
         {
             const auto date = dates[i];
-            const auto & ranges_and_values = *lookupResultGetMapped(it);
+            const auto & ranges_and_values = it->getSecond();
             const auto val_it
                 = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<AttributeType> & v)
                   {
@@ -425,7 +425,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
 
     if (it)
     {
-        auto & values = *lookupResultGetMapped(it);
+        auto & values = it->getSecond();
 
         const auto insert_it
             = std::lower_bound(std::begin(values), std::end(values), range, [](const Value<T> & lhs, const Range & rhs_range)
@@ -498,7 +498,7 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
 
             if (it)
             {
-                auto & values = *lookupResultGetMapped(it);
+                auto & values = it->getSecond();
 
                 const auto insert_it = std::lower_bound(
                     std::begin(values), std::end(values), range, [](const Value<StringRef> & lhs, const Range & rhs_range)
@@ -608,7 +608,7 @@ void RangeHashedDictionary::getIdsAndDates(
 
     const bool is_date = isDate(dict_struct.range_min->type);
 
-    for (const auto & key : attr)
+    hashTableForEach(attr, [&](auto & key)
     {
         for (const auto & value : key.getSecond())
         {
@@ -619,7 +619,7 @@ void RangeHashedDictionary::getIdsAndDates(
             if (is_date && static_cast<UInt64>(end_dates.back()) > DATE_LUT_MAX_DAY_NUM)
                 end_dates.back() = 0;
         }
-    }
+    });
 }
 
 

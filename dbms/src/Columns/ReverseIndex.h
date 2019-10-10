@@ -150,7 +150,6 @@ namespace
 
     public:
         using Base::Base;
-        using iterator = typename Base::iterator;
         using LookupResult = typename Base::LookupResult;
         State & getState() { return *this; }
 
@@ -182,30 +181,22 @@ namespace
 
         /// Searches position by object.
         template <typename ObjectToCompareWith>
-        void ALWAYS_INLINE reverseIndexEmplace(Key key, iterator & it, bool & inserted,
+        void ALWAYS_INLINE reverseIndexEmplace(Key key, LookupResult & it, bool & inserted,
             size_t hash_value, const ObjectToCompareWith& object)
         {
-            LookupResult impl_it = nullptr;
-
-            if (!this->emplaceIfZero(key, impl_it, inserted, hash_value))
-            {
-                reverseIndexEmplaceNonZero(key, impl_it, inserted, hash_value, object);
-            }
-            assert(impl_it != nullptr);
-            it = iterator(this, impl_it);
+            if (!this->emplaceIfZero(key, it, inserted, hash_value))
+                reverseIndexEmplaceNonZero(key, it, inserted, hash_value, object);
+            assert(it != nullptr);
         }
 
         template <typename ObjectToCompareWith>
-        iterator ALWAYS_INLINE reverseIndexFind(ObjectToCompareWith x, size_t hash_value)
+        LookupResult ALWAYS_INLINE reverseIndexFind(ObjectToCompareWith x, size_t hash_value)
         {
             if (Cell::isZero(x, *this))
-                return this->hasZero() ? this->iteratorToZero() : this->end();
+                return this->hasZero() ? this->zeroValue() : nullptr;
 
-            size_t place_value = reverseIndexFindCell(x, hash_value,
-                                    this->grower.place(hash_value));
-            return !this->buf[place_value].isZero(*this)
-                    ? iterator(this, &this->buf[place_value])
-                    : this->end();
+            size_t place_value = reverseIndexFindCell(x, hash_value, this->grower.place(hash_value));
+            return !this->buf[place_value].isZero(*this) ? &this->buf[place_value] : nullptr;
         }
     };
 
@@ -421,7 +412,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
     if constexpr (use_saved_hash)
         state.saved_hash_column = &saved_hash->getData();
 
-    using IteratorType = typename IndexMapType::iterator;
+    using IteratorType = typename IndexMapType::LookupResult;
     IteratorType iterator;
     bool inserted;
 
@@ -461,7 +452,7 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(const StringRef & data)
     if (!index)
         buildIndex();
 
-    using IteratorType = typename IndexMapType::iterator;
+    using IteratorType = typename IndexMapType::LookupResult;
     IteratorType iterator;
     bool inserted;
 
@@ -500,13 +491,13 @@ UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPoint(const StringRef & 
     if (!index)
         buildIndex();
 
-    using IteratorType = typename IndexMapType::iterator;
+    using IteratorType = typename IndexMapType::LookupResult;
     IteratorType iterator;
 
     auto hash = getHash(data);
     iterator = index->reverseIndexFind(data, hash);
 
-    return iterator == index->end() ? size() + base_index : iterator->getValue();
+    return hashTableEnd(*index, iterator) ? size() + base_index : iterator->getValue();
 }
 
 }

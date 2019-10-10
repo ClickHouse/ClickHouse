@@ -57,8 +57,10 @@ struct QuantileExactWeighted
 
     void merge(const QuantileExactWeighted & rhs)
     {
-        for (const auto & pair : rhs.map)
+        hashTableForEach(rhs.map, [&](const auto & pair)
+        {
             map[pair.getFirst()] += pair.getSecond();
+        });
     }
 
     void serialize(WriteBuffer & buf) const
@@ -91,12 +93,12 @@ struct QuantileExactWeighted
 
         size_t i = 0;
         UInt64 sum_weight = 0;
-        for (const auto & pair : map)
+        hashTableForEach(map, [&](const auto & pair)
         {
             sum_weight += pair.getSecond();
             array[i] = pair.getValue();
             ++i;
-        }
+        });
 
         std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
@@ -141,12 +143,12 @@ struct QuantileExactWeighted
 
         size_t i = 0;
         UInt64 sum_weight = 0;
-        for (const auto & pair : map)
+        hashTableForEach(map, [&](const auto & pair)
         {
             sum_weight += pair.getSecond();
             array[i] = pair.getValue();
             ++i;
-        }
+        });
 
         std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 

@@ -84,8 +84,10 @@ int main(int, char **)
     std::cerr << "size: " << map.size() << std::endl;
     std::cerr << "Collisions: " << map.getCollisions() << std::endl;
 
-    for (auto x : map)
+    map.forEachCell([&](auto & x)
+    {
         std::cerr << x.getFirst().toString() << " -> " << x.getSecond() << std::endl;
+    });
 
     return 0;
 }

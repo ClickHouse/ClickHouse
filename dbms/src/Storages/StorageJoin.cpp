@@ -14,6 +14,7 @@
 #include <Poco/String.h>    /// toLower
 #include <Poco/File.h>
 
+#include <any>
 
 namespace DB
 {
@@ -252,7 +253,7 @@ private:
     std::optional<size_t> key_pos;
     MutableColumns columns;
 
-    std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
+    std::any position;
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
@@ -319,23 +320,22 @@ private:
     {
         size_t rows_added = 0;
 
-        if (!position)
-            position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())),
-                [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
+        using Pos = typename Map::ConstPosition;
+        if (!position.has_value())
+            position = std::make_any<Pos>(map.startPos());
 
-        auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());
-        auto end = map.end();
+        Pos & pos = std::any_cast<Pos &>(position);
 
-        for (; it != end; ++it)
+        map.forEachCell([&](const auto & key, const auto & cell)
         {
             if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
             {
                 for (size_t j = 0; j < columns.size(); ++j)
                     if (j == key_pos)
-                        columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
+                        columns[j]->insertData(rawData(key), rawSize(key));
                     else
-                        columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
+                        columns[j]->insertFrom(
+                            *cell.getSecond().block->getByPosition(column_indices[j]).column.get(), cell.getSecond().row_num);
                 ++rows_added;
             }
             else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
@@ -343,22 +343,21 @@ private:
                 throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
             }
             else
-                for (auto ref_it = it->getSecond().begin(); ref_it.ok(); ++ref_it)
+                for (auto ref_it = cell.getSecond().begin(); ref_it.ok(); ++ref_it)
                 {
                     for (size_t j = 0; j < columns.size(); ++j)
                         if (j == key_pos)
-                            columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
+                            columns[j]->insertData(rawData(key), rawSize(key));
                         else
                             columns[j]->insertFrom(*ref_it->block->getByPosition(column_indices[j]).column.get(), ref_it->row_num);
                     ++rows_added;
                 }
 
             if (rows_added >= max_block_size)
-            {
-                ++it;
-                break;
-            }
-        }
+                return true;
+
+            return false;
+        }, pos);
 
         return rows_added;
     }

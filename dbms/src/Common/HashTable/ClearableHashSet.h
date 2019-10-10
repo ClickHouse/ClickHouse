@@ -48,12 +48,6 @@ struct ClearableHashTableCell : public BaseCell
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
-template<typename Key, typename BaseCell>
-ALWAYS_INLINE inline auto lookupResultGetKey(ClearableHashTableCell<Key, BaseCell> * cell) { return &cell->key; }
-
-template<typename Key, typename BaseCell>
-ALWAYS_INLINE inline void * lookupResultGetMapped(ClearableHashTableCell<Key, BaseCell> *) { return nullptr; }
-
 template
 <
     typename Key,

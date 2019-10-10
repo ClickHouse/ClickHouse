@@ -577,7 +577,7 @@ public:
     {
         if (params.num_buckets_cutoff)
         {
-            for (auto & elem : table)
+            hashTableForEach(table, [&](auto & elem)
             {
                 Histogram & histogram = elem.getSecond();
 
@@ -586,16 +586,16 @@ public:
                     histogram.buckets.clear();
                     histogram.total = 0;
                 }
-            }
+            });
         }
 
         if (params.frequency_cutoff)
         {
-            for (auto & elem : table)
+            hashTableForEach(table, [&](auto & elem)
             {
                 Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
-                    continue;
+                    return;
 
                 if (histogram.total + histogram.count_end < params.frequency_cutoff)
                 {
@@ -618,32 +618,32 @@ public:
                     histogram.buckets.swap(new_buckets);
                     histogram.total -= erased_count;
                 }
-            }
+            });
         }
 
         if (params.frequency_add)
         {
-            for (auto & elem : table)
+            hashTableForEach(table, [&](auto & elem)
             {
                 Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
-                    continue;
+                    return;
 
                 for (auto & bucket : histogram.buckets)
                     bucket.second += params.frequency_add;
 
                 histogram.count_end += params.frequency_add;
                 histogram.total += params.frequency_add * histogram.buckets.size();
-            }
+            });
         }
 
         if (params.frequency_desaturate)
         {
-            for (auto & elem : table)
+            hashTableForEach(table, [&](auto & elem)
             {
                 Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
-                    continue;
+                    return;
 
                 double average = histogram.total / histogram.buckets.size();
 
@@ -655,7 +655,7 @@ public:
                 }
 
                 histogram.total = new_total;
-            }
+            });
         }
     }
 
@@ -676,7 +676,7 @@ public:
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (it && lookupResultGetMapped(it)->total + lookupResultGetMapped(it)->count_end != 0)
+                if (it && it->getSecond().total + it->getSecond().count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -710,7 +710,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = lookupResultGetMapped(it)->sample(determinator, end_probability_multiplier);
+            CodePoint code = it->getSecond().sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
