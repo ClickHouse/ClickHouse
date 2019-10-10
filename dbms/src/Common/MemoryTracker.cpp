@@ -246,3 +246,25 @@ DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
         return {};
     return memory_tracker->blocker.cancel();
 }
+
+IgnoreMemoryLimit::IgnoreMemoryLimit()
+    : memory_tracker(DB::CurrentThread::getMemoryTracker())
+{
+    /// Use query-level memory tracker
+    if (auto parent = memory_tracker->getParent())
+        memory_tracker = parent;
+
+    /// Do not do store/restore cycle if there is no limit
+    if (!memory_tracker->getLimit())
+        memory_tracker = nullptr;
+
+    if (memory_tracker) {
+        limit = memory_tracker->getLimit();
+        memory_tracker->setLimit(0);
+    }
+}
+IgnoreMemoryLimit::~IgnoreMemoryLimit()
+{
+    if (memory_tracker)
+        memory_tracker->setLimit(limit);
+}

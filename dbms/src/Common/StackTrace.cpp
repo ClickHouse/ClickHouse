@@ -4,6 +4,7 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/config.h>
+#include <Common/MemoryTracker.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
 #include <Core/Defines.h>
@@ -251,6 +252,8 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(__FreeBSD__)
+    auto ignoreMemoryLimit = std::make_unique<IgnoreMemoryLimit>();
+
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 

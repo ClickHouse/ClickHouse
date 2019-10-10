@@ -70,6 +70,10 @@ public:
     {
         limit.store(limit_, std::memory_order_relaxed);
     }
+    Int64 getLimit()
+    {
+        return limit.load(std::memory_order_relaxed);
+    }
 
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
@@ -126,5 +130,16 @@ namespace CurrentMemoryTracker
     void free(Int64 size);
 }
 
+/// Use by the StackTrace
+class IgnoreMemoryLimit
+{
+public:
+    IgnoreMemoryLimit();
+    ~IgnoreMemoryLimit();
+
+private:
+    MemoryTracker * memory_tracker;
+    Int64 limit = 0;
+};
 
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock();
