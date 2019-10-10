@@ -77,43 +77,30 @@ PoolWithFailover PoolFactory::Get(const Poco::Util::AbstractConfiguration & conf
 {
 
     std::lock_guard<std::mutex> lock(impl->mutex);
-    Poco::Util::Application & app = Poco::Util::Application::instance();
-    app.logger().warning("Config name=" + config_name);
     if (auto entry = impl->pools.find(config_name); entry != impl->pools.end())
     {
-        app.logger().warning("Entry found=" + config_name);
         return *(entry->second.get());
     }
     else
     {
-        app.logger().warning("Searching confg=" + config_name);
         std::string entry_name = getPoolEntryName(config, config_name);
-        app.logger().warning("Entry name created=" + entry_name);
         if (auto id = impl->pools_by_ids.find(entry_name); id != impl->pools_by_ids.end())
         {
-            app.logger().warning("found");
             entry = impl->pools.find(id->second);
             std::shared_ptr<PoolWithFailover> pool = entry->second;
             impl->pools.insert_or_assign(config_name, pool);
-            app.logger().warning("found OK");
             return *pool;
         }
 
-        app.logger().warning("make pool");
         auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
-        app.logger().warning("make pool OK");
         // Check the pool will be shared
         if (!entry_name.empty())
         {
             // Store shared pool
-            app.logger().warning("store");
             impl->pools.insert_or_assign(config_name, pool);
             impl->pools_by_ids.insert_or_assign(entry_name, config_name);
-            app.logger().warning("store OK");
         }
-        app.logger().warning("a2");
         auto a2 = *(pool.get());
-        app.logger().warning("a2 OK");
         return *(pool.get());
     }
 }

@@ -27,7 +27,7 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     return DictionaryFactory::instance().create(name, config, key_in_config, context);
 }
 
-void ExternalDictionaries::reload(const String & name, bool load_never_loading)
+void ExternalDictionariesLoader::reload(const String & name, bool load_never_loading)
 {
     #if USE_MYSQL
         mysqlxx::PoolFactory::instance().reset();
@@ -35,7 +35,7 @@ void ExternalDictionaries::reload(const String & name, bool load_never_loading)
     ExternalLoader::reload(name, load_never_loading);
 }
 
-void ExternalDictionaries::reload(bool load_never_loading)
+void ExternalDictionariesLoader::reload(bool load_never_loading)
 {
     #if USE_MYSQL
         mysqlxx::PoolFactory::instance().reset();
