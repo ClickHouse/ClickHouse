@@ -400,20 +400,20 @@ public:
         }
     }
 
-    // Helper templates to deduce return type based on argument type, since some function may promote type, e.g. addSeconds(Date, 1) => DateTime
+    // Helper templates to deduce return type based on argument type, since some overloads may promote or denote types, e.g. addSeconds(Date, 1) => DateTime
     template <typename FieldType>
     using TransformExecuteReturnType = decltype(std::declval<Transform>().execute(FieldType(), 0, std::declval<DateLUTImpl>()));
 
-    // Deduces result DataType from argument data type, based on return type of Transform{}.execute(from, UInt64, DateLUTImpl).
+    // Deduces RETURN DataType from INTPUT DataType, based on return type of Transform{}.execute(INPUT_TYPE, UInt64, DateLUTImpl).
     // e.g. for Transform-type that has execute()-overload with 'UInt16' input and 'UInt32' return,
     // argument type is expected to be 'Date', and result type is deduced to be 'DateTime'.
-    template <typename FromFieldType>
-    using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<FromFieldType>>::ResultDataType;
+    template <typename FromDataType>
+    using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<typename FromDataType::FieldType>>::ResultDataType;
 
     template <typename FromDataType>
     DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const
     {
-        using ResultDataType = TransformResultDataType<typename FromDataType::FieldType>;
+        using ResultDataType = TransformResultDataType<FromDataType>;
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
             return std::make_shared<DataTypeDate>();
@@ -442,15 +442,15 @@ public:
 
         if (which.isDate())
         {
-            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<typename DataTypeDate::FieldType>, Transform>::execute(Transform{}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(Transform{}, block, arguments, result);
         }
         else if (which.isDateTime())
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<typename DataTypeDateTime::FieldType>, Transform>::execute(Transform{}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(Transform{}, block, arguments, result);
         }
         else if (const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type))
         {
-            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<typename DataTypeDateTime64::FieldType>, Transform>::execute(Transform{datetime64_type->getScale()}, block, arguments, result);
+            DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(Transform{datetime64_type->getScale()}, block, arguments, result);
         }
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
