@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionAddQuarters = FunctionDateOrDateTimeAddInterval<AddOnDateTime64Mixin<AddQuartersImpl>>;
+using FunctionAddQuarters = FunctionDateOrDateTimeAddInterval<AddQuartersImpl>;
 
 void registerFunctionAddQuarters(FunctionFactory & factory)
 {

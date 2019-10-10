@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionAddSeconds = FunctionDateOrDateTimeAddInterval<AddOnDateTime64Mixin<AddSecondsImpl>>;
+using FunctionAddSeconds = FunctionDateOrDateTimeAddInterval<AddSecondsImpl>;
 
 void registerFunctionAddSeconds(FunctionFactory & factory)
 {

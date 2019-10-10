@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionAddWeeks = FunctionDateOrDateTimeAddInterval<AddOnDateTime64Mixin<AddWeeksImpl>>;
+using FunctionAddWeeks = FunctionDateOrDateTimeAddInterval<AddWeeksImpl>;
 
 void registerFunctionAddWeeks(FunctionFactory & factory)
 {

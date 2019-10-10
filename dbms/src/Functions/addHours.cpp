@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionAddHours = FunctionDateOrDateTimeAddInterval<AddOnDateTime64Mixin<AddHoursImpl>>;
+using FunctionAddHours = FunctionDateOrDateTimeAddInterval<AddHoursImpl>;
 
 void registerFunctionAddHours(FunctionFactory & factory)
 {
