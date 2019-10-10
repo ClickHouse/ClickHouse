@@ -32,7 +32,7 @@ TasksStatsCounters TasksStatsCounters::current()
     return res;
 }
 
-ThreadStatus::ThreadStatus() : memory_tracker_ptr(&memory_tracker)
+ThreadStatus::ThreadStatus()
 {
     thread_number = getThreadNumber();
     os_thread_id = TaskStatsInfoGetter::getCurrentTID();
