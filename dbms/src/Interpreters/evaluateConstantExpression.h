@@ -20,6 +20,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /** Evaluate constant expression and its type.
   * Used in rare cases - for elements of set for IN, for data to INSERT.
+  * Throws exception if it's not a constant expression.
   * Quite suboptimal.
   */
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context);
