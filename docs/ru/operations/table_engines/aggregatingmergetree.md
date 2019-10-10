@@ -11,7 +11,7 @@
 
 ## Создание таблицы
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -60,7 +60,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Создаём материализованное представление типа `AggregatingMergeTree`, следящее за таблицей `test.visits`:
 
-``` sql
+```sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate)
 AS SELECT
@@ -74,7 +74,7 @@ GROUP BY CounterID, StartDate;
 
 Вставляем данные в таблицу `test.visits`:
 
-``` sql
+```sql
 INSERT INTO test.visits ...
 ```
 
@@ -82,7 +82,7 @@ INSERT INTO test.visits ...
 
 Чтобы получить агрегированные данные, выполним запрос вида `SELECT ... GROUP BY ...` из представления `test.basic`:
 
-``` sql
+```sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,

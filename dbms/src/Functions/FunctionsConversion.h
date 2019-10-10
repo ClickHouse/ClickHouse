@@ -2186,6 +2186,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 protected:
 

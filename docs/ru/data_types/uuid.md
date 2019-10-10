@@ -4,13 +4,13 @@
 
 Пример UUID значения представлен ниже:
 
-```
+```text
 61f0c404-5cb3-11e7-907b-a6006ad3dba0
 ```
 
 Если при вставке новой записи значение для UUID-колонки не указано, UUID идентификатор будет заполнен нулями:
 
-```
+```text
 00000000-0000-0000-0000-000000000000
 ```
 
@@ -26,15 +26,16 @@
 
 Этот пример демонстрирует, как создать таблицу с UUID-колонкой и добавить в нее сгенерированный UUID.
 
-``` sql
-:) CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
-
-:) INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
-
-:) SELECT * FROM t_uuid
+```sql
+CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
 ```
-
+```sql
+INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
 ```
+```sql
+SELECT * FROM t_uuid
+```
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 └──────────────────────────────────────┴───────────┘
@@ -44,13 +45,13 @@
 
 В этом примере, при добавлении записи в таблицу значение для UUID-колонки не задано. UUID будет заполнен нулями.
 
-``` sql
-:) INSERT INTO t_uuid (y) VALUES ('Example 2')
-
-:) SELECT * FROM t_uuid
+```sql
+INSERT INTO t_uuid (y) VALUES ('Example 2')
 ```
-
+```sql
+SELECT * FROM t_uuid
 ```
+```text
 ┌────────────────────────────────────x─┬─y─────────┐
 │ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
 │ 00000000-0000-0000-0000-000000000000 │ Example 2 │

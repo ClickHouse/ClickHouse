@@ -1,6 +1,8 @@
 #include <Processors/Transforms/FilterTransform.h>
+
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Field.h>
 
 namespace DB
 {

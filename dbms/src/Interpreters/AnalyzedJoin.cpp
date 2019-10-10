@@ -21,12 +21,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 AnalyzedJoin::AnalyzedJoin(const Settings & settings)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , join_use_nulls(settings.join_use_nulls)
     , partial_merge_join(settings.partial_merge_join)
+    , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
+    , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
 {}
 
 void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
@@ -262,9 +265,19 @@ NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpressio
 
 JoinPtr makeJoin(std::shared_ptr<AnalyzedJoin> table_join, const Block & right_sample_block)
 {
-    if (table_join->partial_merge_join)
+    bool is_left_or_inner = isLeft(table_join->kind()) || isInner(table_join->kind());
+    bool is_asof = (table_join->strictness() == ASTTableJoin::Strictness::Asof);
+
+    if (table_join->partial_merge_join && !is_asof && is_left_or_inner)
         return std::make_shared<MergeJoin>(table_join, right_sample_block);
     return std::make_shared<Join>(table_join, right_sample_block);
+}
+
+bool isMergeJoin(const JoinPtr & join)
+{
+    if (join)
+        return typeid_cast<const MergeJoin *>(join.get());
+    return false;
 }
 
 }

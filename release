@@ -87,6 +87,9 @@ then
     elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="+tsan"
     elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="+msan"
     elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="+ubsan"
+    elif [[ "$SANITIZER" == "libfuzzer" ]]; then
+        VERSION_POSTFIX+="+libfuzzer"
+        MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
     else
         echo "Unknown value of SANITIZER variable: $SANITIZER"
         exit 3

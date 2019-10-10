@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Common/COW.h>
 #include <Common/PODArray.h>
 #include <Common/Exception.h>
@@ -23,6 +22,7 @@ namespace ErrorCodes
 
 class Arena;
 class ColumnGathererStream;
+class Field;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -140,11 +140,18 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
-    virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
+    virtual void insertFrom(const IColumn & src, size_t n);
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+
+    /// Appends one element from other column with the same type multiple times.
+    virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src, position);
+    }
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).
@@ -156,6 +163,13 @@ public:
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.
     /// For example, ColumnNullable(Nested) absolutely ignores values of nested column if it is marked as NULL.
     virtual void insertDefault() = 0;
+
+    /// Appends "default value" multiple times.
+    virtual void insertManyDefaults(size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertDefault();
+    }
 
     /** Removes last n elements.
       * Is used to support exception-safety of several operations.

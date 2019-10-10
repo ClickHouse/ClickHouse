@@ -140,7 +140,8 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - timeout - Таймаут отправки данных в секундах.
 - root_path - Префикс для ключей.
 - metrics - Отправка данных из таблицы :ref:`system_tables-system.metrics`.
-- events - Отправка данных из таблицы :ref:`system_tables-system.events`.
+- events - Отправка дельты данных, накопленной за промежуток времени из таблицы :ref:`system_tables-system.events`
+- events_cumulative - Отправка суммарных данных из таблицы :ref:`system_tables-system.events`
 - asynchronous_metrics - Отправка данных из таблицы :ref:`system_tables-system.asynchronous_metrics`.
 
 Можно определить несколько секций `<graphite>`, например, для передачи различных данных с различной частотой.
@@ -156,6 +157,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
     <root_path>one_min</root_path>
     <metrics>true</metrics>
     <events>true</events>
+    <events_cumulative>false</events_cumulative>
     <asynchronous_metrics>true</asynchronous_metrics>
 </graphite>
 ```
@@ -255,6 +257,26 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ```xml
 <interserver_http_host>example.yandex.ru</interserver_http_host>
+```
+
+
+## interserver_http_credentials {#server-settings-interserver_http_credentials}
+
+Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../table_engines/replication.md) движками Replicated*. Это имя пользователя и пароль используются только для взаимодействия между репликами кластера и никак не связаны с аутентификацией клиентов ClickHouse. Сервер проверяет совпадение имени и пароля для соединяющихся с ним реплик, а также использует это же имя и пароль для соединения с другими репликами. Соответственно, эти имя и пароль должны быть прописаны одинаковыми для всех реплик кластера.
+По умолчанию аутентификация не используется.
+
+Раздел содержит следующие параметры:
+
+- `user` — имя пользователя.
+- `password` — пароль.
+
+**Пример конфигурации**
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+</interserver_http_credentials>
 ```
 
 

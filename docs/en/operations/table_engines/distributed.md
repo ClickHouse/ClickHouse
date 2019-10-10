@@ -6,7 +6,7 @@ Reading is automatically parallelized. During a read, the table indexes on remot
 The Distributed engine accepts parameters: the cluster name in the server's config file, the name of a remote database, the name of a remote table, and (optionally) a sharding key.
 Example:
 
-```
+```sql
 Distributed(logs, default, hits[, sharding_key])
 ```
 
@@ -64,12 +64,12 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 
 :   -   `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.
 -   `port` – The TCP port for messenger activity ('tcp_port' in the config, usually set to 9000). Do not confuse it with http_port.
--   `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section "Access rights".
+-   `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [Access rights](../../operations/access_rights.md).
 -   `password` – The password for connecting to a remote server (not masked). Default value: empty string.
 -   `secure` - Use ssl for connection, usually you also should define `port` = 9440. Server should listen on <tcp_port_secure>9440</tcp_port_secure> and have correct certificates.
 -   `compression` - Use data compression. Default value: true.
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the 'load_balancing' setting.
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../settings/settings.md#settings-load_balancing) setting.
 If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times.
 This works in favor of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 
@@ -83,7 +83,7 @@ The Distributed engine allows working with a cluster like a local server. Howeve
 
 There is no support for Distributed tables that look at other Distributed tables (except in cases when a Distributed table only has one shard). As an alternative, make the Distributed table look at the "final" tables.
 
-The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don't need to create a Distributed table – use the 'remote' table function instead. See the section "Table functions".
+The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don't need to create a Distributed table – use the 'remote' table function instead. See the section [Table functions](../../query_language/table_functions/index.md).
 
 There are two methods for writing data to a cluster:
 
@@ -119,7 +119,7 @@ Data is written asynchronously. For an INSERT to a Distributed table, the data b
 
 If the server ceased to exist or had a rough restart (for example, after a device failure) after an INSERT to a Distributed table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the 'broken' subdirectory and no longer used.
 
-When the max_parallel_replicas option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section "Settings, max_parallel_replicas".
+When the max_parallel_replicas option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../settings/settings.md#settings-max_parallel_replicas).
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/distributed/) <!--hide-->

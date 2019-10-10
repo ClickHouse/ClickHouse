@@ -26,6 +26,7 @@ ColumnRawPtrs extractKeysForJoin(const Names & key_names_right, const Block & ri
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right);
 
 void createMissedColumns(Block & block);
+void joinTotals(const Block & totals, const Block & columns_to_add, const Names & key_names_right, Block & block);
 
 }
 

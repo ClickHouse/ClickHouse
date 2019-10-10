@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/SortDescription.h>
-#include <DataStreams/IBlockStream_fwd.h>
+#include <Core/SettingsCommon.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 #include <IO/Progress.h>
-#include <Core/SettingsCommon.h>
 #include <Storages/TableStructureLockHolder.h>
+#include <Common/TypePromotion.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -25,6 +25,8 @@ namespace ErrorCodes
 class ProcessListElement;
 class QuotaForIntervals;
 class QueryStatus;
+struct SortColumnDescription;
+using SortDescription = std::vector<SortColumnDescription>;
 
 /** Callback to track the progress of the query.
   * Used in IBlockInputStream and Context.
@@ -40,7 +42,7 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
   * Lets you get information for profiling: rows per second, blocks per second, megabytes per second, etc.
   * Allows you to stop reading data (in nested sources).
   */
-class IBlockInputStream
+class IBlockInputStream : public TypePromotion<IBlockInputStream>
 {
     friend struct BlockStreamProfileInfo;
 
@@ -70,10 +72,7 @@ public:
     virtual bool isSortedOutput() const { return false; }
 
     /// In case of isSortedOutput, return corresponding SortDescription
-    virtual const SortDescription & getSortDescription() const
-    {
-        throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
-    }
+    virtual const SortDescription & getSortDescription() const;
 
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).

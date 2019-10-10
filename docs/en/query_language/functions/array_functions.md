@@ -49,7 +49,7 @@ Returns an 'Array(T)' type result, where 'T' is the smallest common type out of 
 
 Combines arrays passed as arguments.
 
-```
+```sql
 arrayConcat(arrays)
 ```
 
@@ -82,9 +82,10 @@ Returns 0 if the the element is not in the array, or 1 if it is.
 
 `NULL` is processed as a value.
 
-```
+```sql
 SELECT has([1, 2, NULL], NULL)
-
+```
+```text
 ┌─has([1, 2, NULL], NULL)─┐
 │                       1 │
 └─────────────────────────┘
@@ -94,7 +95,7 @@ SELECT has([1, 2, NULL], NULL)
 
 Checks whether one array is a subset of another.
 
-```
+```sql
 hasAll(set, subset)
 ```
 
@@ -132,7 +133,7 @@ hasAll(set, subset)
 
 Checks whether two arrays have intersection by some elements.
 
-```
+```sql
 hasAny(array1, array2)
 ```
 
@@ -169,10 +170,10 @@ Returns the index of the first 'x' element (starting from 1) if it is in the arr
 
 Example:
 
-```
-:) SELECT indexOf([1,3,NULL,NULL],NULL)
-
+```sql
 SELECT indexOf([1, 3, NULL, NULL], NULL)
+```
+```text
 
 ┌─indexOf([1, 3, NULL, NULL], NULL)─┐
 │                                 3 │
@@ -189,9 +190,10 @@ Returns the number of elements in the array equal to x. Equivalent to arrayCount
 
 Example:
 
-```
+```sql
 SELECT countEqual([1, 2, NULL, NULL], NULL)
-
+```
+```text
 ┌─countEqual([1, 2, NULL, NULL], NULL)─┐
 │                                    2 │
 └──────────────────────────────────────┘
@@ -293,7 +295,7 @@ This is necessary when using ARRAY JOIN with a nested data structure and further
 
 Removes the last item from the array.
 
-```
+```sql
 arrayPopBack(array)
 ```
 
@@ -316,7 +318,7 @@ SELECT arrayPopBack([1, 2, 3]) AS res
 
 Removes the first item from the array.
 
-```
+```sql
 arrayPopFront(array)
 ```
 
@@ -339,7 +341,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res
 
 Adds one item to the end of the array.
 
-```
+```sql
 arrayPushBack(array, single_value)
 ```
 
@@ -363,7 +365,7 @@ SELECT arrayPushBack(['a'], 'b') AS res
 
 Adds one element to the beginning of the array.
 
-```
+```sql
 arrayPushFront(array, single_value)
 ```
 
@@ -387,7 +389,7 @@ SELECT arrayPushBack(['b'], 'a') AS res
 
 Changes the length of the array.
 
-```
+```sql
 arrayResize(array, size[, extender])
 ```
 
@@ -405,17 +407,19 @@ An array of length `size`.
 
 **Examples of calls**
 
-```
+```sql
 SELECT arrayResize([1], 3)
-
+```
+```text
 ┌─arrayResize([1], 3)─┐
 │ [1,0,0]             │
 └─────────────────────┘
 ```
 
-```
+```sql
 SELECT arrayResize([1], 3, NULL)
-
+```
+```text
 ┌─arrayResize([1], 3, NULL)─┐
 │ [1,NULL,NULL]             │
 └───────────────────────────┘
@@ -425,7 +429,7 @@ SELECT arrayResize([1], 3, NULL)
 
 Returns a slice of the array.
 
-```
+```sql
 arraySlice(array, offset[, length])
 ```
 
@@ -645,41 +649,71 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
 
-## arrayDifference(arr)
+## arrayDifference(arr) {#array_functions-arraydifference}
 
-Takes an array, returns an array with the difference between all pairs of neighboring elements. For example:
+Takes an array, returns an array of differences between adjacent elements. The first element will be 0, the second is the difference between the second and first elements of the original array, etc. The type of elements in the resulting array is determined by the type inference rules for subtraction (e.g. UInt8 - UInt8 = Int16). UInt*/Int*/Float* types are supported (type Decimal is not supported).
+
+Example:
 
 ```sql
 SELECT arrayDifference([1, 2, 3, 4])
 ```
 
-```
+```text
 ┌─arrayDifference([1, 2, 3, 4])─┐
 │ [0,1,1,1]                     │
 └───────────────────────────────┘
 ```
 
-## arrayDistinct(arr)
+Example of the overflow due to result type Int64:
 
-Takes an array, returns an array containing the different elements in all the arrays. For example:
+```sql
+SELECT arrayDifference([0, 10000000000000000000])
+```
+
+```text
+┌─arrayDifference([0, 10000000000000000000])─┐
+│ [0,-8446744073709551616]                   │
+└────────────────────────────────────────────┘
+```
+
+## arrayDistinct(arr) {#array_functions-arraydistinct}
+
+Takes an array, returns an array containing the distinct elements. 
+
+Example:
 
 ```sql
 SELECT arrayDistinct([1, 2, 2, 3, 1])
 ```
 
-```
+```text
 ┌─arrayDistinct([1, 2, 2, 3, 1])─┐
 │ [1,2,3]                        │
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr)
+## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
-Returns an array of the same size as the source array, indicating where each element first appears in the source array. For example: arrayEnumerateDense([10,20,10,30]) = [1,2,1,3].
+Returns an array of the same size as the source array, indicating where each element first appears in the source array. 
 
-## arrayIntersect(arr)
+Example:
 
-Takes an array, returns the intersection of all array elements. For example:
+```sql
+SELECT arrayEnumerateDense([10, 20, 10, 30])
+```
+
+```text
+┌─arrayEnumerateDense([10, 20, 10, 30])─┐
+│ [1,2,1,3]                             │
+└───────────────────────────────────────┘
+```
+
+## arrayIntersect(arr) {#array_functions-arrayintersect}
+
+Takes multiple arrays, returns an array with elements that are present in all source arrays. Elements order in the resulting array is the same as in the first array.
+
+Example:
 
 ```sql
 SELECT
@@ -687,22 +721,73 @@ SELECT
     arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
 ```
 
-```
+```text
 ┌─no_intersect─┬─intersect─┐
 │ []           │ [1]       │
 └──────────────┴───────────┘
 ```
 
-## arrayReduce(agg_func, arr1, ...)
+## arrayReduce(agg_func, arr1, ...) {#array_functions-arrayreduce}
 
-Applies an aggregate function to array and returns its result.If aggregate function has multiple arguments, then this function can be applied to multiple arrays of the same size.
+Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 
-arrayReduce('agg_func', arr1, ...) - apply the aggregate function `agg_func` to arrays `arr1...`. If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function. For example: SELECT arrayReduce('max', [1,2,3]) = 3
+Example:
 
-## arrayReverse(arr)
+```sql
+SELECT arrayReduce('max', [1, 2, 3])
+```
 
-Returns an array of the same size as the source array, containing the result of inverting all elements of the source array.
+```text
+┌─arrayReduce('max', [1, 2, 3])─┐
+│                             3 │
+└───────────────────────────────┘
+```
 
+If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
+
+Example:
+
+```sql
+SELECT arrayReduce('maxIf', [3, 5], [1, 0])
+```
+
+```text
+┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
+│                                    3 │
+└──────────────────────────────────────┘
+```
+
+Example with a parametric aggregate function:
+
+```sql
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+```
+
+```text
+┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
+│                                                           4 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## arrayReverse(arr) {#array_functions-arrayreverse}
+
+Returns an array of the same size as the original array containing the elements in reverse order.
+
+Example:
+
+```sql
+SELECT arrayReverse([1, 2, 3])
+```
+
+```text
+┌─arrayReverse([1, 2, 3])─┐
+│ [3,2,1]                 │
+└─────────────────────────┘
+```
+
+## reverse(arr) {#array_functions-reverse}
+
+Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->

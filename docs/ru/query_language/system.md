@@ -62,7 +62,7 @@ ClickHouse может оперировать [распределёнными](..
 
 Отключает фоновую отправку при вставке данных в распределённые таблицы.
 
-```
+```sql
 SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
 
@@ -70,7 +70,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
 
 В синхронном режиме отправляет все данные на узлы кластера. Если какие-либо узлы недоступны, ClickHouse генерирует исключение и останавливает выполнение запроса. Такой запрос можно повторять до успешного завершения, что будет означать возвращение связанности с остальными узлами кластера.
 
-```
+```sql
 SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 ```
 
@@ -78,7 +78,7 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 
 Включает фоновую отправку при вставке данных в распределенные таблицы.
 
-```
+```sql
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
 

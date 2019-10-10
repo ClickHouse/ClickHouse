@@ -4,8 +4,10 @@
 namespace DB
 {
 
-SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_)
-    : min_block_size_rows(min_block_size_rows_), min_block_size_bytes(min_block_size_bytes_)
+SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_, bool reserve_memory_)
+    : min_block_size_rows(min_block_size_rows_)
+    , min_block_size_bytes(min_block_size_bytes_)
+    , reserve_memory(reserve_memory_)
 {
 }
 
@@ -16,7 +18,7 @@ SquashingTransform::Result SquashingTransform::add(MutableColumns && columns)
     if (columns.empty())
         return Result(std::move(accumulated_columns));
 
-    /// Just read block is alredy enough.
+    /// Just read block is already enough.
     if (isEnoughSize(columns))
     {
         /// If no accumulated data, return just read block.
@@ -59,7 +61,12 @@ void SquashingTransform::append(MutableColumns && columns)
     }
 
     for (size_t i = 0, size = columns.size(); i < size; ++i)
-        accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+    {
+        auto & column = accumulated_columns[i];
+        if (reserve_memory)
+            column->reserve(min_block_size_bytes);
+        column->insertRangeFrom(*columns[i], 0, columns[i]->size());
+    }
 }
 
 

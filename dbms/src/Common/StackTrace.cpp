@@ -6,6 +6,7 @@
 #include <Common/config.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
+#include <Core/Defines.h>
 
 #include <cstring>
 #include <filesystem>
@@ -249,7 +250,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
     if (size == 0)
         return callback("<Empty trace>");
 
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 

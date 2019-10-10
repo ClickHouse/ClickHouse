@@ -154,7 +154,7 @@ CREATE TABLE table_name
 Для запуска восстановления, создайте в ZooKeeper узел `/path_to_table/replica_name/flags/force_restore_data` с любым содержимым или выполните команду для восстановления всех реплицируемых таблиц:
 
 ```bash
-sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+$ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 ```
 
 Затем запустите сервер. При старте, сервер удалит эти флаги и запустит восстановление.

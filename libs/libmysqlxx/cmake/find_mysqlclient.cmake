@@ -1,4 +1,4 @@
-option(ENABLE_MYSQL "Enable MySQL" 1)
+option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
 if(ENABLE_MYSQL)
     if(OS_LINUX)
         option(USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysqlclient library instead of bundled" ${NOT_UNBUNDLED})
@@ -6,14 +6,14 @@ if(ENABLE_MYSQL)
         option(USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysqlclient library instead of bundled" OFF)
     endif()
 
-    if(USE_INTERNAL_MYSQL_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/README.md")
+    if(USE_INTERNAL_MYSQL_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/README")
         message(WARNING "submodule contrib/mariadb-connector-c is missing. to fix try run: \n git submodule update --init --recursive")
         set(USE_INTERNAL_MYSQL_LIBRARY 0)
     endif()
 
 
     if (USE_INTERNAL_MYSQL_LIBRARY)
-        set (MYSQLCLIENT_LIBRARIES mysqlclient)
+        set (MYSQLCLIENT_LIBRARIES mariadbclient)
         set (USE_MYSQL 1)
         set (MYSQLXX_LIBRARY mysqlxx)
     else ()

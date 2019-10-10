@@ -51,80 +51,25 @@ public:
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeBinary, ostr);
-    }
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override
-    {
-        deserializeImpl(column, &IDataType::deserializeBinary, istr);
-    }
-
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeAsTextEscaped, ostr, settings);
-    }
-
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
-    }
-
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeAsTextQuoted, ostr, settings);
-    }
-
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeImpl(column, &IDataType::deserializeAsTextQuoted, istr, settings);
-    }
-
-    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
-    }
-
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeAsTextCSV, ostr, settings);
-    }
-
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeImpl(column, &IDataType::deserializeAsTextCSV, istr, settings);
-    }
-
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeAsText, ostr, settings);
-    }
-
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeAsTextJSON, ostr, settings);
-    }
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeImpl(column, &IDataType::deserializeAsTextJSON, istr, settings);
-    }
-
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
-    }
-
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override
-    {
-        serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
-    }
-
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override { return dictionary_type->getDefault(); }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 
