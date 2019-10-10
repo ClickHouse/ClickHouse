@@ -1,15 +1,16 @@
 #pragma once
 
 #include <queue>
-#include <Poco/TemporaryFile.h>
 
 #include <common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
 
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/TemporaryFileStream.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -114,19 +115,7 @@ private:
     Block header_without_constants;
 
     /// Everything below is for external sorting.
-    std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
-
-    /// For reading data from temporary file.
-    struct TemporaryFileStream
-    {
-        ReadBufferFromFile file_in;
-        CompressedReadBuffer compressed_in;
-        BlockInputStreamPtr block_in;
-
-        TemporaryFileStream(const std::string & path, const Block & header_)
-            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header_, 0)) {}
-    };
-
+    std::vector<std::unique_ptr<TemporaryFile>> temporary_files;
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 
     BlockInputStreams inputs_to_merge;

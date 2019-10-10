@@ -40,6 +40,9 @@ struct SyntaxAnalyzerResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
+    /// For sets created during query execution, check if they are empty after creation.
+    NameSet need_check_empty_sets;
+
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 

@@ -719,6 +719,8 @@ The minimum set of characters that you need to escape when passing data in Value
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
+See also: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
+
 ## Vertical {#vertical}
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.

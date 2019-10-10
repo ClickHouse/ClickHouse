@@ -207,7 +207,7 @@ private:
     void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
-    void executeUnion(Pipeline & pipeline, Block header); /// If header is not empty, convert streams structure to it.
+    void executeUnion(Pipeline & pipeline, Block header);
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
@@ -253,12 +253,21 @@ private:
       */
     void initSettings();
 
+    /// Whether you need to check if the set is empty before ExpressionActions is executed. Create a CheckNonEmptySetBlockInputStream if needed.
+    BlockInputStreamPtr createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const;
+
     const SelectQueryOptions options;
     ASTPtr query_ptr;
     Context context;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
+
+    /// Is calculated in getSampleBlock. Is used later in readImpl.
+    AnalysisResult analysis_result;
+    FilterInfoPtr filter_info;
+
+    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;

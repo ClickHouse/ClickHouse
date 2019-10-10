@@ -74,6 +74,13 @@ String Macros::expand(const String & s, size_t level, const String & database_na
     return expand(res, level + 1, database_name, table_name);
 }
 
+String Macros::getValue(const String & key) const
+{
+    if (auto it = macros.find(key); it != macros.end())
+        return it->second;
+    throw Exception("No macro " + key + " in config", ErrorCodes::SYNTAX_ERROR);
+}
+
 String Macros::expand(const String & s, const String & database_name, const String & table_name) const
 {
     return expand(s, 0, database_name, table_name);

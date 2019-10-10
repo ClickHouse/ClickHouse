@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#if USE_POCO_NETSSL
+#if USE_SSL
 #include "MySQLHandler.h"
 
 #include <limits>

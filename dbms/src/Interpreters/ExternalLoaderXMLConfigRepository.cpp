@@ -1,4 +1,4 @@
-#include <Interpreters/ExternalLoaderConfigRepository.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -12,13 +12,16 @@
 namespace DB
 {
 
-ExternalLoaderConfigRepository::Files ExternalLoaderConfigRepository::list(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & path_key) const
+Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
-    Files files;
+    return Poco::File(definition_entity_name).getLastModified();
+}
 
-    auto patterns = getMultipleValuesFromConfig(config, "", path_key);
+std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefinitionNames() const
+{
+    std::set<std::string> files;
+
+    auto patterns = getMultipleValuesFromConfig(main_config, "", config_key);
 
     for (auto & pattern : patterns)
     {
@@ -27,7 +30,7 @@ ExternalLoaderConfigRepository::Files ExternalLoaderConfigRepository::list(
 
         if (pattern[0] != '/')
         {
-            const auto app_config_path = config.getString("config-file", "config.xml");
+            const auto app_config_path = main_config.getString("config-file", "config.xml");
             const auto config_dir = Poco::Path{app_config_path}.parent().toString();
             const auto absolute_path = config_dir + pattern;
             Poco::Glob::glob(absolute_path, files, 0);
@@ -38,7 +41,7 @@ ExternalLoaderConfigRepository::Files ExternalLoaderConfigRepository::list(
         Poco::Glob::glob(pattern, files, 0);
     }
 
-    for (Files::iterator it = files.begin(); it != files.end();)
+    for (std::set<std::string>::iterator it = files.begin(); it != files.end();)
     {
         if (ConfigProcessor::isPreprocessedFile(*it))
             files.erase(it++);
@@ -49,23 +52,17 @@ ExternalLoaderConfigRepository::Files ExternalLoaderConfigRepository::list(
     return files;
 }
 
-bool ExternalLoaderConfigRepository::exists(const std::string & config_file) const
+bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_entity_name) const
 {
-    return Poco::File(config_file).exists();
+    return Poco::File(definition_entity_name).exists();
 }
 
-Poco::Timestamp ExternalLoaderConfigRepository::getLastModificationTime(
+Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
     const std::string & config_file) const
-{
-    return Poco::File(config_file).getLastModified();
-}
-
-Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderConfigRepository::load(
-    const std::string & config_file, const std::string & preprocessed_dir) const
 {
     ConfigProcessor config_processor{config_file};
     ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
-    config_processor.savePreprocessedConfig(preprocessed, preprocessed_dir);
+    config_processor.savePreprocessedConfig(preprocessed, main_config.getString("path", DBMS_DEFAULT_PATH));
     return preprocessed.configuration;
 }
 

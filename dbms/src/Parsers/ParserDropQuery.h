@@ -12,6 +12,9 @@ namespace DB
   *
   * Or:
   * DROP DATABASE [IF EXISTS] db
+  *
+  * Or:
+  * DROP DICTIONARY [IF EXISTS] [db.]name
   */
 class ParserDropQuery : public IParserBase
 {

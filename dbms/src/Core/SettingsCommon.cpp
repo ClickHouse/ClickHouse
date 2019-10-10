@@ -341,6 +341,18 @@ void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf)
     set(s);
 }
 
+template <typename EnumType, typename Tag>
+Field SettingEnum<EnumType, Tag>::toField() const
+{
+    return toString();
+}
+
+template <typename EnumType, typename Tag>
+void SettingEnum<EnumType, Tag>::set(const Field & x)
+{
+    set(safeGet<const String &>(x));
+}
+
 
 #define IMPLEMENT_SETTING_ENUM(ENUM_NAME, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME) \
     IMPLEMENT_SETTING_ENUM_WITH_TAG(ENUM_NAME, void, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME)

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>

@@ -615,6 +615,39 @@ std::vector<const ASTFunction *> getAggregates(const ASTPtr & query)
     return {};
 }
 
+void collectCanShortCircuitSet(const ASTPtr & ast, NameSet & need_check_empty_sets)
+{
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (function->name == "in" || function->name == "globalIn")
+        {
+            for (size_t i = 0; i < function->arguments->children.size(); ++i)
+            {
+                ASTPtr child = function->arguments->children[i];
+                if (const auto * subquery = child->as<ASTSubquery>())
+                    need_check_empty_sets.insert(subquery->getColumnName());
+            }
+        }
+        else if (function->name != "or")
+        {
+            for (size_t i = 0; i < function->arguments->children.size(); ++i)
+            {
+                ASTPtr child = function->arguments->children[i];
+                collectCanShortCircuitSet(child, need_check_empty_sets);
+            }
+        }
+    }
+    else
+    {
+        for (auto & child : ast->children)
+        {
+            /// Do not go to FROM, JOIN, UNION.
+            if (!child->as<ASTTableExpression>() && !child->as<ASTSelectQuery>())
+                collectCanShortCircuitSet(child, need_check_empty_sets);
+        }
+    }
+}
+
 }
 
 /// Calculate which columns are required to execute the expression.
@@ -897,6 +930,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         setJoinStrictness(*select_query, settings.join_default_strictness, result.analyzed_join->table_join);
         collectJoinedColumns(*result.analyzed_join, *select_query, source_columns_set, result.aliases);
+        collectCanShortCircuitSet(query, result.need_check_empty_sets);
     }
 
     result.aggregates = getAggregates(query);

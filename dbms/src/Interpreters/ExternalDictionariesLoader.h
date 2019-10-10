@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Dictionaries/IDictionary.h>
+#include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Interpreters/ExternalLoader.h>
 #include <common/logger_useful.h>
 #include <memory>
@@ -19,8 +20,7 @@ public:
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     ExternalDictionariesLoader(
-        std::unique_ptr<ExternalLoaderConfigRepository> config_repository,
-        const Poco::Util::AbstractConfiguration & config,
+        ExternalLoaderConfigRepositoryPtr config_repository,
         Context & context_);
 
     DictPtr getDictionary(const std::string & name) const

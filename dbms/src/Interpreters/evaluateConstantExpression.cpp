@@ -45,13 +45,14 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     String name = node->getColumnName();
 
     if (!block_with_constants.has(name))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column not found): " + name, ErrorCodes::BAD_ARGUMENTS);
 
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
 
+    /// Expressions like rand() or now() are not constant
     if (!isColumnConst(result_column))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column is not const): " + name, ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_pair(result_column[0], result.type);
 }
@@ -59,11 +60,11 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
-    /// Branch with string in query.
+    /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
 
-    /// Branch with TableFunction in query.
+    /// Skip table functions.
     if (const auto * table_func_ptr = node->as<ASTFunction>())
         if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
             return node;

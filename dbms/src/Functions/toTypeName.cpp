@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
 
 
@@ -36,6 +37,9 @@ public:
 
     static constexpr auto name = "toTypeName";
     String getName() const override { return name; }
+
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
@@ -80,6 +84,7 @@ protected:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 };
 
 

@@ -4,7 +4,6 @@
 
 #include "config_core.h"
 #include <Core/Names.h>
-#include <Core/Field.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
@@ -27,6 +26,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
+
+class Field;
 
 /// The simplest executable object.
 /// Motivation:
@@ -197,9 +198,9 @@ public:
       * Example: now(). Another example: functions that work with periodically updated dictionaries.
       */
 
-    virtual bool isDeterministic() const { return true; }
+    virtual bool isDeterministic() const = 0;
 
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+    virtual bool isDeterministicInScopeOfQuery() const = 0;
 
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
@@ -239,11 +240,16 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
+    /// See the comment for the same method in IFunctionBase
+    virtual bool isDeterministic() const = 0;
+
+    virtual bool isDeterministicInScopeOfQuery() const = 0;
+
     /// Override and return true if function needs to depend on the state of the data.
-    virtual bool isStateful() const { return false; }
+    virtual bool isStateful() const = 0;
 
     /// Override and return true if function could take different number of arguments.
-    virtual bool isVariadic() const { return false; }
+    virtual bool isVariadic() const = 0;
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     virtual size_t getNumberOfArguments() const = 0;
@@ -258,6 +264,12 @@ public:
     /// You pass data types with empty DataTypeFunction for lambda arguments.
     /// This function will replace it with DataTypeFunction containing actual types.
     virtual void getLambdaArgumentTypes(DataTypes & arguments) const = 0;
+
+    /// Returns indexes of arguments, that must be ColumnConst
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const = 0;
+    /// Returns indexes if arguments, that can be Nullable without making result of function Nullable
+    /// (for functions like isNull(x))
+    virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const = 0;
 };
 
 using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
@@ -270,6 +282,11 @@ public:
         return buildImpl(arguments, getReturnType(arguments));
     }
 
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isStateful() const override { return false; }
+    bool isVariadic() const override { return false; }
+
     /// Default implementation. Will check only in non-variadic case.
     void checkNumberOfArguments(size_t number_of_arguments) const override;
 
@@ -280,6 +297,9 @@ public:
         checkNumberOfArguments(arguments.size());
         getLambdaArgumentTypesImpl(arguments);
     }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {}; }
 
 protected:
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
@@ -347,6 +367,8 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
     bool canBeExecutedOnDefaultArguments() const override { return true; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return isDeterministicInScopeOfQuery(); }
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     using PreparedFunctionImpl::execute;
     using PreparedFunctionImpl::executeImplDryRun;
@@ -496,10 +518,19 @@ public:
         return function->checkNumberOfArguments(number_of_arguments);
     }
 
+    bool isDeterministic() const override { return function->isDeterministic(); }
+    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
+
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return function->getArgumentsThatAreAlwaysConstant(); }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    {
+        return function->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
+    }
 
 protected:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }

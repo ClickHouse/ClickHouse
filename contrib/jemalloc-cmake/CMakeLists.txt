@@ -35,7 +35,7 @@ ${JEMALLOC_SOURCE_DIR}/src/tsd.c
 ${JEMALLOC_SOURCE_DIR}/src/witness.c
 )
 
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(OS_DARWIN)
   list(APPEND SRCS ${JEMALLOC_SOURCE_DIR}/src/zone.c)
 endif()
 

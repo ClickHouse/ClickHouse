@@ -103,8 +103,38 @@ Sleeps 'seconds' seconds on each row. You can specify an integer or a floating-p
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
-## currentUser()
-Returns the login of authorized user (initiator of query execution).
+## currentUser() {#other_function-currentuser}
+
+Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
+
+```sql
+SELECT currentUser();
+```
+
+Alias: `user()`, `USER()`.
+
+**Returned values**
+
+- Login of current user.
+- Login of user that initiated query in case of disributed query.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT currentUser();
+```
+
+Result:
+
+```text
+┌─currentUser()─┐
+│ default       │
+└───────────────┘
+```
 
 ## isFinite(x)
 

@@ -9,6 +9,7 @@
 #include <Common/memcpySmall.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 
 
 class Collator;

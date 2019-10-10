@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>

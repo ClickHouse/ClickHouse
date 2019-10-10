@@ -1,5 +1,6 @@
 #include <DataStreams/IBlockInputStream.h>
 
+#include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Quota.h>
 #include <Common/CurrentThread.h>
@@ -26,6 +27,10 @@ namespace ErrorCodes
     extern const int TOO_DEEP_PIPELINE;
 }
 
+const SortDescription & IBlockInputStream::getSortDescription() const
+{
+    throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED);
+}
 
 /// It's safe to access children without mutex as long as these methods are called before first call to `read()` or `readPrefix()`.
 

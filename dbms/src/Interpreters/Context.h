@@ -535,6 +535,7 @@ public:
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
     void setQueryParameter(const String & name, const String & value);
+    void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
