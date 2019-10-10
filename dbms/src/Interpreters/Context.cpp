@@ -2039,7 +2039,7 @@ void Context::dropCompiledExpressionCache() const
 #endif
 
 
-void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd)
+void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
 {
     auto lock = getLock();
     shared->bridge_commands.emplace_back(std::move(cmd));

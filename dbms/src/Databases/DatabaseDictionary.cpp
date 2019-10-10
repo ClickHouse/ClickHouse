@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int SYNTAX_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 DatabaseDictionary::DatabaseDictionary(const String & name_)
@@ -62,6 +63,75 @@ bool DatabaseDictionary::isTableExist(
     const String & table_name) const
 {
     return context.getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
+}
+
+
+bool DatabaseDictionary::isDictionaryExist(
+    const Context & /*context*/,
+    const String & /*table_name*/) const
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+DictionaryPtr DatabaseDictionary::tryGetDictionary(
+    const Context & /*context*/,
+    const String & /*dictionary_name*/) const
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+
+DatabaseDictionariesIteratorPtr DatabaseDictionary::getDictionariesIterator(
+    const Context & /*context*/,
+    const FilterByNameFunction & /*filter_by_dictionary_name*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+
+void DatabaseDictionary::createDictionary(
+    const Context & /*context*/,
+    const String & /*dictionary_name*/,
+    const DictionaryPtr & /*dict_ptr*/,
+    const ASTPtr & /*query*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+void DatabaseDictionary::removeDictionary(
+    const Context & /*context*/,
+    const String & /*table_name*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+void DatabaseDictionary::attachDictionary(
+    const String & /*dictionary_name*/,
+    const DictionaryPtr & /*table*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+DictionaryPtr DatabaseDictionary::detachDictionary(
+    const String & /*dictionary_name*/)
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+
+ASTPtr DatabaseDictionary::tryGetCreateDictionaryQuery(
+    const Context & /*context*/,
+    const String & /*table_name*/) const
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+
+ASTPtr DatabaseDictionary::getCreateDictionaryQuery(
+    const Context & /*context*/,
+    const String & /*table_name*/) const
+{
+    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 StoragePtr DatabaseDictionary::tryGetTable(
