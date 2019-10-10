@@ -22,7 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
-#include <Common/StorageOfAllowedURL.h>
+#include <Common/RemoteHostFilter.h>
 
 
 namespace Poco
@@ -79,7 +79,7 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class SettingsConstraints;
-class StorageOfAllowedURL;
+class RemoteHostFilter;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -351,8 +351,8 @@ public:
     String getInterserverScheme() const;
 
     /// Storage of allowed hosts from config.xml
-    void setStorageOfAllowedURL(const Poco::Util::AbstractConfiguration & config);
-    StorageOfAllowedURL & getStorageOfAllowedURL() const;
+    void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
+    RemoteHostFilter & getRemoteHostFilter() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;

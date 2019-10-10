@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class StorageOfAllowedURL
+class RemoteHostFilter
 {
 public:
     void checkURL(const Poco::URI &uri); /// If URL not allowed in config.xml throw UNACCEPTABLE_URL Exception

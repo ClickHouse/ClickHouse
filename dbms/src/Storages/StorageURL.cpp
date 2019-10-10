@@ -35,7 +35,7 @@ IStorageURLBase::IStorageURLBase(
     const ConstraintsDescription & constraints_)
     : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
-    context_global.getStorageOfAllowedURL().checkURL(uri);
+    context_global.getRemoteHostFilter().checkURL(uri);
     setColumns(columns_);
     setConstraints(constraints_);
 }

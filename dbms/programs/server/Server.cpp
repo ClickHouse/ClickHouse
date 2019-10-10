@@ -242,6 +242,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 #endif
 
+    global_context->setRemoteHostFilter(config());
+
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
@@ -372,8 +374,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-    global_context->setStorageOfAllowedURL(config());
 
     static const auto interserver_tags =
     {

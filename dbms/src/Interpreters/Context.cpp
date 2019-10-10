@@ -51,7 +51,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
-#include <Common/StorageOfAllowedURL.h>
+#include <Common/RemoteHostFilter.h>
 
 namespace ProfileEvents
 {
@@ -155,7 +155,7 @@ struct ContextShared
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
 
-    StorageOfAllowedURL storage_of_allowed_url; /// Allowed URL from config.xml
+    RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
     std::unique_ptr<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
@@ -1565,14 +1565,14 @@ String Context::getInterserverScheme() const
     return shared->interserver_scheme;
 }
 
-void Context::setStorageOfAllowedURL(const Poco::Util::AbstractConfiguration & config)
+void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
 {
-    shared->storage_of_allowed_url.setValuesFromConfig(config);
+    shared->remote_host_filter.setValuesFromConfig(config);
 }
 
-StorageOfAllowedURL & Context::getStorageOfAllowedURL() const
+RemoteHostFilter & Context::getRemoteHostFilter() const
 {
-    return shared->storage_of_allowed_url;
+    return shared->remote_host_filter;
 }
 
 UInt16 Context::getTCPPort() const
