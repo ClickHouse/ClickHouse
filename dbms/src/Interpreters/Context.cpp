@@ -540,8 +540,6 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
-
-
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
