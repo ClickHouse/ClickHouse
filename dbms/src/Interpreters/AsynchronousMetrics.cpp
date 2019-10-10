@@ -167,7 +167,7 @@ void AsynchronousMetrics::update()
             /// Lazy database can not contain MergeTree tables
             if (db.second->getEngineName() == "Lazy")
                 continue;
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
                 auto & table = iterator->table();

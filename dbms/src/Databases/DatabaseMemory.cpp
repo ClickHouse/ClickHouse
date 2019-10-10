@@ -9,6 +9,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabaseMemory::DatabaseMemory(String name_)
@@ -16,7 +18,7 @@ DatabaseMemory::DatabaseMemory(String name_)
     , log(&Logger::get("DatabaseMemory(" + name + ")"))
 {}
 
-void DatabaseMemory::loadTables(
+void DatabaseMemory::loadStoredObjects(
     Context & /*context*/,
     bool /*has_force_restore_data_flag*/)
 {
@@ -32,6 +34,17 @@ void DatabaseMemory::createTable(
     attachTable(table_name, table);
 }
 
+
+void DatabaseMemory::createDictionary(
+    const Context & /*context*/,
+    const String & dictionary_name,
+    const DictionaryPtr & dictionary,
+    const ASTPtr & /*query*/)
+{
+    attachDictionary(dictionary_name, dictionary);
+}
+
+
 void DatabaseMemory::removeTable(
     const Context & /*context*/,
     const String & table_name)
@@ -39,9 +52,17 @@ void DatabaseMemory::removeTable(
     detachTable(table_name);
 }
 
-time_t DatabaseMemory::getTableMetadataModificationTime(
+
+void DatabaseMemory::removeDictionary(
     const Context &,
-    const String &)
+    const String & dictionary_name)
+{
+    detachDictionary(dictionary_name);
+}
+
+
+time_t DatabaseMemory::getObjectMetadataModificationTime(
+    const Context &, const String &)
 {
     return static_cast<time_t>(0);
 }
@@ -52,6 +73,15 @@ ASTPtr DatabaseMemory::getCreateTableQuery(
 {
     throw Exception("There is no CREATE TABLE query for DatabaseMemory tables", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 }
+
+
+ASTPtr DatabaseMemory::getCreateDictionaryQuery(
+    const Context &,
+    const String &) const
+{
+    throw Exception("There is no CREATE DICTIONARY query for DatabaseMemory dictionaries", ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
+}
+
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery(
     const Context &) const

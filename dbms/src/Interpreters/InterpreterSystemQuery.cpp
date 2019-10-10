@@ -315,7 +315,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
         DatabasePtr & database = elem.second;
         const String & database_name = elem.first;
 
-        for (auto iterator = database->getIterator(system_context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(system_context); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replica_names.emplace_back(database_name, iterator->name());

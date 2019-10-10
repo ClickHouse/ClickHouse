@@ -29,7 +29,7 @@ public:
 
     bool empty(const Context & context) const override;
 
-    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
@@ -48,7 +48,7 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void loadTables(Context &, bool) override
+    void loadStoredObjects(Context &, bool) override
     {
         /// do nothing
     }

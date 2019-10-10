@@ -13,8 +13,13 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDictionary.h>
+#include <Storages/StorageFactory.h>
+#include <Dictionaries/DictionaryFactory.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Event.h>
@@ -33,57 +38,80 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 
-static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
+static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
-static void loadTable(
-    Context & context,
-    const String & database_metadata_path,
-    DatabaseOrdinary & database,
-    const String & database_name,
-    const String & database_data_path,
-    const String & file_name,
-    bool has_force_restore_data_flag)
+namespace
 {
-    Logger * log = &Logger::get("loadTable");
 
-    const String table_metadata_path = database_metadata_path + "/" + file_name;
 
-    String s;
+std::pair<String, DictionaryPtr> createDictionaryFromAST(
+    ASTCreateQuery ast_create_query,
+    const String & database_name,
+    const Context & context)
+{
+    ast_create_query.database = database_name;
+
+    if (!ast_create_query.dictionary_attributes_list)
+        throw Exception("Missing definition of dictionary attributes.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+    return
     {
-        char in_buf[METADATA_FILE_BUFFER_SIZE];
-        ReadBufferFromFile in(table_metadata_path, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-        readStringUntilEOF(s, in);
-    }
+        ast_create_query.table,
+        DictionaryFactory::instance().create(ast_create_query.table, ast_create_query, context)
+    };
+}
 
-    /** Empty files with metadata are generated after a rough restart of the server.
-      * Remove these files to slightly reduce the work of the admins on startup.
-      */
-    if (s.empty())
+void loadObject(
+    Context & context,
+    const ASTCreateQuery & query,
+    DatabaseOrdinary & database,
+    const String database_data_path,
+    const String & database_name,
+    bool has_force_restore_data_flag)
+try
+{
+    if (query.is_dictionary)
     {
-        LOG_ERROR(log, "File " << table_metadata_path << " is empty. Removing.");
-        Poco::File(table_metadata_path).remove();
-        return;
+        String dictionary_name;
+        DictionaryPtr dictionary;
+        std::tie(dictionary_name, dictionary) = createDictionaryFromAST(query, database_name, context);
+        database.attachDictionary(dictionary_name, dictionary);
     }
-
-    try
+    else
     {
         String table_name;
         StoragePtr table;
-        std::tie(table_name, table) = createTableFromDefinition(
-            s, database_name, database_data_path, context, has_force_restore_data_flag, "in file " + table_metadata_path);
+        std::tie(table_name, table)
+            = createTableFromAST(query, database_name, database_data_path, context, has_force_restore_data_flag);
         database.attachTable(table_name, table);
     }
-    catch (const Exception & e)
+}
+catch (const Exception & e)
+{
+    throw Exception(
+        "Cannot create object '" + query.table + "' from query " + serializeAST(query) + ", error: " + e.displayText() + ", stack trace:\n"
+            + e.getStackTrace().toString(),
+        ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+}
+
+
+void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
+{
+    if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
     {
-        throw Exception("Cannot create table from metadata file " + table_metadata_path + ", error: " + e.displayText() +
-            ", stack trace:\n" + e.getStackTrace().toString(),
-            ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+        LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
+        watch.restart();
     }
+}
+
 }
 
 
@@ -97,52 +125,66 @@ DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, 
 }
 
 
-void DatabaseOrdinary::loadTables(
+void DatabaseOrdinary::loadStoredObjects(
     Context & context,
     bool has_force_restore_data_flag)
 {
-    using FileNames = std::vector<std::string>;
+    /** Tables load faster if they are loaded in sorted (by name) order.
+      * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
+      *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
+      */
+    using FileNames = std::map<std::string, ASTCreateQuery>;
     FileNames file_names;
 
-    DatabaseOnDisk::iterateTableFiles(*this, log, [&file_names](const String & file_name)
+    size_t total_dictionaries = 0;
+    DatabaseOnDisk::iterateMetadataFiles(*this, log, [&file_names, &total_dictionaries, this](const String & file_name)
     {
-        file_names.push_back(file_name);
+        String full_path = metadata_path + "/" + file_name;
+        try
+        {
+            auto ast = parseCreateQueryFromMetadataFile(full_path, log);
+            if (ast)
+            {
+                auto create_query = ast->as<const ASTCreateQuery &>();
+                file_names[file_name] = create_query;
+                total_dictionaries += create_query.is_dictionary;
+            }
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(
+                "Cannot parse definition from metadata file " + full_path + ", error: " + e.displayText() + ", stack trace:\n"
+                    + e.getStackTrace().toString(), ErrorCodes::CANNOT_PARSE_TEXT);
+        }
+
     });
 
     if (file_names.empty())
         return;
 
-    /** Tables load faster if they are loaded in sorted (by name) order.
-      * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
-      *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
-      */
-    std::sort(file_names.begin(), file_names.end());
+    size_t total_tables = file_names.size() - total_dictionaries;
 
-    const size_t total_tables = file_names.size();
-    LOG_INFO(log, "Total " << total_tables << " tables.");
+    LOG_INFO(log, "Total " << total_tables << " tables and " << total_dictionaries << " dictionaries.");
 
     AtomicStopwatch watch;
-    std::atomic<size_t> tables_processed {0};
+    std::atomic<size_t> tables_processed{0};
+    std::atomic<size_t> dictionaries_processed{0};
 
-    auto loadOneTable = [&](const String & table)
+    auto loadOneObject = [&](const ASTCreateQuery & query)
     {
-        loadTable(context, getMetadataPath(), *this, getDatabaseName(), getDataPath(), table, has_force_restore_data_flag);
+        loadObject(context, query, *this, getDataPath(), getDatabaseName(), has_force_restore_data_flag);
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
-        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
-            || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
-        {
-            LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
-            watch.restart();
-        }
+        if (query.is_dictionary)
+            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
+        else
+            logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
 
     ThreadPool pool(SettingMaxThreads().getAutoValue());
 
-    for (const auto & file_name : file_names)
-    {
-        pool.schedule([&]() { loadOneTable(file_name); });
-    }
+    for (const auto & file_with_ast : file_names)
+        pool.schedule([&]() { loadOneObject(file_with_ast.second); });
 
     pool.wait();
 
@@ -160,24 +202,16 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
         return;
 
     AtomicStopwatch watch;
-    std::atomic<size_t> tables_processed {0};
+    std::atomic<size_t> tables_processed{0};
 
     auto startupOneTable = [&](const StoragePtr & table)
     {
         table->startup();
-
-        if (++tables_processed % PRINT_MESSAGE_EACH_N_TABLES == 0
-            || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
-        {
-            LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
-            watch.restart();
-        }
+        logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
 
     for (const auto & table : tables)
-    {
         thread_pool.schedule([&]() { startupOneTable(table.second); });
-    }
 
     thread_pool.wait();
 }
@@ -192,6 +226,14 @@ void DatabaseOrdinary::createTable(
     DatabaseOnDisk::createTable(*this, context, table_name, table, query);
 }
 
+void DatabaseOrdinary::createDictionary(
+    const Context & context,
+    const String & dictionary_name,
+    const DictionaryPtr & dictionary,
+    const ASTPtr & query)
+{
+    DatabaseOnDisk::createDictionary(*this, context, dictionary_name, dictionary, query);
+}
 
 void DatabaseOrdinary::removeTable(
     const Context & context,
@@ -211,11 +253,11 @@ void DatabaseOrdinary::renameTable(
 }
 
 
-time_t DatabaseOrdinary::getTableMetadataModificationTime(
+time_t DatabaseOrdinary::getObjectMetadataModificationTime(
     const Context & /* context */,
     const String & table_name)
 {
-    return DatabaseOnDisk::getTableMetadataModificationTime(*this, table_name);
+    return DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name);
 }
 
 ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name) const
@@ -226,6 +268,17 @@ ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const Stri
 ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
 {
     return DatabaseOnDisk::tryGetCreateTableQuery(*this, context, table_name);
+}
+
+
+ASTPtr DatabaseOrdinary::getCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
+{
+    return DatabaseOnDisk::getCreateDictionaryQuery(*this, context, dictionary_name);
+}
+
+ASTPtr DatabaseOrdinary::tryGetCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
+{
+    return DatabaseOnDisk::tryGetCreateTableQuery(*this, context, dictionary_name);
 }
 
 ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & context) const
@@ -278,7 +331,7 @@ void DatabaseOrdinary::alterTable(
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
 
-    statement = getTableDefinitionFromCreateQuery(ast);
+    statement = getObjectDefinitionFromCreateQuery(ast);
 
     {
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -323,9 +376,9 @@ String DatabaseOrdinary::getDatabaseName() const
     return name;
 }
 
-String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const
+String DatabaseOrdinary::getObjectMetadataPath(const String & table_name) const
 {
-    return detail::getTableMetadataPath(getMetadataPath(), table_name);
+    return DatabaseOnDisk::getObjectMetadataPath(*this, table_name);
 }
 
 }
