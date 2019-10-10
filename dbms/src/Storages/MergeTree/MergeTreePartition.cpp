@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/FieldVisitors.h>

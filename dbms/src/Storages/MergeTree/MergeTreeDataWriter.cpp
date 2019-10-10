@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartFactory.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
 #include <Interpreters/AggregationCommon.h>
@@ -75,7 +76,7 @@ void buildScatterSelector(
 }
 
 /// Computes ttls and updates ttl infos
-void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTLInfos & ttl_infos, Block & block, const String & column_name)
+void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,IMergeTreeDataPart::TTLInfos & ttl_infos, Block & block, const String & column_name)
 {
     if (!block.has(ttl_entry.result_column))
         ttl_entry.expression->execute(block);
@@ -173,7 +174,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// This will generate unique name in scope of current server process.
     Int64 temp_index = data.insert_increment.get();
 
-    MergeTreeDataPart::MinMaxIndex minmax_idx;
+   IMergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
@@ -204,11 +205,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
 
     MergeTreeData::MutableDataPartPtr new_data_part =
-        std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name, new_part_info);
+        createPart(data, reservation->getDisk(), part_name, new_part_info, TMP_PREFIX + part_name);
 
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
-    new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;
 
     /// The name could be non-unique in case of stale files from previous runs.

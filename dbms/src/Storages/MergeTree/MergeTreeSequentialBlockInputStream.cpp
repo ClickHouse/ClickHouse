@@ -51,13 +51,17 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         columns_for_reader = data_part->columns.addTypes(columns_to_read);
     }
 
-    reader = std::make_unique<MergeTreeReader>(
-        data_part->getFullPath(), data_part, columns_for_reader, /* uncompressed_cache = */ nullptr,
-        mark_cache.get(), /* save_marks_in_cache = */ false, storage,
+    ReaderSettings reader_settings =
+    {
+        /// This is hack
+        .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
+        .max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
+        .save_marks_in_cache = false
+    };
+
+    reader = data_part->getReader(columns_for_reader, 
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
-        /* bytes to use AIO (this is hack) */
-        read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
-        DBMS_DEFAULT_BUFFER_SIZE);
+        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }
 
 

@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnNothing.h>
@@ -13,7 +13,7 @@ namespace DB
 {
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
-        size_t from_mark, MergeTreeReader * merge_tree_reader_)
+        size_t from_mark, IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part->index_granularity))
@@ -108,7 +108,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Block & block)
 
 
 MergeTreeRangeReader::Stream::Stream(
-        size_t from_mark, size_t to_mark, MergeTreeReader * merge_tree_reader_)
+        size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader_)
@@ -406,7 +406,7 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
 
 MergeTreeRangeReader::MergeTreeRangeReader(
-        MergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
+        IMergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
         ExpressionActionsPtr alias_actions_, ExpressionActionsPtr prewhere_actions_,
         const String * prewhere_column_name_, const Names * ordered_names_,
         bool always_reorder_, bool remove_prewhere_column_, bool last_reader_in_chain_)

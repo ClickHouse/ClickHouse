@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {

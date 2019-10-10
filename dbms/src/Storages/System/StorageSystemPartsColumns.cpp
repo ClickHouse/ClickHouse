@@ -98,7 +98,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-        using State = MergeTreeDataPart::State;
+        using State =IMergeTreeDataPart::State;
 
         for (const auto & column : part->columns)
 

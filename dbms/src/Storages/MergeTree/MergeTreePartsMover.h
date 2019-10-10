@@ -3,7 +3,7 @@
 #include <functional>
 #include <vector>
 #include <optional>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/ActionBlocker.h>
 #include <Common/DiskSpaceMonitor.h>
 
@@ -15,10 +15,10 @@ namespace DB
 /// it have to be moved.
 struct MergeTreeMoveEntry
 {
-    std::shared_ptr<const MergeTreeDataPart> part;
+    std::shared_ptr<const IMergeTreeDataPart> part;
     DiskSpace::ReservationPtr reserved_space;
 
-    MergeTreeMoveEntry(const std::shared_ptr<const MergeTreeDataPart> & part_, DiskSpace::ReservationPtr reservation_)
+    MergeTreeMoveEntry(const std::shared_ptr<const IMergeTreeDataPart> & part_, DiskSpace::ReservationPtr reservation_)
         : part(part_), reserved_space(std::move(reservation_))
     {
     }
@@ -33,7 +33,7 @@ class MergeTreePartsMover
 {
 private:
     /// Callback tells that part is not participating in background process
-    using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const MergeTreeDataPart> &, String * reason)>;
+    using AllowedMovingPredicate = std::function<bool(const std::shared_ptr<const IMergeTreeDataPart> &, String * reason)>;
 
 public:
     MergeTreePartsMover(MergeTreeData * data_)
@@ -50,14 +50,14 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part alredy exists.
-    std::shared_ptr<const MergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
+    std::shared_ptr<const IMergeTreeDataPart> clonePart(const MergeTreeMoveEntry & moving_part) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
-    /// MergeTreeDataPart called. If replacing part doesn't exists or not active (commited) than
+    ///IMergeTreeDataPart called. If replacing part doesn't exists or not active (commited) than
     /// cloned part will be removed and loge message will be reported. It may happen in case of concurrent
     /// merge or mutation.
-    void swapClonedPart(const std::shared_ptr<const MergeTreeDataPart> & cloned_parts) const;
+    void swapClonedPart(const std::shared_ptr<const IMergeTreeDataPart> & cloned_parts) const;
 
 public:
     /// Can stop background moves and moves from queries

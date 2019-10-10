@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/AlterCommands.h>
@@ -810,8 +811,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
                 return;
 
-            MutableDataPartPtr part = std::make_shared<DataPart>(*this, part_disk_ptr, part_name, part_info);
-            part->relative_path = part_name;
+            MutableDataPartPtr part = createPart(*this, part_disk_ptr, part_name, part_info, part_name);
             bool broken = false;
 
             try
@@ -1738,7 +1738,7 @@ void MergeTreeData::checkSettingCanBeChanged(const String & setting_name) const
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
 {
-    auto & empty_columns = data_part->empty_columns;
+    auto & empty_columns = data_part->expired_columns;
     if (empty_columns.empty())
         return;
 
@@ -2126,14 +2126,14 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
 
     for (const DataPartPtr & part : remove)
     {
-        if (part->state == MergeTreeDataPart::State::Committed)
+        if (part->state ==IMergeTreeDataPart::State::Committed)
             removePartContributionToColumnSizes(part);
 
-        if (part->state == MergeTreeDataPart::State::Committed || clear_without_timeout)
+        if (part->state ==IMergeTreeDataPart::State::Committed || clear_without_timeout)
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
-        if (part->state != MergeTreeDataPart::State::Outdated)
-            modifyPartState(part, MergeTreeDataPart::State::Outdated);
+        if (part->state !=IMergeTreeDataPart::State::Outdated)
+            modifyPartState(part,IMergeTreeDataPart::State::Outdated);
     }
 }
 
@@ -2583,8 +2583,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskSpace::DiskPtr & disk, const String & relative_path)
 {
-    MutableDataPartPtr part = std::make_shared<DataPart>(*this, disk, Poco::Path(relative_path).getFileName());
-    part->relative_path = relative_path;
+    MutableDataPartPtr part = createPart(*this, disk, Poco::Path(relative_path).getFileName(), relative_path);
     loadPartAndFixMetadata(part);
     return part;
 }
@@ -3022,8 +3021,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part " << part_names.second);
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this, name_to_disk[part_names.first], part_names.first);
-        part->relative_path = source_dir + part_names.second;
+        MutableDataPartPtr part = createPart(
+            *this, name_to_disk[part_names.first], part_names.first, source_dir + part_names.second);
         loadPartAndFixMetadata(part);
         loaded_parts.push_back(part);
     }
@@ -3235,10 +3234,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     LOG_DEBUG(log, "Cloning part " << src_part_absolute_path.toString() << " to " << dst_part_absolute_path.toString());
     localBackup(src_part_absolute_path, dst_part_absolute_path);
 
-    MergeTreeData::MutableDataPartPtr dst_data_part = std::make_shared<MergeTreeData::DataPart>(
-        *this, reservation->getDisk(), dst_part_name, dst_part_info);
+    MergeTreeData::MutableDataPartPtr dst_data_part = createPart(
+        *this, reservation->getDisk(), dst_part_name, dst_part_info, tmp_dst_part_name);
 
-    dst_data_part->relative_path = tmp_dst_part_name;
     dst_data_part->is_temp = true;
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
@@ -3395,7 +3393,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::CurrentlyMovingPartsTagger(MergeTreeM
     : parts_to_move(std::move(moving_parts_)), data(data_)
 {
     for (const auto & moving_part : parts_to_move)
-        if (!data.currently_moving_parts.emplace(moving_part.part).second)
+        if (!data.currently_moving_parts.emplace(moving_part.part->name).second)
             throw Exception("Cannot move part '" + moving_part.part->name + "'. It's already moving.", ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -3405,9 +3403,9 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     for (const auto & moving_part : parts_to_move)
     {
         /// Something went completely wrong
-        if (!data.currently_moving_parts.count(moving_part.part))
+        if (!data.currently_moving_parts.count(moving_part.part->name))
             std::terminate();
-        data.currently_moving_parts.erase(moving_part.part);
+        data.currently_moving_parts.erase(moving_part.part->name);
     }
 }
 
@@ -3446,7 +3444,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::selectPartsForMove()
             *reason = "part already assigned to background operation.";
             return false;
         }
-        if (currently_moving_parts.count(part))
+        if (currently_moving_parts.count(part->name))
         {
             *reason = "part is already moving.";
             return false;
@@ -3480,7 +3478,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
                 "Move is not possible: " + path_to_clone + part->name + " already exists",
                 ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-        if (currently_moving_parts.count(part) || partIsAssignedToBackgroundOperation(part))
+        if (currently_moving_parts.count(part->name) || partIsAssignedToBackgroundOperation(part))
             throw Exception(
                 "Cannot move part '" + part->name + "' because it's participating in background process",
                 ErrorCodes::PART_IS_TEMPORARILY_LOCKED);

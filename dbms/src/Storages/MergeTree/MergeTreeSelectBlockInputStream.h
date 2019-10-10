@@ -27,9 +27,7 @@ public:
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         bool check_columns,
-        size_t min_bytes_to_use_direct_io,
-        size_t max_read_buffer_size,
-        bool save_marks_in_cache,
+        const ReaderSettings & reader_settings,
         const Names & virt_column_names = {},
         size_t part_index_in_query = 0,
         bool quiet = false);

@@ -434,7 +434,7 @@ private:
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
-    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
+    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version);
 
     /// Exchange parts.
 

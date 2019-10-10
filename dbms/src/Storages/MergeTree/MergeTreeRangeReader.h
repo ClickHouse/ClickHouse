@@ -11,7 +11,7 @@ template <typename T>
 class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
 
-class MergeTreeReader;
+class IMergeTreeReader;
 class MergeTreeIndexGranularity;
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
@@ -20,7 +20,7 @@ class MergeTreeIndexGranularity;
 class MergeTreeRangeReader
 {
 public:
-    MergeTreeRangeReader(MergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
+    MergeTreeRangeReader(IMergeTreeReader * merge_tree_reader_, MergeTreeRangeReader * prev_reader_,
                          ExpressionActionsPtr alias_actions_, ExpressionActionsPtr prewhere_actions_,
                          const String * prewhere_column_name_, const Names * ordered_names_,
                          bool always_reorder_, bool remove_prewhere_column_, bool last_reader_in_chain_);
@@ -41,7 +41,7 @@ public:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, MergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
@@ -62,7 +62,7 @@ public:
         size_t num_delayed_rows = 0;
 
         /// Actual reader of data from disk
-        MergeTreeReader * merge_tree_reader = nullptr;
+        IMergeTreeReader * merge_tree_reader = nullptr;
         const MergeTreeIndexGranularity * index_granularity = nullptr;
         bool continue_reading = false;
         bool is_finished = true;
@@ -78,7 +78,7 @@ public:
     {
     public:
         Stream() = default;
-        Stream(size_t from_mark, size_t to_mark, MergeTreeReader * merge_tree_reader);
+        Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
         size_t read(Block & block, size_t num_rows, bool skip_remaining_rows_in_current_granule);
@@ -103,7 +103,7 @@ public:
 
         size_t last_mark = 0;
 
-        MergeTreeReader * merge_tree_reader = nullptr;
+        IMergeTreeReader * merge_tree_reader = nullptr;
         const MergeTreeIndexGranularity * index_granularity = nullptr;
 
         size_t current_mark_index_granularity = 0;
@@ -191,7 +191,7 @@ private:
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
     void filterBlock(Block & block, const IColumn::Filter & filter) const;
 
-    MergeTreeReader * merge_tree_reader = nullptr;
+    IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
 

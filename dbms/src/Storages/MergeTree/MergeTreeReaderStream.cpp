@@ -17,13 +17,13 @@ namespace ErrorCodes
 MergeTreeReaderStream::MergeTreeReaderStream(
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
-        MarkCache * mark_cache_, bool save_marks_in_cache_,
-        UncompressedCache * uncompressed_cache,
-        size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
+        const ReaderSettings & settings,
+        MarkCache * mark_cache_,
+        UncompressedCache * uncompressed_cache, size_t file_size,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
         : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
-        , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
+        , mark_cache(mark_cache_), save_marks_in_cache(settings.save_marks_in_cache)
         , index_granularity_info(index_granularity_info_)
 {
     /// Compute the size of the buffer.
@@ -71,15 +71,15 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     if (max_mark_range_bytes == 0)
-        max_mark_range_bytes = max_read_buffer_size;
+        max_mark_range_bytes = settings.max_read_buffer_size;
 
-    size_t buffer_size = std::min(max_read_buffer_size, max_mark_range_bytes);
+    size_t buffer_size = std::min(settings.max_read_buffer_size, max_mark_range_bytes);
 
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            path_prefix + data_file_extension, uncompressed_cache, sum_mark_range_bytes, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, uncompressed_cache, sum_mark_range_bytes, settings.min_bytes_to_use_direct_io, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -90,7 +90,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            path_prefix + data_file_extension, sum_mark_range_bytes, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, sum_mark_range_bytes, settings.min_bytes_to_use_direct_io, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

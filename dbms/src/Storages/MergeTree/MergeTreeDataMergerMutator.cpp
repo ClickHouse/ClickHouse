@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartFactory.h>
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -552,8 +553,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
-    for (const MergeTreeData::DataPartPtr & part : parts)
-        part->accumulateColumnSizes(merged_column_to_size);
+    // for (const MergeTreeData::DataPartPtr & part : parts)
+    //     part->accumulateColumnSizes(merged_column_to_size);
 
     Names all_column_names = data.getColumns().getNamesOfPhysical();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
@@ -566,10 +567,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-            data, space_reservation->getDisk(), future_part.name, future_part.part_info);
+    MergeTreeData::MutableDataPartPtr new_data_part = createPart(
+            data, space_reservation->getDisk(), future_part.name, future_part.part_info, TMP_PREFIX + future_part.name);
+
     new_data_part->partition.assign(future_part.getPartition());
-    new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
 
     size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
@@ -922,7 +923,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
     const auto & source_part = future_part.parts[0];
-    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
+    auto storage_from_source_part = StorageFroIMergeTreeDataPart::create(source_part);
 
     auto context_for_reading = context;
     context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
@@ -949,9 +950,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-        data, space_reservation->getDisk(), future_part.name, future_part.part_info);
-    new_data_part->relative_path = "tmp_mut_" + future_part.name;
+    MergeTreeData::MutableDataPartPtr new_data_part = createPart(
+        data, space_reservation->getDisk(), future_part.name, future_part.part_info, "tmp_mut_" + future_part.name);
+
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
     new_data_part->index_granularity_info = source_part->index_granularity_info;
@@ -988,7 +989,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
 
-        MergeTreeDataPart::MinMaxIndex minmax_idx;
+       IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
         MergedBlockOutputStream out(data, new_part_tmp_path, all_columns, compression_codec);
 
