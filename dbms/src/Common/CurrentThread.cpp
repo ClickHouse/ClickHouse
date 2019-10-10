@@ -51,6 +51,16 @@ MemoryTracker * CurrentThread::getMemoryTracker()
     return &current_thread->memory_tracker;
 }
 
+DisableMemoryTrackerGuard CurrentThread::temporaryDisableMemoryTracker()
+{
+    static MemoryTracker * no_tracker = nullptr;
+
+    if (unlikely(!current_thread))
+        return DisableMemoryTrackerGuard(no_tracker);
+
+    return DisableMemoryTrackerGuard(current_thread->memory_tracker_ptr);
+}
+
 void CurrentThread::updateProgressIn(const Progress & value)
 {
     if (unlikely(!current_thread))

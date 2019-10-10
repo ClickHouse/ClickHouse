@@ -52,6 +52,7 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker * getMemoryTracker();
+    static DisableMemoryTrackerGuard temporaryDisableMemoryTracker();
 
     static inline Int64 & getUntrackedMemory()
     {

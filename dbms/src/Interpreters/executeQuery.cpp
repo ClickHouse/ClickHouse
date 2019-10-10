@@ -120,6 +120,11 @@ static void logQuery(const String & query, const Context & context, bool interna
 /// Call this inside catch block.
 static void setExceptionStackTrace(QueryLogElement & elem)
 {
+    /// Disable memory tracker for stack trace.
+    /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
+    /// This memory will be tracked for user, so won't have memory leak.
+    auto guard = CurrentThread::temporaryDisableMemoryTracker();
+
     try
     {
         throw;
