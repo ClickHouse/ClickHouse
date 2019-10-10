@@ -42,7 +42,7 @@ parser = argparse.ArgumentParser(description='Helper for the ClickHouse Release 
 parser.add_argument('--repo', '-r', type=str, default='', metavar='PATH',
     help='path to the root of the ClickHouse repository')
 parser.add_argument('--remote', type=str, default='origin',
-    help='remote name of the "yandex/ClickHouse" upstream')
+    help='remote name of the "ClickHouse/ClickHouse" upstream')
 parser.add_argument('-n', type=int, default=3, dest='number',
     help='number of last stable branches to consider')
 parser.add_argument('--token', type=str, required=True,
@@ -78,7 +78,7 @@ for i in reversed(range(len(stables))):
 
     from_commit = stables[i][1]
 
-members = set(github.get_members("yandex", "clickhouse"))
+members = set(github.get_members("ClickHouse", "ClickHouse"))
 def print_responsible(pull_request):
     if pull_request["author"]["login"] in members:
         return colored(pull_request["author"]["login"], 'green')
