@@ -376,7 +376,6 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
         merge_tree_min_rows_for_seek, merge_tree_min_bytes_for_seek,
         part->index_granularity_info.index_granularity_bytes, part->index_granularity_info.fixed_index_granularity);
 
-    size_t granules_dropped = 0;
     size_t marks_count = part->getMarksCount();
     size_t final_mark = part->index_granularity.hasFinalMark();
     size_t index_marks_count = (marks_count - final_mark + useful_index->granularity - 1) / useful_index->granularity;
@@ -411,9 +410,8 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
-                ++granules_dropped;
                 for (size_t index = data_range.begin; index < data_range.end; ++index)
-                    progressImpl(Progress(part->index_granularity.getMarkRows(index), index_reader.readBytes() - prev_index_read_bytes));
+                    progressImpl(Progress(0, index_reader.readBytes() - prev_index_read_bytes, part->index_granularity.getMarkRows(index)));
 
                 continue;
             }

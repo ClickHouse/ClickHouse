@@ -23,6 +23,7 @@ struct QueryThreadLogElement
     /// The data fetched from DB in current thread to execute the query
     UInt64 read_rows{};
     UInt64 read_bytes{};
+    UInt64 skipped_rows{};
 
     /// The data written to DB
     UInt64 written_rows{};

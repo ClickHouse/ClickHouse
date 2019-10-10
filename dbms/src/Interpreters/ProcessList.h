@@ -56,6 +56,7 @@ struct QueryStatusInfo
     double elapsed_seconds;
     size_t read_rows;
     size_t read_bytes;
+    size_t skipped_rows;
     size_t total_rows;
     size_t written_rows;
     size_t written_bytes;

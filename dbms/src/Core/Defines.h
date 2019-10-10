@@ -62,6 +62,8 @@
 
 #define DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO 54420
 
+#define DBMS_MIN_REVISION_WITH_CLIENT_SKIPPED_ROWS_INFO 54426
+
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
 

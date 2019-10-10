@@ -91,6 +91,8 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
         return ResultsetPart::RowsRead;
     else if (part == "bytes_read")
         return ResultsetPart::BytesRead;
+    else if (part == "rows_skipped")
+        return ResultsetPart::RowsSkipped;
     else
         throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
 }
@@ -214,6 +216,9 @@ void TemplateBlockOutputFormat::finalize()
                 break;
             case ResultsetPart::BytesRead:
                 writeValue<size_t, DataTypeUInt64>(progress.read_bytes.load(), format.formats[i]);
+                break;
+            case ResultsetPart::RowsSkipped:
+                writeValue<size_t, DataTypeUInt64>(progress.skipped_rows.load(), format.formats[i]);
                 break;
             default:
                 break;

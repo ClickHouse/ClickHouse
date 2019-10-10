@@ -433,6 +433,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
     res.read_rows         = progress_in.read_rows;
     res.read_bytes        = progress_in.read_bytes;
+    res.skipped_rows      = progress_in.skipped_rows;
     res.total_rows        = progress_in.total_rows_to_read;
 
     /// TODO: Use written_rows and written_bytes when real time progress is implemented

@@ -236,6 +236,9 @@ void XMLRowOutputFormat::writeStatistics()
     writeCString("\t\t<bytes_read>", *ostr);
     writeText(progress.read_bytes.load(), *ostr);
     writeCString("</bytes_read>\n", *ostr);
+    writeCString("\t\t<rows_skipped>", *ostr);
+    writeText(progress.skipped_rows.load(), *ostr);
+    writeCString("</rows_skipped>\n", *ostr);
     writeCString("\t</statistics>\n", *ostr);
 }
 

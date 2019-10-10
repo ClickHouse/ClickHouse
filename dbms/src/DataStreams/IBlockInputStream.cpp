@@ -39,7 +39,7 @@ Block IBlockInputStream::read()
 {
     if (total_rows_approx)
     {
-        progressImpl(Progress(0, 0, total_rows_approx));
+        progressImpl(Progress(0, 0, 0, total_rows_approx));
         total_rows_approx = 0;
     }
 

@@ -50,6 +50,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"is_cancelled", std::make_shared<DataTypeUInt8>()},
         {"read_rows", std::make_shared<DataTypeUInt64>()},
         {"read_bytes", std::make_shared<DataTypeUInt64>()},
+        {"skipped_rows", std::make_shared<DataTypeUInt64>()},
         {"total_rows_approx", std::make_shared<DataTypeUInt64>()},
         {"written_rows", std::make_shared<DataTypeUInt64>()},
         {"written_bytes", std::make_shared<DataTypeUInt64>()},
@@ -106,6 +107,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         res_columns[i++]->insert(process.is_cancelled);
         res_columns[i++]->insert(process.read_rows);
         res_columns[i++]->insert(process.read_bytes);
+        res_columns[i++]->insert(process.skipped_rows);
         res_columns[i++]->insert(process.total_rows);
         res_columns[i++]->insert(process.written_rows);
         res_columns[i++]->insert(process.written_bytes);

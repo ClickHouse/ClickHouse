@@ -44,6 +44,7 @@ Block QueryLogElement::createBlock()
 
         {std::make_shared<DataTypeUInt64>(),                                  "read_rows"},
         {std::make_shared<DataTypeUInt64>(),                                  "read_bytes"},
+        {std::make_shared<DataTypeUInt64>(),                                  "skipped_rows"},
         {std::make_shared<DataTypeUInt64>(),                                  "written_rows"},
         {std::make_shared<DataTypeUInt64>(),                                  "written_bytes"},
         {std::make_shared<DataTypeUInt64>(),                                  "result_rows"},
@@ -101,6 +102,7 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(read_rows);
     columns[i++]->insert(read_bytes);
+    columns[i++]->insert(skipped_rows);
     columns[i++]->insert(written_rows);
     columns[i++]->insert(written_bytes);
     columns[i++]->insert(result_rows);

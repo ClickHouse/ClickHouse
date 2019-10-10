@@ -433,6 +433,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.read_rows = info.read_rows;
                 elem.read_bytes = info.read_bytes;
+                elem.skipped_rows = info.skipped_rows;
 
                 elem.written_rows = info.written_rows;
                 elem.written_bytes = info.written_bytes;
@@ -462,13 +463,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                if (elem.read_rows != 0)
+                if (elem.read_rows != 0 || elem.skipped_rows != 0)
                 {
                     LOG_INFO(&Logger::get("executeQuery"), std::fixed << std::setprecision(3)
                         << "Read " << elem.read_rows << " rows, "
                         << formatReadableSizeWithBinarySuffix(elem.read_bytes) << " in " << elapsed_seconds << " sec., "
                         << static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., "
-                        << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
+                        << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec, "
+                        << "Skipped " << elem.skipped_rows << " rows.");
                 }
 
                 elem.thread_numbers = std::move(info.thread_numbers);
@@ -506,6 +508,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     elem.read_rows = info.read_rows;
                     elem.read_bytes = info.read_bytes;
+                    elem.skipped_rows = info.skipped_rows;
 
                     elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 

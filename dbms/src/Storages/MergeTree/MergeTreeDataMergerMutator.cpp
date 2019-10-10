@@ -480,6 +480,7 @@ struct MergeStageProgress
 
     UInt64 total_rows = 0;
     UInt64 rows_read = 0;
+    UInt64 skipped_rows = 0;
 };
 
 class MergeProgressCallback
@@ -519,12 +520,13 @@ public:
         if (stage.is_first)
             merge_entry->rows_read += value.read_rows;
 
+        stage.skipped_rows += value.skipped_rows;
         stage.total_rows += value.total_rows_to_read;
         stage.rows_read += value.read_rows;
         if (stage.total_rows > 0)
         {
             merge_entry->progress.store(
-                stage.initial_progress + stage.weight * stage.rows_read / stage.total_rows,
+                stage.initial_progress + stage.weight * (stage.rows_read + stage.skipped_rows) / stage.total_rows,
                 std::memory_order_relaxed);
         }
     }

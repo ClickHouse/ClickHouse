@@ -225,6 +225,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
+    elem.skipped_rows = progress_in.skipped_rows.load(std::memory_order_relaxed);
 
     /// TODO: Use written_rows and written_bytes when run time progress is implemented
     elem.written_rows = progress_out.read_rows.load(std::memory_order_relaxed);

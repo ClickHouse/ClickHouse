@@ -17,6 +17,7 @@ struct ProgressValues
 {
     size_t read_rows;
     size_t read_bytes;
+    size_t skipped_rows;
     size_t total_rows_to_read;
     size_t written_rows;
     size_t written_bytes;
@@ -30,10 +31,11 @@ struct ReadProgress
 {
     size_t read_rows;
     size_t read_bytes;
+    size_t skipped_rows;
     size_t total_rows_to_read;
 
-    ReadProgress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
-        : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
+    ReadProgress(size_t read_rows_, size_t read_bytes_, size_t skipped_rows_ = 0, size_t total_rows_to_read_ = 0)
+        : read_rows(read_rows_), read_bytes(read_bytes_), skipped_rows(skipped_rows_), total_rows_to_read(total_rows_to_read_) {}
 };
 
 struct WriteProgress
@@ -53,6 +55,7 @@ struct Progress
 {
     std::atomic<size_t> read_rows {0};        /// Rows (source) processed.
     std::atomic<size_t> read_bytes {0};       /// Bytes (uncompressed, source) processed.
+    std::atomic<size_t> skipped_rows {0};   /// Rows (source) skipped(using skip index).
 
     /** How much rows must be processed, in total, approximately. Non-zero value is sent when there is information about some new part of job.
       * Received values must be summed to get estimate of total rows to process.
@@ -65,10 +68,11 @@ struct Progress
     std::atomic<size_t> written_bytes {0};
 
     Progress() {}
-    Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
-        : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
+    Progress(size_t read_rows_, size_t read_bytes_, size_t read_skip_rows_ = 0, size_t total_rows_to_read_ = 0)
+        : read_rows(read_rows_), read_bytes(read_bytes_), skipped_rows(read_skip_rows_), total_rows_to_read(total_rows_to_read_) {}
     Progress(ReadProgress read_progress)
-        : read_rows(read_progress.read_rows), read_bytes(read_progress.read_bytes), total_rows_to_read(read_progress.total_rows_to_read) {}
+        : read_rows(read_progress.read_rows), read_bytes(read_progress.read_bytes),
+        skipped_rows(read_progress.skipped_rows), total_rows_to_read(read_progress.total_rows_to_read) {}
     Progress(WriteProgress write_progress)
         : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes)  {}
 
@@ -82,6 +86,7 @@ struct Progress
     {
         read_rows += rhs.read_rows;
         read_bytes += rhs.read_bytes;
+        skipped_rows += rhs.skipped_rows;
         total_rows_to_read += rhs.total_rows_to_read;
         written_rows += rhs.written_rows;
         written_bytes += rhs.written_bytes;
@@ -93,6 +98,7 @@ struct Progress
     {
         read_rows = 0;
         read_bytes = 0;
+        skipped_rows = 0;
         total_rows_to_read = 0;
         written_rows = 0;
         written_bytes = 0;
@@ -128,6 +134,7 @@ struct Progress
     {
         read_rows = other.read_rows.load(std::memory_order_relaxed);
         read_bytes = other.read_bytes.load(std::memory_order_relaxed);
+        skipped_rows = other.skipped_rows.load(std::memory_order_relaxed);
         total_rows_to_read = other.total_rows_to_read.load(std::memory_order_relaxed);
         written_rows = other.written_rows.load(std::memory_order_relaxed);
         written_bytes = other.written_bytes.load(std::memory_order_relaxed);

@@ -1532,6 +1532,9 @@ private:
             message << " ("
                 << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                 << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+
+        if (progress.skipped_rows)
+            message << " Skip: " << formatReadableQuantity(progress.skipped_rows) << " rows.";
         else
             message << ". ";
 
@@ -1540,7 +1543,8 @@ private:
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
         if (progress.total_rows_to_read > 0)
         {
-            size_t total_rows_corrected = std::max(progress.read_rows, progress.total_rows_to_read);
+            size_t current_progressed_rows = progress.read_rows + progress.skipped_rows;
+            size_t total_rows_corrected = std::max(current_progressed_rows, progress.total_rows_to_read.load(std::memory_order_relaxed));
 
             /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
             ///  and the query is less than halfway done.
@@ -1548,7 +1552,7 @@ private:
             if (elapsed_ns > 500000000)
             {
                 /// Trigger to start displaying progress bar. If query is mostly done, don't display it.
-                if (progress.read_rows * 2 < total_rows_corrected)
+                if (current_progressed_rows * 2 < total_rows_corrected)
                     show_progress_bar = true;
 
                 if (show_progress_bar)
@@ -1556,7 +1560,7 @@ private:
                     ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
-                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
+                        std::string bar = UnicodeBar::render(UnicodeBar::getWidth(current_progressed_rows, 0, total_rows_corrected, width_of_progress_bar));
                         message << "\033[0;32m" << bar << "\033[0m";
                         if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
                             message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
@@ -1565,7 +1569,7 @@ private:
             }
 
             /// Underestimate percentage a bit to avoid displaying 100%.
-            message << ' ' << (99 * progress.read_rows / total_rows_corrected) << '%';
+            message << ' ' << (99 * current_progressed_rows / total_rows_corrected) << '%';
         }
 
         message << ENABLE_LINE_WRAPPING;
@@ -1577,17 +1581,24 @@ private:
 
     void writeFinalProgress()
     {
-        std::cout << "Processed "
+        std::stringstream progress_message;
+
+        progress_message << "Processed "
             << formatReadableQuantity(progress.read_rows) << " rows, "
             << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
-            std::cout << " ("
+            progress_message << " ("
                 << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                 << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+
+        if (progress.skipped_rows)
+            progress_message << " Skipped " << formatReadableQuantity(progress.skipped_rows) << " rows. ";
         else
-            std::cout << ". ";
+            progress_message << ". ";
+
+        std::cout << progress_message.str();
     }
 
 

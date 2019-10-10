@@ -34,7 +34,8 @@ public:
         RowsBeforeLimit,
         TimeElapsed,
         RowsRead,
-        BytesRead
+        BytesRead,
+        RowsSkipped,
     };
 
     static ResultsetPart stringToResultsetPart(const String & part);
