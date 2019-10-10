@@ -48,7 +48,7 @@ MemoryTracker * CurrentThread::getMemoryTracker()
 {
     if (unlikely(!current_thread))
         return nullptr;
-    return &current_thread->memory_tracker;
+    return current_thread->memory_tracker_ptr;
 }
 
 DisableMemoryTrackerGuard CurrentThread::temporaryDisableMemoryTracker()
