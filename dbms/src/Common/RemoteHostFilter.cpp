@@ -1,5 +1,5 @@
 #include <re2/re2.h>
-#include <Common/StorageOfAllowedURL.h>
+#include <Common/RemoteHostFilter.h>
 #include <Poco/URI.h>
 #include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -14,21 +14,21 @@ namespace ErrorCodes
     extern const int UNACCEPTABLE_URL;
 }
 
-void StorageOfAllowedURL::checkURL(const Poco::URI & uri)
+void RemoteHostFilter::checkURL(const Poco::URI & uri)
 {
     if (!checkString(uri.getHost()) &&
         !checkString(uri.getHost() + ":" + toString(uri.getPort())))
         throw Exception("URL \"" + uri.toString() + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
 }
 
-void StorageOfAllowedURL::checkHostAndPort(const std::string & host, const std::string & port)
+void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port)
 {
     if (!checkString(host) &&
         !checkString(host + ":" + port))
         throw Exception("URL \"" + host + ":" + port + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
 }
 
-void StorageOfAllowedURL::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
+void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.has("remote_url_allow_hosts"))
     {
@@ -44,7 +44,7 @@ void StorageOfAllowedURL::setValuesFromConfig(const Poco::Util::AbstractConfigur
     }
 }
 
-bool StorageOfAllowedURL::checkString(const std::string &host)
+bool RemoteHostFilter::checkString(const std::string &host)
 {
     if (!primary_hosts.empty() || !regexp_hosts.empty())
     {

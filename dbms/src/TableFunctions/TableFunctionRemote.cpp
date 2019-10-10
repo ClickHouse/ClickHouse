@@ -162,9 +162,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             {
                 size_t colon = host.find(':');
                 if (colon == String::npos)
-                    context.getStorageOfAllowedURL().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
+                    context.getRemoteHostFilter().checkHostAndPort(host, toString((secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort())));
                 else
-                    context.getStorageOfAllowedURL().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
+                    context.getRemoteHostFilter().checkHostAndPort(host.substr(0, colon), host.substr(colon + 1));
             }
         }
 
