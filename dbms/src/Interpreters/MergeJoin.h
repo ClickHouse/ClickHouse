@@ -26,6 +26,7 @@ public:
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
+    ASTTableJoin::Kind getKind() const override;
 
 private:
     mutable std::shared_mutex rwlock;

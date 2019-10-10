@@ -62,7 +62,7 @@ bool CheckNonEmptySetBlockInputStream::inOrInnerRightJoinWithEmpty() const
         }
         else if (action.type == ExpressionAction::JOIN)
         {
-            if (const auto * join = dynamic_cast<Join *>(action.join.get()))
+            if (const IJoin * join = action.join.get())
             {
                 checker.hasJoin = true;
                 checker.innerRightJoinWithEmpty &= join->getTotalRowCount() == 0 && isInnerOrRight(join->getKind());

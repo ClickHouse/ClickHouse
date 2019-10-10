@@ -352,6 +352,11 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
     makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
 }
 
+ASTTableJoin::Kind MergeJoin::getKind() const
+{
+    return table_join->kind();
+}
+
 void MergeJoin::setTotals(const Block & totals_block)
 {
     totals = totals_block;
@@ -439,9 +444,6 @@ void MergeJoin::joinBlock(Block & block)
         left_cursor.nextN(left_key_tail);
         joinInequalsLeft(block, left_columns, right_columns, left_cursor.position(), left_cursor.end(), is_all);
         //left_cursor.nextN(left_cursor.end() - left_cursor.position());
-
-        changeLeftColumns(block, std::move(left_columns));
-        addRightColumns(block, std::move(right_columns));
     }
     else if (is_inner)
     {
@@ -463,9 +465,10 @@ void MergeJoin::joinBlock(Block & block)
         }
 
         left_cursor.nextN(left_key_tail);
-        changeLeftColumns(block, std::move(left_columns));
-        addRightColumns(block, std::move(right_columns));
     }
+
+    changeLeftColumns(block, std::move(left_columns));
+    addRightColumns(block, std::move(right_columns));
 }
 
 void MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const Block & right_block,

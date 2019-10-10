@@ -5,8 +5,6 @@
 #include <shared_mutex>
 #include <deque>
 
-#include <Parsers/ASTTablesInSelectQuery.h>
-
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
@@ -163,7 +161,7 @@ public:
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const;
 
-    ASTTableJoin::Kind getKind() const { return kind; }
+    ASTTableJoin::Kind getKind() const override { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
     AsofRowRefs::Type getAsofType() const { return *asof_type; }
     bool anyTakeLastRow() const { return any_take_last_row; }

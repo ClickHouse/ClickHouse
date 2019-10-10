@@ -721,7 +721,7 @@ BlockInputStreamPtr InterpreterSelectQuery::createCheckNonEmptySetIfNeed(BlockIn
     {
         if (action.type == ExpressionAction::JOIN)
         {
-            const auto * join = dynamic_cast<Join *>(action.join.get());
+            const IJoin * join = action.join.get();
             if (!join)
                 continue;
             if (isInnerOrRight(join->getKind()))
