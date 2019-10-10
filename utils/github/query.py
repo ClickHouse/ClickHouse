@@ -57,7 +57,7 @@ class Query:
         return logins
 
     _LABELS = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 labels(first: {max_page_size} {next}) {{
                     pageInfo {{
@@ -99,7 +99,7 @@ class Query:
         return labels
 
     _TIMELINE = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 timeline(first: {max_page_size} {next}) {{
                     pageInfo {{
@@ -164,7 +164,7 @@ class Query:
         return events
 
     _PULL_REQUESTS = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             defaultBranchRef {{
                 name
                 target {{
@@ -280,7 +280,7 @@ class Query:
                     f'there are {commit["associatedPullRequests"]["totalCount"]} pull-requests merged in commit {commit["oid"]}'
 
                 for pull_request in commit['associatedPullRequests']['nodes']:
-                    if(pull_request['baseRepository']['nameWithOwner'] == 'yandex/ClickHouse' and
+                    if(pull_request['baseRepository']['nameWithOwner'] == 'ClickHouse/ClickHouse' and
                        pull_request['baseRefName'] == default_branch_name and
                        pull_request['mergeCommit']['oid'] == commit['oid'] and
                        (not login or pull_request['author']['login'] == login)):
@@ -289,7 +289,7 @@ class Query:
         return pull_requests
 
     _DEFAULT = '''
-        repository(owner: "yandex", name: "ClickHouse") {
+        repository(owner: "ClickHouse", name: "ClickHouse") {
             defaultBranchRef {
                 name
             }
@@ -304,7 +304,7 @@ class Query:
         return self._run(Query._DEFAULT)['repository']['defaultBranchRef']['name']
 
     _GET_LABEL = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             labels(first: {max_page_size} {next} query: "{name}") {{
                 pageInfo {{
                     hasNextPage

@@ -18,6 +18,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -1437,6 +1438,56 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         node->children.push_back(locale_node);
 
     return true;
+}
+
+bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserKeyValuePairsList pairs_list_parser;
+
+    ASTPtr identifier;
+    ASTPtr expr_list_args;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    if (pos.get().type != TokenType::OpeningRoundBracket)
+        return false;
+
+    ++pos;
+    if (!pairs_list_parser.parse(pos, expr_list_args, expected))
+        return false;
+
+    if (pos.get().type != TokenType::ClosingRoundBracket)
+        return false;
+
+    ++pos;
+    auto function = std::make_shared<ASTFunctionWithKeyValueArguments>();
+    function->name = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    function->elements = expr_list_args;
+    function->children.push_back(function->elements);
+    node = function;
+
+    return true;
+}
+
+bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier non_parametric;
+    ParserIdentifierWithParameters parametric;
+
+    if (parametric.parse(pos, node, expected))
+        return true;
+
+    ASTPtr ident;
+    if (non_parametric.parse(pos, ident, expected))
+    {
+        auto func = std::make_shared<ASTFunction>();
+        tryGetIdentifierNameInto(ident, func->name);
+        node = func;
+        return true;
+    }
+
+    return false;
 }
 
 }
