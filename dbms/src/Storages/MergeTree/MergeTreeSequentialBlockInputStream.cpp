@@ -107,12 +107,16 @@ try
             if (should_evaluate_missing_defaults)
                 reader->evaluateMissingDefaults({}, columns);
 
+            res = header.cloneEmpty();
+
             /// Reorder columns and fill result block.
             size_t num_columns = sample.size();
             auto it = sample.begin();
             for (size_t i = 0; i < num_columns; ++i)
             {
-                res.insert({columns[i], it->type, it->name});
+                if (header.has(it->name))
+                    header.getByName(it->name).column = std::move(columns[i]);
+
                 ++it;
             }
 
