@@ -1,3 +1,5 @@
+SET partial_merge_join = 0;
+
 SELECT number as n, j FROM numbers(4)
 ANY LEFT JOIN (
     SELECT number * 2 AS n, number + 10 AS j
