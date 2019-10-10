@@ -273,6 +273,8 @@ bool StorageLiveView::hasColumn(const String & column_name) const
 
 Block StorageLiveView::getHeader() const
 {
+    std::lock_guard lock(sample_block_lock);
+
     if (!sample_block)
     {
         auto storage = global_context.getTable(select_database_name, select_table_name);
