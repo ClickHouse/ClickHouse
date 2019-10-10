@@ -18,32 +18,24 @@ template <size_t initial_size_degree = 8>
 struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
 {
     /// Increase the size of the hash table.
-    void increaseSize()
-    {
-        this->size_degree += this->size_degree >= 15 ? 1 : 2;
-    }
+    void increaseSize() { this->size_degree += this->size_degree >= 15 ? 1 : 2; }
 };
 
-template
-<
+template <
     typename Key,
     typename Cell,
     typename Hash,
     typename Grower,
-    typename Allocator,    /// TODO WithStackMemory
+    typename Allocator, /// TODO WithStackMemory
     typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
-    size_t BITS_FOR_BUCKET = 8
->
-class TwoLevelHashTable :
-    private boost::noncopyable,
-    protected Hash            /// empty base optimization
+    size_t BITS_FOR_BUCKET = 8>
+class TwoLevelHashTable : private boost::noncopyable,
+                          protected Hash /// empty base optimization
 {
 protected:
-    friend class const_iterator;
-    friend class iterator;
-
     using HashValue = size_t;
     using Self = TwoLevelHashTable;
+
 public:
     using Impl = ImplTable;
 
@@ -83,37 +75,32 @@ protected:
 public:
     using key_type = typename Impl::key_type;
     using value_type = typename Impl::value_type;
+    using mapped_type = typename Impl::mapped_type;
 
     using LookupResult = typename Impl::LookupResult;
     using ConstLookupResult = typename Impl::ConstLookupResult;
 
     Impl impls[NUM_BUCKETS];
 
-
-    TwoLevelHashTable() {}
+    TwoLevelHashTable() { }
 
     /// Copy the data from another (normal) hash table. It should have the same hash function.
+    /// TODO There is an old assumption that the zero key (stored separately) is first in iteration order. Is that still hold?
     template <typename Source>
     TwoLevelHashTable(const Source & src)
     {
-        typename Source::const_iterator it = src.begin();
-
-        /// It is assumed that the zero key (stored separately) is first in iteration order.
-        if (it != src.end() && it.getPtr()->isZero(src))
+        src.forEachCell([&](const Cell & cell)
         {
-            insert(it->getValue());
-            ++it;
-        }
-
-        for (; it != src.end(); ++it)
-        {
-            const Cell * cell = it.getPtr();
-            size_t hash_value = cell->getHash(src);
-            size_t buck = getBucketFromHash(hash_value);
-            impls[buck].insertUniqueNonZero(cell, hash_value);
-        }
+            if (cell.isZero(src))
+                insert(cell.getValue());
+            else
+            {
+                size_t hash_value = cell.getHash(src);
+                size_t buck = getBucketFromHash(hash_value);
+                impls[buck].insertUniqueNonZero(&cell, hash_value);
+            }
+        });
     }
-
 
     class iterator
     {
@@ -208,6 +195,27 @@ public:
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
 
 
+    /// No fancy variants for TwoLevelHashTable as it's only used for aggregations.
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature void(const Cell &).
+    template <typename Func>
+    void forEachCell(Func && func) const
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature void(Cell &).
+    template <typename Func>
+    void forEachCell(Func && func)
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
+
+
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
@@ -217,7 +225,7 @@ public:
         emplace(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
-            insertSetMapped(lookupResultGetMapped(res.first), x);
+            insertSetMapped(res.first->getSecond(), x);
 
         return res;
     }
@@ -248,8 +256,7 @@ public:
 
     /// Same, but with a precalculated values of hash function.
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it,
-                                  bool & inserted, size_t hash_value)
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
         impls[buck].emplace(key_holder, it, inserted, hash_value);

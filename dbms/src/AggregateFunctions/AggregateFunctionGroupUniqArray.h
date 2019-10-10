@@ -77,12 +77,12 @@ public:
             auto & cur_set = this->data(place).value;
             auto & rhs_set = this->data(rhs).value;
 
-            for (auto & rhs_elem : rhs_set)
+            hashTableForEach(rhs_set, [&](const auto & rhs_elem)
             {
                 if (cur_set.size() >= max_elems)
                     return;
                 cur_set.insert(rhs_elem.getValue());
-            }
+            });
         }
     }
 
@@ -91,8 +91,10 @@ public:
         auto & set = this->data(place).value;
         size_t size = set.size();
         writeVarUInt(size, buf);
-        for (const auto & elem : set)
+        hashTableForEach(set, [&](const auto & elem)
+        {
             writeIntBinary(elem, buf);
+        });
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
@@ -115,8 +117,11 @@ public:
         data_to.resize(old_size + size);
 
         size_t i = 0;
-        for (auto it = set.begin(); it != set.end(); ++it, ++i)
-            data_to[old_size + i] = it->getValue();
+        hashTableForEach(set, [&](const auto & elem)
+        {
+            data_to[old_size + i] = elem.getValue();
+            ++i;
+        });
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -192,10 +197,10 @@ public:
         auto & set = this->data(place).value;
         writeVarUInt(set.size(), buf);
 
-        for (const auto & elem : set)
+        hashTableForEach(set, [&](const auto & elem)
         {
             writeStringBinary(elem.getValue(), buf);
-        }
+        });
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
@@ -230,15 +235,16 @@ public:
 
         bool inserted;
         State::Set::LookupResult it;
-        for (auto & rhs_elem : rhs_set)
+        hashTableForEach(rhs_set, [&](const auto & rhs_elem)
         {
             if (limit_num_elems && cur_set.size() >= max_elems)
-                return;
+                return true;
 
             // We have to copy the keys to our arena.
             assert(arena != nullptr);
             cur_set.emplace(ArenaKeyHolder{rhs_elem.getValue(), *arena}, it, inserted);
-        }
+            return false;
+        });
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -249,11 +255,10 @@ public:
 
         auto & set = this->data(place).value;
         offsets_to.push_back(offsets_to.back() + set.size());
-
-        for (auto & elem : set)
+        hashTableForEach(set, [&](const auto & elem)
         {
             deserializeAndInsert(elem.getValue(), data_to);
-        }
+        });
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

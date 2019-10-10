@@ -3,7 +3,6 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
 
-
 template <typename Key, typename TMapped>
 struct FixedClearableHashMapCell
 {
@@ -22,24 +21,6 @@ struct FixedClearableHashMapCell
     const Mapped & getSecond() const { return mapped; }
     bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
-    static constexpr bool need_zero_value_storage = false;
-
-    struct CellExt
-    {
-        CellExt() {}
-        CellExt(Key && key_, FixedClearableHashMapCell * ptr_) : key(key_), ptr(ptr_) {}
-        void update(Key && key_, FixedClearableHashMapCell * ptr_)
-        {
-            key = key_;
-            ptr = ptr_;
-        }
-        Key key;
-        FixedClearableHashMapCell * ptr;
-        const Key & getFirst() const { return key; }
-        Mapped & getSecond() { return ptr->mapped; }
-        const Mapped & getSecond() const { return *ptr->mapped; }
-        const value_type getValue() const { return {key, *ptr->mapped}; }
-    };
 };
 
 
@@ -53,7 +34,7 @@ public:
 
     mapped_type & operator[](Key x)
     {
-        typename FixedClearableHashMap::iterator it;
+        typename FixedClearableHashMap::LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
 

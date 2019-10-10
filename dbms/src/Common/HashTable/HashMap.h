@@ -11,9 +11,7 @@
   */
 
 
-struct NoInitTag
-{
-};
+struct NoInitTag {};
 
 /// A pair that does not initialize the elements, if not needed.
 template <typename First, typename Second>
@@ -25,14 +23,10 @@ struct PairNoInit
     PairNoInit() {}
 
     template <typename First_>
-    PairNoInit(First_ && first_, NoInitTag) : first(std::forward<First_>(first_))
-    {
-    }
+    PairNoInit(First_ && first_, NoInitTag) : first(std::forward<First_>(first_)) {}
 
     template <typename First_, typename Second_>
-    PairNoInit(First_ && first_, Second_ && second_) : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_))
-    {
-    }
+    PairNoInit(First_ && first_, Second_ && second_) : first(std::forward<First_>(first_)), second(std::forward<Second_>(second_)) {}
 };
 
 
@@ -48,14 +42,15 @@ struct HashMapCell
 
     value_type value;
 
-    HashMapCell() {}
-    HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) {}
-    HashMapCell(const value_type & value_, const State &) : value(value_) {}
+    HashMapCell() { }
+    HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) { }
+    HashMapCell(const value_type & value_, const State &) : value(value_) { }
 
     const Key & getFirst() const { return value.first; }
     Mapped & getSecond() { return value.second; }
     const Mapped & getSecond() const { return value.second; }
 
+    const Key & getKey() const { return value.first; }
     const value_type & getValue() const { return value; }
 
     static const Key & getKey(const value_type & value) { return value.first; }
@@ -64,7 +59,7 @@ struct HashMapCell
     bool keyEquals(const Key & key_, size_t /*hash_*/) const { return value.first == key_; }
     bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return value.first == key_; }
 
-    void setHash(size_t /*hash_value*/) {}
+    void setHash(size_t /*hash_value*/) { }
     size_t getHash(const Hash & hash) const { return hash(value.first); }
 
     bool isZero(const State & state) const { return isZero(value.first, state); }
@@ -110,15 +105,6 @@ struct HashMapCell
     }
 };
 
-template<typename Key, typename Mapped, typename Hash, typename State>
-ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCell<Key, Mapped, Hash, State> * cell)
-{ return &cell->getFirst(); }
-
-template<typename Key, typename Mapped, typename Hash, typename State>
-ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCell<Key, Mapped, Hash, State> * cell)
-{ return &cell->getSecond(); }
-
-
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 {
@@ -135,15 +121,6 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
     void setHash(size_t hash_value) { saved_hash = hash_value; }
     size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
-
-template<typename Key, typename Mapped, typename Hash, typename State>
-ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
-{ return &cell->getFirst(); }
-
-template<typename Key, typename Mapped, typename Hash, typename State>
-ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
-{ return &cell->getSecond(); }
-
 
 template <
     typename Key,
@@ -171,16 +148,29 @@ public:
     ///  have a key equals to the given cell, a new cell gets emplaced into that map,
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
-    template <typename Func>
-    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
+    template <typename TSelf, typename Func>
+    static void ALWAYS_INLINE mergeToViaEmplace(TSelf & self, Self & that, Func && func)
     {
-        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        using UCell = std::conditional_t<std::is_const_v<TSelf>, std::add_const_t<Cell>, Cell>;
+        self.forEachCell([&](UCell & cell)
         {
             typename Self::LookupResult res_it;
             bool inserted;
-            that.emplace(it->getFirst(), res_it, inserted, it.getHash());
-            func(*lookupResultGetMapped(res_it), it->getSecond(), inserted);
-        }
+            that.emplace(cell.getFirst(), res_it, inserted, cell.getHash(self));
+            func(res_it->getSecond(), cell.getSecond(), inserted);
+        });
+    }
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
+    {
+        mergeToViaEmplace(*this, that, std::forward<Func>(func));
+    }
+
+    template <typename Func>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func) const
+    {
+        mergeToViaEmplace(*this, that, std::forward<Func>(func));
     }
 
     /// Merge every cell's value of current map into the destination map via find.
@@ -188,33 +178,30 @@ public:
     ///  Each filled cell in current map will invoke func once. If that map doesn't
     ///  have a key equals to the given cell, func is invoked with the third argument
     ///  exist set to false. Otherwise exist is set to true.
+    template <typename TSelf, typename Func>
+    static void ALWAYS_INLINE mergeToViaFind(TSelf & self, Self & that, Func && func)
+    {
+        using UCell = std::conditional_t<std::is_const_v<TSelf>, std::add_const_t<Cell>, Cell>;
+        self.forEachCell([&](UCell & cell)
+        {
+            auto res_it = that.find(cell.getFirst(), cell.getHash(self));
+            if (!res_it)
+                func(cell.getSecond(), cell.getSecond(), false);
+            else
+                func(res_it->getSecond(), cell.getSecond(), true);
+        });
+    }
+
     template <typename Func>
     void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
     {
-        for (auto it = this->begin(), end = this->end(); it != end; ++it)
-        {
-            auto res_it = that.find(it->getFirst(), it.getHash());
-            if (!res_it)
-                func(it->getSecond(), it->getSecond(), false);
-            else
-                func(*lookupResultGetMapped(res_it), it->getSecond(), true);
-        }
+        mergeToViaFind(*this, that, std::forward<Func>(func));
     }
 
-    /// Call func(const Key &, Mapped &) for each hash map element.
     template <typename Func>
-    void forEachValue(Func && func)
+    void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func) const
     {
-        for (auto & v : *this)
-            func(v.getFirst(), v.getSecond());
-    }
-
-    /// Call func(Mapped &) for each hash map element.
-    template <typename Func>
-    void forEachMapped(Func && func)
-    {
-        for (auto & v : *this)
-            func(v.getSecond());
+        mergeToViaFind(*this, that, std::forward<Func>(func));
     }
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
@@ -238,9 +225,9 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new(lookupResultGetMapped(it)) mapped_type();
+            new (&it->getSecond()) mapped_type();
 
-        return *lookupResultGetMapped(it);
+        return it->getSecond();
     }
 };
 

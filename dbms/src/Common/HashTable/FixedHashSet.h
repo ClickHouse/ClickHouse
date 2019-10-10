@@ -6,14 +6,17 @@ template <typename Key, typename Allocator = HashTableAllocator>
 class FixedHashSet : public FixedHashTable<Key, FixedHashTableCell<Key>, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, FixedHashTableCell<Key>, Allocator>;
+    using Cell = FixedHashTableCell<Key>;
+    using Base = FixedHashTable<Key, Cell, Allocator>;
     using Self = FixedHashSet;
 
     void merge(const Self & rhs)
     {
-        for (size_t i = 0; i < Base::BUFFER_SIZE; ++i)
-            if (Base::buf[i].isZero(*this) && !rhs.buf[i].isZero(*this))
-                Base::buf[i] = rhs.buf[i];
+        rhs.forEachCell([&](Key i, const Cell & cell)
+        {
+            if (Base::buf[i].isZero(*this))
+                new (&Base::buf[i]) Cell(cell);
+        });
     }
 
     /// NOTE: Currently this method isn't used. When it does, the ReadBuffer should

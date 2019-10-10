@@ -399,7 +399,7 @@ public:
         typename SmallMapTable::iterator it;
         bool inserted;
         this->emplace(x, it, inserted);
-        new(&it->getSecond()) mapped_type();
+        new (&it->getSecond()) mapped_type();
         return it->getSecond();
     }
 };

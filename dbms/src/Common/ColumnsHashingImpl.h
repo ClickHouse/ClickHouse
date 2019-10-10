@@ -174,13 +174,13 @@ protected:
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
-            cached = lookupResultGetMapped(it);
+            cached = &it->getSecond();
 
         if (inserted)
         {
             if constexpr (has_mapped)
             {
-                new(lookupResultGetMapped(it)) Mapped();
+                new (&it->getSecond()) Mapped();
             }
         }
 
@@ -191,18 +191,18 @@ protected:
 
             if constexpr (has_mapped)
             {
-                cache.value.first = *lookupResultGetKey(it);
-                cache.value.second = *lookupResultGetMapped(it);
+                cache.value.first = it->getKey();
+                cache.value.second = it->getSecond();
                 cached = &cache.value.second;
             }
             else
             {
-                cache.value = *lookupResultGetKey(it);
+                cache.value = it->getKey();
             }
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(*lookupResultGetMapped(it), *cached, inserted);
+            return EmplaceResult(it->getSecond(), *cached, inserted);
         else
             return EmplaceResult(inserted);
     }
@@ -233,7 +233,7 @@ protected:
                 cache.value.first = key;
                 if (it)
                 {
-                    cache.value.second = *lookupResultGetMapped(it);
+                    cache.value.second = it->getSecond();
                 }
             }
             else
@@ -243,7 +243,7 @@ protected:
         }
 
         if constexpr (has_mapped)
-            return FindResult(it ? lookupResultGetMapped(it) : nullptr, it != nullptr);
+            return FindResult(it ? &it->getSecond() : nullptr, it != nullptr);
         else
             return FindResult(it != nullptr);
     }

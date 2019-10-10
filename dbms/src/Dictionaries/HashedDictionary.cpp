@@ -88,7 +88,7 @@ void HashedDictionary::isInAttrImpl(const AttrType & attr, const ChildType & chi
         while (id != null_value && id != ancestor_id)
         {
             auto it = attr.find(id);
-            if (it != std::end(attr))
+            if (!hashTableEnd(attr, it))
                 id = second(*it);
             else
                 break;
@@ -596,7 +596,7 @@ void HashedDictionary::getItemsAttrImpl(
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : get_default(i));
+        set_value(i, !hashTableEnd(attr, it) ? static_cast<OutputType>(second(*it)) : get_default(i));
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
@@ -706,8 +706,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIdsAttrImpl(const Att
 {
     PaddedPODArray<Key> ids;
     ids.reserve(attr.size());
-    for (const auto & value : attr)
-        ids.push_back(first(value));
+    hashTableForEach(attr, [&](const auto & value) { ids.push_back(first(value)); });
 
     return ids;
 }

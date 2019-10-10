@@ -51,9 +51,9 @@ struct AggregateIndependent
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(*lookupResultGetMapped(place));
+                        creator(place->getSecond());
                     else
-                        updater(*lookupResultGetMapped(place));
+                        updater(place->getSecond());
                 }
             });
         }
@@ -93,7 +93,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        updater(*lookupResultGetMapped(place));
+                        updater(place->getSecond());
                         continue;
                     }
                     prev_key = *it;
@@ -102,9 +102,9 @@ struct AggregateIndependentWithSequentialKeysOptimization
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(*lookupResultGetMapped(place));
+                        creator(place->getSecond());
                     else
-                        updater(*lookupResultGetMapped(place));
+                        updater(place->getSecond());
                 }
             });
         }
@@ -128,10 +128,10 @@ struct MergeSequential
     {
         for (size_t i = 1; i < num_maps; ++i)
         {
-            auto begin = source_maps[i]->begin();
-            auto end = source_maps[i]->end();
-            for (auto it = begin; it != end; ++it)
-                merger((*source_maps[0])[it->getFirst()], it->getSecond());
+            source_maps[i]->forEachCell([&](auto & cell)
+            {
+                merger((*source_maps[0])[cell.getFirst()], cell.getSecond());
+            });
         }
 
         result_map = source_maps[0];

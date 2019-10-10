@@ -140,8 +140,10 @@ public:
         }
         else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
         {
-            for (const auto & x : rhs.getContainer<Medium>())
+            hashTableForEach(rhs.getContainer<Medium>(), [&](const auto & x)
+            {
                 insert(x.getValue());
+            });
         }
         else if (rhs.getContainerType() == details::ContainerType::LARGE)
             getContainer<Large>().merge(rhs.getContainer<Large>());
@@ -254,8 +256,10 @@ private:
         }
         else if (container_type == details::ContainerType::MEDIUM)
         {
-            for (const auto & x : getContainer<Medium>())
+            hashTableForEach(getContainer<Medium>(), [&](const auto & x)
+            {
                 tmp_large->insert(x.getValue());
+            });
 
             destroy();
         }

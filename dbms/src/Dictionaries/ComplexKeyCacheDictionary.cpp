@@ -215,8 +215,10 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
         return;
 
     std::vector<size_t> required_rows(outdated_keys.size());
-    std::transform(
-        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
+    {
+        size_t i = 0;
+        hashTableForEach(outdated_keys, [&](auto & pair) { required_rows[i++] = pair.getSecond().front(); });
+    }
 
     /// request new values
     update(

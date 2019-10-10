@@ -67,8 +67,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                *lookupResultGetMapped(it) = 0;
-            ++*lookupResultGetMapped(it);
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -80,11 +80,11 @@ int main(int argc, char ** argv)
 
         size_t sum_counts = 0;
         size_t elems = 0;
-        for (const auto & kv : map)
+        map.forEachCell([&](auto & kv)
         {
             sum_counts += kv.getSecond();
             ++elems;
-        }
+        });
 
         std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
     }
@@ -103,8 +103,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(i, it, inserted);
             if (inserted)
-                *lookupResultGetMapped(it) = 0;
-            ++*lookupResultGetMapped(it);
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -116,14 +116,14 @@ int main(int argc, char ** argv)
 
         size_t sum_counts = 0;
         size_t elems = 0;
-        for (const auto & kv : map)
+        map.forEachCell([&](auto & kv)
         {
             sum_counts += kv.getSecond();
             ++elems;
 
             if (kv.getFirst() > n)
                 std::cerr << kv.getFirst() << std::endl;
-        }
+        });
 
         std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;
 
