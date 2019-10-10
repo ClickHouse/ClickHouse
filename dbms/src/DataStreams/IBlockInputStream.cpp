@@ -266,7 +266,6 @@ void IBlockInputStream::progressImpl(const Progress & value)
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
         ProgressValues progress = process_list_elem->getProgressIn();
-        size_t total_rows_estimate = std::max(progress.read_rows, progress.total_rows_to_read);
 
         /** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
             * NOTE: Maybe it makes sense to have them checked directly in ProcessList?
