@@ -189,7 +189,7 @@ protected:
             }
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getIterator(context);
+                tables_it = database->getTablesIterator(context);
 
             const bool need_lock_structure = needLockStructure(database, header);
 
@@ -251,10 +251,10 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(database->getTableMetadataPath(table_name));
+                    res_columns[res_index++]->insert(database->getObjectMetadataPath(table_name));
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+                    res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(context, table_name)));
 
                 {
                     Array dependencies_table_name_array;
@@ -372,7 +372,7 @@ private:
     UInt64 max_block_size;
     ColumnPtr databases;
     size_t database_idx = 0;
-    DatabaseIteratorPtr tables_it;
+    DatabaseTablesIteratorPtr tables_it;
     const Context context;
     bool done = false;
     DatabasePtr database;

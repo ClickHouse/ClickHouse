@@ -173,7 +173,10 @@ private:
 class DatabaseLazyIterator final : public IDatabaseTablesIterator
 {
 public:
-    DatabaseLazyIterator(DatabaseLazy & database_, const Context & context_, Strings && table_names_);
+    DatabaseLazyIterator(
+        DatabaseLazy & database_,
+        const Context & context_,
+        Strings && table_names_);
 
     void next() override;
     bool isValid() const override;

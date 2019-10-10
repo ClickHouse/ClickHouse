@@ -238,7 +238,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 Context & context) -> DictionarySourcePtr {
+                                 const Context & context) -> DictionarySourcePtr {
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             context, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));

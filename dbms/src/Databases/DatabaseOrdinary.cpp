@@ -242,6 +242,13 @@ void DatabaseOrdinary::removeTable(
     DatabaseOnDisk::removeTable(*this, context, table_name, log);
 }
 
+void DatabaseOrdinary::removeDictionary(
+    const Context & context,
+    const String & table_name)
+{
+    DatabaseOnDisk::removeDictionary(*this, context, table_name, log);
+}
+
 void DatabaseOrdinary::renameTable(
     const Context & context,
     const String & table_name,

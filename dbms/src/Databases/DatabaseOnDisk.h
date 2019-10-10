@@ -12,7 +12,7 @@ namespace DB
 
 namespace detail
 {
-    String getTableMetadataPath(const String & base_path, const String & table_name);
+    String getObjectMetadataPath(const String & base_path, const String & dictionary_name);
     String getDatabaseMetadataPath(const String & base_path);
     ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true);
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, bool throw_on_error);
@@ -170,7 +170,7 @@ void DatabaseOnDisk::renameTable(
         throw Exception{Exception::CreateFromPoco, e};
     }
 
-    ASTPtr ast = detail::getQueryFromMetadata(detail::getTableMetadataPath(database.getMetadataPath(), table_name));
+    ASTPtr ast = detail::getQueryFromMetadata(detail::getObjectMetadataPath(database.getMetadataPath(), table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + backQuote(table_name) + ".", ErrorCodes::FILE_DOESNT_EXIST);
     ast->as<ASTCreateQuery &>().table = to_table_name;
