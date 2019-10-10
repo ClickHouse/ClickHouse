@@ -4,12 +4,14 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDictionary.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <sstream>
 
@@ -25,84 +27,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-String getTableDefinitionFromCreateQuery(const ASTPtr & query)
-{
-    ASTPtr query_clone = query->clone();
-    auto & create = query_clone->as<ASTCreateQuery &>();
-
-    /// We remove everything that is not needed for ATTACH from the query.
-    create.attach = true;
-    create.database.clear();
-    create.as_database.clear();
-    create.as_table.clear();
-    create.if_not_exists = false;
-    create.is_populate = false;
-    create.replace_view = false;
-
-    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create.is_view && !create.is_materialized_view && !create.is_live_view)
-        create.select = nullptr;
-
-    create.format = nullptr;
-    create.out_file = nullptr;
-
-    std::ostringstream statement_stream;
-    formatAST(create, statement_stream, false);
-    statement_stream << '\n';
-    return statement_stream.str();
-}
-
-
-std::pair<String, StoragePtr> createTableFromDefinition(
-    const String & definition,
-    const String & database_name,
-    const String & database_data_path,
-    Context & context,
-    bool has_force_restore_data_flag,
-    const String & description_for_error_message)
-{
-    ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
-
-    auto & ast_create_query = ast->as<ASTCreateQuery &>();
-    ast_create_query.attach = true;
-    ast_create_query.database = database_name;
-
-    if (ast_create_query.as_table_function)
-    {
-        const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
-        const auto & factory = TableFunctionFactory::instance();
-        StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
-        return {ast_create_query.table, storage};
-    }
-    /// We do not directly use `InterpreterCreateQuery::execute`, because
-    /// - the database has not been created yet;
-    /// - the code is simpler, since the query is already brought to a suitable form.
-    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
-        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
-    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
-
-    return
-    {
-        ast_create_query.table,
-        StorageFactory::instance().get(
-            ast_create_query,
-            database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
-            columns, constraints,
-            true, has_force_restore_data_flag)
-    };
-}
-
-
 bool DatabaseWithOwnTablesBase::isTableExist(
     const Context & /*context*/,
     const String & table_name) const
 {
     std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
+}
+
+bool DatabaseWithOwnTablesBase::isDictionaryExist(
+    const Context & /*context*/,
+    const String & dictionary_name) const
+{
+    std::lock_guard lock(mutex);
+    return dictionaries.find(dictionary_name) != dictionaries.end();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
@@ -116,22 +54,46 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     return it->second;
 }
 
-DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
+DictionaryPtr DatabaseWithOwnTablesBase::tryGetDictionary(const Context & /*context*/, const String & dictionary_name) const
+{
+    std::lock_guard dict_lock{mutex};
+    auto it = dictionaries.find(dictionary_name);
+    if (it == dictionaries.end())
+        return {};
+
+    return it->second;
+}
+
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
-        return std::make_unique<DatabaseSnapshotIterator>(tables);
+        return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
     Tables filtered_tables;
     for (const auto & [table_name, storage] : tables)
         if (filter_by_table_name(table_name))
             filtered_tables.emplace(table_name, storage);
-    return std::make_unique<DatabaseSnapshotIterator>(std::move(filtered_tables));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables));
+}
+
+
+DatabaseDictionariesIteratorPtr DatabaseWithOwnTablesBase::getDictionariesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_dictionary_name)
+{
+    std::lock_guard lock(mutex);
+    if (!filter_by_dictionary_name)
+        return std::make_unique<DatabaseDictionariesSnapshotIterator>(dictionaries);
+
+    Dictionaries filtered_dictionaries;
+    for (const auto & [dictionary_name, dictionary] : dictionaries)
+        if (filter_by_dictionary_name(dictionary_name))
+            filtered_dictionaries.emplace(dictionary_name, dictionary);
+    return std::make_unique<DatabaseDictionariesSnapshotIterator>(std::move(filtered_dictionaries));
 }
 
 bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
 {
     std::lock_guard lock(mutex);
-    return tables.empty();
+    return tables.empty() && dictionaries.empty();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
@@ -149,11 +111,34 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
     return res;
 }
 
+DictionaryPtr DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name)
+{
+    DictionaryPtr res;
+    {
+        std::lock_guard lock(mutex);
+        auto it = dictionaries.find(dictionary_name);
+        if (it == dictionaries.end())
+            throw Exception("Dictionary " + name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        res = it->second;
+        dictionaries.erase(it);
+    }
+
+    return res;
+}
+
 void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
 {
     std::lock_guard lock(mutex);
     if (!tables.emplace(table_name, table).second)
         throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+}
+
+
+void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name, const DictionaryPtr & dictionary)
+{
+    std::lock_guard lock(mutex);
+    if (!dictionaries.emplace(dictionary_name, dictionary).second)
+        throw Exception("Dictionary " + name + "." + dictionary_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

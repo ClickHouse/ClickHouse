@@ -459,6 +459,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ACCESS_DENIED = 482;
     extern const int TOO_MANY_REDIRECTS = 483;
     extern const int INTERNAL_REDIS_ERROR = 484;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 500;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

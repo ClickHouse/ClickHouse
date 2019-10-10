@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IDictionary.h"
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace Poco
@@ -27,7 +28,15 @@ public:
 
     static DictionaryFactory & instance();
 
-    DictionaryPtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context) const;
+    DictionaryPtr create(
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const Context & context) const;
+
+    DictionaryPtr create(const std::string & name,
+        const ASTCreateQuery & ast,
+        const Context & context) const;
 
     using Creator = std::function<DictionaryPtr(
         const std::string & name,

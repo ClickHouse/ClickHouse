@@ -27,7 +27,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_)
 {
 }
 
-void DatabaseDictionary::loadTables(Context &, bool)
+void DatabaseDictionary::loadStoredObjects(Context &, bool)
 {
 }
 
@@ -79,9 +79,9 @@ StoragePtr DatabaseDictionary::tryGetTable(
     return {};
 }
 
-DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context, const FilterByNameFunction & filter_by_name)
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name)
 {
-    return std::make_unique<DatabaseSnapshotIterator>(listTables(context, filter_by_name));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(context, filter_by_name));
 }
 
 bool DatabaseDictionary::empty(const Context & context) const
@@ -115,7 +115,7 @@ void DatabaseDictionary::removeTable(
     throw Exception("DatabaseDictionary: removeTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-time_t DatabaseDictionary::getTableMetadataModificationTime(
+time_t DatabaseDictionary::getObjectMetadataModificationTime(
     const Context &,
     const String &)
 {

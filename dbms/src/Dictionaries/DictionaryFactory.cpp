@@ -20,7 +20,10 @@ void DictionaryFactory::registerLayout(const std::string & layout_type, Creator 
 
 
 DictionaryPtr DictionaryFactory::create(
-    const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context) const
+    const std::string & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    const Context & context) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     const auto & layout_prefix = config_prefix + ".layout";
@@ -46,6 +49,15 @@ DictionaryPtr DictionaryFactory::create(
 
     throw Exception{name + ": unknown dictionary layout type: " + layout_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
+
+DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, const Context & context) const
+{
+    (void)(name);
+    (void)(ast);
+    (void)(context);
+    return nullptr;
+}
+
 
 DictionaryFactory & DictionaryFactory::instance()
 {

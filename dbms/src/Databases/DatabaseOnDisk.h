@@ -18,6 +18,22 @@ namespace detail
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, bool throw_on_error);
 }
 
+ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * log);
+
+std::pair<String, StoragePtr> createTableFromAST(
+    ASTCreateQuery ast_create_query,
+    const String & database_name,
+    const String & database_data_path,
+    Context & context,
+    bool has_force_restore_data_flag);
+
+/** Get the row with the table definition based on the CREATE query.
+  * It is an ATTACH query that you can execute to create a table from the correspondent database.
+  * See the implementation.
+  */
+String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
+
+
 /* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
  */
 class DatabaseOnDisk
@@ -30,10 +46,23 @@ public:
         const StoragePtr & table,
         const ASTPtr & query);
 
+    static void createDictionary(
+        IDatabase & database,
+        const Context & context,
+        const String & dictionary_name,
+        const DictionaryPtr & dictionary,
+        const ASTPtr & query);
+
     static void removeTable(
         IDatabase & database,
         const Context & context,
         const String & table_name,
+        Poco::Logger * log);
+
+    static void removeDictionary(
+        IDatabase & database,
+        const Context & context,
+        const String & dictionary_name,
         Poco::Logger * log);
 
     template <typename Database>
@@ -55,29 +84,45 @@ public:
         const Context & context,
         const String & table_name);
 
+    static ASTPtr getCreateDictionaryQuery(
+        const IDatabase & database,
+        const Context & context,
+        const String & dictionary_name);
+
+    static ASTPtr tryGetCreateDictionaryQuery(
+        const IDatabase & database,
+        const Context & context,
+        const String & dictionary_name);
+
     static ASTPtr getCreateDatabaseQuery(
         const IDatabase & database,
         const Context & context);
 
     static void drop(const IDatabase & database);
 
-    static String getTableMetadataPath(
+    static String getObjectMetadataPath(
         const IDatabase & database,
-        const String & table_name);
+        const String & object_name);
 
-    static time_t getTableMetadataModificationTime(
+    static time_t getObjectMetadataModificationTime(
         const IDatabase & database,
-        const String & table_name);
+        const String & object_name);
 
 
     using IteratingFunction = std::function<void(const String &)>;
-    static void iterateTableFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function);
+    static void iterateMetadataFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function);
 
 private:
     static ASTPtr getCreateTableQueryImpl(
         const IDatabase & database,
         const Context & context,
         const String & table_name,
+        bool throw_on_error);
+
+    static ASTPtr getCreateDictionaryQueryImpl(
+        const IDatabase & database,
+        const Context & context,
+        const String & dictionary_name,
         bool throw_on_error);
 };
 
