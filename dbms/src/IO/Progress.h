@@ -110,6 +110,7 @@ struct Progress
 
         res.read_rows = read_rows.load(std::memory_order_relaxed);
         res.read_bytes = read_bytes.load(std::memory_order_relaxed);
+        res.skipped_rows = skipped_rows.load(std::memory_order_relaxed);
         res.total_rows_to_read = total_rows_to_read.load(std::memory_order_relaxed);
         res.written_rows = written_rows.load(std::memory_order_relaxed);
         res.written_bytes = written_bytes.load(std::memory_order_relaxed);
@@ -123,6 +124,7 @@ struct Progress
 
         res.read_rows = read_rows.fetch_and(0);
         res.read_bytes = read_bytes.fetch_and(0);
+        res.skipped_rows = skipped_rows.fetch_and(0);
         res.total_rows_to_read = total_rows_to_read.fetch_and(0);
         res.written_rows = written_rows.fetch_and(0);
         res.written_bytes = written_bytes.fetch_and(0);
