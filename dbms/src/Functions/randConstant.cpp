@@ -50,6 +50,7 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
 private:
     ToType value;
@@ -63,6 +64,8 @@ class FunctionBuilderRandomConstant : public FunctionBuilderImpl
 public:
     static constexpr auto name = Name::name;
     String getName() const override { return name; }
+
+    bool isDeterministic() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }

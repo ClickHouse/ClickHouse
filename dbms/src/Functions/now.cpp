@@ -53,6 +53,7 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
 private:
     time_t time_value;
@@ -65,8 +66,10 @@ public:
     static constexpr auto name = "now";
 
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
 
+    bool isDeterministic() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 0; }
     static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderNow>(); }
 
 protected:
