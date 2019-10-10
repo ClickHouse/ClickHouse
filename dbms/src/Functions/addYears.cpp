@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionAddYears = FunctionDateOrDateTimeAddInterval<AddOnDateTime64Mixin<AddYearsImpl>>;
+using FunctionAddYears = FunctionDateOrDateTimeAddInterval<AddYearsImpl>;
 
 void registerFunctionAddYears(FunctionFactory & factory)
 {
