@@ -35,7 +35,7 @@ $ docker pull yandex/tutorial-catboost-clickhouse
 ```bash
 $ docker image ls
 REPOSITORY                            TAG                 IMAGE ID            CREATED             SIZE
-yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19 months ago       1.58GB
+yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22 hours ago        1.37GB
 ```
 
 **3.** Запустите Docker-контейнер основанный на данном образе:
@@ -44,53 +44,18 @@ yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-**4.** Удалите старую версию СlickHouse:
-
-```bash
-// Проверяем версию СlickHouse
-$ dpkg -l | grep clickhouse-server
-
-// Останавливаем СlickHouse Server
-$ sudo service clickhouse-server stop
-
-// Удаляем СlickHouse
-$ sudo apt-get purge clickhouse-server-base
-$ sudo apt-get purge clickhouse-server-common
-$ sudo apt-get autoremove
-
-// Проверяем, что все успешно удалилось
-$ dpkg -l | grep clickhouse-server
-```
-
-**5.** Установите СlickHouse:
-
-```bash
-$ sudo apt-get install dirmngr
-$ sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-$ echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-$ sudo apt-get update
-
-$ sudo apt-get install -y clickhouse-server clickhouse-client
-
-$ sudo service clickhouse-server start
-$ clickhouse-client
-```
-
-См. подробное описание в [Быстром старте](https://clickhouse.yandex/#quick-start).
-
 ## 1. Создайте таблицу {#create-table}
 
-Чтобы создать таблицу в ClickHouse для обучающей выборки:
+Чтобы создать таблицу для обучающей выборки:
 
-**1.** Запустите ClickHouse-клиент:
+**1.** Запустите клиент ClickHouse:
 
 ```bash
 $ clickhouse client
 ```
 
 !!! note "Примечание"
-    ClickHouse-сервер уже запущен внутри Docker-контейнера.
+    Сервер ClickHouse уже запущен внутри Docker-контейнера.
 
 **2.** Создайте таблицу в ClickHouse с помощью следующей команды:
 
@@ -109,10 +74,10 @@ $ clickhouse client
     ROLE_FAMILY UInt32, 
     ROLE_CODE UInt32
 )
-ENGINE = MergeTree(date, date, 8192)
+ENGINE = MergeTree()
 ```
 
-## 2. Вставьте данные в таблицу {#insert-the-data-to-the-table}
+## 2. Вставьте данные в таблицу {#insert-data-to-table}
 
 Чтобы вставить данные:
 
@@ -138,15 +103,15 @@ SELECT count()
 FROM amazon_train
 
 +-count()-+
-|   32769 |
+|   65538 |
 +---------+
 ```
 
-## 3. Настройте конфигурацию модели {#configure-the-model}
+## 3. Настройте конфигурацию модели {#configure-model}
 
-Опциональный шаг: Docker-контейнер содержит все необходимые файлы конфигурации.
+**Опциональный шаг**: Docker-контейнер содержит файл конфигурации модели и ссылку на него в конфигурации ClickHouse. См. файлы: `models/amazon_model.xml` и `../../etc/clickhouse-server/config.d/models_config.xml`.
 
-Создайте файл с конфигурацией модели в папке `models` (например, `models/config_model.xml`):
+**1.** Создайте файл с конфигурацией модели в папке `models` (например, `models/config_model.xml`):
 
 ```xml
 <models>
@@ -163,21 +128,18 @@ FROM amazon_train
 </models>
 ```
 
-!!! note "Примечание"
-    Чтобы посмотреть конфигурационный файл в Docker-контейнере, выполните команду `cat models/amazon_model.xml`.
-
-В конфигурации ClickHouse уже прописан параметр:
+**2.** Добавьте ссылку на созданный файл в конфигурацию ClickHouse `../../etc/clickhouse-server/config.d/models_config.xml`.
 
 ```xml
-// ../../etc/clickhouse-server/config.xml
+// ../../etc/clickhouse-server/config.d/models_config.xml
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-Чтобы убедиться в этом, выполните команду `tail ../../etc/clickhouse-server/config.xml`.
+В конфигурации ClickHouse Docker-контейнера ссылка уже прописана. Чтобы убедиться в этом, выполните команду `tail ../../etc/clickhouse-server/config.d/models_config.xml`.
 
-## 4. Запустите вывод модели из SQL {#run-the-model-inference}
+## 4. Запустите вывод модели из SQL {#run-model-inference}
 
-Для тестирования запустите ClickHouse-клиент `$ clickhouse client`.
+Для тестирования модели запустите клиент ClickHouse `$ clickhouse client`.
 
 Проверьте, что модель работает:
 

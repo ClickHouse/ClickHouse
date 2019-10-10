@@ -1,6 +1,6 @@
 # Applying a Catboost Model in ClickHouse {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) — is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
+[CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
 
 With this instruction, you will learn to apply pre-trained models in ClickHouse: as a result, you run the model inference from SQL.
 
@@ -35,7 +35,7 @@ This Docker image contains everything you need to run CatBoost and ClickHouse: c
 ```bash
 $ docker image ls
 REPOSITORY                            TAG                 IMAGE ID            CREATED             SIZE
-yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19 months ago       1.58GB
+yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22 hours ago        1.37GB
 ```
 
 **3.** Start a Docker container based on this image:
@@ -43,37 +43,6 @@ yandex/tutorial-catboost-clickhouse   latest              3e5ad9fae997        19
 ```bash
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
-
-**4.** Remove old ClickHouse versions:
-
-```bash
-$ sudo apt-get purge clickhouse-server-base
-$ sudo apt-get purge clickhouse-server-common
-$ sudo apt-get autoremove
-```
-
-**5.** Проверьте успешность удаления:
-
-```bash
-dpkg -l | grep clickhouse-server
-```
-
-**6.** Install packages:
-
-```bash
-$ sudo apt-get install dirmngr
-$ sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-$ echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-$ sudo apt-get update
-
-$ sudo apt-get install -y clickhouse-server clickhouse-client
-
-$ sudo service clickhouse-server start
-$ clickhouse-client
-```
-
-For more information, see [Quick Start](https://clickhouse.yandex/#quick-start).
 
 ## 1. Create a Table {#create-table}
 
@@ -105,10 +74,10 @@ $ clickhouse client
     ROLE_FAMILY UInt32, 
     ROLE_CODE UInt32
 )
-ENGINE = MergeTree(date, date, 8192)
+ENGINE = MergeTree()
 ```
 
-## 2. Insert the Data to the Table {#insert-the-data-to-the-table}
+## 2. Insert the Data to the Table {#insert-data-to-table}
 
 To insert the data:
 
@@ -129,19 +98,20 @@ $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CS
 ```sql
 $ clickhouse client
 :) SELECT count() FROM amazon_train
+
 SELECT count()
 FROM amazon_train
 
 +-count()-+
-|   32769 |
+|   65538 |
 +---------+
 ```
 
-## 3. Configure the Model to Work with the Trained Model {#configure-the-model}
+## 3. Configure the Model to Work with the Trained Model {#configure-model}
 
-This step is optional: the Docker container contains all configuration files. 
+**Optional step**: the Docker container contains model configuration file and link to it in ClickHouse configuration. See `models/amazon_model.xml` and `../../etc/clickhouse-server/config.d/models_config.xml`.
 
-Create a config file in the `models` folder (for example, `models/config_model.xml`) with the model configuration:
+**1.** Create a model config file in the `models` folder (for example, `models/config_model.xml`):
 
 ```xml
 <models>
@@ -158,21 +128,18 @@ Create a config file in the `models` folder (for example, `models/config_model.x
 </models>
 ```
 
-!!! note "Note"
-    To show contents of the config file in the Docker container, run `cat models/amazon_model.xml`.
-
-The ClickHouse config file should already have this setting:
+**2.** Add a link to the created file to the ClickHouse configuration `../../etc/clickhouse-server/config.d/models_config.xml`.
 
 ```xml
-// ../../etc/clickhouse-server/config.xml
-<models_config>/home/catboost/models/*_model.xml</models_config>
+// ../../etc/clickhouse-server/config.d/models_config.xml
+<models_config>/home/catboost/models/*_model.xml< / models_config>
 ```
 
-To check it, run `tail ../../etc/clickhouse-server/config.xml`.
+The ClickHouse config file should already have this setting. To check it, run `tail ../../etc/clickhouse-server/config.d/models_config.xml`.
 
-## 4. Run the Model Inference from SQL {#run-the-model-inference}
+## 4. Run the Model Inference from SQL {#run-model-inference}
 
-For test run the ClickHouse client `$ clickhouse client`.
+For test model run the ClickHouse client `$ clickhouse client`.
 
 Let's make sure that the model is working:
 
