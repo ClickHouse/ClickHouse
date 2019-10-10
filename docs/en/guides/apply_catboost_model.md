@@ -7,9 +7,9 @@ With this instruction, you will learn to apply pre-trained models in ClickHouse:
 To apply a CatBoost model in ClickHouse:
 
 1. [Create a Table](#create-table).
-2. [Insert the Data to the Table](#insert-the-data-to-the-table).
-3. [Configure the Model](#configure-the-model).
-4. [Run the Model Inference from SQL](#run-the-model-inference).
+2. [Insert the Data to the Table](#insert-data-to-table).
+3. [Configure the Model](#configure-model).
+4. [Run the Model Inference from SQL](#run-model-inference).
 
 For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
 
