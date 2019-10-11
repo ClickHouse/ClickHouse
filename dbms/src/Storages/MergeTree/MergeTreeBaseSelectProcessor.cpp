@@ -377,55 +377,58 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
         part->index_granularity_info.index_granularity_bytes, part->index_granularity_info.fixed_index_granularity);
 
     size_t marks_count = part->getMarksCount();
+    size_t index_granularity = useful_index->granularity;
     size_t final_mark = part->index_granularity.hasFinalMark();
-    size_t index_marks_count = (marks_count - final_mark + useful_index->granularity - 1) / useful_index->granularity;
+    size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
-    MarkRanges res;
+    MarkRanges ranges_to_get_from_index;
     MergeTreeIndexReader index_reader(useful_index, part, index_marks_count, ranges);
 
     /// Some granules can cover two or more ranges,
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
-    size_t prev_index_read_bytes = 0;
+
+    /// Important: ranges are in right-to-left order, because 'reverse' was done in MergeTreeDataSelectExecutor
     for (size_t range_index = ranges.size(); range_index > 0; --range_index)
     {
         const MarkRange & range = ranges[range_index - 1];
-        MarkRange index_range(range.begin / useful_index->granularity, (range.end + useful_index->granularity - 1) / useful_index->granularity);
+        MarkRange index_range(range.begin / index_granularity, (range.end + index_granularity - 1) / index_granularity);
 
         if (last_index_mark != index_range.begin || !granule)
             index_reader.seek(index_range.begin);
 
-        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+        for (size_t i = index_range.begin; i < index_range.end; ++i)
         {
-            if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
+            if (i != index_range.begin || !granule || last_index_mark != index_range.begin)
             {
-                prev_index_read_bytes = index_reader.readBytes();
+                size_t prev_index_read_bytes = index_reader.readBytes();
                 granule = index_reader.read();
+                progressImpl(Progress(0, index_reader.readBytes() - prev_index_read_bytes));
             }
 
-            MarkRange data_range(
-                std::max(range.begin, index_mark * useful_index->granularity),
-                std::min(range.end, (index_mark + 1) * useful_index->granularity));
+            MarkRange data_range(std::max(range.begin, i * index_granularity), std::min(range.end, (i + 1) * index_granularity));
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
                 for (size_t index = data_range.begin; index < data_range.end; ++index)
-                    progressImpl(Progress(0, index_reader.readBytes() - prev_index_read_bytes, part->index_granularity.getMarkRows(index)));
-
-                continue;
+                    progressImpl(Progress(0, 0, part->index_granularity.getMarkRows(index)));
             }
-
-            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
-                res.push_back(data_range);
             else
-                res.back().end = data_range.end;
+            {
+                if (ranges_to_get_from_index.empty() || ranges_to_get_from_index.back().end - data_range.begin > min_marks_for_seek)
+                    ranges_to_get_from_index.emplace_back(data_range.begin, data_range.end);
+                else
+                    ranges_to_get_from_index.back().end = data_range.end;
+            }
         }
 
         last_index_mark = index_range.end - 1;
     }
 
-    return res;
+    /// Important: Change order to right-to-left, for MergeTreeThreadSelectBlockInputStream to get ranges with .pop_back()
+    std::reverse(std::begin(ranges_to_get_from_index), std::end(ranges_to_get_from_index));
+    return ranges_to_get_from_index;
 }
 
 

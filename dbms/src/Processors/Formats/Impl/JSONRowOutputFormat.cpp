@@ -231,7 +231,8 @@ void JSONRowOutputFormat::writeStatistics()
     writeCString("\t\t\"bytes_read\": ", *ostr);
     writeText(progress.read_bytes.load(), *ostr);
     writeChar('\n', *ostr);
-    writeCString("\t\t\"rows_skipped\": ", *ostr);
+    writeCString(",\n", *ostr);
+    writeCString("\t\t\"skipped_rows\": ", *ostr);
     writeText(progress.skipped_rows.load(), *ostr);
     writeChar('\n', *ostr);
 

@@ -1532,9 +1532,6 @@ private:
             message << " ("
                 << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                 << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
-
-        if (progress.skipped_rows)
-            message << " Skip: " << formatReadableQuantity(progress.skipped_rows) << " rows.";
         else
             message << ". ";
 
@@ -1581,24 +1578,17 @@ private:
 
     void writeFinalProgress()
     {
-        std::stringstream progress_message;
-
-        progress_message << "Processed "
+        std::cout << "Processed "
             << formatReadableQuantity(progress.read_rows) << " rows, "
             << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
         size_t elapsed_ns = watch.elapsed();
         if (elapsed_ns)
-            progress_message << " ("
+            std::cout << " ("
                 << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                 << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
-
-        if (progress.skipped_rows)
-            progress_message << " Skipped " << formatReadableQuantity(progress.skipped_rows) << " rows. ";
         else
-            progress_message << ". ";
-
-        std::cout << progress_message.str();
+            std::cout << ". ";
     }
 
 

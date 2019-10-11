@@ -17,17 +17,18 @@ void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
     size_t new_written_rows = 0;
     size_t new_written_bytes = 0;
 
+    if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SKIPPED_ROWS_INFO)
+        readVarUInt(new_skipped_rows, in);
+
     readVarUInt(new_read_rows, in);
     readVarUInt(new_read_bytes, in);
     readVarUInt(new_total_rows_to_read, in);
+
     if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
         readVarUInt(new_written_rows, in);
         readVarUInt(new_written_bytes, in);
     }
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SKIPPED_ROWS_INFO)
-        readVarUInt(new_skipped_rows, in);
 
     this->read_rows = new_read_rows;
     this->read_bytes = new_read_bytes;
@@ -40,7 +41,19 @@ void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
 
 void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
 {
-    writeVarUInt(this->read_rows, out);
+
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SKIPPED_ROWS_INFO)
+    {
+        writeVarUInt(this->skipped_rows, out);
+        writeVarUInt(this->read_rows, out);
+    }
+    else
+    {
+        /// For the lower version, in order to ensure the accuracy of the progress bar
+        /// we need to read_rows + skipped_rows as value of read_rows.
+        writeVarInt(this->read_rows + this->skipped_rows, out);
+    }
+
     writeVarUInt(this->read_bytes, out);
     writeVarUInt(this->total_rows_to_read, out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
@@ -48,9 +61,6 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
         writeVarUInt(this->written_rows, out);
         writeVarUInt(this->written_bytes, out);
     }
-
-    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SKIPPED_ROWS_INFO)
-        writeVarUInt(this->skipped_rows, out);
 }
 
 void ProgressValues::writeJSON(WriteBuffer & out) const

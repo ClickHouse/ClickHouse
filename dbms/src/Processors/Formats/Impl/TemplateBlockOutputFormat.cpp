@@ -45,6 +45,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
             case static_cast<size_t>(ResultsetPart::TimeElapsed):
             case static_cast<size_t>(ResultsetPart::RowsRead):
             case static_cast<size_t>(ResultsetPart::BytesRead):
+            case static_cast<size_t>(ResultsetPart::RowsSkipped):
                 if (format.formats[i] == ColumnFormat::None)
                     format.throwInvalidFormat("Serialization type for output part rows, rows_before_limit, time, "
                                               "rows_read or bytes_read is not specified", i);
@@ -91,7 +92,7 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
         return ResultsetPart::RowsRead;
     else if (part == "bytes_read")
         return ResultsetPart::BytesRead;
-    else if (part == "rows_skipped")
+    else if (part == "skipped_rows")
         return ResultsetPart::RowsSkipped;
     else
         throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
