@@ -29,8 +29,6 @@ namespace ErrorCodes
 }
 
 
-static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context)
     : name(name_)

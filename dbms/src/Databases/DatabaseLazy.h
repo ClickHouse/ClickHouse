@@ -75,11 +75,11 @@ public:
 
     ASTPtr getCreateDictionaryQuery(
         const Context & context,
-        const String & table_name) const override;
+        const String & dictionary_name) const override;
 
     ASTPtr tryGetCreateDictionaryQuery(
         const Context & context,
-        const String & table_name) const override;
+        const String & dictionary_name) const override;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 

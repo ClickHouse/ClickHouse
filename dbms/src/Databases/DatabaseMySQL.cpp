@@ -107,7 +107,7 @@ ASTPtr DatabaseMySQL::tryGetCreateTableQuery(const Context &, const String & tab
     return local_tables_cache[table_name].create_table_query;
 }
 
-time_t DatabaseMySQL::getTableMetadataModificationTime(const Context &, const String & table_name)
+time_t DatabaseMySQL::getObjectMetadataModificationTime(const Context &, const String & table_name)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
