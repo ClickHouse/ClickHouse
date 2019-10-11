@@ -43,6 +43,8 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 
+#include <Dictionaries/DictionaryFactory.h>
+
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
@@ -69,6 +71,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
+    extern const int DICTIONARY_ALREADY_EXISTS;
 }
 
 
@@ -700,6 +703,32 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return {};
 }
 
+BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
+{
+    String dictionary_name = create.table;
+
+    String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
+
+    auto guard = context.getDDLGuard(database_name, dictionary_name);
+    DatabasePtr database = context.getDatabase(database_name);
+
+    if (database->isDictionaryExist(context, dictionary_name))
+    {
+        if (create.if_not_exists)
+            return {};
+        else
+            throw Exception(
+                "Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+    }
+
+    auto res = DictionaryFactory::instance().create(dictionary_name, create, context.getGlobalContext());
+    if (create.attach)
+        database->attachDictionary(dictionary_name, res);
+    else
+        database->createDictionary(context, dictionary_name, res, query_ptr);
+
+    return {};
+}
 
 BlockIO InterpreterCreateQuery::execute()
 {
@@ -709,11 +738,11 @@ BlockIO InterpreterCreateQuery::execute()
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
-    {
         return createDatabase(create);
-    }
-    else
+    else if (!create.is_dictionary)
         return createTable(create);
+    else
+        return createDictionary(create);
 }
 
 

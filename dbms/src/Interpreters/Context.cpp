@@ -792,6 +792,16 @@ bool Context::isTableExist(const String & database_name, const String & table_na
         && it->second->isTableExist(*this, table_name);
 }
 
+bool Context::isDictionaryExists(const String & database_name, const String & dictionary_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    checkDatabaseAccessRightsImpl(db);
+
+    Databases::const_iterator it = shared->databases.find(db);
+    return shared->databases.end() != it && it->second->isDictionaryExist(*this, dictionary_name);
+}
 
 bool Context::isDatabaseExist(const String & database_name) const
 {
@@ -804,22 +814,6 @@ bool Context::isDatabaseExist(const String & database_name) const
 bool Context::isExternalTableExist(const String & table_name) const
 {
     return external_tables.end() != external_tables.find(table_name);
-}
-
-
-void Context::assertTableExists(const String & database_name, const String & table_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
-    Databases::const_iterator it = shared->databases.find(db);
-    if (shared->databases.end() == it)
-        throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-
-    if (!it->second->isTableExist(*this, table_name))
-        throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 
@@ -1061,6 +1055,17 @@ ASTPtr Context::getCreateTableQuery(const String & database_name, const String &
     assertDatabaseExists(db);
 
     return shared->databases[db]->getCreateTableQuery(*this, table_name);
+}
+
+
+ASTPtr Context::getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    assertDatabaseExists(db);
+
+    return shared->databases[db]->getCreateDictionaryQuery(*this, dictionary_name);
 }
 
 ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
