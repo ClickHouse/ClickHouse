@@ -4,3 +4,9 @@ Initial
 MOVE simple
 2	2
 6	10
+MOVE incompatible schema missing column
+4	4
+0	0
+MOVE incompatible schema different order by
+4	4
+0	0
