@@ -64,16 +64,7 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    bool filter_always_zero = false;
-
-    if (!initialized)
-    {
-        initialized = true;
-        if (expression->checkColumnIsAlwaysFalse(filter_column_name))
-            filter_always_zero = true;
-    }
-
-    if (constant_filter_description.always_false || filter_always_zero)
+    if (constant_filter_description.always_false)
     {
         input.close();
         output.finish();
@@ -92,6 +83,18 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk)
 
 void FilterTransform::transform(Chunk & chunk)
 {
+    if (!initialized)
+    {
+        initialized = true;
+        /// Cannot check this in prepare. Because in prepare columns for set may be not created yet.
+        if (expression->checkColumnIsAlwaysFalse(filter_column_name))
+        {
+            stopReading();
+            chunk = Chunk(getOutputPort().getHeader().getColumns(), 0);
+            return;
+        }
+    }
+
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
