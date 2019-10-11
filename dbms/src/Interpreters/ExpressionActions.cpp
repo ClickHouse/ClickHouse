@@ -1,5 +1,4 @@
 #include "config_core.h"
-#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -1191,13 +1190,15 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 
     for (auto & action : actions)
     {
-        if (action.type == action.APPLY_FUNCTION
-            && action.function_base
-            && functionIsInOrGlobalInOperator(action.function_base->getName())
-            && action.result_name == column_name
-            && action.argument_names.size() > 1)
+        if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
-            set_to_check = action.argument_names[1];
+            auto name = action.function_base->getName();
+            if ((name == "in" || name == "globalIn")
+                && action.result_name == column_name
+                && action.argument_names.size() > 1)
+            {
+                set_to_check = action.argument_names[1];
+            }
         }
     }
 
