@@ -1,7 +1,6 @@
 #pragma once
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -15,6 +14,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+// TODO include this last because of a broken roaring header. See the comment
+// inside.
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB
 {
