@@ -4,7 +4,10 @@
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 
-#include <cppkafka/cppkafka.h>
+namespace cppkafka
+{
+    class Consumer;
+}
 
 namespace Poco
 {
