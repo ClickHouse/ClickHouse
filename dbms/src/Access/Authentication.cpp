@@ -28,10 +28,7 @@ namespace
 
     Digest encodePlainText(const StringRef & text)
     {
-        Digest digest;
-        digest.resize(text.size);
-        memcpy(digest.data(), text.data, text.size);
-        return digest;
+        return Digest(text.data, text.data + text.size);
     }
 
     Digest encodeSHA256(const StringRef & text)
@@ -102,7 +99,7 @@ String Authentication::getPassword() const
 {
     if (type != PLAINTEXT_PASSWORD)
         throw Exception("Cannot decode the password", ErrorCodes::LOGICAL_ERROR);
-    return String(reinterpret_cast<const char *>(password_hash.data()), password_hash.size());
+    return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
 
 
