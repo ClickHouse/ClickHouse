@@ -85,7 +85,7 @@ DatabaseDictionariesIteratorPtr DatabaseDictionary::getDictionariesIterator(
     const Context & /*context*/,
     const FilterByNameFunction & /*filter_by_dictionary_name*/)
 {
-    return nullptr;
+    return std::make_unique<DatabaseDictionariesSnapshotIterator>();
 }
 
 
