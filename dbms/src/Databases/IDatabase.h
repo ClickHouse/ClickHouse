@@ -67,13 +67,14 @@ private:
     Dictionaries::iterator it;
 
 public:
+    DatabaseDictionariesSnapshotIterator() = default;
     DatabaseDictionariesSnapshotIterator(Dictionaries & dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
 
     DatabaseDictionariesSnapshotIterator(Dictionaries && dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
 
     void next() { ++it; }
 
-    bool isValid() const { return it != dictionaries.end(); }
+    bool isValid() const { return !dictionaries.empty() && it != dictionaries.end(); }
 
     const String & name() const { return it->first; }
 

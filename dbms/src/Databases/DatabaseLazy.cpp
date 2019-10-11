@@ -123,7 +123,7 @@ DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
     const Context & /*context*/,
     const FilterByNameFunction & /*filter_by_dictionary_name*/)
 {
-    throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
+    return std::make_unique<DatabaseDictionariesSnapshotIterator>();
 }
 
 void DatabaseLazy::attachDictionary(
