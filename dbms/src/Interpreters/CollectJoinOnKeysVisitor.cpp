@@ -32,16 +32,24 @@ void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const 
 }
 
 void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast,
-                                                     const std::pair<size_t, size_t> & table_no)
+                                                     const std::pair<size_t, size_t> & table_no, const ASOF::Inequality & inequality)
 {
     if (table_no.first == 1 || table_no.second == 2)
     {
         asof_left_key = left_ast->clone();
         asof_right_key = right_ast->clone();
+        analyzed_join.setAsofInequality(inequality);
+        return;
+    }
+    else if (table_no.first == 2 || table_no.second == 1)
+    {
+        asof_left_key = right_ast->clone();
+        asof_right_key = left_ast->clone();
+        analyzed_join.setAsofInequality(ASOF::reverseInequality(inequality));
         return;
     }
 
-    throw Exception("ASOF JOIN for (left_table.x <= right_table.x) is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("ASOF JOIN requires keys inequality from different tables", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
@@ -66,10 +74,9 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         return;
     }
 
-    bool less_or_equals = (func.name == "lessOrEquals");
-    bool greater_or_equals = (func.name == "greaterOrEquals");
+    ASOF::Inequality inequality = ASOF::getInequality(func.name);
 
-    if (data.is_asof && (less_or_equals || greater_or_equals))
+    if (data.is_asof && (inequality != ASOF::Inequality::None))
     {
         if (data.asof_left_key || data.asof_right_key)
             throwSyntaxException("ASOF JOIN expects exactly one inequality in ON section, unexpected " + queryToString(ast) + ".");
@@ -78,11 +85,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(ast, left, right, data);
 
-        if (greater_or_equals)
-            data.addAsofJoinKeys(left, right, table_numbers);
-        else
-            data.addAsofJoinKeys(right, left, std::make_pair(table_numbers.second, table_numbers.first));
-
+        data.addAsofJoinKeys(left, right, table_numbers, inequality);
         return;
     }
 

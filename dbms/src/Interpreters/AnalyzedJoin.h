@@ -5,6 +5,7 @@
 #include <Core/SettingsCommon.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/asof.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
@@ -48,6 +49,7 @@ class AnalyzedJoin
     ASTs key_asts_left;
     ASTs key_asts_right;
     ASTTableJoin table_join;
+    ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -99,6 +101,9 @@ public:
 
     void addJoinedColumn(const NameAndTypePair & joined_column);
     void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
+
+    void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
+    ASOF::Inequality getAsofInequality() { return asof_inequality; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
