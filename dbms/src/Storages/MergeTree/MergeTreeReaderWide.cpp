@@ -34,7 +34,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(const MergeTreeData::DataPartPtr & data
     clockid_t clock_type_)
     : IMergeTreeReader(data_part_, columns_
     , uncompressed_cache_, mark_cache_, mark_ranges_
-    , settings_ , avg_value_size_hints_)
+    , settings_, avg_value_size_hints_)
 {
     try
     {

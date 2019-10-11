@@ -315,7 +315,7 @@ void MergeTreeDataPartWide::loadColumnsChecksumsIndexes(bool require_columns_che
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     String full_path = getFullPath();
-    index_granularity_info.changeGranularityIfRequired(full_path);
+    index_granularity_info.changeGranularityIfRequired(shared_from_this());
 
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);

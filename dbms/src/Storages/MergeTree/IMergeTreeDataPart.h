@@ -84,6 +84,10 @@ public:
     /// If no checksums are present returns the name of the first physically existing column.
     virtual String getColumnNameWithMinumumCompressedSize() const = 0;
 
+    virtual String getMarkExtension(bool /* is_adaptive */) const { return ""; }
+
+    virtual size_t getMarkSize(bool /* is_adaptive */) const { return 0; }
+
     // virtual void detach() = 0;
 
     // virtual Checksums check(

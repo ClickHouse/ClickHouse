@@ -2,15 +2,20 @@
 
 #include <optional>
 #include <Core/Types.h>
+// #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
 
 class MergeTreeData;
+class IMergeTreeDataPart;
+
 /// Meta information about index granularity
 struct MergeTreeIndexGranularityInfo
 {
 public:
+    using MergeTreeDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
+
     /// Marks file extension '.mrk' or '.mrk2'
     String marks_file_extension;
 
@@ -26,14 +31,13 @@ public:
     /// Approximate bytes size of one granule
     size_t index_granularity_bytes;
 
-    MergeTreeIndexGranularityInfo(
-        const MergeTreeData & storage);
+    MergeTreeIndexGranularityInfo(const MergeTreeDataPartPtr & part);
 
-    void changeGranularityIfRequired(const std::string & path_to_part);
+    void changeGranularityIfRequired(const MergeTreeDataPartPtr & part);
 
-    String getMarksFilePath(const String & column_path) const
+    String getMarksFilePath(const String & path_prefix) const
     {
-        return column_path + marks_file_extension;
+        return path_prefix + marks_file_extension;
     }
 private:
 

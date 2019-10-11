@@ -62,6 +62,14 @@ public:
 
     bool supportsVerticalMerge() const override { return true; }
 
+    String getMarkExtension(bool is_adaptive) const override { return is_adaptive ? ".mrk2" : ".mrk"; }
+
+    size_t getMarkSize(bool is_adaptive) const override
+    {
+        size_t nums = is_adaptive ? 3 : 2; 
+        return sizeof(size_t) * nums;
+    }
+
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
     ///   (either by locking columns_lock, or by locking table structure).

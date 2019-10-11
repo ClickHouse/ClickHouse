@@ -144,7 +144,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
-    , index_granularity_info(storage) {}
+    , index_granularity_info(shared_from_this()) {}
 
 IMergeTreeDataPart::IMergeTreeDataPart(
         const MergeTreeData & storage_,
@@ -157,7 +157,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , info(info_)
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
-    , index_granularity_info(storage) {}
+    , index_granularity_info(shared_from_this()) {}
 
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
