@@ -8,7 +8,7 @@
 
 1. [Создайте таблицу](#create-table).
 2. [Вставьте данные в таблицу](#insert-data-to-table).
-3. [Настройте конфигурацию модели](#configure-model).
+3. [Создайте библиотеку libcatboostmodel и настройте конфигурацию модели](#build-libcatboostmodel-and-configure-model) (Опциональный шаг).
 4. [Запустите вывод модели из SQL](#run-model-inference).
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
@@ -77,26 +77,31 @@ $ clickhouse client
 ENGINE = MergeTree()
 ```
 
-## 2. Вставьте данные в таблицу {#insert-data-to-table}
-
-Чтобы вставить данные:
-
-**1.** Выйдите из клиента ClickHouse:
+**3.** Выйдите из клиента ClickHouse:
 
 ```sql
 :) exit
 ```
 
-**2.** Загрузите данные:
+## 2. Вставьте данные в таблицу {#insert-data-to-table}
+
+Чтобы вставить данные:
+
+**1.** Выполните следующую команду:
 
 ```bash
 $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CSVWithNames' < ~/amazon/train.csv
 ```
 
+**2.** Запустите клиент ClickHouse:
+
+```bash
+$ clickhouse client
+```
+
 **3.** Проверьте, что данные действительно загрузились:
 
 ```sql
-$ clickhouse client
 :) SELECT count() FROM amazon_train
 
 SELECT count()
@@ -107,9 +112,14 @@ FROM amazon_train
 +---------+
 ```
 
-## 3. Настройте конфигурацию модели {#configure-model}
+## 3. Создайте библиотеку libcatboostmodel и настройте конфигурацию модели {#build-libcatboostmodel-and-configure-model}
 
-**Опциональный шаг**: Docker-контейнер содержит файл конфигурации модели и ссылку на него в конфигурации ClickHouse. См. файлы: `models/amazon_model.xml` и `../../etc/clickhouse-server/config.d/models_config.xml`.
+!!! note "Примечание" 
+    **Опциональный шаг.** Docker-образ уже содержит библиотеку `.data/libcatboostmodel.so` и файл конфигурации модели `models/amazon_model.xml`.
+
+Библиотека `libcatboostmodel.<so|dll|dylib>` — это библиотека CatBoost, которая содержит интерфейс для применения моделей. Чтобы собрать библиотеку, см. [документацию CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+
+Чтобы настроить конфигурацию модели:
 
 **1.** Создайте файл с конфигурацией модели в папке `models` (например, `models/config_model.xml`):
 
@@ -128,14 +138,21 @@ FROM amazon_train
 </models>
 ```
 
-**2.** Добавьте ссылку на созданный файл в конфигурацию ClickHouse `../../etc/clickhouse-server/config.d/models_config.xml`.
+**2.** Укажите в конфигурации ClickHouse:
+
+- Путь к `libcatboostmodel.so`:
 
 ```xml
-// ../../etc/clickhouse-server/config.d/models_config.xml
+<catboost_dynamic_library_path>/home/catboost/.data/libcatboostmodel.so</catboost_dynamic_library_path>
+```
+
+- Путь к созданной конфигурации модели:
+
+```xml
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-В конфигурации ClickHouse Docker-контейнера ссылка уже прописана. Чтобы убедиться в этом, выполните команду `tail ../../etc/clickhouse-server/config.d/models_config.xml`.
+В конфигурации ClickHouse Docker-контейнера эти пути уже прописаны. Чтобы убедиться в этом, выполните команду `tail ../../etc/clickhouse-server/config.d/models_config.xml`.
 
 ## 4. Запустите вывод модели из SQL {#run-model-inference}
 

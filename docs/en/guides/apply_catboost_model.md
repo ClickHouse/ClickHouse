@@ -8,7 +8,7 @@ To apply a CatBoost model in ClickHouse:
 
 1. [Create a Table](#create-table).
 2. [Insert the Data to the Table](#insert-data-to-table).
-3. [Configure the Model](#configure-model).
+3. [Build libcatboostmodel and Configure the Model](#build-libcatboostmodel-and-configure-model) (Optional step).
 4. [Run the Model Inference from SQL](#run-model-inference).
 
 For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
@@ -48,7 +48,7 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 
 To create a ClickHouse table for the train sample:
 
-**1.** Start a ClickHouse client:
+**1.** Start ClickHouse console client in interactive mode:
 
 ```bash
 $ clickhouse client
@@ -77,26 +77,31 @@ $ clickhouse client
 ENGINE = MergeTree()
 ```
 
-## 2. Insert the Data to the Table {#insert-data-to-table}
-
-To insert the data:
-
-**1.** Exit from ClickHouse console client:
+**3.** Exit from ClickHouse console client:
 
 ```sql
 :) exit
 ```
 
-**2.** Upload the data:
+## 2. Insert the Data to the Table {#insert-data-to-table}
+
+To insert the data:
+
+**1.** Run the following command:
 
 ```bash
 $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CSVWithNames' < ~/amazon/train.csv
 ```
 
+**2.** Start ClickHouse console client in interactive mode:
+
+```bash
+$ clickhouse client
+```
+
 **3.** Make sure the data has been uploaded:
 
 ```sql
-$ clickhouse client
 :) SELECT count() FROM amazon_train
 
 SELECT count()
@@ -107,9 +112,14 @@ FROM amazon_train
 +---------+
 ```
 
-## 3. Configure the Model to Work with the Trained Model {#configure-model}
+## 3. Build libcatboostmodel Configure the Model to Work with the Trained Model {#build-libcatboostmodel-and-configure-model}
 
-**Optional step**: the Docker container contains model configuration file and link to it in ClickHouse configuration. See `models/amazon_model.xml` and `../../etc/clickhouse-server/config.d/models_config.xml`.
+!!! note "Note"
+    **Optional step.** The Docker image contains the library `.data/libcatboostmodel.so` and model configuration file `models/amazon_model.xml`. 
+
+The library `libcatboostmodel.<so|dll|dylib>` is the CatBoost model interface library. To build the library see [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+
+To configure the model:
 
 **1.** Create a model config file in the `models` folder (for example, `models/config_model.xml`):
 
@@ -131,8 +141,7 @@ FROM amazon_train
 **2.** Add a link to the created file to the ClickHouse configuration `../../etc/clickhouse-server/config.d/models_config.xml`.
 
 ```xml
-// ../../etc/clickhouse-server/config.d/models_config.xml
-<models_config>/home/catboost/models/*_model.xml< / models_config>
+<models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
 The ClickHouse config file should already have this setting. To check it, run `tail ../../etc/clickhouse-server/config.d/models_config.xml`.
