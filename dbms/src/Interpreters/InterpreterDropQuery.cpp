@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int UNKNOWN_DICTIONARY;
 }
 
 
@@ -39,15 +40,26 @@ BlockIO InterpreterDropQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
 
     if (!drop.table.empty())
-        return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
+    {
+        if (!drop.is_dictionary)
+            return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
+        else
+            return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
+    }
     else if (!drop.database.empty())
         return executeToDatabase(drop.database, drop.kind, drop.if_exists);
     else
-        throw Exception("Database and table names is empty.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Nothing to drop, both names are empty.", ErrorCodes::LOGICAL_ERROR);
 }
 
 
-BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock)
+BlockIO InterpreterDropQuery::executeToTable(
+    String & database_name_,
+    String & table_name,
+    ASTDropQuery::Kind kind,
+    bool if_exists,
+    bool if_temporary,
+    bool no_ddl_lock)
 {
     if (if_temporary || database_name_.empty())
     {
@@ -95,6 +107,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
                 database_and_table.first->getMetadataPath()
                 + escapeForFileName(database_and_table.second->getTableName());
 
+            /// NOTE seems like duplication of the code inside removeTable method of database
             const auto prev_metadata_name = metadata_file_without_extension + ".sql";
             const auto drop_metadata_name = metadata_file_without_extension + ".sql.tmp_drop";
 
@@ -131,6 +144,50 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         }
     }
 
+    return {};
+}
+
+
+BlockIO InterpreterDropQuery::executeToDictionary(
+    String & database_name_,
+    String & dictionary_name,
+    ASTDropQuery::Kind kind,
+    bool if_exists,
+    bool is_temporary,
+    bool no_ddl_lock)
+{
+    if (is_temporary)
+        throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
+
+    String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
+
+    auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, dictionary_name) : nullptr);
+
+    DatabasePtr database = tryGetDatabase(database_name, false);
+
+    if (!database || !database->isDictionaryExist(context, dictionary_name))
+    {
+        if (!if_exists)
+            throw Exception(
+                "Dictionary " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(dictionary_name) + " doesn't exist.",
+                ErrorCodes::UNKNOWN_DICTIONARY);
+        else
+            return {};
+    }
+
+    if (kind == ASTDropQuery::Kind::Detach)
+    {
+        /// Drop dictionary from memory, don't touch data and metadata
+        database->detachDictionary(dictionary_name);
+    }
+    else if (kind == ASTDropQuery::Kind::Truncate)
+    {
+        throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
+    }
+    else if (kind == ASTDropQuery::Kind::Drop)
+    {
+        database->removeDictionary(context, dictionary_name);
+    }
     return {};
 }
 
