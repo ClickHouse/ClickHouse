@@ -174,14 +174,16 @@ else:
 def escape_string(s):
     return s.encode(escape_string_codec).decode('utf-8')
 
+# WITH toDateTime64(20191010163704, 3, 'UTC')
+
 # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
 for func in functions:
     for dt in datetime64_args:
         dt32 = func.format(datetime='now()')
-        dt64 = func.format(datetime=dt)
-        f = "'values match:', ({dt32}) == ({dt64}), 'types match:', toTypeName({dt32}) == toTypeName({dt64})".format(dt32=dt32, dt64=dt64)
-        print("""SELECT 'SELECT {dt64}';""".format(dt64=escape_string(dt64)))    # for debug only
-        print("""SELECT toTypeName({dt32}), {dt32};""".format(dt32=dt32)) # for debug only
-        print("""SELECT toTypeName({dt64}), {dt64};""".format(dt64=dt64)) # for debug only
-        print("""SELECT {f};""".format(f=f))
-        print("""SELECT '------------------------------------------';""") # for debug only
+        # dt64 = func.format(datetime=dt)
+        # f = "'values match:', ({dt32}) == ({dt64}), 'types match:', toTypeName({dt32}) == toTypeName({dt64})".format(dt32=dt32, dt64=dt64)
+        print("""SELECT 'SELECT {dt32}'""".format(dt32=escape_string(dt32)))    # for debug only
+        print("""SELECT toTypeName(r), {dt32} as r""".format(dt32=dt32)) # for debug only
+        # print("""SELECT toTypeName(r), {dt64} as r""".format(dt64=dt64)) # for debug only
+#        print("""SELECT {f};""".format(f=f))
+        print("""SELECT '------------------------------------------'""") # for debug only
