@@ -46,7 +46,7 @@
             <port>3306</port>
             <user>root</user>
             <password>clickhouse</password>
-            <table>test2</table>
+            <table>test3</table>
             <close_connection>true</close_connection>
             <share_connection>true</share_connection>
          </mysql>
@@ -82,7 +82,7 @@
             <port>3306</port>
             <user>root</user>
             <password>clickhouse</password>
-            <table>test2</table>
+            <table>test4</table>
             <close_connection>true</close_connection>
             <share_connection>true</share_connection>
          </mysql>
