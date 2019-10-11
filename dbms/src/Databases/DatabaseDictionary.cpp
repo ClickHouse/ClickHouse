@@ -70,14 +70,14 @@ bool DatabaseDictionary::isDictionaryExist(
     const Context & /*context*/,
     const String & /*table_name*/) const
 {
-    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+    return false;
 }
 
 DictionaryPtr DatabaseDictionary::tryGetDictionary(
     const Context & /*context*/,
     const String & /*dictionary_name*/) const
 {
-    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+    return nullptr;
 }
 
 
@@ -85,7 +85,7 @@ DatabaseDictionariesIteratorPtr DatabaseDictionary::getDictionariesIterator(
     const Context & /*context*/,
     const FilterByNameFunction & /*filter_by_dictionary_name*/)
 {
-    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+    return nullptr;
 }
 
 
@@ -123,7 +123,7 @@ ASTPtr DatabaseDictionary::tryGetCreateDictionaryQuery(
     const Context & /*context*/,
     const String & /*table_name*/) const
 {
-    throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
+    return nullptr;
 }
 
 
