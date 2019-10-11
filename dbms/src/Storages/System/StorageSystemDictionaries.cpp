@@ -41,7 +41,7 @@ NameSet getFilteredDictionaries(const ASTPtr & query, const Context & context, c
 {
     MutableColumnPtr column = ColumnString::create();
     auto dicts_it = database->getDictionariesIterator(context);
-    while (dicts_it->isValid())
+    while (dicts_it && dicts_it->isValid())
     {
         column->insert(dicts_it->name());
         dicts_it->next();
@@ -137,7 +137,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         auto dictionaries_set = getFilteredDictionaries(query_info.query, context, database_ptr);
         auto filter = [&dictionaries_set](const String & dict_name) { return dictionaries_set.count(dict_name); };
         auto dictionaries_it = database_ptr->getDictionariesIterator(context, filter);
-        while (dictionaries_it->isValid())
+        while (dictionaries_it && dictionaries_it->isValid())
         {
             size_t i = 0;
             res_columns[i++]->insert(database);
