@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_REMOTE_SHARD_FOUND;
+    extern const int NO_REMOTE_SHARD_AVAILABLE;
 }
 
 
@@ -31,9 +32,42 @@ ColumnsDescription getStructureOfRemoteTable(
     const Context & context,
     const ASTPtr & table_func_ptr)
 {
-    /// Send to the first any remote shard.
-    const auto & shard_info = cluster.getAnyShardInfo();
+    const auto & shards_info = cluster.getShardsInfo();
 
+    std::string fail_messages;
+
+    for (auto & shard_info : shards_info)
+    {
+        try {
+            const auto & res = getStructureOfRemoteTableInShard(shard_info, database, table, context, table_func_ptr);
+            return res;
+        }
+        catch (const DB::NetException & e)
+        {
+            /// THIS DOES NOT WORK AND IS ALWAYS FALSE???
+            if (context.getSettingsRef().skip_unavailable_shards)
+            {
+                std::string fail_message = getCurrentExceptionMessage(false);
+                fail_messages += fail_message + '\n';
+
+                continue;
+            }
+            throw;
+        }
+    }
+
+    throw DB::NetException(
+        "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
+        DB::ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+}
+
+ColumnsDescription getStructureOfRemoteTableInShard(
+    const Cluster::ShardInfo & shard_info,
+    const std::string & database,
+    const std::string & table,
+    const Context & context,
+    const ASTPtr & table_func_ptr)
+{
     String query;
 
     if (table_func_ptr)
