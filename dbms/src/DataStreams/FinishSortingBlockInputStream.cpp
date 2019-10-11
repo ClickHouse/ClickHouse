@@ -26,7 +26,7 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 FinishSortingBlockInputStream::FinishSortingBlockInputStream(
     const BlockInputStreamPtr & input, const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
-    size_t max_merged_block_size_, size_t limit_)
+    size_t max_merged_block_size_, UInt64 limit_)
     : description_sorted(description_sorted_), description_to_sort(description_to_sort_),
     max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
@@ -62,6 +62,7 @@ struct Less
     }
 };
 
+
 Block FinishSortingBlockInputStream::readImpl()
 {
     if (limit && total_rows_processed >= limit)
@@ -85,7 +86,7 @@ Block FinishSortingBlockInputStream::readImpl()
         {
             Block block = children.back()->read();
 
-            /// End of input stream, but we can`t return immediatly, we need to merge already read blocks.
+            /// End of input stream, but we can`t return immediately, we need to merge already read blocks.
             /// Check it later, when get end of stream from impl.
             if (!block)
             {
@@ -98,12 +99,9 @@ Block FinishSortingBlockInputStream::readImpl()
             if (description_to_sort.empty())
                 return block;
 
-            size_t size = block.rows();
-            if (size == 0)
+            if (block.rows() == 0)
                 continue;
 
-            /// We need to sort each block separatly before merging.
-            sortBlock(block, description_to_sort);
 
             removeConstantsFromBlock(block);
 
@@ -116,6 +114,7 @@ Block FinishSortingBlockInputStream::readImpl()
 
                 Less less(last_columns, current_columns);
 
+                size_t size = block.rows();
                 IColumn::Permutation perm(size);
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
@@ -148,8 +147,11 @@ Block FinishSortingBlockInputStream::readImpl()
             blocks.push_back(block);
         }
 
-        impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
-        res = impl->read();
+        if (!blocks.empty())
+        {
+            impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
+            res = impl->read();
+        }
     }
 
     if (res)

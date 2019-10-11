@@ -13,7 +13,7 @@ class ASTSubquery : public ASTWithAlias
 {
 public:
     /** Get the text that identifies this element. */
-    String getID() const override { return "Subquery"; }
+    String getID(char) const override { return "Subquery"; }
 
     ASTPtr clone() const override
     {

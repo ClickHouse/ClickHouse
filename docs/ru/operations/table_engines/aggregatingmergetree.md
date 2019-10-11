@@ -1,18 +1,17 @@
-<a name="table_engine-aggregatingmergetree"></a>
 
 # AggregatingMergeTree
 
-Движок наследует функциональность [MergeTree](mergetree.md#table_engines-mergetree), изменяя логику слияния кусков данных. Все строки с одинаковым первичным ключом (точнее, с одинаковым [ключом сортировки](mergetree.md#table_engines-mergetree-sorting_key)) ClickHouse заменяет на одну (в пределах одного куска данных), которая хранит объединение состояний агрегатных функций.
+Движок наследует функциональность [MergeTree](mergetree.md#table_engines-mergetree), изменяя логику слияния кусков данных. Все строки с одинаковым первичным ключом (точнее, с одинаковым [ключом сортировки](mergetree.md)) ClickHouse заменяет на одну (в пределах одного куска данных), которая хранит объединение состояний агрегатных функций.
 
 Таблицы типа `AggregatingMergeTree` могут использоваться для инкрементальной агрегации данных, в том числе, для агрегирующих материализованных представлений.
 
-Движок обрабатывает все столбцы типа [AggregateFunction](../../data_types/nested_data_structures/aggregatefunction.md#data_type-aggregatefunction).
+Движок обрабатывает все столбцы типа [AggregateFunction](../../data_types/nested_data_structures/aggregatefunction.md).
 
 Использование `AggregatingMergeTree` оправдано только в том случае, когда это уменьшает количество строк на порядки.
 
 ## Создание таблицы
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -25,11 +24,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md#query_language-queries-create_table).
+Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md).
 
 **Секции запроса**
 
-При создании таблицы `AggregatingMergeTree` используются те же [секции](mergetree.md#table_engines-mergetree-configuring), что и при создании таблицы `MergeTree`.
+При создании таблицы `AggregatingMergeTree` используются те же [секции](mergetree.md), что и при создании таблицы `MergeTree`.
 
 
 <details markdown="1"><summary>Устаревший способ создания таблицы</summary>
@@ -61,7 +60,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Создаём материализованное представление типа `AggregatingMergeTree`, следящее за таблицей `test.visits`:
 
-``` sql
+```sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate)
 AS SELECT
@@ -75,7 +74,7 @@ GROUP BY CounterID, StartDate;
 
 Вставляем данные в таблицу `test.visits`:
 
-``` sql
+```sql
 INSERT INTO test.visits ...
 ```
 
@@ -83,7 +82,7 @@ INSERT INTO test.visits ...
 
 Чтобы получить агрегированные данные, выполним запрос вида `SELECT ... GROUP BY ...` из представления `test.basic`:
 
-``` sql
+```sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,

@@ -89,6 +89,13 @@ String FieldVisitorDump::operator() (const Tuple & x_def) const
     return wb.str();
 }
 
+String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
+{
+    WriteBufferFromOwnString wb;
+    writeQuoted(x.name, wb);
+    writeQuoted(x.data, wb);
+    return wb.str();
+}
 
 /** In contrast to writeFloatText (and writeQuoted),
   *  even if number looks like integer after formatting, prints decimal point nevertheless (for example, Float64(1) is printed as 1.).
@@ -121,6 +128,10 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
+String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
+{
+    return formatQuoted(x.data);
+}
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -156,7 +167,7 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
 }
 
 
-FieldVisitorHash::FieldVisitorHash(SipHash & hash) : hash(hash) {}
+FieldVisitorHash::FieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
 void FieldVisitorHash::operator() (const Null &) const
 {
@@ -229,6 +240,16 @@ void FieldVisitorHash::operator() (const DecimalField<Decimal128> & x) const
     UInt8 type = Field::Types::Decimal128;
     hash.update(type);
     hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const AggregateFunctionStateData & x) const
+{
+    UInt8 type = Field::Types::AggregateFunctionState;
+    hash.update(type);
+    hash.update(x.name.size());
+    hash.update(x.name.data(), x.name.size());
+    hash.update(x.data.size());
+    hash.update(x.data.data(), x.data.size());
 }
 
 

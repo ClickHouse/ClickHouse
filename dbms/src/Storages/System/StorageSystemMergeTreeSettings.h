@@ -15,6 +15,7 @@ class Context;
   */
 class SystemMergeTreeSettings : public ext::shared_ptr_helper<SystemMergeTreeSettings>, public IStorageSystemOneBlock<SystemMergeTreeSettings>
 {
+    friend struct ext::shared_ptr_helper<SystemMergeTreeSettings>;
 public:
     std::string getName() const override { return "SystemMergeTreeSettings"; }
 

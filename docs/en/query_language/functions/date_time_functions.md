@@ -4,7 +4,7 @@ Support for time zones
 
 All functions for working with the date and time that have a logical use for the time zone can accept a second optional time zone argument. Example: Asia/Yekaterinburg. In this case, they use the specified time zone instead of the local (default) one.
 
-``` sql
+```sql
 SELECT
     toDateTime('2016-06-15 23:00:00') AS time,
     toDate(time) AS date_local,
@@ -12,7 +12,7 @@ SELECT
     toString(time, 'US/Samoa') AS time_samoa
 ```
 
-```
+```text
 ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
@@ -20,17 +20,29 @@ SELECT
 
 Only time zones that differ from UTC by a whole number of hours are supported.
 
+## toTimeZone
+
+Convert time or date and time to the specified time zone.
+
 ## toYear
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
+
+## toQuarter
+
+Converts a date or date with time to a UInt8 number containing the quarter number.
 
 ## toMonth
 
 Converts a date or date with time to a UInt8 number containing the month number (1-12).
 
+## toDayOfYear
+
+Converts a date or date with time to a UInt16 number containing the number of the day of the year (1-366).
+
 ## toDayOfMonth
 
--Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
+Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
 
 ## toDayOfWeek
 
@@ -50,9 +62,24 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
-## toMonday
+## toUnixTimestamp
 
-Rounds down a date or date with time to the nearest Monday.
+Converts a date with time to a unix timestamp.
+
+## toStartOfYear
+
+Rounds down a date or date with time to the first day of the year.
+Returns the date.
+
+## toStartOfISOYear
+
+Rounds down a date or date with time to the first day of ISO year.
+Returns the date.
+
+## toStartOfQuarter
+
+Rounds down a date or date with time to the first day of the quarter.
+The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October.
 Returns the date.
 
 ## toStartOfMonth
@@ -63,16 +90,24 @@ Returns the date.
 !!! attention
     The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do "natural" overflow.
 
-## toStartOfQuarter
+## toMonday
 
-Rounds down a date or date with time to the first day of the quarter.
-The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October.
+Rounds down a date or date with time to the nearest Monday.
 Returns the date.
 
-## toStartOfYear
+## toStartOfWeek(t[,mode])
 
-Rounds down a date or date with time to the first day of the year.
+Rounds down a date or date with time to the nearest Sunday or Monday by mode.
 Returns the date.
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used. 
+
+## toStartOfDay
+
+Rounds down a date with time to the start of the day.
+
+## toStartOfHour
+
+Rounds down a date with time to the start of the hour.
 
 ## toStartOfMinute
 
@@ -80,21 +115,21 @@ Rounds down a date with time to the start of the minute.
 
 ## toStartOfFiveMinute
 
-Rounds down a date with time to the start of the hour.
+Rounds down a date with time to the start of the five-minute interval.
+
+## toStartOfTenMinutes
+Rounds down a date with time to the start of the ten-minute interval.
 
 ## toStartOfFifteenMinutes
 
 Rounds down the date with time to the start of the fifteen-minute interval.
 
-Note: If you need to round a date with time to any other number of seconds, minutes, or hours, you can convert it into a number by using the toUInt32 function, then round the number using intDiv and multiplication, and convert it back using the toDateTime function.
-
-## toStartOfHour
-
-Rounds down a date with time to the start of the hour.
-
-## toStartOfDay
-
-Rounds down a date with time to the start of the day.
+## toStartOfInterval(time_or_data, INTERVAL x unit [, time_zone])
+This is a generalization of other functions named `toStartOf*`. For example,  
+`toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,  
+`toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,  
+`toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,  
+`toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)` etc.
 
 ## toTime
 
@@ -103,6 +138,10 @@ Converts a date with time to a certain fixed date, while preserving the time.
 ## toRelativeYearNum
 
 Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
+
+## toRelativeQuarterNum
+
+Converts a date with time or date to the number of the quarter, starting from a certain fixed point in the past.
 
 ## toRelativeMonthNum
 
@@ -128,6 +167,80 @@ Converts a date with time or date to the number of the minute, starting from a c
 
 Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
 
+## toISOYear
+
+Converts a date or date with time to a UInt16 number containing the ISO Year number.
+
+## toISOWeek
+
+Converts a date or date with time to a UInt8 number containing the ISO Week number.
+
+## toWeek(date[,mode])
+This function returns the week number for date or datetime. The two-argument form of toWeek() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
+`toISOWeek() `is a compatibility function that is equivalent to `toWeek(date,3)`.
+The following table describes how the mode argument works.
+
+| Mode | First day of week | Range |  Week 1 is the first week … |
+| ----------- | -------- | -------- | ------------------ |
+|0|Sunday|0-53|with a Sunday in this year
+|1|Monday|0-53|with 4 or more days this year
+|2|Sunday|1-53|with a Sunday in this year
+|3|Monday|1-53|with 4 or more days this year
+|4|Sunday|0-53|with 4 or more days this year
+|5|Monday|0-53|with a Monday in this year
+|6|Sunday|1-53|with 4 or more days this year
+|7|Monday|1-53|with a Monday in this year
+|8|Sunday|1-53|contains January 1
+|9|Monday|1-53|contains January 1
+
+For mode values with a meaning of “with 4 or more days this year,” weeks are numbered according to ISO 8601:1988:
+
+- If the week containing January 1 has 4 or more days in the new year, it is week 1.
+
+- Otherwise, it is the last week of the previous year, and the next week is week 1.
+
+For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn't matter how many days in the new year the week contained, even if it contained only one day.
+
+```sql
+toWeek(date, [, mode][, Timezone])
+```
+**Parameters**
+
+- `date` – Date or DateTime.
+- `mode` – Optional parameter, Range of values is [0,9], default is 0.
+- `Timezone` –  Optional parameter, it behaves like any other conversion function.
+
+**Example**
+
+```sql
+SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9;
+```
+
+```text
+┌───────date─┬─week0─┬─week1─┬─week9─┐
+│ 2016-12-27 │    52 │    52 │     1 │
+└────────────┴───────┴───────┴───────┘
+```
+
+## toYearWeek(date[,mode])
+Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
+
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used. 
+
+`toISOYear() `is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+
+**Example**
+
+```sql
+SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
+```
+
+```text
+┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
+│ 2016-12-27 │    201652 │    201652 │    201701 │
+└────────────┴───────────┴───────────┴───────────┘
+```
+
 ## now
 
 Accepts zero arguments and returns the current time at one of the moments of request execution.
@@ -147,6 +260,73 @@ The same as 'today() - 1'.
 
 Rounds the time to the half hour.
 This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a tracking tag shows a single user's consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the tag ID, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
+
+## toYYYYMM
+
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY * 100 + MM).
+
+## toYYYYMMDD
+
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY * 10000 + MM * 100 + DD).
+
+## toYYYYMMDDhhmmss
+
+Converts a date or date with time to a UInt64 number containing the year and month number (YYYY * 10000000000 + MM * 100000000 + DD * 1000000 + hh * 10000 + mm * 100 + ss).
+
+## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
+
+Function adds a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+
+```sql
+WITH
+    toDate('2018-01-01') AS date,
+    toDateTime('2018-01-01 00:00:00') AS date_time
+SELECT
+    addYears(date, 1) AS add_years_with_date,
+    addYears(date_time, 1) AS add_years_with_date_time
+```
+
+```text
+┌─add_years_with_date─┬─add_years_with_date_time─┐
+│          2019-01-01 │      2019-01-01 00:00:00 │
+└─────────────────────┴──────────────────────────┘
+```
+
+## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters
+
+Function subtract a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+
+```sql
+WITH
+    toDate('2019-01-01') AS date,
+    toDateTime('2019-01-01 00:00:00') AS date_time
+SELECT
+    subtractYears(date, 1) AS subtract_years_with_date,
+    subtractYears(date_time, 1) AS subtract_years_with_date_time
+```
+
+```text
+┌─subtract_years_with_date─┬─subtract_years_with_date_time─┐
+│               2018-01-01 │           2018-01-01 00:00:00 │
+└──────────────────────────┴───────────────────────────────┘
+```
+
+## dateDiff('unit', t1, t2, \[timezone\])
+
+Return the difference between two times expressed in 'unit' e.g. `'hours'`. 't1' and 't2' can be Date or DateTime, If 'timezone' is specified, it applied to both arguments. If not, timezones from datatypes 't1' and 't2' are used. If that timezones are not the same, the result is unspecified.
+
+Supported unit values:
+
+| unit   |
+| ------ |
+|second  |
+|minute  |
+|hour    |
+|day     |
+|week    |
+|month   |
+|quarter |
+|year    |
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 

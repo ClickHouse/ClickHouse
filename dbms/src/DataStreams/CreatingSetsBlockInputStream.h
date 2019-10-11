@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Poco/Logger.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <Interpreters/ExpressionAnalyzer.h>    /// SubqueriesForSets
+#include <DataStreams/IBlockInputStream.h>
+#include <Interpreters/SubqueryForSet.h>
 
 
 namespace Poco { class Logger; }
@@ -14,13 +14,13 @@ namespace DB
   * in the `readPrefix` function or before reading the first block
   * initializes all the passed sets.
   */
-class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
+class CreatingSetsBlockInputStream : public IBlockInputStream
 {
 public:
     CreatingSetsBlockInputStream(
         const BlockInputStreamPtr & input,
         const SubqueriesForSets & subqueries_for_sets_,
-        const SizeLimits & network_transfer_limits);
+        const Context & context_);
 
     String getName() const override { return "CreatingSets"; }
 
@@ -35,6 +35,7 @@ protected:
 
 private:
     SubqueriesForSets subqueries_for_sets;
+    const Context & context;
     bool created = false;
 
     SizeLimits network_transfer_limits;

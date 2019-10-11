@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
@@ -22,6 +22,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -32,20 +33,17 @@ static void executeCreateQuery(
     Context & context,
     const String & database,
     const String & file_name,
-    ThreadPool * pool,
     bool has_force_restore_data_flag)
 {
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0);
 
-    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.attach = true;
     ast_create_query.database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
-    if (pool)
-        interpreter.setDatabaseLoadingThreadpool(*pool);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
     interpreter.execute();
 }
@@ -55,7 +53,6 @@ static void loadDatabase(
     Context & context,
     const String & database,
     const String & database_path,
-    ThreadPool * thread_pool,
     bool force_restore_data)
 {
     /// There may exist .sql file with database creation statement.
@@ -72,7 +69,8 @@ static void loadDatabase(
     else
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database);
 
-    executeCreateQuery(database_attach_query, context, database, database_metadata_file, thread_pool, force_restore_data);
+    executeCreateQuery(database_attach_query, context, database,
+                       database_metadata_file, force_restore_data);
 }
 
 
@@ -90,9 +88,6 @@ void loadMetadata(Context & context)
       */
     Poco::File force_restore_data_flag_file(context.getFlagsPath() + "force_restore_data");
     bool has_force_restore_data_flag = force_restore_data_flag_file.exists();
-
-    /// For parallel tables loading.
-    ThreadPool thread_pool(SettingMaxThreads().getAutoValue());
 
     /// Loop over databases.
     std::map<String, String> databases;
@@ -112,13 +107,20 @@ void loadMetadata(Context & context)
         databases.emplace(unescapeForFileName(it.name()), it.path().toString());
     }
 
-    for (const auto & elem : databases)
-        loadDatabase(context, elem.first, elem.second, &thread_pool, has_force_restore_data_flag);
-
-    thread_pool.wait();
+    for (const auto & [name, db_path] : databases)
+        loadDatabase(context, name, db_path, has_force_restore_data_flag);
 
     if (has_force_restore_data_flag)
-        force_restore_data_flag_file.remove();
+    {
+        try
+        {
+            force_restore_data_flag_file.remove();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data santity checks");
+        }
+    }
 }
 
 
@@ -128,7 +130,7 @@ void loadMetadataSystem(Context & context)
     if (Poco::File(path).exists())
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, SYSTEM_DATABASE, path, nullptr, true);
+        loadDatabase(context, SYSTEM_DATABASE, path, true);
     }
     else
     {

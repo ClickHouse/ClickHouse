@@ -4,7 +4,7 @@
 #include <unordered_set>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace Poco
@@ -15,7 +15,6 @@ namespace Poco
 
 namespace DB
 {
-class ExternalDictionaries;
 
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
@@ -23,7 +22,7 @@ class ExternalDictionaries;
 class DatabaseDictionary : public IDatabase
 {
 public:
-    DatabaseDictionary(const String & name_, const Context & context);
+    DatabaseDictionary(const String & name_);
 
     String getDatabaseName() const override;
 
@@ -34,7 +33,6 @@ public:
 
     void loadTables(
         Context & context,
-        ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
     bool isTableExist(
@@ -45,7 +43,7 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    DatabaseIteratorPtr getIterator(const Context & context) override;
+    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
     bool empty(const Context & context) const override;
 
@@ -61,18 +59,6 @@ public:
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
     StoragePtr detachTable(const String & table_name) override;
-
-    void renameTable(
-        const Context & context,
-        const String & table_name,
-        IDatabase & to_database,
-        const String & to_table_name) override;
-
-    void alterTable(
-        const Context & context,
-        const String & name,
-        const ColumnsDescription & columns,
-        const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(
         const Context & context,
@@ -93,13 +79,10 @@ public:
 private:
     const String name;
     mutable std::mutex mutex;
-    const ExternalDictionaries & external_dictionaries;
-    std::unordered_set<String> deleted_tables;
 
     Poco::Logger * log;
 
-    Tables loadTables();
-
+    Tables listTables(const Context & context, const FilterByNameFunction & filter_by_name);
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 

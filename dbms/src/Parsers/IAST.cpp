@@ -17,25 +17,23 @@ namespace ErrorCodes
 }
 
 
-const char * IAST::hilite_keyword    = "\033[1m";
-const char * IAST::hilite_identifier = "\033[0;36m";
-const char * IAST::hilite_function   = "\033[0;33m";
-const char * IAST::hilite_operator   = "\033[1;33m";
-const char * IAST::hilite_alias      = "\033[0;32m";
-const char * IAST::hilite_none       = "\033[0m";
+const char * IAST::hilite_keyword      = "\033[1m";
+const char * IAST::hilite_identifier   = "\033[0;36m";
+const char * IAST::hilite_function     = "\033[0;33m";
+const char * IAST::hilite_operator     = "\033[1;33m";
+const char * IAST::hilite_alias        = "\033[0;32m";
+const char * IAST::hilite_substitution = "\033[1;36m";
+const char * IAST::hilite_none         = "\033[0m";
 
 
-/// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(const String & x)
+size_t IAST::size() const
 {
-    String res(x.size(), '\0');
-    {
-        WriteBufferFromString wb(res);
-        writeProbablyBackQuotedString(x, wb);
-    }
+    size_t res = 1;
+    for (const auto & child : children)
+        res += child->size();
+
     return res;
 }
-
 
 size_t IAST::checkSize(size_t max_size) const
 {
@@ -53,20 +51,26 @@ size_t IAST::checkSize(size_t max_size) const
 IAST::Hash IAST::getTreeHash() const
 {
     SipHash hash_state;
-    getTreeHashImpl(hash_state);
+    updateTreeHash(hash_state);
     IAST::Hash res;
     hash_state.get128(res.first, res.second);
     return res;
 }
 
 
-void IAST::getTreeHashImpl(SipHash & hash_state) const
+void IAST::updateTreeHash(SipHash & hash_state) const
+{
+    updateTreeHashImpl(hash_state);
+    hash_state.update(children.size());
+    for (const auto & child : children)
+        child->updateTreeHash(hash_state);
+}
+
+
+void IAST::updateTreeHashImpl(SipHash & hash_state) const
 {
     auto id = getID();
     hash_state.update(id.data(), id.size());
-    hash_state.update(children.size());
-    for (const auto & child : children)
-        child->getTreeHashImpl(hash_state);
 }
 
 
@@ -127,6 +131,14 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
                 writeDoubleQuotedString(name, out);
             else
                 writeProbablyDoubleQuotedString(name, out);
+            break;
+        }
+        case IdentifierQuotingStyle::BackticksMySQL:
+        {
+            if (always_quote_identifiers)
+                writeBackQuotedStringMySQL(name, out);
+            else
+                writeProbablyBackQuotedStringMySQL(name, out);
             break;
         }
     }

@@ -22,7 +22,7 @@ std::string validateODBCConnectionString(const std::string & connection_string)
     /// Connection string is a list of name, value pairs.
     /// name and value are separated by '='.
     /// names are case insensitive.
-    /// name=value pairs are sepated by ';'.
+    /// name=value pairs are separated by ';'.
     /// ASCII whitespace characters are skipped before and after delimiters.
     /// value may be optionally enclosed by {}
     /// in enclosed value, } is escaped as }}.

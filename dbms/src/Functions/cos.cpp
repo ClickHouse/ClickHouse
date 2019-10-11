@@ -1,11 +1,11 @@
-#include <Functions/FunctionMathUnaryFloat64.h>
+#include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
 {
 
 struct CosName { static constexpr auto name = "cos"; };
-using FunctionCos = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CosName, cos>>;
+using FunctionCos = FunctionMathUnary<UnaryFunctionVectorized<CosName, cos>>;
 
 void registerFunctionCos(FunctionFactory & factory)
 {

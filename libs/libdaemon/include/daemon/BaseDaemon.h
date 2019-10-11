@@ -16,13 +16,12 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/FileChannel.h>
-#include <Poco/SyslogChannel.h>
 #include <Poco/Version.h>
 #include <common/Types.h>
 #include <common/logger_useful.h>
 #include <daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <loggers/Loggers.h>
 
 namespace Poco { class TaskManager; }
 
@@ -40,7 +39,7 @@ namespace Poco { class TaskManager; }
 ///
 /// You can configure different log options for different loggers used inside program
 ///  by providing subsections to "logger" in configuration file.
-class BaseDaemon : public Poco::Util::ServerApplication
+class BaseDaemon : public Poco::Util::ServerApplication, public Loggers
 {
     friend class SignalListener;
 
@@ -55,9 +54,6 @@ public:
 
     /// Читает конфигурацию
     void reloadConfiguration();
-
-    /// Строит необходимые логгеры
-    void buildLoggers(Poco::Util::AbstractConfiguration & config);
 
     /// Определяет параметр командной строки
     void defineOptions(Poco::Util::OptionSet & _options) override;
@@ -91,9 +87,6 @@ public:
 
     /// Разбудить
     void wakeup();
-
-    /// Закрыть файлы с логами. При следующей записи, будут созданы новые файлы.
-    void closeLogs();
 
     /// В Graphite компоненты пути(папки) разделяются точкой.
     /// У нас принят путь формата root_path.hostname_yandex_ru.key
@@ -130,11 +123,6 @@ public:
         return nullptr;
     }
 
-    std::optional<size_t> getLayer() const
-    {
-        return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
-    }
-
     /// close all process FDs except
     /// 0-2 -- stdin, stdout, stderr
     /// also doesn't close global internal pipes for signal handling
@@ -159,7 +147,7 @@ protected:
 
     /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
     void waitForTerminationRequest()
-#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
+#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
     override
 #endif
     ;
@@ -209,14 +197,7 @@ protected:
     Poco::Thread signal_listener_thread;
     std::unique_ptr<Poco::Runnable> signal_listener;
 
-    /// Файлы с логами.
-    Poco::AutoPtr<Poco::FileChannel> log_file;
-    Poco::AutoPtr<Poco::FileChannel> error_log_file;
-    Poco::AutoPtr<Poco::Channel> syslog_channel;
-
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
-
-    std::optional<size_t> layer;
 
     std::mutex signal_handler_mutex;
     std::condition_variable signal_event;
@@ -229,8 +210,9 @@ protected:
 
 private:
 
-    /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
-    std::string config_logger;
+    /// Check SSE and others instructions availability
+    /// Calls exit on fail
+    void checkRequiredInstructions();
 };
 
 

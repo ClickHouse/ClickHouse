@@ -54,7 +54,7 @@ private:
         PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
         ~PoolEntryHelper()
         {
-            std::unique_lock<std::mutex> lock(data.pool.mutex);
+            std::unique_lock lock(data.pool.mutex);
             data.in_use = false;
             data.pool.available.notify_one();
         }
@@ -107,7 +107,7 @@ public:
     /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
     Entry get(Poco::Timespan::TimeDiff timeout)
     {
-        std::unique_lock<std::mutex> lock(mutex);
+        std::unique_lock lock(mutex);
 
         while (true)
         {
@@ -133,7 +133,7 @@ public:
 
     void reserve(size_t count)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         while (items.size() < count)
             items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));

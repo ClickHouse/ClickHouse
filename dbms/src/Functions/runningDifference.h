@@ -2,6 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -53,13 +54,16 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        Src prev;
+        Src prev{};
         bool has_prev_value = false;
 
         for (size_t i = 0; i < size; ++i)
         {
             if (null_map && (*null_map)[i])
+            {
+                dst[i] = Dst{};
                 continue;
+            }
 
             if (!has_prev_value)
             {
@@ -127,11 +131,17 @@ public:
         return name;
     }
 
+    bool isStateful() const override
+    {
+        return true;
+    }
+
     size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
+    bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;
@@ -159,7 +169,7 @@ public:
         const auto & res_type = block.getByPosition(result).type;
 
         /// When column is constant, its difference is zero.
-        if (src.column->isColumnConst())
+        if (isColumnConst(*src.column))
         {
             block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
@@ -180,8 +190,8 @@ public:
         {
             using SrcFieldType = decltype(field_type_tag);
 
-            process(static_cast<const ColumnVector<SrcFieldType> &>(*src_column).getData(),
-                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData(), null_map);
+            process(assert_cast<const ColumnVector<SrcFieldType> &>(*src_column).getData(),
+                assert_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData(), null_map);
         });
 
         if (null_map_column)

@@ -1,4 +1,3 @@
-<a name="data_type-decimal"></a>
 
 # Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S)
 

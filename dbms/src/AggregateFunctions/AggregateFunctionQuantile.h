@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
 
 #include <type_traits>
 
@@ -32,6 +33,8 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+template <typename> class QuantileTiming;
 
 
 /** Generic aggregate function for calculation of quantiles.
@@ -63,9 +66,7 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
 private:
     using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
-    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>)
-        && (!(std::is_same_v<Value, DataTypeDate::FieldType> || std::is_same_v<Value, DataTypeDateTime::FieldType>)
-            || std::is_same_v<Data, QuantileTiming<Value>>);
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -73,11 +74,12 @@ private:
     /// Used when there are single level to get.
     Float64 level = 0.5;
 
-    DataTypePtr argument_type;
+    DataTypePtr & argument_type;
 
 public:
-    AggregateFunctionQuantile(const DataTypePtr & argument_type, const Array & params)
-        : levels(params, returns_many), level(levels.levels[0]), argument_type(argument_type)
+    AggregateFunctionQuantile(const DataTypePtr & argument_type_, const Array & params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type_}, params)
+        , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -102,13 +104,21 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        auto value = static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
+
+        if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
+        {
+            /// QuantileTiming only supports integers.
+            if (isNaN(value) || value > std::numeric_limits<Value>::max() || value < std::numeric_limits<Value>::min())
+                return;
+        }
+
         if constexpr (has_second_arg)
             this->data(place).add(
-                column.getData()[row_num],
+                value,
                 columns[1]->getUInt(row_num));
         else
-            this->data(place).add(column.getData()[row_num]);
+            this->data(place).add(value);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -134,22 +144,22 @@ public:
 
         if constexpr (returns_many)
         {
-            ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+            ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
             ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
             size_t size = levels.size();
-            offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+            offsets_to.push_back(offsets_to.back() + size);
 
             if (!size)
                 return;
 
             if constexpr (returns_float)
             {
-                auto & data_to = static_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
+                auto & data_to = assert_cast<ColumnVector<FloatReturnType> &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
+                data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
             else
             {
@@ -157,13 +167,13 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getMany(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
+                data.getMany(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
         }
         else
         {
             if constexpr (returns_float)
-                static_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
+                assert_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
             else
                 static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
@@ -171,13 +181,16 @@ public:
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 
-    static void assertSecondArg(const DataTypes & argument_types)
+    static void assertSecondArg(const DataTypes & types)
     {
         if constexpr (has_second_arg)
-            /// TODO: check that second argument is of numerical type.
-            assertBinary(Name::name, argument_types);
+        {
+            assertBinary(Name::name, types);
+            if (!isUnsignedInteger(types[1]))
+                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
         else
-            assertUnary(Name::name, argument_types);
+            assertUnary(Name::name, types);
     }
 };
 
@@ -187,8 +200,15 @@ struct NameQuantileDeterministic { static constexpr auto name = "quantileDetermi
 struct NameQuantilesDeterministic { static constexpr auto name = "quantilesDeterministic"; };
 
 struct NameQuantileExact { static constexpr auto name = "quantileExact"; };
-struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
+
+struct NameQuantileExactExclusive { static constexpr auto name = "quantileExactExclusive"; };
+struct NameQuantilesExactExclusive { static constexpr auto name = "quantilesExactExclusive"; };
+
+struct NameQuantileExactInclusive { static constexpr auto name = "quantileExactInclusive"; };
+struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExactInclusive"; };
+
+struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
 
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };

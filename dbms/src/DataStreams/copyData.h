@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataStreams/IBlockStream_fwd.h>
+
 #include <atomic>
 #include <functional>
 
@@ -7,8 +9,6 @@
 namespace DB
 {
 
-class IBlockInputStream;
-class IBlockOutputStream;
 class Block;
 
 /** Copies data from the InputStream into the OutputStream

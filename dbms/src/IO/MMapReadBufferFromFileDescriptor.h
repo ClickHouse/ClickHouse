@@ -20,10 +20,10 @@ protected:
     void init(int fd_, size_t offset);
 
 public:
-    MMapReadBufferFromFileDescriptor(int fd, size_t offset, size_t length);
+    MMapReadBufferFromFileDescriptor(int fd_, size_t offset_, size_t length_);
 
     /// Map till end of file.
-    MMapReadBufferFromFileDescriptor(int fd, size_t offset);
+    MMapReadBufferFromFileDescriptor(int fd_, size_t offset_);
 
     ~MMapReadBufferFromFileDescriptor() override;
 

@@ -1,5 +1,5 @@
-set(ODBC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/unixodbc)
-set(ODBC_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/unixodbc)
+set(ODBC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/unixodbc)
+set(ODBC_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/unixodbc)
 
 
 set(SRCS
@@ -23,7 +23,7 @@ ${ODBC_SOURCE_DIR}/libltdl/loaders/preopen.c
 ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/libltdl/libltdlcS.c
 )
 
-add_library(ltdl ${LINK_MODE} ${SRCS})
+add_library(ltdl ${SRCS})
 
 target_include_directories(ltdl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/libltdl)
 target_include_directories(ltdl PUBLIC ${ODBC_SOURCE_DIR}/libltdl)
@@ -32,6 +32,7 @@ target_include_directories(ltdl PUBLIC ${ODBC_SOURCE_DIR}/libltdl/libltdl)
 target_compile_definitions(ltdl PRIVATE -DHAVE_CONFIG_H -DLTDL -DLTDLOPEN=libltdlc)
 
 target_compile_options(ltdl PRIVATE -Wno-constant-logical-operand -Wno-unknown-warning-option -O2)
+target_link_libraries(ltdl PRIVATE ${CMAKE_DL_LIBS})
 
 
 set(SRCS
@@ -273,15 +274,15 @@ ${ODBC_SOURCE_DIR}/lst/lstSetFreeFunc.c
 ${ODBC_SOURCE_DIR}/lst/_lstVisible.c
 )
 
-add_library(unixodbc ${LINK_MODE} ${SRCS})
+add_library(unixodbc ${SRCS})
 
-target_link_libraries(unixodbc ltdl)
+target_link_libraries(unixodbc PRIVATE ltdl)
 
 # SYSTEM_FILE_PATH was changed to /etc
 
-target_include_directories(unixodbc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/private)
-target_include_directories(unixodbc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64)
-target_include_directories(unixodbc PUBLIC ${ODBC_SOURCE_DIR}/include)
+target_include_directories(unixodbc SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/private)
+target_include_directories(unixodbc SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64)
+target_include_directories(unixodbc SYSTEM PUBLIC ${ODBC_SOURCE_DIR}/include)
 
 target_compile_definitions(unixodbc PRIVATE -DHAVE_CONFIG_H)
 

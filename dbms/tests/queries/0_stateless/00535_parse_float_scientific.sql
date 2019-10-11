@@ -1,7 +1,7 @@
-DROP TABLE IF EXISTS test.float;
-CREATE TABLE test.float (x Float64) ENGINE = Log;
+DROP TABLE IF EXISTS float;
+CREATE TABLE float (x Float64) ENGINE = Log;
 
-INSERT INTO test.float VALUES (1e7);
-SELECT * FROM test.float;
+INSERT INTO float VALUES (1e7);
+SELECT * FROM float;
 
-DROP TABLE test.float;
+DROP TABLE float;

@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
@@ -76,6 +77,7 @@ public:
     }
 
     AggregateFunctionRetention(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
     {
         for (const auto i : ext::range(0, arguments.size()))
         {
@@ -86,7 +88,7 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        events_size = arguments.size();
+        events_size = static_cast<UInt8>(arguments.size());
     }
 
 
@@ -99,11 +101,10 @@ public:
     {
         for (const auto i : ext::range(0, events_size))
         {
-            auto event = static_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
+            auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
             {
                 this->data(place).add(i);
-                break;
             }
         }
     }
@@ -125,8 +126,8 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & data_to = static_cast<ColumnUInt8 &>(static_cast<ColumnArray &>(to).getData()).getData();
-        auto & offsets_to = static_cast<ColumnArray &>(to).getOffsets();
+        auto & data_to = assert_cast<ColumnUInt8 &>(assert_cast<ColumnArray &>(to).getData()).getData();
+        auto & offsets_to = assert_cast<ColumnArray &>(to).getOffsets();
 
         ColumnArray::Offset current_offset = data_to.size();
         data_to.resize(current_offset + events_size);

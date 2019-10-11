@@ -8,60 +8,10 @@
 #include <IO/WriteHelpers.h>
 #include <port/unistd.h>
 #include <csignal>
-
-
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_PIPE;
-        extern const int CANNOT_DLSYM;
-        extern const int CANNOT_FORK;
-        extern const int CANNOT_WAITPID;
-        extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
-        extern const int CANNOT_CREATE_CHILD_PROCESS;
-    }
-}
-
+#include <common/Pipe.h>
 
 namespace
 {
-    struct Pipe
-    {
-        union
-        {
-            int fds[2];
-            struct
-            {
-                int read_fd;
-                int write_fd;
-            };
-        };
-
-        Pipe()
-        {
-            #ifndef __APPLE__
-            if (0 != pipe2(fds, O_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            #else
-            if (0 != pipe(fds))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds[0], F_SETFD, FD_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds[1], F_SETFD, FD_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            #endif
-        }
-
-        ~Pipe()
-        {
-            if (read_fd >= 0)
-                close(read_fd);
-            if (write_fd >= 0)
-                close(write_fd);
-        }
-    };
-
     /// By these return codes from the child process, we learn (for sure) about errors when creating it.
     enum class ReturnCodes : int
     {
@@ -72,17 +22,25 @@ namespace
     };
 }
 
-
 namespace DB
 {
 
-ShellCommand::ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd, bool terminate_in_destructor_)
-    : pid(pid)
+namespace ErrorCodes
+{
+    extern const int CANNOT_DLSYM;
+    extern const int CANNOT_FORK;
+    extern const int CANNOT_WAITPID;
+    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
+    extern const int CANNOT_CREATE_CHILD_PROCESS;
+}
+
+ShellCommand::ShellCommand(pid_t pid_, int in_fd_, int out_fd_, int err_fd_, bool terminate_in_destructor_)
+    : pid(pid_)
     , terminate_in_destructor(terminate_in_destructor_)
     , log(&Poco::Logger::get("ShellCommand"))
-    , in(in_fd)
-    , out(out_fd)
-    , err(err_fd) {}
+    , in(in_fd_)
+    , out(out_fd_)
+    , err(err_fd_) {}
 
 ShellCommand::~ShellCommand()
 {
@@ -125,15 +83,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
 
         /// Replace the file descriptors with the ends of our pipes.
-        if (STDIN_FILENO != dup2(pipe_stdin.read_fd, STDIN_FILENO))
+        if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
             _exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
         if (!pipe_stdin_only)
         {
-            if (STDOUT_FILENO != dup2(pipe_stdout.write_fd, STDOUT_FILENO))
+            if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
 
-            if (STDERR_FILENO != dup2(pipe_stderr.write_fd, STDERR_FILENO))
+            if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
@@ -143,12 +101,12 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.write_fd, pipe_stdout.read_fd, pipe_stderr.read_fd, terminate_in_destructor));
+    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
     /// Now the ownership of the file descriptors is passed to the result.
-    pipe_stdin.write_fd = -1;
-    pipe_stdout.read_fd = -1;
-    pipe_stderr.read_fd = -1;
+    pipe_stdin.fds_rw[1] = -1;
+    pipe_stdout.fds_rw[0] = -1;
+    pipe_stderr.fds_rw[0] = -1;
 
     return res;
 }
@@ -158,8 +116,8 @@ std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command,
 {
     /// Arguments in non-constant chunks of memory (as required for `execv`).
     /// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
-    std::vector<char> argv0("sh", "sh" + strlen("sh") + 1);
-    std::vector<char> argv1("-c", "-c" + strlen("-c") + 1);
+    std::vector<char> argv0("sh", &("sh"[3]));
+    std::vector<char> argv1("-c", &("-c"[3]));
     std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
 
     char * const argv[] = { argv0.data(), argv1.data(), argv2.data(), nullptr };

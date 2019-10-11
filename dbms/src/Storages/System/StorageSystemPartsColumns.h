@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 
 
@@ -17,6 +16,7 @@ class Context;
 class StorageSystemPartsColumns
         : public ext::shared_ptr_helper<StorageSystemPartsColumns>, public StorageSystemPartsBase
 {
+    friend struct ext::shared_ptr_helper<StorageSystemPartsColumns>;
 public:
     std::string getName() const override { return "SystemPartsColumns"; }
 

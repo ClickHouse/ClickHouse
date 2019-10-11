@@ -16,6 +16,7 @@ nav:
     - 'WikiStat': 'getting_started/example_datasets/wikistat.md'
     - ' ترابایت از لاگ های کلیک از سرویس Criteo': 'getting_started/example_datasets/criteo.md'
     - ' بنچمارک Star Schema': 'getting_started/example_datasets/star_schema.md'
+    - 'Yandex.Metrica Data': 'getting_started/example_datasets/metrica.md'
 
 - 'Interfaces':
   - 'Interface ها': 'interfaces/index.md'
@@ -29,6 +30,7 @@ nav:
     - 'کتابخانه های مشتری': 'interfaces/third-party/client_libraries.md'
     - 'یکپارچگی': 'interfaces/third-party/integrations.md'
     - 'رابط های بصری': 'interfaces/third-party/gui.md'
+    - 'پروکسی': 'interfaces/third-party/proxy.md'
 
 - 'Data types':
   - 'Introduction': 'data_types/index.md'
@@ -38,6 +40,7 @@ nav:
   - ' مقادیر Boolean': 'data_types/boolean.md'
   - 'String': 'data_types/string.md'
   - 'FixedString(N)': 'data_types/fixedstring.md'
+  - 'UUID': 'data_types/uuid.md'
   - 'Date': 'data_types/date.md'
   - 'DateTime': 'data_types/datetime.md'
   - 'Enum': 'data_types/enum.md'
@@ -52,14 +55,63 @@ nav:
     - 'hidden': 'data_types/special_data_types/index.md'
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
+    - 'Nothing': 'data_types/special_data_types/nothing.md'
+  - 'Domains':
+    - 'Overview': 'data_types/domains/overview.md'
+    - 'IPv4': 'data_types/domains/ipv4.md'
+    - 'IPv6': 'data_types/domains/ipv6.md'
 
-- 'SQL reference':
+- 'Database Engines':
+    - 'Introduction': 'database_engines/index.md'
+    - 'MySQL': 'database_engines/mysql.md'
+
+- 'Table Engines':
+  - 'Introduction': 'operations/table_engines/index.md'
+  - 'MergeTree Family':
+    - 'MergeTree': 'operations/table_engines/mergetree.md'
+    - 'Data Replication': 'operations/table_engines/replication.md'
+    - 'Custom Partitioning Key': 'operations/table_engines/custom_partitioning_key.md'
+    - 'ReplacingMergeTree': 'operations/table_engines/replacingmergetree.md'
+    - 'SummingMergeTree': 'operations/table_engines/summingmergetree.md'
+    - 'AggregatingMergeTree': 'operations/table_engines/aggregatingmergetree.md'
+    - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
+    - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
+    - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
+  - 'Log Family':
+    - 'Introduction': 'operations/table_engines/log_family.md'
+    - 'StripeLog': 'operations/table_engines/stripelog.md'
+    - 'Log': 'operations/table_engines/log.md'
+    - 'TinyLog': 'operations/table_engines/tinylog.md'
+  - 'Integrations':
+    - 'Kafka': 'operations/table_engines/kafka.md'
+    - 'MySQL': 'operations/table_engines/mysql.md'
+    - 'JDBC': 'operations/table_engines/jdbc.md'
+    - 'ODBC': 'operations/table_engines/odbc.md'
+    - 'HDFS': 'operations/table_engines/hdfs.md'
+  - 'Special':
+    - 'Distributed': 'operations/table_engines/distributed.md'
+    - 'External data': 'operations/table_engines/external_data.md'
+    - 'Dictionary': 'operations/table_engines/dictionary.md'
+    - 'Merge': 'operations/table_engines/merge.md'
+    - 'File': 'operations/table_engines/file.md'
+    - 'Null': 'operations/table_engines/null.md'
+    - 'Set': 'operations/table_engines/set.md'
+    - 'Join': 'operations/table_engines/join.md'
+    - 'URL': 'operations/table_engines/url.md'
+    - 'View': 'operations/table_engines/view.md'
+    - 'MaterializedView': 'operations/table_engines/materializedview.md'
+    - 'Memory': 'operations/table_engines/memory.md'
+    - 'Buffer': 'operations/table_engines/buffer.md'
+
+- 'SQL Reference':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
   - 'INSERT INTO': 'query_language/insert_into.md'
   - 'CREATE': 'query_language/create.md'
   - 'ALTER': 'query_language/alter.md'
-  - 'Other kinds of queries': 'query_language/misc.md'
+  - 'SYSTEM': 'query_language/system.md'
+  - 'SYSTEM': 'query_language/show.md'
+  - 'Other Kinds of Queries': 'query_language/misc.md'
   - 'Functions':
     - 'Introduction': 'query_language/functions/index.md'
     - 'Arithmetic': 'query_language/functions/arithmetic_functions.md'
@@ -76,9 +128,11 @@ nav:
     - 'Working with Arrays': 'query_language/functions/array_functions.md'
     - 'Splitting and Merging Strings and Arrays': 'query_language/functions/splitting_merging_functions.md'
     - 'Bit': 'query_language/functions/bit_functions.md'
+    - 'Bitmap': 'query_language/functions/bitmap_functions.md'
     - 'Hash': 'query_language/functions/hash_functions.md'
     - 'Generating Pseudo-Random Numbers': 'query_language/functions/random_functions.md'
     - 'Encoding': 'query_language/functions/encoding_functions.md'
+    - 'Working with UUID': 'query_language/functions/uuid_functions.md'
     - 'Working with URLs': 'query_language/functions/url_functions.md'
     - 'Working with IP Addresses': 'query_language/functions/ip_address_functions.md'
     - 'Working with JSON.': 'query_language/functions/json_functions.md'
@@ -89,98 +143,79 @@ nav:
     - 'arrayJoin': 'query_language/functions/array_join.md'
     - 'Working with geographical coordinates': 'query_language/functions/geo.md'
     - 'Working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
+    - 'Machine Learning Functions': 'query_language/functions/machine_learning_functions.md'
     - 'Other': 'query_language/functions/other_functions.md'
-  - 'Aggregate functions':
+  - 'Aggregate Functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
-    - 'Function reference': 'query_language/agg_functions/reference.md'
+    - 'Reference': 'query_language/agg_functions/reference.md'
     - 'Aggregate function combinators': 'query_language/agg_functions/combinators.md'
     - 'Parametric aggregate functions': 'query_language/agg_functions/parametric_functions.md'
-  - 'Table functions':
+  - 'Table Functions':
     - 'Introduction': 'query_language/table_functions/index.md'
     - 'file': 'query_language/table_functions/file.md'
     - 'merge': 'query_language/table_functions/merge.md'
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
+    - 'mysql': 'query_language/table_functions/mysql.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
+    - 'odbc': 'query_language/table_functions/odbc.md'
+    - 'hdfs': 'query_language/table_functions/hdfs.md'
+    - 'input': 'query_language/table_functions/input.md'   
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
-    - 'External dictionaries':
-      - 'General description': 'query_language/dicts/external_dicts.md'
-      - 'Configuring an external dictionary': 'query_language/dicts/external_dicts_dict.md'
-      - 'Storing dictionaries in memory': 'query_language/dicts/external_dicts_dict_layout.md'
-      - 'Dictionary updates': 'query_language/dicts/external_dicts_dict_lifetime.md'
-      - 'Sources of external dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
-      - 'Dictionary key and fields': 'query_language/dicts/external_dicts_dict_structure.md'
-    - 'Internal dictionaries': 'query_language/dicts/internal_dicts.md'
-  - 'Operators': 'query_language/operators.md'
-  - 'General syntax': 'query_language/syntax.md'
+    - 'External Dictionaries':
+      - 'General Description': 'query_language/dicts/external_dicts.md'
+      - 'Configuring an External Dictionary': 'query_language/dicts/external_dicts_dict.md'
+      - 'Storing Dictionaries in Memory': 'query_language/dicts/external_dicts_dict_layout.md'
+      - 'Dictionary Updates': 'query_language/dicts/external_dicts_dict_lifetime.md'
+      - 'Sources of External Dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
+      - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
+    - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
+    - 'Operators': 'query_language/operators.md'
+    - 'General Syntax': 'query_language/syntax.md'
 
 - 'Operations':
-  - 'hidden': 'operations/index.md'
-  - 'Table engines':
-    - 'Introduction': 'operations/table_engines/index.md'
-    - 'MergeTree family':
-      - 'MergeTree': 'operations/table_engines/mergetree.md'
-      - 'Data replication': 'operations/table_engines/replication.md'
-      - 'Custom partitioning key': 'operations/table_engines/custom_partitioning_key.md'
-      - 'ReplacingMergeTree': 'operations/table_engines/replacingmergetree.md'
-      - 'SummingMergeTree': 'operations/table_engines/summingmergetree.md'
-      - 'AggregatingMergeTree': 'operations/table_engines/aggregatingmergetree.md'
-      - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
-      - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
-    - 'For small data':
-      - 'TinyLog': 'operations/table_engines/tinylog.md'
-      - 'Log': 'operations/table_engines/log.md'
-      - 'Memory': 'operations/table_engines/memory.md'
-      - 'Buffer': 'operations/table_engines/buffer.md'
-      - 'External data': 'operations/table_engines/external_data.md'
-    - 'Special':
-      - 'Distributed': 'operations/table_engines/distributed.md'
-      - 'Dictionary': 'operations/table_engines/dictionary.md'
-      - 'Merge': 'operations/table_engines/merge.md'
-      - 'File': 'operations/table_engines/file.md'
-      - 'Null': 'operations/table_engines/null.md'
-      - 'Set': 'operations/table_engines/set.md'
-      - 'Join': 'operations/table_engines/join.md'
-      - 'URL': 'operations/table_engines/url.md'
-      - 'View': 'operations/table_engines/view.md'
-      - 'MaterializedView': 'operations/table_engines/materializedview.md'
-    - 'Integrations':
-      - 'Kafka': 'operations/table_engines/kafka.md'
-      - 'MySQL': 'operations/table_engines/mysql.md'
-  - 'Access rights': 'operations/access_rights.md'
-  - 'Configuration files': 'operations/configuration_files.md'
+  - 'Introduction': 'operations/index.md'
+  - 'Requirements': 'operations/requirements.md'
+  - 'Monitoring': 'operations/monitoring.md'
+  - 'Troubleshooting': 'operations/troubleshooting.md'
+  - 'Usage Recommendations': 'operations/tips.md'
+  - 'ClickHouse Update': 'operations/update.md'
+  - 'Access Rights': 'operations/access_rights.md'
+  - 'Data Backup': 'operations/backup.md'
+  - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
-  - 'System tables': 'operations/system_tables.md'
-  - 'Usage recommendations': 'operations/tips.md'
-  - 'Server configuration parameters':
+  - 'System Tables': 'operations/system_tables.md'
+  - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
-    - 'Server settings': 'operations/server_settings/settings.md'
+    - 'Server Settings': 'operations/server_settings/settings.md'
   - 'Settings':
     - 'Introduction': 'operations/settings/index.md'
-    - 'Permissions for queries': 'operations/settings/permissions_for_queries.md'
-    - 'Restrictions on query complexity': 'operations/settings/query_complexity.md'
+    - 'Permissions for Queries': 'operations/settings/permissions_for_queries.md'
+    - 'Restrictions on Query Complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
-    - 'Settings profiles': 'operations/settings/settings_profiles.md'
-
+    - 'Settings Profiles': 'operations/settings/settings_profiles.md'
+    - 'User Settings': 'operations/settings/settings_users.md'
+    - 'Constraints on Settings': 'operations/settings/constraints_on_settings.md'
   - 'Utilities':
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
 - 'F.A.Q.':
-  - 'General questions': 'faq/general.md'
+  - 'General Questions': 'faq/general.md'
 
 - 'Development':
   - 'hidden': 'development/index.md'
-  - 'Overview of ClickHouse architecture': 'development/architecture.md'
-  - 'How to build ClickHouse on Linux': 'development/build.md'
-  - 'How to build ClickHouse on Mac OS X': 'development/build_osx.md'
-  - 'How to write  C++ code': 'development/style.md'
-  - 'How to run ClickHouse tests': 'development/tests.md'
+  - 'Overview of ClickHouse Architecture': 'development/architecture.md'
+  - 'How to Build ClickHouse on Linux': 'development/build.md'
+  - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
+  - 'How to Write C++ code': 'development/style.md'
+  - 'How to Run ClickHouse Tests': 'development/tests.md'
+  - 'Third-Party Libraries Used': 'development/contrib.md'
 
-- 'What''s new':
+- 'What''s New':
   - 'Roadmap': 'roadmap.md'
   - 'Changelog': 'changelog.md'
-  - 'Security changelog': 'security_changelog.md'
+  - 'Security Changelog': 'security_changelog.md'

@@ -1,4 +1,4 @@
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 
@@ -35,14 +35,11 @@ void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCall
         return;
 
     /// For outputting additional information in some formats.
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&from))
-    {
-        if (input->getProfileInfo().hasAppliedLimit())
-            to.setRowsBeforeLimit(input->getProfileInfo().getRowsBeforeLimit());
+    if (from.getProfileInfo().hasAppliedLimit())
+        to.setRowsBeforeLimit(from.getProfileInfo().getRowsBeforeLimit());
 
-        to.setTotals(input->getTotals());
-        to.setExtremes(input->getExtremes());
-    }
+    to.setTotals(from.getTotals());
+    to.setExtremes(from.getExtremes());
 
     if (is_cancelled())
         return;

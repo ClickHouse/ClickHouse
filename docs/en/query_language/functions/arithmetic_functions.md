@@ -4,11 +4,11 @@ For all arithmetic functions, the result type is calculated as the smallest numb
 
 Example:
 
-``` sql
+```sql
 SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
 ```
 
-```
+```text
 ┌─toTypeName(0)─┬─toTypeName(plus(0, 0))─┬─toTypeName(plus(plus(0, 0), 0))─┬─toTypeName(plus(plus(plus(0, 0), 0), 0))─┐
 │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
 └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘
@@ -59,7 +59,7 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 
 Calculates a number with the reverse sign. The result is always signed.
 
-## abs(a)
+## abs(a) {#arithm_func-abs}
 
 Calculates the absolute value of the number (a). That is, if a &lt; 0, it returns -a. For unsigned types it doesn't do anything. For signed integer types, it returns an unsigned number.
 

@@ -1,6 +1,7 @@
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <IO/WriteBufferAIO.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/ProfileEvents.h>
 
 #include <limits>
@@ -62,7 +63,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     if (fd == -1)
     {
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-        throwFromErrno("Cannot open file " + filename, error_code);
+        throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
     }
 }
 
@@ -96,7 +97,7 @@ void WriteBufferAIO::sync()
     /// Ask OS to flush data to disk.
     int res = ::fsync(fd);
     if (res == -1)
-        throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
+        throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
 }
 
 void WriteBufferAIO::nextImpl()
@@ -110,11 +111,19 @@ void WriteBufferAIO::nextImpl()
     /// Create a request for asynchronous write.
     prepare();
 
+#if defined(__FreeBSD__)
+    request.aio.aio_lio_opcode = LIO_WRITE;
+    request.aio.aio_fildes = fd;
+    request.aio.aio_buf = reinterpret_cast<volatile void *>(buffer_begin);
+    request.aio.aio_nbytes = region_aligned_size;
+    request.aio.aio_offset = region_aligned_begin;
+#else
     request.aio_lio_opcode = IOCB_CMD_PWRITE;
     request.aio_fildes = fd;
     request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
     request.aio_nbytes = region_aligned_size;
     request.aio_offset = region_aligned_begin;
+#endif
 
     /// Send the request.
     while (io_submit(aio_context.ctx, 1, &request_ptr) < 0)
@@ -165,7 +174,7 @@ void WriteBufferAIO::doTruncate(off_t length)
 
     int res = ::ftruncate(fd, length);
     if (res == -1)
-        throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
+        throwFromErrnoWithPath("Cannot truncate file " + filename, filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void WriteBufferAIO::flush()
@@ -192,8 +201,15 @@ bool WriteBufferAIO::waitForAIOCompletion()
         }
     }
 
+    // Unpoison the memory returned from an uninstrumented system function.
+    __msan_unpoison(&event, sizeof(event));
+
     is_pending_write = false;
+#if defined(__FreeBSD__)
+    bytes_written = aio_return(reinterpret_cast<struct aiocb *>(event.udata));
+#else
     bytes_written = event.res;
+#endif
 
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
@@ -262,7 +278,7 @@ void WriteBufferAIO::prepare()
     /// Region of the disk in which we want to write data.
     const off_t region_begin = pos_in_file;
 
-    if ((flush_buffer.offset() > std::numeric_limits<off_t>::max()) ||
+    if ((flush_buffer.offset() > static_cast<size_t>(std::numeric_limits<off_t>::max())) ||
         (pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(flush_buffer.offset()))))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 
@@ -396,7 +412,13 @@ void WriteBufferAIO::finalize()
 
     bytes_written -= truncation_count;
 
-    off_t pos_offset = bytes_written - (pos_in_file - request.aio_offset);
+#if defined(__FreeBSD__)
+    off_t aio_offset = request.aio.aio_offset;
+#else
+    off_t aio_offset = request.aio_offset;
+#endif
+    off_t pos_offset = bytes_written - (pos_in_file - aio_offset);
+
     if (pos_in_file > (std::numeric_limits<off_t>::max() - pos_offset))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
     pos_in_file += pos_offset;
@@ -409,7 +431,7 @@ void WriteBufferAIO::finalize()
         /// Truncate the file to remove unnecessary zeros from it.
         int res = ::ftruncate(fd, max_pos_in_file);
         if (res == -1)
-            throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
+            throwFromErrnoWithPath("Cannot truncate file " + filename, filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
     }
 }
 

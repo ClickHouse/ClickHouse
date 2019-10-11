@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Poco/Path.h>
 #include <optional>
 
+namespace Poco { class Path; }
 
 namespace DB
 {

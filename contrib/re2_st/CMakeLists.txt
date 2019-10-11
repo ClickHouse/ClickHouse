@@ -10,7 +10,7 @@ foreach (src ${RE2_SOURCES_})
     list(APPEND RE2_ST_SOURCES ${RE2_SOURCE_DIR}/${src})
 endforeach ()
 
-add_library (re2_st ${RE2_ST_SOURCES})
+add_library(re2_st ${RE2_ST_SOURCES})
 target_compile_definitions (re2_st PRIVATE NDEBUG NO_THREADS re2=re2_st)
 target_include_directories (re2_st PRIVATE .)
 target_include_directories (re2_st SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR} ${RE2_SOURCE_DIR})

@@ -56,7 +56,12 @@ class ClickHouseTable:
         columns = ', '.join(list(float_columns) + list(cat_columns))
         query = "select modelEvaluate('{}', {}) from test.{} format TSV"
         result = self.client.query(query.format(model_name, columns, self.table_name))
-        return tuple(map(float, filter(len, map(str.strip, result.split()))))
+
+        def parse_row(row):
+            values = tuple(map(float, filter(len, map(str.strip, row.replace('(', '').replace(')', '').split(',')))))
+            return values if len(values) != 1 else values[0]
+
+        return tuple(map(parse_row, filter(len, map(str.strip, result.split('\n')))))
 
     def _drop_table(self):
         self.client.query('drop table test.{}'.format(self.table_name))

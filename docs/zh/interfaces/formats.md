@@ -1,6 +1,4 @@
-<a name="formats"></a>
-
-# 输入输出格式
+# 输入输出格式 {#formats}
 
 ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT`) 请求中使用。
 
@@ -12,9 +10,11 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 | [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
 | [TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
+| [Template](#format-template) | ✔ | ✔ |
+| [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
-| [Values](#values) | ✔ | ✔ |
+| [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
 | [VerticalRaw](#verticalraw) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
@@ -32,9 +32,7 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✔ |
 
-<a name="tabseparated"></a>
-
-## TabSeparated
+## TabSeparated {#tabseparated}
 
 在 TabSeparated 格式中，数据按行写入。每行包含由制表符分隔的值。除了行中的最后一个值（后面紧跟换行符）之外，每个值都跟随一个制表符。 在任何地方都可以使用严格的 Unix 命令行。最后一行还必须在最后包含换行符。值以文本格式编写，不包含引号，并且要转义特殊字符。
 
@@ -95,36 +93,146 @@ world
 
 数组写在方括号内的逗号分隔值列表中。 通常情况下，数组中的数字项目会被拼凑，但日期，带时间的日期以及字符串将使用与上面相同的转义规则用单引号引起来。
 
-[NULL](../query_language/syntax.md#null-literal) 将输出为 `\N`。
+[NULL](../query_language/syntax.md) 将输出为 `\N`。
 
-<a name="tabseparatedraw"></a>
-
-## TabSeparatedRaw
+## TabSeparatedRaw {#tabseparatedraw}
 
 与 `TabSeparated` 格式不一样的是，行数据是不会被转义的。
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
 这种格式也可以使用名称 `TSVRaw` 来表示。
-<a name="tabseparatedwithnames"></a>
 
-## TabSeparatedWithNames
+## TabSeparatedWithNames {#tabseparatedwithnames}
 
 与 `TabSeparated` 格式不一样的是，第一行会显示列的名称。
 在解析过程中，第一行完全被忽略。您不能使用列名来确定其位置或检查其正确性。
 （未来可能会加入解析头行的功能）
 
 这种格式也可以使用名称 ` TSVWithNames` 来表示。
-<a name="tabseparatedwithnamesandtypes"></a>
 
-## TabSeparatedWithNamesAndTypes
+## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 与 `TabSeparated` 格式不一样的是，第一行会显示列的名称，第二行会显示列的类型。
 在解析过程中，第一行和第二行完全被忽略。
 
 这种格式也可以使用名称 ` TSVWithNamesAndTypes` 来表示。
-<a name="tskv"></a>
 
-## TSKV
+## Template {#format-template}
+
+This format allows to specify a custom format string with placeholders for values with specified escaping rule.
+
+It uses settings `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
+
+Format string `format_schema_rows` specifies rows format with the following syntax:
+
+ `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
+
+  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`), 
+  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped), 
+  `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
+  
+  - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
+  - `Escaped` (similarly to `TSV`)
+  - `Quoted` (similarly to `Values`)
+  - `Raw` (without escaping, similarly to `TSVRaw`)
+  - `None` (no escaping rule, see further)
+  
+  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
+  
+  So, for the following format string:
+    
+    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+    
+  the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
+
+  `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+  
+ The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
+
+Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+
+ - `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+ - `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
+ - `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
+ - `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
+ - `rows` is the total number of output rows
+ - `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
+ - `time` is the request execution time in seconds
+ - `rows_read` is the number of rows have been read
+ - `bytes_read` is the number of bytes (uncompressed) have been read
+ 
+ The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
+ If the `format_schema` setting is an empty string, `${data}` is used as default value.
+  For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
+ 
+ `Select` example:
+```sql
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5
+FORMAT Template 
+SETTINGS format_schema = '<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    ${data}
+  </table>
+  <table border="1"> <caption>Max</caption>
+    ${max}
+  </table>
+  <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
+ </body>
+</html>',
+format_schema_rows = '<tr> <td>${SearchPhrase:XML}</td> <td>${с:XML}</td> </tr>',
+format_schema_rows_between_delimiter = '\n    '
+```
+```html
+<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    <tr> <td></td> <td>8267016</td> </tr>
+    <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
+    <tr> <td>yandex</td> <td>1655</td> </tr>
+    <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
+    <tr> <td>freeform photos</td> <td>1480</td> </tr>
+  </table>
+  <table border="1"> <caption>Max</caption>
+    <tr> <td></td> <td>8873898</td> </tr>
+  </table>
+  <b>Processed 3095973 rows in 0.1569913 sec</b>
+ </body>
+</html>
+```
+
+`Insert` example:
+```
+Some header
+Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+Total rows: 2
+```
+```sql
+INSERT INTO UserActivity FORMAT Template SETTINGS 
+format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
+format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
+```
+`PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
+All delimiters in the input data must be strictly equal to delimiters in specified format strings.
+ 
+## TemplateIgnoreSpaces {#templateignorespaces}
+
+This format is suitable only for input.
+Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters. 
+It's possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
+```sql
+INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
+format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
+format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
+format_schema_rows_between_delimiter = ','
+```
+
+## TSKV {#tskv}
 
 与 `TabSeparated` 格式类似，但它输出的是 `name=value` 的格式。名称会和 `TabSeparated` 格式一样被转义，`=` 字符也会被转义。
 
@@ -141,7 +249,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../query_language/syntax.md#null-literal) 输出为 `\N`。
+[NULL](../query_language/syntax.md) 输出为 `\N`。
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -156,9 +264,8 @@ x=1	y=\N
 数据的输出和解析都支持这种格式。对于解析，任何顺序都支持不同列的值。可以省略某些值，用 `-` 表示， 它们被视为等于它们的默认值。在这种情况下，零和空行被用作默认值。作为默认值，不支持表中指定的复杂值。
 
 对于不带等号或值，可以用附加字段 `tskv` 来表示，这种在解析上是被允许的。这样的话该字段被忽略。
-<a name="csv"></a>
 
-## CSV
+## CSV {#csv}
 
 按逗号分隔的数据格式([RFC](https://tools.ietf.org/html/rfc4180))。
 
@@ -169,7 +276,7 @@ x=1	y=\N
 clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-&ast;默认情况下间隔符是 `,` ，在[format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter)中可以了解更多间隔符配置。
+&ast;默认情况下间隔符是 `,` ，在 [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
 
 解析的时候，可以使用或不使用引号来解析所有值。支持双引号和单引号。行也可以不用引号排列。 在这种情况下，它们被解析为逗号或换行符（CR 或 LF）。在解析不带引号的行时，若违反 RFC 规则，会忽略前导和尾随的空格和制表符。 对于换行，全部支持 Unix（LF），Windows（CR LF）和 Mac OS Classic（CR LF）。
 
@@ -180,9 +287,8 @@ CSV 格式是和 TabSeparated 一样的方式输出总数和极值。
 ## CSVWithNames
 
 会输出带头部行，和 `TabSeparatedWithNames` 一样。
-<a name="json"></a>
 
-## JSON
+## JSON {#json}
 
 以 JSON 格式输出数据。除了数据表之外，它还输出列名称和类型以及一些附加信息：输出行的总数以及在没有 LIMIT 时可以输出的行数。 例：
 
@@ -267,13 +373,11 @@ JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-ClickHouse 支持 [NULL](../query_language/syntax.md#null-literal), 在 JSON 格式中以 `null`  输出来表示.
+ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `null` 输出来表示.
 
 参考 JSONEachRow 格式。
 
-<a name="jsoncompact"></a>
-
-## JSONCompact
+## JSONCompact {#jsoncompact}
 
 与 JSON 格式不同的是它以数组的方式输出结果，而不是以结构体。
 
@@ -318,9 +422,8 @@ ClickHouse 支持 [NULL](../query_language/syntax.md#null-literal), 在 JSON 格
 
 这种格式仅仅适用于输出结果集，而不适用于解析（将数据插入到表中）。
 参考 `JSONEachRow` 格式。
-<a name="jsoneachrow"></a>
 
-## JSONEachRow
+## JSONEachRow {#jsoneachrow}
 
 将数据结果每一行以 JSON 结构体输出（换行分割 JSON 结构体）。
 
@@ -340,28 +443,79 @@ ClickHouse 支持 [NULL](../query_language/syntax.md#null-literal), 在 JSON 格
 与 JSON 格式不同的是，没有替换无效的UTF-8序列。任何一组字节都可以在行中输出。这是必要的，因为这样数据可以被格式化而不会丢失任何信息。值的转义方式与JSON相同。
 
 对于解析，任何顺序都支持不同列的值。可以省略某些值 - 它们被视为等于它们的默认值。在这种情况下，零和空行被用作默认值。 作为默认值，不支持表中指定的复杂值。元素之间的空白字符被忽略。如果在对象之后放置逗号，它将被忽略。对象不一定必须用新行分隔。
-<a name="native"></a>
 
-## Native
+### Usage of Nested Structures {#jsoneachrow-nested}
+
+If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+
+For example, consider the following table:
+
+```sql
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data the following way:
+
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+To insert data as hierarchical JSON object set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+Without this setting ClickHouse throws the exception.
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+```text
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+```text
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+```sql
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+```text
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
+
+## Native {#native}
 
 最高性能的格式。 据通过二进制格式的块进行写入和读取。对于每个块，该块中的行数，列数，列名称和类型以及列的部分将被相继记录。 换句话说，这种格式是 “列式”的 - 它不会将列转换为行。 这是用于在服务器之间进行交互的本地界面中使用的格式，用于使用命令行客户端和 C++ 客户端。
 
 您可以使用此格式快速生成只能由 ClickHouse DBMS 读取的格式。但自己处理这种格式是没有意义的。
-<a name="null"></a>
 
-## Null
+## Null {#null}
 
 没有输出。但是，查询已处理完毕，并且在使用命令行客户端时，数据将传输到客户端。这仅用于测试，包括生产力测试。
 显然，这种格式只适用于输出，不适用于解析。
-<a name="pretty"></a>
 
-## Pretty
+## Pretty {#pretty}
 
 将数据以表格形式输出，也可以使用 ANSI 转义字符在终端中设置颜色。
 它会绘制一个完整的表格，每行数据在终端中占用两行。
 每一个结果块都会以单独的表格输出。这是很有必要的，以便结果块不用缓冲结果输出（缓冲在可以预见结果集宽度的时候是很有必要的）。
 
-[NULL](../query_language/syntax.md#null-literal) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../query_language/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 ``` sql
 SELECT * FROM t_null
@@ -405,19 +559,15 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-<a name="prettycompact"></a>
-
-## PrettyCompact
+## PrettyCompact {#prettycompact}
 
 与 `Pretty` 格式不一样的是，`PrettyCompact` 去掉了行之间的表格分割线，这样使得结果更加紧凑。这种格式会在交互命令行客户端下默认使用。
-<a name="prettycompactmonoblock"></a>
 
-## PrettyCompactMonoBlock
+## PrettyCompactMonoBlock {#prettycompactmonoblock}
 
 与 `PrettyCompact` 格式不一样的是，它支持 10,000 行数据缓冲，然后输出在一个表格中，不会按照块来区分
-<a name="prettynoescapes"></a>
 
-## PrettyNoEscapes
+## PrettyNoEscapes {#prettynoescapes}
 
 与 `Pretty` 格式不一样的是，它不使用 ANSI 字符转义， 这在浏览器显示数据以及在使用 `watch` 命令行工具是有必要的。
 
@@ -436,14 +586,12 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 ### PrettySpaceNoEscapes
 
 用法类似上述。
-<a name="prettyspace"></a>
 
-## PrettySpace
+## PrettySpace {#prettyspace}
 
 与 `PrettyCompact`(#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
-<a name="rowbinary"></a>
 
-## RowBinary
+## RowBinary {#rowbinary}
 
 以二进制格式逐行格式化和解析数据。行和值连续列出，没有分隔符。
 这种格式比 Native 格式效率低，因为它是基于行的。
@@ -451,28 +599,26 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 整数使用固定长度的小端表示法。 例如，UInt64 使用8个字节。
 DateTime 被表示为 UInt32 类型的Unix 时间戳值。
 Date 被表示为 UInt16 对象，它的值为 1970-01-01以来的天数。
-字符串表示为 varint 长度（无符号[LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟字符串的字节数。
+字符串表示为 varint 长度（无符号 [LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟字符串的字节数。
 FixedString 被简单地表示为一个字节序列。
 
-数组表示为 varint 长度（无符号[LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟有序的数组元素。
+数组表示为 varint 长度（无符号 [LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟有序的数组元素。
 
-对于 [NULL](../query_language/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [Nullable](../data_types/nullable.md#data_type-nullable) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
+对于 [NULL](../query_language/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [Nullable](../data_types/nullable.md) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
 
-## Values
+## Values {#data-format-values}
 
-在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../query_language/syntax.md#null-literal) 为 `NULL`。
+在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../query_language/syntax.md) 为 `NULL`。
 
 以 Values 格式传递数据时需要转义的最小字符集是：单引号和反斜线。
 
 这是 `INSERT INTO t VALUES ...` 中可以使用的格式，但您也可以将其用于查询结果。
 
-<a name="vertical"></a>
-
-## Vertical
+## Vertical {#vertical}
 
 使用指定的列名在单独的行上打印每个值。如果每行都包含大量列，则此格式便于打印一行或几行。
 
-[NULL](../query_language/syntax.md#null-literal) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../query_language/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 示例:
 
@@ -489,9 +635,7 @@ y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-<a name="verticalraw"></a>
-
-## VerticalRaw
+## VerticalRaw {#verticalraw}
 
 和 `Vertical` 格式不同点在于，行是不会被转义的。
 这种格式仅仅适用于输出，但不适用于解析输入（将数据插入到表中）。
@@ -520,9 +664,7 @@ Row 1:
 test: string with \'quotes\' and \t with some special \n characters
 ```
 
-<a name="xml"></a>
-
-## XML
+## XML {#xml}
 
 该格式仅适用于输出查询结果，但不适用于解析输入，示例：
 
@@ -596,9 +738,7 @@ test: string with \'quotes\' and \t with some special \n characters
 
 数组输出为 `<array> <elem> Hello </ elem> <elem> World </ elem> ... </ array>`，元组输出为 `<tuple> <elem> Hello </ elem> <elem> World </ ELEM> ... </tuple>` 。
 
-<a name="format_capnproto"></a>
-
-## CapnProto
+## CapnProto {#capnproto}
 
 Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
 
@@ -618,7 +758,7 @@ struct Message {
 }
 ```
 
-格式文件存储的目录可以在服务配置中的[ format_schema_path ](../operations/server_settings/settings.md#server_settings-format_schema_path) 指定。
+格式文件存储的目录可以在服务配置中的 [ format_schema_path ](../operations/server_settings/settings.md) 指定。
 
 Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
 

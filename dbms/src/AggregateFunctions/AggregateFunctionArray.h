@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/WriteHelpers.h>
@@ -28,7 +29,8 @@ private:
 
 public:
     AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : nested_func(nested_), num_arguments(arguments.size())
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, {})
+        , nested_func(nested_), num_arguments(arguments.size())
     {
         for (const auto & type : arguments)
             if (!isArray(type))
@@ -80,18 +82,18 @@ public:
         const IColumn * nested[num_arguments];
 
         for (size_t i = 0; i < num_arguments; ++i)
-            nested[i] = &static_cast<const ColumnArray &>(*columns[i]).getData();
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
 
-        const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*columns[0]);
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
-        size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
+        size_t begin = offsets[row_num - 1];
         size_t end = offsets[row_num];
 
         /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
         for (size_t i = 1; i < num_arguments; ++i)
         {
-            const ColumnArray & ith_column = static_cast<const ColumnArray &>(*columns[i]);
+            const ColumnArray & ith_column = assert_cast<const ColumnArray &>(*columns[i]);
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
             if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))

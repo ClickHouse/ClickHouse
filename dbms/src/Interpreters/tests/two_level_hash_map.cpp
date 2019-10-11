@@ -14,7 +14,7 @@
 
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -60,15 +60,15 @@ int main(int argc, char ** argv)
         using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key>>, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
@@ -82,7 +82,7 @@ int main(int argc, char ** argv)
         size_t elems = 0;
         for (const auto & kv : map)
         {
-            sum_counts += kv.second;
+            sum_counts += kv.getSecond();
             ++elems;
         }
 
@@ -96,15 +96,15 @@ int main(int argc, char ** argv)
         //using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(i, it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
@@ -118,11 +118,11 @@ int main(int argc, char ** argv)
         size_t elems = 0;
         for (const auto & kv : map)
         {
-            sum_counts += kv.second;
+            sum_counts += kv.getSecond();
             ++elems;
 
-            if (kv.first > n)
-                std::cerr << kv.first << std::endl;
+            if (kv.getFirst() > n)
+                std::cerr << kv.getFirst() << std::endl;
         }
 
         std::cerr << "sum_counts: " << sum_counts << ", elems: " << elems << std::endl;

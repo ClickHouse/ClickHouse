@@ -33,7 +33,7 @@ ConfigReloader::ConfigReloader(
 
 void ConfigReloader::start()
 {
-    thread = std::thread(&ConfigReloader::run, this);
+    thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
 }
 
 
@@ -78,28 +78,39 @@ void ConfigReloader::run()
 
 void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
-    std::lock_guard<std::mutex> lock(reload_mutex);
+    std::lock_guard lock(reload_mutex);
 
     FilesChangesTracker new_files = getNewFileList();
-    if (force || new_files.isDifferOrNewerThan(files))
+    if (force || need_reload_from_zk || new_files.isDifferOrNewerThan(files))
     {
         ConfigProcessor config_processor(path);
         ConfigProcessor::LoadedConfig loaded_config;
         try
         {
-            LOG_DEBUG(log, "Loading config `" << path << "'");
+            LOG_DEBUG(log, "Loading config '" << path << "'");
 
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
                     zk_node_cache, zk_changed_event, fallback_to_preprocessed);
         }
+        catch (const Coordination::Exception & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+                need_reload_from_zk = true;
+
+            if (throw_on_error)
+                throw;
+
+            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + path + "'");
+            return;
+        }
         catch (...)
         {
             if (throw_on_error)
                 throw;
 
-            tryLogCurrentException(log, "Error loading config from `" + path + "'");
+            tryLogCurrentException(log, "Error loading config from '" + path + "'");
             return;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
@@ -110,7 +121,10 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
          *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
          */
         if (!loaded_config.loaded_from_preprocessed)
+        {
             files = std::move(new_files);
+            need_reload_from_zk = false;
+        }
 
         try
         {
@@ -120,7 +134,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         {
             if (throw_on_error)
                 throw;
-            tryLogCurrentException(log, "Error updating configuration from `" + path + "' config.");
+            tryLogCurrentException(log, "Error updating configuration from '" + path + "' config.");
         }
     }
 }

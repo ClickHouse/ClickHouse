@@ -1,12 +1,14 @@
 # Third-party libraries may have substandard code.
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-stringop-overflow")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-implicit-fallthrough -Wno-class-memaccess -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format -Wno-parentheses-equality")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -std=c++1z")
 endif ()
+
+set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
@@ -27,8 +29,7 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    add_subdirectory (double-conversion)
+    add_subdirectory (double-conversion-cmake)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
@@ -44,16 +45,15 @@ if (USE_INTERNAL_METROHASH_LIBRARY)
 endif ()
 
 add_subdirectory (murmurhash)
+add_subdirectory (croaring)
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
 endif ()
 
-if (USE_INTERNAL_UNWIND_LIBRARY)
-    add_subdirectory (libunwind)
-endif ()
-
 if (USE_INTERNAL_ZLIB_LIBRARY)
+    set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
+    set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
     set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
     set (WITH_NATIVE_INSTRUCTIONS ${ARCH_NATIVE} CACHE INTERNAL "")
     if (OS_FREEBSD OR ARCH_I386)
@@ -65,7 +65,7 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     endif ()
 
     add_subdirectory (${INTERNAL_ZLIB_NAME})
-    # todo: make pull to Dead2/zlib-ng and remove:
+    # TODO: make pull to Dead2/zlib-ng and remove:
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
     target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
@@ -74,15 +74,15 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
        target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
     endif ()
 
-    set_target_properties(example PROPERTIES EXCLUDE_FROM_ALL 1)
-    if (TARGET example64)
-        set_target_properties(example64 PROPERTIES EXCLUDE_FROM_ALL 1)
-    endif ()
+    #set_target_properties(example PROPERTIES EXCLUDE_FROM_ALL 1)
+    #if (TARGET example64)
+    #    set_target_properties(example64 PROPERTIES EXCLUDE_FROM_ALL 1)
+    #endif ()
 
-    set_target_properties(minigzip PROPERTIES EXCLUDE_FROM_ALL 1)
-    if (TARGET minigzip64)
-        set_target_properties(minigzip64 PROPERTIES EXCLUDE_FROM_ALL 1)
-    endif ()
+    #set_target_properties(minigzip PROPERTIES EXCLUDE_FROM_ALL 1)
+    #if (TARGET minigzip64)
+    #    set_target_properties(minigzip64 PROPERTIES EXCLUDE_FROM_ALL 1)
+    #endif ()
 endif ()
 
 if (USE_INTERNAL_CCTZ_LIBRARY)
@@ -101,51 +101,132 @@ if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
 
+if (USE_INTERNAL_H3_LIBRARY)
+    add_subdirectory(h3-cmake)
+endif ()
+
 if (USE_INTERNAL_SSL_LIBRARY)
     if (NOT MAKE_STATIC_LIBRARIES)
         set (BUILD_SHARED 1)
     endif ()
-    set (USE_SHARED ${USE_STATIC_LIBRARIES})
-    set (LIBRESSL_SKIP_INSTALL 1)
+
+    # By default, ${CMAKE_INSTALL_PREFIX}/etc/ssl is selected - that is not what we need.
+    # We need to use system wide ssl directory.
+    set (OPENSSLDIR "/etc/ssl")
+
+    set (LIBRESSL_SKIP_INSTALL 1 CACHE INTERNAL "")
     add_subdirectory (ssl)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     set (POCO_SKIP_OPENSSL_FIND 1)
+
+    add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
+    add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
-    add_subdirectory (mariadb-connector-c-cmake)
-    target_include_directories(mysqlclient BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
-    target_include_directories(mysqlclient BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
+    set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_REMOTE_IO OFF)
+    set(CLIENT_PLUGIN_DIALOG OFF)
+    set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF)
+    set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
+    set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
+    set(SKIP_TESTS 1)
+    if (GLIBC_COMPATIBILITY)
+        set(LIBM glibc-compatibility)
+    endif()
+    add_subdirectory (mariadb-connector-c)
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
     add_subdirectory (librdkafka-cmake)
     target_include_directories(rdkafka BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
-    target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
+    if(OPENSSL_INCLUDE_DIR)
+        target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
+    endif()
 endif ()
+
+if (USE_RDKAFKA)
+    add_subdirectory (cppkafka-cmake)
+endif()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_subdirectory (unixodbc-cmake)
+    add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
-if (USE_INTERNAL_CAPNP_LIBRARY)
-    set (BUILD_TESTING 0 CACHE INTERNAL "")
-    set (_save ${CMAKE_CXX_EXTENSIONS})
-    set (CMAKE_CXX_EXTENSIONS)
-    add_subdirectory (capnproto/c++)
-    set (CMAKE_CXX_EXTENSIONS ${_save})
-    target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
-endif ()
+if (USE_INTERNAL_PARQUET_LIBRARY)
+if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+    # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
+    # But this mode can be used for updating auto-generated parquet files:
+    # cmake -DUSE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE=1 -DUSE_STATIC_LIBRARIES=0
+    # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> /contrib/arrow-cmake/cpp/src/parquet/
+
+    # Also useful parquet reader:
+    # cd contrib/arrow/cpp/build && mkdir -p build && cmake .. -DPARQUET_BUILD_EXECUTABLES=1 && make -j8
+    # contrib/arrow/cpp/build/debug/parquet-reader some_file.parquet
+
+    set (ARROW_COMPUTE ON CACHE INTERNAL "")
+    set (ARROW_PARQUET ON CACHE INTERNAL "")
+    set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
+    set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
+    set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
+    #set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
+    set (Boost_FOUND 1 CACHE INTERNAL "")
+    #set (ZLIB_HOME ${ZLIB_INCLUDE_DIR})
+    #set (ZLIB_FOUND 1)
+    if (MAKE_STATIC_LIBRARIES)
+        set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
+        set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
+        set (ARROW_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
+    else()
+        set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
+        set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
+    endif()
+
+    if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
+        set(_save_build_type ${CMAKE_BUILD_TYPE})
+        set(CMAKE_BUILD_TYPE RELEASE)
+    endif()
+
+    # Because Arrow uses CMAKE_SOURCE_DIR as a project path
+    # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
+    set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
+    add_subdirectory (arrow/cpp)
+
+    if(_save_build_type)
+        set(CMAKE_BUILD_TYPE ${_save_build_type})
+    endif()
+
+else()
+    if(USE_INTERNAL_SNAPPY_LIBRARY)
+        set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
+        if (NOT MAKE_STATIC_LIBRARIES)
+            set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
+        endif()
+
+        add_subdirectory(snappy)
+
+        set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
+        if(SANITIZE STREQUAL "undefined")
+            target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
+        endif()
+    endif()
+
+    add_subdirectory(arrow-cmake)
+endif()
+endif()
 
 if (USE_INTERNAL_POCO_LIBRARY)
+    set (POCO_VERBOSE_MESSAGES 0 CACHE INTERNAL "")
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (POCO_ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
-    if (MSVC)
+    if (MSVC OR NOT USE_POCO_DATAODBC)
         set (ENABLE_DATA_ODBC 0 CACHE INTERNAL "") # TODO (build fail)
     endif ()
     add_subdirectory (poco)
@@ -160,13 +241,15 @@ if (USE_INTERNAL_POCO_LIBRARY)
     endif ()
 endif ()
 
-if (USE_INTERNAL_GTEST_LIBRARY)
+if(USE_INTERNAL_GTEST_LIBRARY)
     # Google Test from sources
     add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     # avoid problems with <regexp.h>
     target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
-    target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
-endif ()
+elseif(GTEST_SRC_DIR)
+    add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+endif()
 
 if (USE_INTERNAL_LLVM_LIBRARY)
     file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp CONTENT " ")
@@ -194,23 +277,53 @@ if (USE_INTERNAL_LLVM_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
-  add_subdirectory(libgsasl)
+    add_subdirectory(libgsasl)
 endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
     add_subdirectory(libxml2-cmake)
 endif ()
 
-if (USE_INTERNAL_HDFS3_LIBRARY)
-    include(${ClickHouse_SOURCE_DIR}/cmake/find_protobuf.cmake)
-    if (USE_INTERNAL_PROTOBUF_LIBRARY)
-        set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
+if (USE_INTERNAL_BROTLI_LIBRARY)
+    add_subdirectory(brotli-cmake)
+    target_compile_definitions(brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
+endif ()
+
+if (USE_INTERNAL_PROTOBUF_LIBRARY)
+    if (MAKE_STATIC_LIBRARIES)
         set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
-        add_subdirectory(protobuf/cmake)
+    else ()
+        set(protobuf_BUILD_SHARED_LIBS ON CACHE INTERNAL "" FORCE)
     endif ()
+    set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
+    set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
+    add_subdirectory(protobuf/cmake)
+endif ()
+
+if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
 endif ()
 
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()
+
+if (USE_INTERNAL_HYPERSCAN_LIBRARY)
+    add_subdirectory (hyperscan)
+endif()
+
+if (USE_SIMDJSON)
+    add_subdirectory (simdjson-cmake)
+endif()
+
+if (USE_MIMALLOC)
+    add_subdirectory (mimalloc)
+endif()
+
+if (USE_FASTOPS)
+    add_subdirectory (fastops-cmake)
+endif()
+
+#if (USE_INTERNAL_ORC_LIBRARY)
+#    add_subdirectory(orc-cmake)
+#endif ()

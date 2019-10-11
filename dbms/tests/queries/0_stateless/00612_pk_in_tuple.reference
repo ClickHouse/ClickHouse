@@ -24,14 +24,14 @@ key, arrayJoin(n.x) in ((1, 1), (2, 2))
 (key, left array join n.x) in ((1, 1), (2, 2))
 1
 2
-max(key) from tab where (key, left array join n.x) in (1, 1)
+max(key) from tab_00612 where (key, left array join n.x) in (1, 1)
 1
 1
-max(key) from tab where (key, left array join n.x) in ((1, 1), (2, 2))
+max(key) from tab_00612 where (key, left array join n.x) in ((1, 1), (2, 2))
 2
 2
-max(key) from tab any left join (select key, arrayJoin(n.x) as val from tab) using key where (key, val) in (1, 1)
+max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) using key where (key, val) in (1, 1)
 1
-max(key) from tab any left join (select key, arrayJoin(n.x) as val from tab) using key where (key, val) in ((1, 1), (2, 2))
+max(key) from tab_00612 any left join (select key, arrayJoin(n.x) as val from tab_00612) using key where (key, val) in ((1, 1), (2, 2))
 2
 1

@@ -36,7 +36,7 @@ namespace ErrorCodes
   *
   * It is implemented in two steps.
   * At first step, it creates a pattern of zeros, literal characters, whitespaces, etc.
-  *  and quickly fills resulting charater array (string column) with this pattern.
+  *  and quickly fills resulting character array (string column) with this pattern.
   * At second step, it walks across the resulting character array and modifies/replaces specific charaters,
   *  by calling some functions by pointers and shifting cursor by specified amount.
   *
@@ -79,7 +79,7 @@ private:
         Func func;
         size_t shift;
 
-        Action(Func func, size_t shift = 0) : func(func), shift(shift) {}
+        Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
 
         void perform(char *& target, Time source, const DateLUTImpl & timezone)
         {

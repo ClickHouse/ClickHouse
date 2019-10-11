@@ -6,6 +6,8 @@ select IPv4StringToNum('127.0.0.1' as p) == (0x7f000001 as n), IPv4NumToString(n
 select IPv4StringToNum(materialize('127.0.0.1') as p) == (materialize(0x7f000001) as n), IPv4NumToString(n) == p;
 select IPv4NumToString(toUInt32(0)) == '0.0.0.0';
 select IPv4NumToString(materialize(toUInt32(0))) == materialize('0.0.0.0');
+select IPv4NumToString(toUInt32(0x7f000001)) == '127.0.0.1';
+select IPv4NumToString(materialize(toUInt32(0x7f000001))) == materialize('127.0.0.1');
 
 select IPv6NumToString(toFixedString('', 16)) == '::';
 select IPv6NumToString(toFixedString(materialize(''), 16)) == materialize('::');
@@ -24,10 +26,10 @@ SELECT hex(IPv4ToIPv6(1297626935));
 
 /* Тест с таблицей */
 
-DROP TABLE IF EXISTS test.addresses;
-CREATE TABLE test.addresses(addr UInt32) ENGINE = Memory;
-INSERT INTO test.addresses(addr) VALUES (1297626935), (2130706433), (3254522122);
-SELECT hex(IPv4ToIPv6(addr)) FROM test.addresses ORDER BY addr ASC;
+DROP TABLE IF EXISTS addresses;
+CREATE TABLE addresses(addr UInt32) ENGINE = Memory;
+INSERT INTO addresses(addr) VALUES (1297626935), (2130706433), (3254522122);
+SELECT hex(IPv4ToIPv6(addr)) FROM addresses ORDER BY addr ASC;
 
 /* cutIPv6 */
 
@@ -111,15 +113,16 @@ SELECT cutIPv6(toFixedString(unhex('00000000000000000000FFFFC1FC110A'), 16), 0, 
 
 /*  Реальные IPv6-адреса */
 
-DROP TABLE IF EXISTS test.addresses;
-CREATE TABLE test.addresses(addr String) ENGINE = Memory;
-INSERT INTO test.addresses(addr) VALUES ('20010DB8AC10FE01FEEDBABECAFEF00D'), ('20010DB8AC10FE01DEADC0DECAFED00D'), ('20010DB8AC10FE01ABADBABEFACEB00C');
-SELECT cutIPv6(toFixedString(unhex(addr), 16), 3, 0) FROM test.addresses ORDER BY addr ASC;
+DROP TABLE IF EXISTS addresses;
+CREATE TABLE addresses(addr String) ENGINE = Memory;
+INSERT INTO addresses(addr) VALUES ('20010DB8AC10FE01FEEDBABECAFEF00D'), ('20010DB8AC10FE01DEADC0DECAFED00D'), ('20010DB8AC10FE01ABADBABEFACEB00C');
+SELECT cutIPv6(toFixedString(unhex(addr), 16), 3, 0) FROM addresses ORDER BY addr ASC;
 
 /*  IPv4-mapped IPv6-адреса */
 
-DROP TABLE IF EXISTS test.addresses;
-CREATE TABLE test.addresses(addr String) ENGINE = Memory;
-INSERT INTO test.addresses(addr) VALUES ('00000000000000000000FFFFC1FC110A'), ('00000000000000000000FFFF4D583737'), ('00000000000000000000FFFF7F000001');
-SELECT cutIPv6(toFixedString(unhex(addr), 16), 0, 3) FROM test.addresses ORDER BY addr ASC;
+DROP TABLE IF EXISTS addresses;
+CREATE TABLE addresses(addr String) ENGINE = Memory;
+INSERT INTO addresses(addr) VALUES ('00000000000000000000FFFFC1FC110A'), ('00000000000000000000FFFF4D583737'), ('00000000000000000000FFFF7F000001');
+SELECT cutIPv6(toFixedString(unhex(addr), 16), 0, 3) FROM addresses ORDER BY addr ASC;
 
+DROP TABLE addresses;

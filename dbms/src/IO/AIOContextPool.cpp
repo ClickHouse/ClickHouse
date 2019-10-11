@@ -1,7 +1,8 @@
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
+#include <Common/MemorySanitizer.h>
 #include <Poco/Logger.h>
 #include <boost/range/iterator_range.hpp>
 #include <errno.h>
@@ -69,6 +70,9 @@ int AIOContextPool::getCompletionEvents(io_event events[], const int max_events)
         if (errno != EINTR)
             throwFromErrno("io_getevents: Failed to wait for asynchronous IO completion", ErrorCodes::CANNOT_IO_GETEVENTS, errno);
 
+    /// Unpoison the memory returned from a non-instrumented system call.
+    __msan_unpoison(events, sizeof(*events) * num_events);
+
     return num_events;
 }
 
@@ -78,13 +82,17 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
     if (num_events == 0)
         return;
 
-    const std::lock_guard<std::mutex> lock{mutex};
+    const std::lock_guard lock{mutex};
 
     /// look at returned events and find corresponding promise, set result and erase promise from map
     for (const auto & event : boost::make_iterator_range(events, events + num_events))
     {
         /// get id from event
+#if defined(__FreeBSD__)
+        const auto completed_id = (reinterpret_cast<struct iocb *>(event.udata))->aio_data;
+#else
         const auto completed_id = event.data;
+#endif
 
         /// set value via promise and release it
         const auto it = promises.find(completed_id);
@@ -94,7 +102,11 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
             continue;
         }
 
+#if defined(__FreeBSD__)
+        it->second.set_value(aio_return(reinterpret_cast<struct aiocb *>(event.udata)));
+#else
         it->second.set_value(event.res);
+#endif
         promises.erase(it);
     }
 }
@@ -114,7 +126,7 @@ void AIOContextPool::notifyProducers(const int num_producers) const
 
 void AIOContextPool::reportExceptionToAnyProducer()
 {
-    const std::lock_guard<std::mutex> lock{mutex};
+    const std::lock_guard lock{mutex};
 
     const auto any_promise_it = std::begin(promises);
     any_promise_it->second.set_exception(std::current_exception());
@@ -123,7 +135,7 @@ void AIOContextPool::reportExceptionToAnyProducer()
 
 std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
 {
-    std::unique_lock<std::mutex> lock{mutex};
+    std::unique_lock lock{mutex};
 
     /// get current id and increment it by one
     const auto request_id = next_id;
@@ -148,6 +160,12 @@ std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
     }
 
     return promises[request_id].get_future();
+}
+
+AIOContextPool & AIOContextPool::instance()
+{
+    static AIOContextPool instance;
+    return instance;
 }
 
 }

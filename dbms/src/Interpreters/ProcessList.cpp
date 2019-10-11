@@ -1,5 +1,5 @@
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -9,7 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <common/logger_useful.h>
 #include <chrono>
 
@@ -38,7 +38,7 @@ static bool isUnlimitedQuery(const IAST * ast)
         return false;
 
     /// It is KILL QUERY
-    if (typeid_cast<const ASTKillQueryQuery *>(ast))
+    if (ast->as<ASTKillQueryQuery>())
         return true;
 
     /// It is SELECT FROM system.processes
@@ -46,12 +46,12 @@ static bool isUnlimitedQuery(const IAST * ast)
     /// False negative: USE system; SELECT * FROM processes;
     /// False positive: SELECT * FROM system.processes CROSS JOIN (SELECT ...)
 
-    if (auto ast_selects = typeid_cast<const ASTSelectWithUnionQuery *>(ast))
+    if (const auto * ast_selects = ast->as<ASTSelectWithUnionQuery>())
     {
         if (!ast_selects->list_of_selects || ast_selects->list_of_selects->children.empty())
             return false;
 
-        auto ast_select = typeid_cast<const ASTSelectQuery *>(ast_selects->list_of_selects->children[0].get());
+        const auto * ast_select = ast_selects->list_of_selects->children[0]->as<ASTSelectQuery>();
         if (!ast_select)
             return false;
 
@@ -87,11 +87,10 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
     {
         std::unique_lock lock(mutex);
 
+        const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
-            auto max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
-
-            if (!max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(max_wait_ms), [&]{ return processes.size() < max_size; }))
+            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
@@ -117,18 +116,43 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                         + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
 
-                auto range = user_process_list->second.queries.equal_range(client_info.current_query_id);
-                if (range.first != range.second)
+                auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
+
+                if (running_query != user_process_list->second.queries.end())
                 {
                     if (!settings.replace_running_query)
                         throw Exception("Query with id = " + client_info.current_query_id + " is already running.",
                             ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 
                     /// Ask queries to cancel. They will check this flag.
-                    for (auto it = range.first; it != range.second; ++it)
-                        it->second->is_killed.store(true, std::memory_order_relaxed);
-                }
+                    running_query->second->is_killed.store(true, std::memory_order_relaxed);
+
+                    const auto replace_running_query_max_wait_ms = settings.replace_running_query_max_wait_ms.totalMilliseconds();
+                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(replace_running_query_max_wait_ms),
+                        [&]
+                        {
+                            running_query = user_process_list->second.queries.find(client_info.current_query_id);
+                            if (running_query == user_process_list->second.queries.end())
+                                return true;
+                            running_query->second->is_killed.store(true, std::memory_order_relaxed);
+                            return false;
+                        }))
+                    {
+                        throw Exception("Query with id = " + client_info.current_query_id + " is already running and can't be stopped",
+                            ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+                    }
+                 }
             }
+        }
+
+        /// Check other users running query with our query_id
+        for (const auto & user_process_list : user_to_queries)
+        {
+            if (user_process_list.first == client_info.current_user)
+                continue;
+            if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
+                throw Exception("Query with id = " + client_info.current_query_id + " is already running by user " + user_process_list.first,
+                    ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
         }
 
         auto process_it = processes.emplace(processes.end(),
@@ -164,7 +188,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             /// Actualize thread group info
             if (auto thread_group = CurrentThread::getGroup())
             {
-                std::unique_lock lock_thread_group(thread_group->mutex);
+                std::lock_guard lock_thread_group(thread_group->mutex);
                 thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
                 thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
                 thread_group->query = process_it->query;
@@ -226,17 +250,12 @@ ProcessListEntry::~ProcessListEntry()
 
     bool found = false;
 
-    auto range = user_process_list.queries.equal_range(query_id);
-    if (range.first != range.second)
+    if (auto running_query = user_process_list.queries.find(query_id); running_query != user_process_list.queries.end())
     {
-        for (auto jt = range.first; jt != range.second; ++jt)
+        if (running_query->second == process_list_element_ptr)
         {
-            if (jt->second == process_list_element_ptr)
-            {
-                user_process_list.queries.erase(jt);
-                found = true;
-                break;
-            }
+            user_process_list.queries.erase(running_query->first);
+            found = true;
         }
     }
 
@@ -245,8 +264,7 @@ ProcessListEntry::~ProcessListEntry()
         LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
-
-    parent.have_space.notify_one();
+    parent.have_space.notify_all();
 
     /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
     if (user_process_list.queries.empty())
@@ -283,7 +301,7 @@ QueryStatus::~QueryStatus() = default;
 
 void QueryStatus::setQueryStreams(const BlockIO & io)
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     query_stream_in = io.in;
     query_stream_out = io.out;
@@ -296,7 +314,7 @@ void QueryStatus::releaseQueryStreams()
     BlockOutputStreamPtr out;
 
     {
-        std::lock_guard<std::mutex> lock(query_streams_mutex);
+        std::lock_guard lock(query_streams_mutex);
 
         query_streams_status = QueryStreamsStatus::Released;
         in = std::move(query_stream_in);
@@ -308,14 +326,14 @@ void QueryStatus::releaseQueryStreams()
 
 bool QueryStatus::streamsAreReleased()
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     return query_streams_status == QueryStreamsStatus::Released;
 }
 
 bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     if (query_streams_status != QueryStreamsStatus::Initialized)
         return false;
@@ -323,6 +341,29 @@ bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStream
     in = query_stream_in;
     out = query_stream_out;
     return true;
+}
+
+CancellationCode QueryStatus::cancelQuery(bool kill)
+{
+    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
+    if (streamsAreReleased())
+        return CancellationCode::CancelSent;
+
+    BlockInputStreamPtr input_stream;
+    BlockOutputStreamPtr output_stream;
+
+    if (tryGetQueryStreams(input_stream, output_stream))
+    {
+        if (input_stream)
+        {
+            input_stream->cancel(kill);
+            return CancellationCode::CancelSent;
+        }
+        return CancellationCode::CancelCannotBeSent;
+    }
+    /// Query is not even started
+    is_killed.store(true);
+    return CancellationCode::CancelSent;
 }
 
 
@@ -356,35 +397,25 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 }
 
 
-ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
 
     if (!elem)
         return CancellationCode::NotFound;
 
-    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
-    if (elem->streamsAreReleased())
-        return CancellationCode::CancelSent;
+    return elem->cancelQuery(kill);
+}
 
-    BlockInputStreamPtr input_stream;
-    BlockOutputStreamPtr output_stream;
 
-    if (elem->tryGetQueryStreams(input_stream, output_stream))
-    {
-        IProfilingBlockInputStream * input_stream_casted;
-        if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
-        {
-            input_stream_casted->cancel(kill);
-            return CancellationCode::CancelSent;
-        }
-        return CancellationCode::CancelCannotBeSent;
-    }
-    /// Query is not even started
-    elem->is_killed.store(true);
-    return CancellationCode::CancelSent;
+void ProcessList::killAllQueries()
+{
+    std::lock_guard lock(mutex);
+
+    for (auto & process : processes)
+        process.cancelQuery(true);
 }
 
 
@@ -396,11 +427,13 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.client_info       = client_info;
     res.elapsed_seconds   = watch.elapsedSeconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
-    res.read_rows         = progress_in.rows;
-    res.read_bytes        = progress_in.bytes;
-    res.total_rows        = progress_in.total_rows;
-    res.written_rows      = progress_out.rows;
-    res.written_bytes     = progress_out.bytes;
+    res.read_rows         = progress_in.read_rows;
+    res.read_bytes        = progress_in.read_bytes;
+    res.total_rows        = progress_in.total_rows_to_read;
+
+    /// TODO: Use written_rows and written_bytes when real time progress is implemented
+    res.written_rows      = progress_out.read_rows;
+    res.written_bytes     = progress_out.read_bytes;
 
     if (thread_group)
     {
@@ -409,11 +442,9 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
         if (get_thread_list)
         {
-            std::shared_lock lock(thread_group->mutex);
-            res.thread_numbers.reserve(thread_group->thread_statuses.size());
-
-            for (auto & thread_status_elem : thread_group->thread_statuses)
-                res.thread_numbers.emplace_back(thread_status_elem.second->thread_number);
+            std::lock_guard lock(thread_group->mutex);
+            res.thread_numbers = thread_group->thread_numbers;
+            res.os_thread_ids = thread_group->os_thread_ids;
         }
 
         if (get_profile_events)
@@ -431,7 +462,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 {
     Info per_query_infos;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     per_query_infos.reserve(processes.size());
     for (const auto & process : processes)

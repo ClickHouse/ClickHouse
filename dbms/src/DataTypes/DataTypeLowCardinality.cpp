@@ -4,6 +4,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -140,11 +142,11 @@ struct IndexesSerializationType
     }
 
     IndexesSerializationType(const IColumn & column,
-                             bool has_additional_keys,
-                             bool need_global_dictionary,
+                             bool has_additional_keys_,
+                             bool need_global_dictionary_,
                              bool enumerate_dictionaries)
-        : has_additional_keys(has_additional_keys)
-        , need_global_dictionary(need_global_dictionary)
+        : has_additional_keys(has_additional_keys_)
+        , need_global_dictionary(need_global_dictionary_)
         , need_update_dictionary(enumerate_dictionaries)
     {
         if (typeid_cast<const ColumnUInt8 *>(&column))
@@ -182,7 +184,7 @@ struct SerializeStateLowCardinality : public IDataType::SerializeBinaryBulkState
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
-    explicit SerializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
+    explicit SerializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
 struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkState
@@ -195,7 +197,13 @@ struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkS
     ColumnPtr null_map;
     UInt64 num_pending_rows = 0;
 
-    explicit DeserializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
+    /// If dictionary should be updated.
+    /// Can happen is some granules was skipped while reading from MergeTree.
+    /// We should store this flag in State because
+    ///   in case of long block of empty arrays we may not need read dictionary at first reading.
+    bool need_update_dictionary = false;
+
+    explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
 static SerializeStateLowCardinality * checkAndGetLowCardinalitySerializeState(
@@ -508,6 +516,10 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
+    /// Do not write anything for empty column. (May happen while writing empty arrays.)
+    if (limit == 0)
+        return;
+
     auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();
     ColumnPtr keys = sub_column->getDictionary().getNestedColumn();
@@ -534,7 +546,7 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (auto nullable_keys = typeid_cast<const ColumnNullable *>(keys.get()))
+    if (auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();
@@ -680,9 +692,13 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     };
 
     if (!settings.continuous_reading)
+    {
         low_cardinality_state->num_pending_rows = 0;
 
-    bool first_dictionary = true;
+        /// Remember in state that some granules were skipped and we need to update dictionary.
+        low_cardinality_state->need_update_dictionary = true;
+    }
+
     while (limit)
     {
         if (low_cardinality_state->num_pending_rows == 0)
@@ -695,10 +711,12 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
             index_type.deserialize(*indexes_stream);
 
-            if (index_type.need_global_dictionary && (!global_dictionary || index_type.need_update_dictionary || (first_dictionary && !settings.continuous_reading)))
+            bool need_update_dictionary =
+                !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
+            if (index_type.need_global_dictionary && need_update_dictionary)
             {
                 readDictionary();
-                first_dictionary = false;
+                low_cardinality_state->need_update_dictionary = false;
             }
 
             if (low_cardinality_state->index_type.has_additional_keys)
@@ -709,7 +727,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             readIntBinary(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
-        size_t num_rows_to_read = std::min(limit, low_cardinality_state->num_pending_rows);
+        size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
         readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
@@ -725,25 +743,111 @@ void DataTypeLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr)
     dictionary_type->deserializeBinary(field, istr);
 }
 
-template <typename ... Args>
+void DataTypeLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeBinary, ostr);
+}
+void DataTypeLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+{
+    deserializeImpl(column, &IDataType::deserializeBinary, istr);
+}
+
+void DataTypeLowCardinality::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextEscaped, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextQuoted, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextQuoted, istr, settings);
+}
+
+void DataTypeLowCardinality::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextCSV, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextCSV, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsText, ostr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextJSON, ostr, settings);
+}
+void DataTypeLowCardinality::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextJSON, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
+}
+
+void DataTypeLowCardinality::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
+}
+
+void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    if (allow_add_row)
+    {
+        deserializeImpl(column, &IDataType::deserializeProtobuf, protobuf, true, row_added);
+        return;
+    }
+
+    row_added = false;
+    auto & low_cardinality_column= getColumnLowCardinality(column);
+    auto  nested_column = low_cardinality_column.getDictionary().getNestedColumn();
+    auto temp_column = nested_column->cloneEmpty();
+    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(low_cardinality_column.size() - 1);
+    temp_column->insertFrom(*nested_column, unique_row_number);
+    bool dummy;
+    dictionary_type.get()->deserializeProtobuf(*temp_column, protobuf, false, dummy);
+    low_cardinality_column.popBack(1);
+    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
+}
+
+template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
-        const IColumn & column, size_t row_num, WriteBuffer & ostr,
-        DataTypeLowCardinality::SerealizeFunctionPtr<Args ...> func, Args & ... args) const
+    const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
 {
     auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
-    (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, ostr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
 
-template <typename ... Args>
+template <typename... Params, typename... Args>
 void DataTypeLowCardinality::deserializeImpl(
-        IColumn & column, ReadBuffer & istr,
-        DataTypeLowCardinality::DeserealizeFunctionPtr<Args ...> func, Args & ... args) const
+    IColumn & column, DataTypeLowCardinality::DeserializeFunctionPtr<Params...> func, Args &&... args) const
 {
     auto & low_cardinality_column= getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    (dictionary_type.get()->*func)(*temp_column, istr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*temp_column, std::forward<Args>(args)...);
 
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
 }
@@ -757,8 +861,8 @@ namespace
         const IDataType & keys_type;
         const Creator & creator;
 
-        CreateColumnVector(MutableColumnUniquePtr & column, const IDataType & keys_type, const Creator & creator)
-                : column(column), keys_type(keys_type), creator(creator)
+        CreateColumnVector(MutableColumnUniquePtr & column_, const IDataType & keys_type_, const Creator & creator_)
+                : column(column_), keys_type(keys_type_), creator(creator_)
         {
         }
 
@@ -766,7 +870,7 @@ namespace
         void operator()()
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
-                column = creator((ColumnVector<T> *)(nullptr));
+                column = creator(static_cast<ColumnVector<T> *>(nullptr));
         }
     };
 }
@@ -780,14 +884,14 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         type = nullable_type->getNestedType().get();
 
     if (isString(type))
-        return creator((ColumnString *)(nullptr));
+        return creator(static_cast<ColumnString *>(nullptr));
     if (isFixedString(type))
-        return creator((ColumnFixedString *)(nullptr));
+        return creator(static_cast<ColumnFixedString *>(nullptr));
     if (typeid_cast<const DataTypeDate *>(type))
-        return creator((ColumnVector<UInt16> *)(nullptr));
+        return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
-        return creator((ColumnVector<UInt32> *)(nullptr));
-    if (isNumber(type))
+        return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
+    if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
         TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));
@@ -828,6 +932,11 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+}
+
+Field DataTypeLowCardinality::getDefault() const
+{
+    return dictionary_type->getDefault();
 }
 
 bool DataTypeLowCardinality::equals(const IDataType & rhs) const

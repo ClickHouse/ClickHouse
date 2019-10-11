@@ -1,8 +1,10 @@
 #pragma once
 
-#include <vector>
-#include <Common/Stopwatch.h>
 #include <Core/Types.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Common/Stopwatch.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -10,13 +12,12 @@ namespace DB
 class Block;
 class ReadBuffer;
 class WriteBuffer;
-class IProfilingBlockInputStream;
 
-/// Information for profiling. See IProfilingBlockInputStream.h
+/// Information for profiling. See IBlockInputStream.h
 struct BlockStreamProfileInfo
 {
     /// Info about stream object this profile info refers to.
-    IProfilingBlockInputStream * parent = nullptr;
+    IBlockInputStream * parent = nullptr;
 
     bool started = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time
@@ -48,6 +49,13 @@ struct BlockStreamProfileInfo
     /// Sets main fields from other object (see methods above).
     /// If skip_block_size_info if true, then rows, bytes and block fields are ignored.
     void setFrom(const BlockStreamProfileInfo & rhs, bool skip_block_size_info);
+
+    /// Only for Processors.
+    void setRowsBeforeLimit(size_t rows_before_limit_)
+    {
+        applied_limit = true;
+        rows_before_limit = rows_before_limit_;
+    }
 
 private:
     void calculateRowsBeforeLimit() const;

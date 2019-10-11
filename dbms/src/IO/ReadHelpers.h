@@ -11,10 +11,11 @@
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
+#include <common/StringRef.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <common/StringRef.h>
+
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
@@ -38,7 +39,8 @@
 #endif
 
 
-#define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
+/// 1 GiB
+#define DEFAULT_MAX_STRING_SIZE (1ULL << 30)
 
 
 namespace DB
@@ -163,7 +165,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
 
-void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
+[[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
 inline void assertChar(char symbol, ReadBuffer & buf)
 {
@@ -254,7 +256,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
-    x = 0;
+    std::make_unsigned_t<T> res = 0;
     if (buf.eof())
     {
         if constexpr (throw_exception)
@@ -290,22 +292,17 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
-                x *= 10;
-                x += *buf.position() - '0';
+                res *= 10;
+                res += *buf.position() - '0';
                 break;
             default:
-                if (negative)
-                    x = -x;
+                x = negative ? -res : res;
                 return ReturnType(true);
         }
         ++buf.position();
     }
 
-    /// NOTE Signed integer overflow is undefined behaviour. Consider we have '128' that is parsed as Int8 and overflowed.
-    /// We are happy if it is overflowed to -128 and then 'x = -x' does nothing. But UBSan will warn.
-    if (negative)
-        x = -x;
-
+    x = negative ? -res : res;
     return ReturnType(true);
 }
 
@@ -331,7 +328,7 @@ template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     bool negative = false;
-    x = 0;
+    std::make_unsigned_t<T> res = 0;
 
     auto on_error = []
     {
@@ -353,6 +350,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (*buf.position() == '0') /// There are many zeros in real datasets.
     {
         ++buf.position();
+        x = 0;
         return;
     }
 
@@ -365,8 +363,8 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
         if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
-            x *= 10;
-            x += *buf.position() & 0x0F;
+            res *= 10;
+            res += *buf.position() & 0x0F;
             ++buf.position();
         }
         else
@@ -374,8 +372,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// See note about undefined behaviour above.
-    if (std::is_signed_v<T> && negative)
-        x = -x;
+    x = std::is_signed_v<T> && negative ? -res : res;
 }
 
 template <typename T>
@@ -407,6 +404,7 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
+void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
@@ -427,6 +425,9 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 /// Read and append result to array of characters.
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readNullTerminated(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
@@ -586,7 +587,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 {
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
-      * Then look at 5th charater. If it is a number - treat whole as unix timestamp.
+      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
       */
 
@@ -679,7 +680,7 @@ inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); 
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
-inline void readText(UInt128 &, ReadBuffer &)
+[[noreturn]] inline void readText(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
@@ -758,7 +759,7 @@ inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & se
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(UInt128 &, ReadBuffer &)
+[[noreturn]] inline void readCSV(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.

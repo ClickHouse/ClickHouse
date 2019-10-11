@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Core/Row.h>
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
@@ -18,6 +21,7 @@
 namespace DB
 {
 
+struct ColumnSize;
 class MergeTreeData;
 
 
@@ -27,30 +31,13 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
-        : storage(storage_), name(name_), info(info_)
-    {
-    }
+    MergeTreeDataPart(const MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_);
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
+    MergeTreeDataPart(MergeTreeData & storage_, const DiskSpace::DiskPtr & disk_, const String & name_);
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
-
-    struct ColumnSize
-    {
-        size_t marks = 0;
-        size_t data_compressed = 0;
-        size_t data_uncompressed = 0;
-
-        void add(const ColumnSize & other)
-        {
-            marks += other.marks;
-            data_compressed += other.data_compressed;
-            data_uncompressed += other.data_uncompressed;
-        }
-    };
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
@@ -58,6 +45,8 @@ struct MergeTreeDataPart
     ColumnSize getColumnSize(const String & name, const IDataType & type) const;
 
     ColumnSize getTotalColumnsSize() const;
+
+    size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Returns full path to part dir
     String getFullPath() const;
@@ -75,10 +64,15 @@ struct MergeTreeDataPart
     DayNum getMinDate() const;
     DayNum getMaxDate() const;
 
+    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
+    time_t getMinTime() const;
+    time_t getMaxTime() const;
+
     bool isEmpty() const { return rows_count == 0; }
 
     const MergeTreeData & storage;
 
+    DiskSpace::DiskPtr disk;
     String name;
     MergeTreePartInfo info;
 
@@ -87,9 +81,9 @@ struct MergeTreeDataPart
     mutable String relative_path;
 
     size_t rows_count = 0;
-    size_t marks_count = 0;
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
+                                            /// May not contain size of checksums.txt and columns.txt
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
@@ -100,26 +94,36 @@ struct MergeTreeDataPart
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
     bool is_duplicate = false;
 
+    /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
+    mutable std::atomic<bool> is_frozen {false};
+
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted: we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:  we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Commited:  we successfully committed a part to active dataset
-     * Precommitted -> Outdated:  a part was replaced by a covering part or DROP PARTITION
-     * Outdated -> Deleting:      a cleaner selected this part for deletion
-     * Deleting -> Outdated:      if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
+     * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
+     * Precommitted -> Commited:    we successfully committed a part to active dataset
+     * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
+     * Outdated -> Deleting:        a cleaner selected this part for deletion
+     * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
+     * Committed -> DeleteOnDestroy if part was moved to another disk
      */
     enum class State
     {
-        Temporary,      /// the part is generating now, it is not in data_parts list
-        PreCommitted,   /// the part is in data_parts, but not used for SELECTs
-        Committed,      /// active data part, used by current and upcoming SELECTs
-        Outdated,       /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
-        Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+        Temporary,       /// the part is generating now, it is not in data_parts list
+        PreCommitted,    /// the part is in data_parts, but not used for SELECTs
+        Committed,       /// active data part, used by current and upcoming SELECTs
+        Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
+        Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+        DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
+
+    using TTLInfo = MergeTreeDataPartTTLInfo;
+    using TTLInfos = MergeTreeDataPartTTLInfos;
+
+    TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     mutable State state{State::Temporary};
@@ -151,7 +155,7 @@ struct MergeTreeDataPart
     struct StatesFilter
     {
         std::initializer_list<State> affordable_states;
-        StatesFilter(const std::initializer_list<State> & affordable_states) : affordable_states(affordable_states) {}
+        StatesFilter(const std::initializer_list<State> & affordable_states_) : affordable_states(affordable_states_) {}
 
         bool operator() (const std::shared_ptr<const MergeTreeDataPart> & part) const
         {
@@ -172,6 +176,10 @@ struct MergeTreeDataPart
     Index index;
 
     MergeTreePartition partition;
+
+    /// Amount of rows between marks
+    /// As index always loaded into memory
+    MergeTreeIndexGranularity index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -195,6 +203,7 @@ struct MergeTreeDataPart
 
         void load(const MergeTreeData & storage, const String & part_path);
         void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
+        void store(const Names & column_names, const DataTypes & data_types, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -206,6 +215,9 @@ struct MergeTreeDataPart
 
     /// Columns description.
     NamesAndTypesList columns;
+
+    /// Columns with values, that all have been zeroed by expired ttl
+    NameSet empty_columns;
 
     using ColumnToSize = std::map<std::string, UInt64>;
 
@@ -223,6 +235,8 @@ struct MergeTreeDataPart
         *  unblocking, block it for writing.
         */
     mutable std::mutex alter_mutex;
+
+    MergeTreeIndexGranularityInfo index_granularity_info;
 
     ~MergeTreeDataPart();
 
@@ -244,6 +258,9 @@ struct MergeTreeDataPart
     /// Makes clone of a part in detached/ directory via hard links
     void makeCloneInDetached(const String & prefix) const;
 
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const DiskSpace::ReservationPtr & reservation) const;
+
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
@@ -252,11 +269,12 @@ struct MergeTreeDataPart
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
-    bool hasColumnFiles(const String & column) const;
+    bool hasColumnFiles(const String & column, const IDataType & type) const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
+    UInt64 getMarksCount() const;
 
 private:
     /// Reads columns names and types from columns.txt
@@ -265,12 +283,18 @@ private:
     /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    /// Loads index file. Also calculates this->marks_count if marks_count = 0
+    /// Loads marks index granularity into memory
+    void loadIndexGranularity();
+
+    /// Loads index file.
     void loadIndex();
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
+
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
+    void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
 

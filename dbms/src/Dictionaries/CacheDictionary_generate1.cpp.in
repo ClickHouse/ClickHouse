@@ -12,13 +12,11 @@ using TYPE = @NAME@;
 void CacheDictionary::get@NAME@(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::@NAME@))
-        throw Exception {name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                         ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut@NAME@);
 
     const auto null_value = std::get<TYPE>(attribute.null_values);
 
-    getItemsNumber<TYPE>(attribute, ids, out, [&](const size_t) { return null_value; });
+    getItemsNumberImpl<TYPE, TYPE>(attribute, ids, out, [&](const size_t) { return null_value; });
 }
 
 }

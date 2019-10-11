@@ -1,19 +1,18 @@
-set allow_experimental_low_cardinality_type = 1;
-
-create table test.tab (a String, b LowCardinality(UInt32)) engine = MergeTree order by a;
-insert into test.tab values ('a', 1);
-select *, toTypeName(b) from test.tab;
-alter table test.tab modify column b UInt32;
-select *, toTypeName(b) from test.tab;
-alter table test.tab modify column b LowCardinality(UInt32);
-select *, toTypeName(b) from test.tab;
-alter table test.tab modify column b StringWithDictionary;
-select *, toTypeName(b) from test.tab;
-alter table test.tab modify column b LowCardinality(UInt32);
-select *, toTypeName(b) from test.tab;
-alter table test.tab modify column b String;
-select *, toTypeName(b) from test.tab;
-alter table test.tab modify column b LowCardinality(UInt32);
-select *, toTypeName(b) from test.tab;
-drop table if exists test.tab;
-
+set allow_suspicious_low_cardinality_types = 1;
+drop table if exists tab_00718;
+create table tab_00718 (a String, b LowCardinality(UInt32)) engine = MergeTree order by a;
+insert into tab_00718 values ('a', 1);
+select *, toTypeName(b) from tab_00718;
+alter table tab_00718 modify column b UInt32;
+select *, toTypeName(b) from tab_00718;
+alter table tab_00718 modify column b LowCardinality(UInt32);
+select *, toTypeName(b) from tab_00718;
+alter table tab_00718 modify column b StringWithDictionary;
+select *, toTypeName(b) from tab_00718;
+alter table tab_00718 modify column b LowCardinality(UInt32);
+select *, toTypeName(b) from tab_00718;
+alter table tab_00718 modify column b String;
+select *, toTypeName(b) from tab_00718;
+alter table tab_00718 modify column b LowCardinality(UInt32);
+select *, toTypeName(b) from tab_00718;
+drop table if exists tab_00718;

@@ -38,11 +38,19 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
-## 商业
+### LightHouse
 
+[LightHouse](https://github.com/VKCOM/lighthouse) 是ClickHouse的轻量级Web界面。
+
+特征：
+
+ - 包含过滤和元数据的表列表。
+ - 带有过滤和排序的表格预览。
+ - 只读查询执行。
+ 
 ### DBeaver
 
-[DBeaver](https://dbeaver.io/) - 具有ClickHouse支持的通用桌面数据库客户端。
+[DBeaver](https://dbeaver.io/) 具有ClickHouse支持的通用桌面数据库客户端。
 
 特征：
 
@@ -50,9 +58,25 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 表格预览。
  - 自动完成。
 
+### clickhouse-cli
+
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) 是ClickHouse的替代命令行客户端，用Python 3编写。
+
+特征：
+ - 自动完成。
+ - 查询和数据输出的语法高亮显示。
+ - 寻呼机支持数据输出。
+ - 自定义PostgreSQL类命令。
+
+### clickhouse-flamegraph
+
+  [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
+## 商业
+
 ### DataGrip
 
-[DataGrip](https://www.jetbrains.com/datagrip/)是JetBrains的数据库IDE，专门支持ClickHouse。 它还嵌入到其他基于IntelliJ的工具中：PyCharm，IntelliJ IDEA，GoLand，PhpStorm等。
+[DataGrip](https://www.jetbrains.com/datagrip/) 是JetBrains的数据库IDE，专门支持ClickHouse。 它还嵌入到其他基于IntelliJ的工具中：PyCharm，IntelliJ IDEA，GoLand，PhpStorm等。
 
 特征：
 
@@ -63,4 +87,4 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 重构。
  - 搜索和导航。
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_gui/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/gui/) <!--hide-->

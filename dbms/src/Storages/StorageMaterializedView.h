@@ -2,21 +2,21 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
 
-class IAST; // XXX: should include full class - for proper use inside inline methods
-using ASTPtr = std::shared_ptr<IAST>;
-
-
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
+
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
@@ -26,18 +26,24 @@ public:
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    {
+        return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand, query_context);
+    }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
-    void drop() override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void truncate(const ASTPtr &) override;
+    void drop(TableStructureWriteLockHolder &) override;
+
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     void shutdown() override;
 
@@ -49,6 +55,8 @@ public:
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
 
+    ActionLock getActionLock(StorageActionBlockType type) override;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -57,7 +65,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    String getDataPath() const override;
+    Strings getDataPaths() const override;
 
 private:
     String select_database_name;

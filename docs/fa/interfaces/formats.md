@@ -1,8 +1,6 @@
-<a name="formats"></a>
-
 <div dir="rtl" markdown="1">
 
-# فرمت های Input و Output
+# فرمت های Input و Output {#formats}
 
 فرمت تعیین می کند که چگونه داده ها پس از اجرای SELECT (چگونه نوشته شده و چگونه توسط سرور فرمت شده) به شما بر می گردد، و چگونه آن برای INSERT ها پذیرفته شده (چگونه آن توسط سرور پارس و خوانده می شود).
 
@@ -14,9 +12,11 @@ Format | INSERT | SELECT
 [TabSeparatedRaw](formats.md#tabseparatedraw)  | ✗ | ✔ |
 [TabSeparatedWithNames](formats.md#tabseparatedwithnames) | ✔ | ✔ |
 [TabSeparatedWithNamesAndTypes](formats.md#tabseparatedwithnamesandtypes) | ✔ | ✔ |
+[Template](#format-template) | ✔ | ✔ |
+[TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
 [CSV](formats.md#csv) | ✔ | ✔ |
 [CSVWithNames](formats.md#csvwithnames) | ✔ | ✔ |
-[Values](formats.md#values) | ✔ | ✔ |
+[Values](formats.md#data-format-values) | ✔ | ✔ |
 [Vertical](formats.md#vertical) | ✗ | ✔ |
 [VerticalRaw](formats.md#verticalraw) | ✗ | ✔ |
 [JSON](formats.md#json) | ✗ | ✔ |
@@ -45,9 +45,9 @@ Format | INSERT | SELECT
 
 Dates با فرمت YYY-MM-DD نوشته می شوند و به همین حالت پارس می شوند، اما با هر کاراکتری به عنوان جدا کننده. Dates به همراه زمان با فرمت YYYY-MM-DD hh:mm:ss نوشته می شوند و با همین فرمت پارس می شوند، اما با هر کاراکتری به عنوان جداکننده.  این در منطقه زمان سیستم در زمانی که کلاینت یا سرور شروع می شود (بسته به اینکه کدام یک از داده ها را تشکیل می دهد) رخ می دهد. برای تاریخ همراه با زمان DST مشخص نمی شود. پس اگر یک دامپ دارای زمان DST باشد، دامپ، داده ها را به طور غیرمستقیم مطابقت نمی دهد و پارسینگ، یکی از دو ساعت را انتخاب خواهد کرد. در طول عملیات خواندن، تاریخ ها و تاریخ و ساعت های نادرست می توانند به صورت null و یا natural overflow پارس شوند، بدون اینکه پیغام خطایی نمایش دهند.
 
-به عنوان یک استثنا، پارس کردن تاریخ به همراه ساعت، اگر مقدار دقیقا شامل 10 عدد decimal باشد، به عنوان فرمت unix timestamp پشتیبانی خواهد کرد. خروجی وابسته به time-zone نمی باشد.  فرمت های YYYY-MM-DD hh: mm: ss و NNNNNNNNNN به صورت خودکار تمایز می یابند.
+به عنوان یک استثنا، پارس کردن تاریخ به همراه ساعت، اگر مقدار دقیقا شامل 10 عدد decimal باشد، به عنوان فرمت unix timestamp پشتیبانی خواهد کرد. خروجی وابسته به time-zone نمی باشد. فرمت های YYYY-MM-DD hh: mm: ss و NNNNNNNNNN به صورت خودکار تمایز می یابند.
 
-رشته های دارای کاراکتر های ویژه backslash-escaped چاپ می شوند. escape های در ادامه برای خروجی استفاده می شوند: `\b`، `\f`، `\r`، `\n`، `\t`، `\0`, `\'`، `\\`. پارسر همچنین از `\a`، `\v`، و `\xHH` (hex escape) و هر `\c`  پشتیبانی می کند. بدین ترتیب خواندن داده ها از فرمت line feed که می تواند به صورت `\n` یا `\`  نوشته شود پشتیبانی می کند. برای مثال، رشته ی `Hello world` به همراه line feed بین کلمات به جای space می تواند به هر یک از حالات زیر پارس شود::
+رشته های دارای کاراکتر های ویژه backslash-escaped چاپ می شوند. escape های در ادامه برای خروجی استفاده می شوند: `\b`، `\f`، `\r`، `\n`، `\t`، `\0`, `\'`، `\\`. پارسر همچنین از `\a`، `\v`، و `\xHH` (hex escape) و هر `\c` پشتیبانی می کند. بدین ترتیب خواندن داده ها از فرمت line feed که می تواند به صورت `\n` یا `\` نوشته شود پشتیبانی می کند. برای مثال، رشته ی `Hello world` به همراه line feed بین کلمات به جای space می تواند به هر یک از حالات زیر پارس شود::
 
 </div>
 
@@ -117,6 +117,122 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 همچنین این فرمت تحت عنوان ` TSVWithNamesAndTypes`وجود دارد.
 
+
+## Template {#format-template}
+
+This format allows to specify a custom format string with placeholders for values with specified escaping rule.
+
+It uses settings `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
+
+Format string `format_schema_rows` specifies rows format with the following syntax:
+
+ `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
+
+  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`), 
+  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped), 
+  `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
+  
+  - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
+  - `Escaped` (similarly to `TSV`)
+  - `Quoted` (similarly to `Values`)
+  - `Raw` (without escaping, similarly to `TSVRaw`)
+  - `None` (no escaping rule, see further)
+  
+  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
+  
+  So, for the following format string:
+    
+    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+    
+  the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
+
+  `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+  
+ The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
+
+Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+
+ - `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+ - `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
+ - `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
+ - `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
+ - `rows` is the total number of output rows
+ - `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
+ - `time` is the request execution time in seconds
+ - `rows_read` is the number of rows have been read
+ - `bytes_read` is the number of bytes (uncompressed) have been read
+ 
+ The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
+ If the `format_schema` setting is an empty string, `${data}` is used as default value.
+  For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
+ 
+ `Select` example:
+```sql
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5
+FORMAT Template 
+SETTINGS format_schema = '<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    ${data}
+  </table>
+  <table border="1"> <caption>Max</caption>
+    ${max}
+  </table>
+  <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
+ </body>
+</html>',
+format_schema_rows = '<tr> <td>${SearchPhrase:XML}</td> <td>${с:XML}</td> </tr>',
+format_schema_rows_between_delimiter = '\n    '
+```
+```html
+<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    <tr> <td></td> <td>8267016</td> </tr>
+    <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
+    <tr> <td>yandex</td> <td>1655</td> </tr>
+    <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
+    <tr> <td>freeform photos</td> <td>1480</td> </tr>
+  </table>
+  <table border="1"> <caption>Max</caption>
+    <tr> <td></td> <td>8873898</td> </tr>
+  </table>
+  <b>Processed 3095973 rows in 0.1569913 sec</b>
+ </body>
+</html>
+```
+
+`Insert` example:
+```
+Some header
+Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+Total rows: 2
+```
+```sql
+INSERT INTO UserActivity FORMAT Template SETTINGS 
+format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n', 
+format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
+```
+`PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
+All delimiters in the input data must be strictly equal to delimiters in specified format strings.
+ 
+## TemplateIgnoreSpaces {#templateignorespaces}
+
+This format is suitable only for input.
+Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters. 
+It's possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
+```sql
+INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
+format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
+format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
+format_schema_rows_between_delimiter = ','
+```
+
 ## TSKV
 
 مشابه فرمت TabSeparated، اما خروجی به صورت name=value می باشد. نام ها مشابه روش TabSeparated، escape می شوند، و همچنین = symbol هم escape می شود.
@@ -144,13 +260,11 @@ SearchPhrase=baku       count()=1000
 
 پارس کردن، اجازه می دهد که فیلد اضافه ی `tskv` بدون علامت و مقدار وجود داشته باشد. این فیلد نادیده گرفته می شود.
 
-<a name="csv"></a>
-
-## CSV
+## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-زمانی که از این روش برای فرمت استفاده می شود، سطر ها با دابل کوتیشن enclosed می شوند. دابل کوتیشن داخل یک رشته خروجی آن به صورت دو دابل کوتیشن در  یک سطر است. قانون دیگری برای escape کردن کاراکترها وجود ندارد. تاریخ و تاریخ-ساعت در دابل کوتیشن ها enclosed می شوند. اعداد بدون دابل کوتیشن در خروجی می آیند. مقادیر با جدا کننده * مشخص می شوند. سطر ها با استفاده از line feed (LF) جدا می شوند. آرایه ها در csv به این صورت serialize می شوند: ابتدا آرایه به یک رشته با فرمت TabSeparate سریالایز می شوند، و سپس رشته ی حاصل در دابل کوتیشن برای csv ارسال می شود. Tuple ها در فرمت CSV در ستون های جدا سریالایز می شوند (به این ترتیب، nest ها در tuble از دست میروند)
+زمانی که از این روش برای فرمت استفاده می شود، سطر ها با دابل کوتیشن enclosed می شوند. دابل کوتیشن داخل یک رشته خروجی آن به صورت دو دابل کوتیشن در یک سطر است. قانون دیگری برای escape کردن کاراکترها وجود ندارد. تاریخ و تاریخ-ساعت در دابل کوتیشن ها enclosed می شوند. اعداد بدون دابل کوتیشن در خروجی می آیند. مقادیر با جدا کننده * مشخص می شوند. سطر ها با استفاده از line feed (LF) جدا می شوند. آرایه ها در csv به این صورت serialize می شوند: ابتدا آرایه به یک رشته با فرمت TabSeparate سریالایز می شوند، و سپس رشته ی حاصل در دابل کوتیشن برای csv ارسال می شود. Tuple ها در فرمت CSV در ستون های جدا سریالایز می شوند (به این ترتیب، nest ها در tuble از دست میروند)
 
 </div>
 
@@ -160,7 +274,7 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 <div dir="rtl" markdown="1">
 
-&ast;به صورت پیش فرض — `,`. برای اطلاعات بیشتر [format_csv_delimiter](/operations/settings/settings/#format_csv_delimiter) را ببینید.
+&ast;به صورت پیش فرض — `,`. برای اطلاعات بیشتر [format_csv_delimiter](/operations/settings/settings/#settings-format_csv_delimiter) را ببینید.
 
 در هنگام پارس کردن، تمامی مقادیر می توانند با کوتیشن یا بدون کوتیشن پارس شوند. تک کوتیشن و دابل کوتیشن پشتیبانی می شود. سطر ها می توانند بدون کوتیشن تنظیم شوند. در این مورد سطر ها، جدا کننده ها با (CR یا LF) پارس می شوند. در موارد نقض RFC، در هنگام پارس کردن سطر ها بدون کوتیشن، فضاها و tab های پیشین نادید گرفته می شوند. برای line feed، یونیکس از (LF)، ویدنوز از (CR LF) و Mac OS کلاسیک (CR LF) پشتیبانی می کند.
 
@@ -332,6 +446,60 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 
 برای پارس کردن، هر ترتیبی برای مقادیر ستون های مختلف پشتیبانی می شود. حذف شدن بعضی مقادیر قابل قبول است، آنها با مقادیر پیش فرض خود برابر هستند. در این مورد، صفر و سطر های خالی به عنوان مقادیر پیش فرض قرار می گیرند. مقادیر پیچیده که می توانند در جدول مشخص شوند، به عنوان مقادیر پیش فرض پشتیبانی نمی شوند. Whitespace بین element ها نادیده گرفته می شوند. اگر کاما بعد از object ها قرار گیرند، نادیده گرفته می شوند. object ها نیازی به جداسازی با استفاده از new line را ندارند.
 
+### Usage of Nested Structures {#jsoneachrow-nested}
+
+If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+
+For example, consider the following table:
+
+```sql
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data the following way:
+
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+To insert data as hierarchical JSON object set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+Without this setting ClickHouse throws the exception.
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+```text
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+```sql
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+```text
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+```sql
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+```text
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
+
 ## Native
 
 کارآمدترین فرمت. داده ها توسط بلاک ها و در فرمت باینری نوشته و خوانده می شوند. برای هر بلاک، تعداد سطرها، تعداد ستون ها، نام ستون ها و type آنها، و بخش هایی از ستون ها در این بلاک یکی پس از دیگری ثبت می شوند. به عبارت دیگر، این فرمت "columnar" است - این فرمت ستون ها را به سطر تبدیل نمی کند. این فرمت در حالت native interface و بین سرور و محیط ترمینال و همچنین کلاینت C++ استفاده می شود.
@@ -344,7 +512,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 
 ## Pretty
 
-خروجی داده ها به صورت جداول Unicode-art، همچنین استفاده از ANSI-escape برای تنظیم رنگ های ترمینال. یک جدول کامل کشیده می شود، و هر سطر دو خط از ترمینال را اشغال می کند. هر بلاکِ نتیجه، به عنوان یک جدول جدا چاپ می شود.پس بلاک ها می توانند بدون بافر کردن نتایج چاپ شوند (بافرینگ برای pre-calculate تمام مقادیر قابل مشاهده  ضروری است). برای جلوگیری از دامپ زیاد داده ها در ترمینال، 10 هزار سطر اول چاپ می شوند. اگر تعداد سطر های بزرگتر مساوی 10 هزار باشد، پیغام " 10 هزار اول نمایش داده شد" چاپ می شود. این فرمت فقط مناسب خروجی نتایج query ها می باشد، نه برای پارس کردن (دریافت داده ها و درج آن در جدول).
+خروجی داده ها به صورت جداول Unicode-art، همچنین استفاده از ANSI-escape برای تنظیم رنگ های ترمینال. یک جدول کامل کشیده می شود، و هر سطر دو خط از ترمینال را اشغال می کند. هر بلاکِ نتیجه، به عنوان یک جدول جدا چاپ می شود.پس بلاک ها می توانند بدون بافر کردن نتایج چاپ شوند (بافرینگ برای pre-calculate تمام مقادیر قابل مشاهده ضروری است). برای جلوگیری از دامپ زیاد داده ها در ترمینال، 10 هزار سطر اول چاپ می شوند. اگر تعداد سطر های بزرگتر مساوی 10 هزار باشد، پیغام " 10 هزار اول نمایش داده شد" چاپ می شود. این فرمت فقط مناسب خروجی نتایج query ها می باشد، نه برای پارس کردن (دریافت داده ها و درج آن در جدول).
 
 فرمت Pretty از total values (هنگام استفاده از WITH TOTALS) و extreme (هنگام که 'extremes' برابر با 1 است) برای خروجی پشتیبانی می کند. در این موارد، total values و extreme values بعد از نمایش داده های اصلی در جداول جدا، چاپ می شوند. مثال (برای فرمت PrettyCompact نمایش داده شده است):
 
@@ -425,7 +593,7 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 
 آرایه به عنوان variant length نشان داده می شود (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128))، دنباله ای از عانصر پیوسته آرایه
 
-## Values
+## Values {#data-format-values}
 
 هر سطر داخل براکت چاپ می شود. سطر ها توسط comma جدا می شوند. برای آخرین سطر comma وجود ندارد. مقادیر داخل براکت همچنین توسط comma جدا می شوند. اعداد با فرمت decimal و بدون کوتیشن چاپ می شوند. آرایه ها در براکت ها چاپ می شوند. رشته ها، تاریخ و تاریخ با ساعت داخل کوتیشن قرار می گیرند. قوانین escape و پارس کردن شبیه به فرمت TabSeparated انجام می شود. در طول فرمت، extra spaces درج نمی شوند، اما در هنگام پارس کردن، آنها مجاز و skip می شوند. (به جز space های داخل مقادیر آرایه، که مجاز نیستند).
 
@@ -548,9 +716,7 @@ test: string with \'quotes\' and \t with some special \n characters
 
 آرایه ها به شکل `<array><elem>Hello</elem><elem>World</elem>...</array>` و tuple ها به صورت `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>` در خروجی می آیند.
 
-<a name="format_capnproto"></a>
-
-## CapnProto
+## CapnProto {#capnproto}
 
 Cap'n Proto یک فرمت پیام باینری شبیه به Protocol Buffer و Thrift می باشد، اما شبیه به JSON یا MessagePack نیست.
 
@@ -578,7 +744,7 @@ struct Message {
 
 <div dir="rtl" markdown="1">
 
-فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) قرار گرفته اند.
+فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [ format_schema_path](../operations/server_settings/settings.md) قرار گرفته اند.
 
 عملیات Deserialization موثر است و معمولا لود سیستم را افزایش نمی دهد.
 

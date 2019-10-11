@@ -1,4 +1,3 @@
-<a name="utils-clickhouse-copier"></a>
 
 # clickhouse-copier
 
@@ -25,7 +24,7 @@ To reduce network traffic, we recommend running `clickhouse-copier` on the same 
 The utility should be run manually:
 
 ```bash
-clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+$ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 Parameters:
@@ -33,12 +32,20 @@ Parameters:
 - `daemon` — Starts `clickhouse-copier` in daemon mode.
 - `config` — The path to the `zookeeper.xml` file with the parameters for the connection to ZooKeeper.
 - `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
+- `task-file` — Optional path to file with task configuration for initial upload to ZooKeeper.
+- `task-upload-force` — Force upload `task-file` even if node already exists.
 - `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
 
 ## Format of zookeeper.xml
 
 ```xml
 <yandex>
+    <logger>
+        <level>trace</level>
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+
     <zookeeper>
         <node index="1">
             <host>127.0.0.1</host>

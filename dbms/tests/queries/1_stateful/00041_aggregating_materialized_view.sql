@@ -42,7 +42,7 @@ SELECT
     sumMerge(Visits)				AS Visits,
     uniqMerge(Users)				AS Users
 FROM test.basic
-WHERE CounterID = 731962
+WHERE CounterID = 942285
 GROUP BY StartDate
 ORDER BY StartDate;
 
@@ -52,7 +52,7 @@ SELECT
     sum(Sign) 						AS Visits,
     uniq(UserID)					AS Users
 FROM test.visits
-WHERE CounterID = 731962
+WHERE CounterID = 942285
 GROUP BY StartDate
 ORDER BY StartDate;
 

@@ -1,6 +1,6 @@
 #pragma once
 #include <common/logger_useful.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
@@ -12,7 +12,7 @@ namespace DB
 /// Collapses the same rows with the opposite sign roughly like CollapsingSortedBlockInputStream.
 /// Outputs the rows in random order (the input streams must still be ordered).
 /// Outputs only rows with a positive sign.
-class CollapsingFinalBlockInputStream : public IProfilingBlockInputStream
+class CollapsingFinalBlockInputStream : public IBlockInputStream
 {
 public:
     CollapsingFinalBlockInputStream(
@@ -45,9 +45,9 @@ private:
         MergingBlock(const Block & block_,
                      size_t stream_index_,
                      const SortDescription & desc,
-                     const String & sign_column_name,
-                     BlockPlainPtrs * output_blocks)
-            : block(block_), stream_index(stream_index_), output_blocks(output_blocks)
+                     const String & sign_column_name_,
+                     BlockPlainPtrs * output_blocks_)
+            : block(block_), stream_index(stream_index_), output_blocks(output_blocks_)
         {
             sort_columns.resize(desc.size());
             for (size_t i = 0; i < desc.size(); ++i)
@@ -59,7 +59,7 @@ private:
                 sort_columns[i] = block.safeGetByPosition(column_number).column.get();
             }
 
-            const IColumn * sign_icolumn = block.getByName(sign_column_name).column.get();
+            const IColumn * sign_icolumn = block.getByName(sign_column_name_).column.get();
 
             sign_column = typeid_cast<const ColumnInt8 *>(sign_icolumn);
 
@@ -163,7 +163,7 @@ private:
     struct Cursor
     {
         MergingBlockPtr block;
-        size_t pos;
+        size_t pos = 0;
 
         Cursor() {}
         explicit Cursor(const MergingBlockPtr & block_, size_t pos_ = 0) : block(block_), pos(pos_) {}

@@ -95,7 +95,7 @@ namespace common
     template <>
     inline bool mulOverflow(__int128 x, __int128 y, __int128 & res)
     {
-        res = x * y;
+        res = static_cast<unsigned __int128>(x) * static_cast<unsigned __int128>(y);    /// Avoid signed integer overflow.
         if (!x || !y)
             return false;
 

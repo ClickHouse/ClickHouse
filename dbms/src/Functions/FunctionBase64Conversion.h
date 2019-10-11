@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config_functions.h"
 #if USE_BASE64
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>

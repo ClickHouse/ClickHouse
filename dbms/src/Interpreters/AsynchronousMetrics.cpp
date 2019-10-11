@@ -4,7 +4,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
-#include <Common/config.h>
+#include "config_core.h"
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -17,7 +17,7 @@
 #endif
 
 #if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h> // Y_IGNORE
+    #include <gperftools/malloc_extension.h>
 
     /// Initializing malloc extension in global constructor as required.
     struct MallocExtensionInitializer
@@ -42,7 +42,7 @@ AsynchronousMetrics::~AsynchronousMetrics()
     try
     {
         {
-            std::lock_guard<std::mutex> lock{wait_mutex};
+            std::lock_guard lock{wait_mutex};
             quit = true;
         }
 
@@ -58,14 +58,14 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetrics::Container AsynchronousMetrics::getValues() const
 {
-    std::lock_guard<std::mutex> lock{container_mutex};
+    std::lock_guard lock{container_mutex};
     return container;
 }
 
 
 void AsynchronousMetrics::set(const std::string & name, Value value)
 {
-    std::lock_guard<std::mutex> lock{container_mutex};
+    std::lock_guard lock{container_mutex};
     container[name] = value;
 }
 
@@ -74,7 +74,7 @@ void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
 
-    std::unique_lock<std::mutex> lock{wait_mutex};
+    std::unique_lock lock{wait_mutex};
 
     /// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
     const auto get_next_minute = []
@@ -137,10 +137,7 @@ void AsynchronousMetrics::update()
 #if USE_EMBEDDED_COMPILER
     {
         if (auto compiled_expression_cache = context.getCompiledExpressionCache())
-        {
-            set("CompiledExpressionCacheBytes", compiled_expression_cache->weight());
             set("CompiledExpressionCacheCount", compiled_expression_cache->count());
-        }
     }
 #endif
 
@@ -162,10 +159,17 @@ void AsynchronousMetrics::update()
 
         size_t max_part_count_for_partition = 0;
 
+        size_t number_of_databases = databases.size();
+        size_t total_number_of_tables = 0;
+
         for (const auto & db : databases)
         {
+            /// Lazy database can not contain MergeTree tables
+            if (db.second->getEngineName() == "Lazy")
+                continue;
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {
+                ++total_number_of_tables;
                 auto & table = iterator->table();
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
@@ -179,27 +183,30 @@ void AsynchronousMetrics::update()
                     calculateMaxAndSum(max_inserts_in_queue, sum_inserts_in_queue, status.queue.inserts_in_queue);
                     calculateMaxAndSum(max_merges_in_queue, sum_merges_in_queue, status.queue.merges_in_queue);
 
-                    try
+                    if (!status.is_readonly)
                     {
-                        time_t absolute_delay = 0;
-                        time_t relative_delay = 0;
-                        table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
+                        try
+                        {
+                            time_t absolute_delay = 0;
+                            time_t relative_delay = 0;
+                            table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
 
-                        calculateMax(max_absolute_delay, absolute_delay);
-                        calculateMax(max_relative_delay, relative_delay);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(__PRETTY_FUNCTION__,
-                            "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                            calculateMax(max_absolute_delay, absolute_delay);
+                            calculateMax(max_relative_delay, relative_delay);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__,
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                        }
                     }
 
-                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getData().getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getMaxPartsCountForPartition());
                 }
 
                 if (table_merge_tree)
                 {
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getData().getMaxPartsCountForPartition());
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountForPartition());
                 }
             }
         }
@@ -216,6 +223,9 @@ void AsynchronousMetrics::update()
         set("ReplicasMaxRelativeDelay", max_relative_delay);
 
         set("MaxPartCountForPartition", max_part_count_for_partition);
+
+        set("NumberOfDatabases", number_of_databases);
+        set("NumberOfTables", total_number_of_tables);
     }
 
 #if USE_TCMALLOC
@@ -268,7 +278,7 @@ void AsynchronousMetrics::update()
             set("jemalloc." NAME, value); \
         } while (0);
 
-        FOR_EACH_METRIC(GET_METRIC);
+        FOR_EACH_METRIC(GET_METRIC)
 
     #undef GET_METRIC
     #undef FOR_EACH_METRIC

@@ -51,9 +51,11 @@
 
 `a BETWEEN b AND c` - равнозначно `a >= b AND a <= c`
 
+`a NOT BETWEEN b AND c` - равнозначно `a < b OR a > c`
+
 ## Операторы для работы с множествами
 
-*Смотрите раздел [Операторы IN](select.md/#query_language-in_operators).*
+*Смотрите раздел [Операторы IN](select.md#select-in-operators).*
 
 `a IN ...` - функция `in(a, b)`
 
@@ -62,6 +64,69 @@
 `a GLOBAL IN ...` - функция `globalIn(a, b)`
 
 `a GLOBAL NOT IN ...` - функция `globalNotIn(a, b)`
+
+## Оператор для работы с датами и временем {#operators-datetime}
+
+```sql
+EXTRACT(part FROM date);
+```
+
+Позволяет извлечь отдельные части из переданной даты. Например, можно получить месяц из даты, или минуты из времени.
+
+В параметре `part` указывается, какой фрагмент даты нужно получить. Доступные значения:
+
+- `DAY` — День. Возможные значения: 1–31.
+- `MONTH` — Номер месяца. Возможные значения: 1–12.
+- `YEAR` — Год.
+- `SECOND` — Секунда. Возможные значения: 0–59.
+- `MINUTE` — Минута. Возможные значения: 0–59.
+- `HOUR` — Час. Возможные значения: 0–23.
+
+Эти значения могут быть указаны также в нижнем регистре (`day`, `month`).
+
+В параметре `date` указывается исходная дата. Поддерживаются типы [Date](../data_types/date.md) и [DateTime](../data_types/datetime.md).
+
+Примеры:
+
+```sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+```
+
+В следующем примере создадим таблицу и добавим в неё значение с типом `DateTime`.
+
+```sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64,
+    OrderName String,
+    OrderDate DateTime
+)
+ENGINE = Log;
+```
+
+```sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+```sql
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+```
+
+```text
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+Больше примеров приведено в [тестах](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
 
 ## Оператор логического отрицания
 
@@ -83,11 +148,9 @@
 
 Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](functions/array_join.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
 
-<a name="operator_case"><a>
+## Условное выражение {#operator_case}
 
-## Условное выражение
-
-``` sql
+```sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -97,7 +160,9 @@ END
 
 В случае указания `x` - функция `transform(x, [a, ...], [b, ...], c)`. Иначе — `multiIf(a, b, ..., c)`.
 При отсутствии секции `ELSE c`, значением по умолчанию будет `NULL`.
-P.S. Функция `transform` не умеет работать с `NULL`.
+
+!!! note "Примечание"
+    Функция `transform` не умеет работать с `NULL`.
 
 ## Оператор склеивания строк
 
@@ -128,50 +193,37 @@ P.S. Функция `transform` не умеет работать с `NULL`.
 
 ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL`.
 
-<a name="operator-is-null"></a>
+### IS NULL {#operator-is-null}
 
-### IS NULL
-
-- Для значений типа [Nullable](../data_types/nullable.md#data_type-nullable) оператор `IS NULL` возвращает:
+- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
     - `1`, если значение — `NULL`.
     - `0` в обратном случае.
 - Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
-```bash
-:) SELECT x+100 FROM t_null WHERE y IS NULL
-
-SELECT x + 100
-FROM t_null
-WHERE isNull(y)
-
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+```text
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
-<a name="operator-is-not-null"></a>
 
 ### IS NOT NULL
 
-- Для значений типа [Nullable](../data_types/nullable.md#data_type-nullable) оператор `IS NOT NULL` возвращает:
+- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NOT NULL` возвращает:
     - `0`, если значение — `NULL`.
     - `1`, в обратном случае.
 - Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
 
-```bash
-:) SELECT * FROM t_null WHERE y IS NOT NULL
-
-SELECT *
-FROM t_null
-WHERE isNotNull(y)
-
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+```text
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/operators/) <!--hide-->

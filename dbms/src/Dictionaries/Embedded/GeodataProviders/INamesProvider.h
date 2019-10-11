@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Entries.h"
 #include <memory>
+#include "Entries.h"
 
 
 // Iterates over all name entries in data source
@@ -42,11 +42,9 @@ using ILanguageRegionsNamesDataSourcePtr = std::unique_ptr<ILanguageRegionsNames
 class IRegionsNamesDataProvider
 {
 public:
-    virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(
-        const std::string & language) const = 0;
+    virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const = 0;
 
     virtual ~IRegionsNamesDataProvider() {}
 };
 
 using IRegionsNamesDataProviderPtr = std::unique_ptr<IRegionsNamesDataProvider>;
-

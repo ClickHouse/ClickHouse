@@ -12,46 +12,66 @@ Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 For integer arguments, it makes sense to round with a negative 'N' value (for non-negative 'N', the function doesn't do anything).
 If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
 
-## ceil(x\[, N\])
+## ceil(x\[, N\]), ceiling(x\[, N\])
 
 Returns the smallest round number that is greater than or equal to 'x'. In every other way, it is the same as the 'floor' function (see above).
 
-## round(x\[, N\])
+## round(x[, N]) {#rounding_functions-round}
 
-Implements [banker's rounding](https://en.wikipedia.org/wiki/Rounding#Round_half_to_even), i.e., rounding to the nearest even integer.
+Rounds a value to a specified number of decimal places.
 
-**Function arguments:**
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers the function returns the number having the nearest even digit (banker's rounding).
 
-- `x` — the number to be rounded. [Type](../../data_types/index.md#data_types) —  any number.
-- `N`—  the position of the number after the decimal point to round the number to.
+```sql
+round(expression [, decimal_places])
+```
+
+**Parameters:**
+
+- `expression` — A number to be rounded. Can be any [expression](../syntax.md#syntax-expressions) returning the numeric [data type](../../data_types/index.md#data_types).
+- `decimal-places` — An integer value.
+    - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
+    - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
+    - If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
 
 **Returned value:**
 
-The rounded number of the same type as the input number `x`
+The rounded number of the same type as the input number.
 
-**Example:**
+### Examples
 
-``` sql
-SELECT
-    number / 2 AS x,
-    round(x)
-FROM system.numbers
-LIMIT 10
+**Example of use**
+
+```sql
+SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 ```
-
-```
+```text
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
 │   1 │                        1 │
-│ 1.5 │                        2 │
-│   2 │                        2 │
-│ 2.5 │                        2 │
-│   3 │                        3 │
-│ 3.5 │                        4 │
-│   4 │                        4 │
-│ 4.5 │                        4 │
 └─────┴──────────────────────────┘
+```
+
+**Examples of rounding**
+
+Rounding to the nearest number.
+
+```text
+round(3.2, 0) = 3
+round(4.1267, 2) = 4.13
+round(22,-1) = 20
+round(467,-2) = 500
+round(-467,-2) = -500
+```
+
+Banker's rounding.
+
+```text
+round(3.5) = 4
+round(4.5) = 4
+round(3.55, 1) = 3.6
+round(3.65, 1) = 3.6
 ```
 
 ## roundToExp2(num)
@@ -66,5 +86,8 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.
 
+## roundDown(num, arr)
+
+Accept a number, round it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->

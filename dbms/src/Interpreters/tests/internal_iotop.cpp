@@ -1,4 +1,4 @@
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
@@ -10,7 +10,6 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-
 
 
 std::mutex mutex;
@@ -52,8 +51,10 @@ void do_io(size_t id)
     TaskStatsInfoGetter get_info;
 
     get_info.getStat(stat, tid);
-    std::lock_guard<std::mutex> lock(mutex);
-    std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
+    {
+        std::lock_guard lock(mutex);
+        std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
+    }
 
     size_t copy_size = 1048576 * (1 + id);
     std::string path_dst = "test_out_" + std::to_string(id);
@@ -67,7 +68,7 @@ void do_io(size_t id)
 
     get_info.getStat(stat, tid);
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         std::cerr << "#" << id << ", tid " << tid << ", step1\n" << stat << "\n";
     }
 
@@ -79,7 +80,7 @@ void do_io(size_t id)
 
     get_info.getStat(stat, tid);
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         std::cerr << "#" << id << ", tid " << tid << ", step2\n" << stat << "\n";
     }
 
@@ -91,7 +92,7 @@ void do_io(size_t id)
 
     get_info.getStat(stat, tid);
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         std::cerr << "#" << id << ", tid " << tid << ", step3\n" << stat << "\n";
     }
 

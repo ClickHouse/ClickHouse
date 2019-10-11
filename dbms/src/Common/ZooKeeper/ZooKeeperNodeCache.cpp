@@ -20,25 +20,23 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Even
 
 ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallback caller_watch_callback)
 {
-    zkutil::ZooKeeperPtr zookeeper;
     std::unordered_set<std::string> invalidated_paths;
     {
-        std::lock_guard<std::mutex> lock(context->mutex);
+        std::lock_guard lock(context->mutex);
 
-        if (!context->zookeeper)
+        if (context->all_paths_invalidated)
         {
             /// Possibly, there was a previous session and it has expired. Clear the cache.
             path_to_cached_znode.clear();
-
-            context->zookeeper = get_zookeeper();
+            context->all_paths_invalidated = false;
         }
-        zookeeper = context->zookeeper;
 
         invalidated_paths.swap(context->invalidated_paths);
     }
 
+    zkutil::ZooKeeperPtr zookeeper = get_zookeeper();
     if (!zookeeper)
-        throw DB::Exception("Could not get znode: `" + path + "'. ZooKeeper not configured.", DB::ErrorCodes::NO_ZOOKEEPER);
+        throw DB::Exception("Could not get znode: '" + path + "'. ZooKeeper not configured.", DB::ErrorCodes::NO_ZOOKEEPER);
 
     for (const auto & invalidated_path : invalidated_paths)
         path_to_cached_znode.erase(invalidated_path);
@@ -59,14 +57,14 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
 
         bool changed = false;
         {
-            std::lock_guard<std::mutex> lock(owned_context->mutex);
+            std::lock_guard lock(owned_context->mutex);
 
             if (response.type != Coordination::SESSION)
                 changed = owned_context->invalidated_paths.emplace(response.path).second;
             else if (response.state == Coordination::EXPIRED_SESSION)
             {
-                owned_context->zookeeper = nullptr;
                 owned_context->invalidated_paths.clear();
+                owned_context->all_paths_invalidated = true;
                 changed = true;
             }
         }

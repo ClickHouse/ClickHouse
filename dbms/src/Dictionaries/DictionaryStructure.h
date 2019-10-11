@@ -1,47 +1,57 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <vector>
-#include <string>
 #include <map>
 #include <optional>
+#include <string>
+#include <vector>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 enum class AttributeUnderlyingType
 {
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Float32,
-    Float64,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    String
+    utUInt8,
+    utUInt16,
+    utUInt32,
+    utUInt64,
+    utUInt128,
+    utInt8,
+    utInt16,
+    utInt32,
+    utInt64,
+    utFloat32,
+    utFloat64,
+    utDecimal32,
+    utDecimal64,
+    utDecimal128,
+    utString
 };
 
-
-/** For implicit conversions in dictGet functions.
-  */
-bool isAttributeTypeConvertibleTo(AttributeUnderlyingType from, AttributeUnderlyingType to);
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
 
 std::string toString(const AttributeUnderlyingType type);
 
+/// Implicit conversions in dictGet functions is disabled.
+inline void checkAttributeType(const std::string & dict_name, const std::string & attribute_name,
+                               AttributeUnderlyingType attribute_type, AttributeUnderlyingType to)
+{
+    if (attribute_type != to)
+        throw Exception{dict_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute_type)
+            + ", expected " + toString(to), ErrorCodes::TYPE_MISMATCH};
+}
 
 /// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;
@@ -104,8 +114,10 @@ struct DictionaryStructure final
 
 private:
     std::vector<DictionaryAttribute> getAttributes(
-        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-        const bool hierarchy_allowed = true, const bool allow_null_values = true);
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const bool hierarchy_allowed = true,
+        const bool allow_null_values = true);
 };
 
 }

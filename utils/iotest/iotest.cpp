@@ -11,7 +11,7 @@
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <cstdlib>
@@ -44,7 +44,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 {
     using namespace DB;
 
-    Memory direct_buf(block_size, sysconf(_SC_PAGESIZE));
+    Memory<> direct_buf(block_size, sysconf(_SC_PAGESIZE));
     std::vector<char> simple_buf(block_size);
 
     char * buf;

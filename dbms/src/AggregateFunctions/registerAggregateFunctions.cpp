@@ -15,6 +15,7 @@ void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
+void registerAggregateFunctionRate(AggregateFunctionFactory &);
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
@@ -25,7 +26,15 @@ void registerAggregateFunctionUniqCombined(AggregateFunctionFactory &);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory &);
 void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
+void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
+void registerAggregateFunctionHistogram(AggregateFunctionFactory &);
+void registerAggregateFunctionRetention(AggregateFunctionFactory &);
+void registerAggregateFunctionTimeSeriesGroupSum(AggregateFunctionFactory &);
+void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
+void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
+void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
+void registerAggregateFunctionMoving(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -33,9 +42,7 @@ void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFacto
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory &);
-
-void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
-void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
+void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 
 void registerAggregateFunctions()
 {
@@ -50,6 +57,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantile(factory);
         registerAggregateFunctionsSequenceMatch(factory);
         registerAggregateFunctionWindowFunnel(factory);
+        registerAggregateFunctionRate(factory);
         registerAggregateFunctionsMinMaxAny(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSimple(factory);
@@ -60,9 +68,15 @@ void registerAggregateFunctions()
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
+        registerAggregateFunctionsBitmap(factory);
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
+        registerAggregateFunctionTimeSeriesGroupSum(factory);
+        registerAggregateFunctionMLMethod(factory);
+        registerAggregateFunctionEntropy(factory);
+        registerAggregateFunctionSimpleLinearRegression(factory);
+        registerAggregateFunctionMoving(factory);
     }
 
     {
@@ -74,6 +88,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorState(factory);
         registerAggregateFunctionCombinatorMerge(factory);
         registerAggregateFunctionCombinatorNull(factory);
+        registerAggregateFunctionCombinatorResample(factory);
     }
 }
 

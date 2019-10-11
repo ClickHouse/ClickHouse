@@ -1,14 +1,16 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Interpreters/IExternalLoadable.h>
-#include <common/StringRef.h>
+
 #include <Core/Names.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
-#include <memory>
-#include <chrono>
+#include <common/StringRef.h>
 #include "IDictionarySource.h"
+
+#include <chrono>
+#include <memory>
 
 namespace DB
 {
@@ -18,10 +20,6 @@ using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
 struct DictionaryStructure;
 class ColumnString;
-
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-
 
 struct IDictionaryBase : public IExternalLoadable
 {
@@ -57,6 +55,8 @@ struct IDictionaryBase : public IExternalLoadable
         return source && source->isModified();
     }
 
+    virtual std::exception_ptr getLastException() const { return {}; }
+
     std::shared_ptr<IDictionaryBase> shared_from_this()
     {
         return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
@@ -79,17 +79,20 @@ struct IDictionary : IDictionaryBase
 
     /// Methods for hierarchy.
 
-    virtual void isInVectorVector(const PaddedPODArray<Key> & /*child_ids*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
+    virtual void isInVectorVector(
+        const PaddedPODArray<Key> & /*child_ids*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
         throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void isInVectorConstant(const PaddedPODArray<Key> & /*child_ids*/, const Key /*ancestor_id*/, PaddedPODArray<UInt8> & /*out*/) const
+    virtual void
+    isInVectorConstant(const PaddedPODArray<Key> & /*child_ids*/, const Key /*ancestor_id*/, PaddedPODArray<UInt8> & /*out*/) const
     {
         throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void isInConstantVector(const Key /*child_id*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
+    virtual void
+    isInConstantVector(const Key /*child_id*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
         throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }

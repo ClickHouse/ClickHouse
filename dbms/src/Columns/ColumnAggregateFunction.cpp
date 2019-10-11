@@ -1,13 +1,17 @@
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnsCommon.h>
+#include <Common/assert_cast.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Columns/ColumnsCommon.h>
 
+#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
@@ -16,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -26,9 +31,9 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
             func->destroy(val);
 }
 
-void ColumnAggregateFunction::addArena(ArenaPtr arena_)
+void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
 {
-    arenas.push_back(arena_);
+    foreign_arenas.push_back(arena_);
 }
 
 MutableColumnPtr ColumnAggregateFunction::convertToValues() const
@@ -63,7 +68,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         *   AggregateFunction(quantileTiming(0.5), UInt64)
         * into UInt16 - already finished result of `quantileTiming`.
         */
-    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+    if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
     {
         auto res = createView();
         res->set(function_state->getNestedFunction());
@@ -80,6 +85,37 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
     return res;
 }
 
+MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const
+{
+    MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
+    res->reserve(data.size());
+
+    auto ML_function = func.get();
+    if (ML_function)
+    {
+        if (data.size() == 1)
+        {
+            /// Case for const column. Predict using single model.
+            ML_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
+        }
+        else
+        {
+            /// Case for non-constant column. Use different aggregate function for each row.
+            size_t row_num = 0;
+            for (auto val : data)
+            {
+                ML_function->predictValues(val, *res, block, row_num, 1, arguments, context);
+                ++row_num;
+            }
+        }
+    }
+    else
+    {
+        throw Exception("Illegal aggregate function is passed",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    return res;
+}
 
 void ColumnAggregateFunction::ensureOwnership()
 {
@@ -123,7 +159,7 @@ void ColumnAggregateFunction::ensureOwnership()
 
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
 {
-    const ColumnAggregateFunction & from_concrete = static_cast<const ColumnAggregateFunction &>(from);
+    const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
     if (start + length > from_concrete.data.size())
         throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length)
@@ -150,7 +186,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 
         size_t old_size = data.size();
         data.resize(old_size + length);
-        memcpy(&data[old_size], &from_concrete.data[start], length * sizeof(data[0]));
+        memcpy(data.data() + old_size, &from_concrete.data[start], length * sizeof(data[0]));
     }
 }
 
@@ -230,39 +266,44 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-/// NOTE: Highly overestimates size of a column if it was produced in AggregatingBlockInputStream (it contains size of other columns)
+/// The returned size is less than real size. The reason is that some parts of
+/// aggregate function data may be allocated on shared arenas. These arenas are
+/// used for several blocks, and also may be updated concurrently from other
+/// threads, so we can't know the size of these data.
 size_t ColumnAggregateFunction::byteSize() const
 {
-    size_t res = data.size() * sizeof(data[0]);
-
-    for (const auto & arena : arenas)
-        res += arena->size();
-
-    return res;
+    return data.size() * sizeof(data[0])
+            + (my_arena ? my_arena->size() : 0);
 }
 
-
-/// Like byteSize(), highly overestimates size
+/// Like in byteSize(), the size is underestimated.
 size_t ColumnAggregateFunction::allocatedBytes() const
 {
-    size_t res = data.allocated_bytes();
+    return data.allocated_bytes()
+            + (my_arena ? my_arena->size() : 0);
+}
 
-    for (const auto & arena : arenas)
-        res += arena->size();
-
-    return res;
+void ColumnAggregateFunction::protect()
+{
+    data.protect();
 }
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return create(func, Arenas(1, std::make_shared<Arena>()));
+    return create(func);
+}
+
+String ColumnAggregateFunction::getTypeString() const
+{
+    return DataTypeAggregateFunction(func, func->getArgumentTypes(), func->getParameters()).getName();
 }
 
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
-    Field field = String();
+    Field field = AggregateFunctionStateData();
+    field.get<AggregateFunctionStateData &>().name = getTypeString();
     {
-        WriteBufferFromString buffer(field.get<String &>());
+        WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
     }
     return field;
@@ -270,9 +311,10 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
-    res = String();
+    res = AggregateFunctionStateData();
+    res.get<AggregateFunctionStateData &>().name = getTypeString();
     {
-        WriteBufferFromString buffer(res.get<String &>());
+        WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
     }
 }
@@ -312,14 +354,15 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 
 void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
 {
-    insertMergeFrom(static_cast<const ColumnAggregateFunction &>(from).data[n]);
+    insertMergeFrom(assert_cast<const ColumnAggregateFunction &>(from).data[n]);
 }
 
 Arena & ColumnAggregateFunction::createOrGetArena()
 {
-    if (unlikely(arenas.empty()))
-        arenas.emplace_back(std::make_shared<Arena>());
-    return *arenas.back().get();
+    if (unlikely(!my_arena))
+        my_arena = std::make_shared<Arena>();
+
+    return *my_arena.get();
 }
 
 
@@ -337,13 +380,23 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
     }
 }
 
-
 void ColumnAggregateFunction::insert(const Field & x)
 {
+    String type_string = getTypeString();
+
+    if (x.getType() != Field::Types::AggregateFunctionState)
+        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
+                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
+
+    auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    if (type_string != field_name)
+        throw Exception("Cannot insert filed with type " + field_name + " into column with type " + type_string,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.get<const String &>());
+    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, &arena);
 }
 
@@ -378,7 +431,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       *  as we cannot legally compare pointers after last element + 1 of some valid memory region.
       *  Probably this will not work under UBSan.
       */
-    ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena);
+    ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena - 1);
     func->deserialize(data.back(), read_buffer, &dst_arena);
 
     return read_buffer.position();
@@ -440,7 +493,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     }
 
     for (size_t i = 0; i < num_rows; ++i)
-        static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
+        assert_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
 
     return columns;
 }
@@ -465,12 +518,13 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     AlignedBuffer place_buffer(func->sizeOfData(), func->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
-    String serialized;
+    AggregateFunctionStateData serialized;
+    serialized.name = getTypeString();
 
     func->create(place);
     try
     {
-        WriteBufferFromString buffer(serialized);
+        WriteBufferFromString buffer(serialized.data);
         func->serialize(place, buffer);
     }
     catch (...)
@@ -482,6 +536,33 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 
     min = serialized;
     max = serialized;
+}
+
+namespace
+{
+
+ConstArenas concatArenas(const ConstArenas & array, ConstArenaPtr arena)
+{
+    ConstArenas result = array;
+    if (arena)
+        result.push_back(std::move(arena));
+
+    return result;
+}
+
+}
+
+ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
+{
+    auto res = create(func, concatArenas(foreign_arenas, my_arena));
+    res->src = getPtr();
+    return res;
+}
+
+ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
+    : foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
+      func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+{
 }
 
 }

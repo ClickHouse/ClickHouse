@@ -1,4 +1,3 @@
-<a name="example_datasets-ontime"></a>
 
 <div dir="rtl" markdown="1">
 
@@ -9,11 +8,11 @@
 </div>
 
 ```bash
-for s in `seq 1987 2017`
+for s in `seq 1987 2018`
 do
 for m in `seq 1 12`
 do
-wget http://transtats.bts.gov/PREZIP/On_Time_On_Time_Performance_${s}_${m}.zip
+wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_${s}_${m}.zip
 done
 done
 ```
@@ -198,7 +197,7 @@ Q4. تعداد تاخیرها براساس carrier در سال 78
 </div>
 
 ``` sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
 <div dir="rtl" markdown="1">
@@ -208,7 +207,7 @@ Q5. درصد تاخیر ها براساس carrier در سال 2007
 </div>
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -238,7 +237,7 @@ ORDER BY c3 DESC;
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
 ```
 
 <div dir="rtl" markdown="1">
@@ -248,7 +247,7 @@ Q6. مانند query قبلی اما برای طیف وسیعی از سال ها
 </div>
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -278,7 +277,7 @@ ORDER BY c3 DESC;
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
 ```
 
 <div dir="rtl" markdown="1">
@@ -293,7 +292,7 @@ FROM
 (
     select
         Year,
-        count(*)*1000 as c1
+        count(*)*100 as c1
     from ontime
     WHERE DepDelay>10
     GROUP BY Year

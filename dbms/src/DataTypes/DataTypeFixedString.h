@@ -30,7 +30,7 @@ public:
             throw Exception("FixedString size is too large", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-    std::string getName() const override;
+    std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::FixedString; }
 
     const char * getFamilyName() const override { return "FixedString"; }
@@ -50,6 +50,8 @@ public:
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
@@ -64,12 +66,12 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
+
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override
-    {
-        return String();
-    }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 

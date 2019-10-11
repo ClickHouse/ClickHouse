@@ -1,14 +1,14 @@
-DROP TABLE IF EXISTS test.empty;
-DROP TABLE IF EXISTS test.data;
+DROP TABLE IF EXISTS empty;
+DROP TABLE IF EXISTS data;
 
-CREATE TABLE test.empty (value Int8) ENGINE = TinyLog;
-CREATE TABLE test.data (value Int8) ENGINE = TinyLog;
+CREATE TABLE empty (value Int8) ENGINE = TinyLog;
+CREATE TABLE data (value Int8) ENGINE = TinyLog;
 
-INSERT INTO test.data SELECT * FROM test.empty;
-SELECT * FROM test.data;
+INSERT INTO data SELECT * FROM empty;
+SELECT * FROM data;
 
-INSERT INTO test.data SELECT 1;
-SELECT * FROM test.data;
+INSERT INTO data SELECT 1;
+SELECT * FROM data;
 
-DROP TABLE test.empty;
-DROP TABLE test.data;
+DROP TABLE empty;
+DROP TABLE data;

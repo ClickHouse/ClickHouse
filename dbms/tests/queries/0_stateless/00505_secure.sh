@@ -19,13 +19,11 @@ if [ -z $tcp_port_secure ]; then
     cat $CURDIR/00505_secure.reference
 else
 
+    CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
     if [[ $CLICKHOUSE_CLIENT != *"--port"* ]]; then
-        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
-
-        # Auto port detect. Cant test with re-definedvia command line ports
+        # Auto port detect. Cant test with re-defined via command line ports
         $CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure -q "SELECT 1";
     else
-        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
         echo 1
     fi
 

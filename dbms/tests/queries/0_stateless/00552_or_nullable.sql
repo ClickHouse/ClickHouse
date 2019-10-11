@@ -7,7 +7,17 @@ SELECT
     0.1 OR NULL,
     NULL OR 1 OR NULL,
     0 OR NULL OR 1 OR NULL;
-   
+
+SELECT
+    0 AND NULL,
+    1 AND NULL,
+    toNullable(0) AND NULL,
+    toNullable(1) AND NULL,
+    0.0 AND NULL,
+    0.1 AND NULL,
+    NULL AND 1 AND NULL,
+    0 AND NULL AND 1 AND NULL;
+
 SELECT
     x,
     0 OR x,
@@ -34,18 +44,18 @@ SELECT
     0 AND x AND 1 AND x
 FROM (SELECT number % 2 ? number % 3 : NULL AS x FROM system.numbers LIMIT 10);
 
-DROP TABLE IF EXISTS test.test;
+DROP TABLE IF EXISTS test;
 
-CREATE TABLE test.test
+CREATE TABLE test
 (
     x Nullable(Int32)
 ) ENGINE = Log;
 
-INSERT INTO test.test VALUES(1), (0), (null);
+INSERT INTO test VALUES(1), (0), (null);
 
-SELECT * FROM test.test;
-SELECT x FROM test.test WHERE x != 0;
-SELECT x FROM test.test WHERE x != 0 OR isNull(x);
-SELECT x FROM test.test WHERE x != 1;
+SELECT * FROM test;
+SELECT x FROM test WHERE x != 0;
+SELECT x FROM test WHERE x != 0 OR isNull(x);
+SELECT x FROM test WHERE x != 1;
 
-DROP TABLE test.test;
+DROP TABLE test;

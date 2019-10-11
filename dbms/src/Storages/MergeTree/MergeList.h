@@ -30,11 +30,13 @@ struct MergeInfo
     std::string result_part_name;
     Array source_part_names;
     std::string partition_id;
+    bool is_mutation;
     Float64 elapsed;
     Float64 progress;
     UInt64 num_parts;
     UInt64 total_size_bytes_compressed;
     UInt64 total_size_marks;
+    UInt64 total_rows_count;
     UInt64 bytes_read_uncompressed;
     UInt64 bytes_written_uncompressed;
     UInt64 rows_read;
@@ -44,19 +46,29 @@ struct MergeInfo
     UInt64 thread_number;
 };
 
+struct FutureMergedMutatedPart;
 
 struct MergeListElement : boost::noncopyable
 {
     const std::string database;
     const std::string table;
-    const std::string result_part_name;
     std::string partition_id;
-    Stopwatch watch;
-    std::atomic<Float64> progress{};
+
+    const std::string result_part_name;
+    Int64 result_data_version{};
+    bool is_mutation{};
+
     UInt64 num_parts{};
     Names source_part_names;
+    Int64 source_data_version{};
+
+    Stopwatch watch;
+    std::atomic<Float64> progress{};
+    std::atomic<bool> is_cancelled{};
+
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_marks{};
+    UInt64 total_rows_count{};
     std::atomic<UInt64> bytes_read_uncompressed{};
     std::atomic<UInt64> bytes_written_uncompressed{};
 
@@ -75,8 +87,7 @@ struct MergeListElement : boost::noncopyable
     UInt32 thread_number;
 
 
-    MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name,
-                     const MergeTreeData::DataPartsVector & source_parts);
+    MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);
 
     MergeInfo getInfo() const;
 
@@ -99,7 +110,7 @@ public:
     MergeListEntry(const MergeListEntry &) = delete;
     MergeListEntry & operator=(const MergeListEntry &) = delete;
 
-    MergeListEntry(MergeList & list, const container_t::iterator it) : list(list), it{it} {}
+    MergeListEntry(MergeList & list_, const container_t::iterator it_) : list(list_), it{it_} {}
     ~MergeListEntry();
 
     MergeListElement * operator->() { return &*it; }
@@ -124,24 +135,36 @@ public:
     template <typename... Args>
     EntryPtr insert(Args &&... args)
     {
-        std::lock_guard<std::mutex> lock{mutex};
+        std::lock_guard lock{mutex};
         return std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
     }
 
     info_container_t get() const
     {
-        std::lock_guard<std::mutex> lock{mutex};
+        std::lock_guard lock{mutex};
         info_container_t res;
         for (const auto & merge_element : merges)
             res.emplace_back(merge_element.getInfo());
         return res;
+    }
+
+    void cancelPartMutations(const String & partition_id, Int64 mutation_version)
+    {
+        std::lock_guard lock{mutex};
+        for (auto & merge_element : merges)
+        {
+            if ((partition_id.empty() || merge_element.partition_id == partition_id)
+                && merge_element.source_data_version < mutation_version
+                && merge_element.result_data_version >= mutation_version)
+                merge_element.is_cancelled = true;
+        }
     }
 };
 
 
 inline MergeListEntry::~MergeListEntry()
 {
-    std::lock_guard<std::mutex> lock{list.mutex};
+    std::lock_guard lock{list.mutex};
     list.merges.erase(it);
 }
 

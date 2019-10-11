@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class ExternalModels;
+class ExternalModelsLoader;
 
 /// Evaluate external model.
 /// First argument - model name, the others - model arguments.
@@ -17,7 +17,7 @@ public:
 
     static FunctionPtr create(const Context & context);
 
-    explicit FunctionModelEvaluate(const ExternalModels & models) : models(models) {}
+    explicit FunctionModelEvaluate(const ExternalModelsLoader & models_loader_) : models_loader(models_loader_) {}
 
     String getName() const override { return name; }
 
@@ -25,14 +25,16 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
-    const ExternalModels & models;
+    const ExternalModelsLoader & models_loader;
 };
 
 }

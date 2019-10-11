@@ -1,5 +1,4 @@
 #include <Interpreters/Set.h>
-#include <Interpreters/Join.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
@@ -19,10 +18,14 @@ namespace ErrorCodes
 CreatingSetsBlockInputStream::CreatingSetsBlockInputStream(
     const BlockInputStreamPtr & input,
     const SubqueriesForSets & subqueries_for_sets_,
-    const SizeLimits & network_transfer_limits)
-    : subqueries_for_sets(subqueries_for_sets_),
-    network_transfer_limits(network_transfer_limits)
+    const Context & context_)
+    : subqueries_for_sets(subqueries_for_sets_)
+    , context(context_)
 {
+    const Settings & settings = context.getSettingsRef();
+    network_transfer_limits = SizeLimits(
+        settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+
     for (auto & elem : subqueries_for_sets)
     {
         if (elem.second.source)
@@ -59,12 +62,7 @@ void CreatingSetsBlockInputStream::readPrefixImpl()
 
 Block CreatingSetsBlockInputStream::getTotals()
 {
-    auto input = dynamic_cast<IProfilingBlockInputStream *>(children.back().get());
-
-    if (input)
-        return input->getTotals();
-    else
-        return totals;
+    return children.back()->getTotals();
 }
 
 
@@ -97,7 +95,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
     BlockOutputStreamPtr table_out;
     if (subquery.table)
-        table_out = subquery.table->write({}, {});
+        table_out = subquery.table->write({}, context);
 
     bool done_with_set = !subquery.set;
     bool done_with_join = !subquery.join;
@@ -125,22 +123,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_join)
         {
-            for (const auto & name_with_alias : subquery.joined_block_aliases)
-            {
-                if (block.has(name_with_alias.first))
-                {
-                    auto pos = block.getPositionByName(name_with_alias.first);
-                    auto column = block.getByPosition(pos);
-                    block.erase(pos);
-                    column.name = name_with_alias.second;
-                    block.insert(std::move(column));
-                }
-            }
-
-            if (subquery.joined_block_actions)
-                subquery.joined_block_actions->execute(block);
-
-            if (!subquery.join->insertFromBlock(block))
+            if (!subquery.insertJoinedBlock(block))
                 done_with_join = true;
         }
 
@@ -158,9 +141,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (done_with_set && done_with_join && done_with_table)
         {
-            if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
-                profiling_in->cancel(false);
-
+            subquery.source->cancel(false);
             break;
         }
     }
@@ -171,15 +152,11 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     watch.stop();
 
     size_t head_rows = 0;
-    if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
-    {
-        const BlockStreamProfileInfo & profile_info = profiling_in->getProfileInfo();
+    const BlockStreamProfileInfo & profile_info = subquery.source->getProfileInfo();
 
-        head_rows = profile_info.rows;
+    head_rows = profile_info.rows;
 
-        if (subquery.join)
-            subquery.join->setTotals(profiling_in->getTotals());
-    }
+    subquery.setTotals();
 
     if (head_rows != 0)
     {

@@ -1,12 +1,14 @@
 #include <ostream>
 #include <sstream>
+
 #include <Common/typeid_cast.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
-#include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -16,33 +18,73 @@ namespace ErrorCodes
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
 }
 
-void QueryAliasesVisitor::visit(const ASTPtr & ast) const
+static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
 {
-    /// Bottom-up traversal. We do not go into subqueries.
-    visitChildren(ast);
+    std::stringstream message;
+    message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":" << std::endl;
+    formatAST(*ast, message, false, true);
+    message << std::endl << "and" << std::endl;
+    formatAST(*prev_ast, message, false, true);
+    message << std::endl;
+    return message.str();
+}
 
-    if (!tryVisit<ASTSubquery>(ast))
-    {
-        DumpASTNode dump(*ast, ostr, visit_depth, "getQueryAliases");
-        visitOther(ast);
-    }
+
+bool QueryAliasesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+{
+    /// Don't descent into table functions and subqueries and special case for ArrayJoin.
+    if (node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>())
+        return false;
+    return true;
+}
+
+void QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
+{
+    if (auto * s = ast->as<ASTSubquery>())
+        visit(*s, ast, data);
+    else if (auto * q = ast->as<ASTSelectQuery>())
+        visit(*q, ast, data);
+    else if (auto * aj = ast->as<ASTArrayJoin>())
+        visit(*aj, ast, data);
+    else
+        visitOther(ast, data);
+}
+
+void QueryAliasesMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, Data &)
+{
+    ASTPtr with = select.with();
+    if (!with)
+        return;
+
+    for (auto & child : with->children)
+        if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
+            ast_with_alias->prefer_alias_to_column_name = true;
 }
 
 /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
 /// (skip the expression list itself and its children).
-void QueryAliasesVisitor::visit(const ASTArrayJoin &, const ASTPtr & ast) const
+void QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data)
 {
+    visitOther(ast, data);
+
+    std::vector<ASTPtr> grand_children;
     for (auto & child1 : ast->children)
         for (auto & child2 : child1->children)
             for (auto & child3 : child2->children)
-                visit(child3);
+                grand_children.push_back(child3);
+
+    /// create own visitor to run bottom to top
+    for (auto & child : grand_children)
+        Visitor(data).visit(child);
 }
 
 /// set unique aliases for all subqueries. this is needed, because:
 /// 1) content of subqueries could change after recursive analysis, and auto-generated column names could become incorrect
 /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
-void QueryAliasesVisitor::visit(ASTSubquery & subquery, const ASTPtr & ast) const
+void QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
 {
+    Aliases & aliases = data.aliases;
+
     static std::atomic_uint64_t subquery_index = 0;
 
     if (subquery.alias.empty())
@@ -55,46 +97,26 @@ void QueryAliasesVisitor::visit(ASTSubquery & subquery, const ASTPtr & ast) cons
         while (aliases.count(alias));
 
         subquery.setAlias(alias);
-        subquery.prefer_alias_to_column_name = true;
         aliases[alias] = ast;
     }
     else
-        visitOther(ast);
+        visitOther(ast, data);
+
+    subquery.prefer_alias_to_column_name = true;
 }
 
-void QueryAliasesVisitor::visitOther(const ASTPtr & ast) const
+void QueryAliasesMatcher::visitOther(const ASTPtr & ast, Data & data)
 {
+    Aliases & aliases = data.aliases;
+
     String alias = ast->tryGetAlias();
     if (!alias.empty())
     {
         if (aliases.count(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
-            throw Exception(wrongAliasMessage(ast, alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+            throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;
     }
-}
-
-void QueryAliasesVisitor::visitChildren(const ASTPtr & ast) const
-{
-    for (auto & child : ast->children)
-    {
-        /// Don't descent into table functions and subqueries and special case for ArrayJoin.
-        if (!tryVisit<ASTTableExpression>(ast) &&
-            !tryVisit<ASTSelectWithUnionQuery>(ast) &&
-            !tryVisit<ASTArrayJoin>(ast))
-            visit(child);
-    }
-}
-
-String QueryAliasesVisitor::wrongAliasMessage(const ASTPtr & ast, const String & alias) const
-{
-    std::stringstream message;
-    message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":" << std::endl;
-    formatAST(*ast, message, false, true);
-    message << std::endl << "and" << std::endl;
-    formatAST(*aliases[alias], message, false, true);
-    message << std::endl;
-    return message.str();
 }
 
 }

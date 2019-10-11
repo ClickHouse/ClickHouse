@@ -3,6 +3,8 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/assert_cast.h>
+
 
 namespace DB
 {
@@ -32,8 +34,8 @@ namespace
         auto & data = res_col->getData();
 
         data.resize(hash_map.size());
-        for (auto val : hash_map)
-            data[val.second] = val.first;
+        for (const auto & val : hash_map)
+            data[val.getSecond()] = val.getFirst();
 
         for (auto & ind : index)
             ind = hash_map[ind];
@@ -212,13 +214,6 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.check(getDictionary().size());
 }
 
-void ColumnLowCardinality::insertDataWithTerminatingZero(const char * pos, size_t length)
-{
-    compactIfSharedDictionary();
-    idx.insertPosition(dictionary.getColumnUnique().uniqueInsertDataWithTerminatingZero(pos, length));
-    idx.check(getDictionary().size());
-}
-
 StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
@@ -243,12 +238,15 @@ void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 {
     auto unique_ptr = dictionary.getColumnUniquePtr();
+    if (size == 0)
+        unique_ptr = unique_ptr->cloneEmpty();
+
     return ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), getIndexes().cloneResized(size));
 }
 
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
-    const auto & low_cardinality_column = static_cast<const ColumnLowCardinality &>(rhs);
+    const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
     size_t n_index = getIndexes().getUInt(n);
     size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
@@ -310,21 +308,11 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
     dictionary.setShared(column_unique);
 }
 
-ColumnLowCardinality::MutablePtr ColumnLowCardinality::compact()
-{
-    auto positions = idx.getPositions();
-    /// Create column with new indexes and old dictionary.
-    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), (*std::move(positions)).mutate());
-    /// Will create new dictionary.
-    column->compactInplace();
-
-    return column;
-}
-
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
     auto sub_positions = (*idx.getPositions()->cut(start, length)).mutate();
     /// Create column with new indexes and old dictionary.
+    /// Dictionary is shared, but will be recreated after compactInplace call.
     auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
     /// Will create new dictionary.
     column->compactInplace();
@@ -347,7 +335,7 @@ void ColumnLowCardinality::compactIfSharedDictionary()
 
 
 ColumnLowCardinality::DictionaryEncodedColumn
-ColumnLowCardinality::getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const
+ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const
 {
     MutableColumnPtr sub_indexes = (*std::move(idx.getPositions()->cut(offset, limit))).mutate();
     auto indexes_map = mapUniqueIndex(*sub_indexes);
@@ -363,19 +351,23 @@ ColumnPtr ColumnLowCardinality::countKeys() const
 
     auto counter = ColumnUInt64::create(dict_size, 0);
     idx.countKeys(counter->getData());
-    return std::move(counter);
+    return counter;
 }
 
+bool ColumnLowCardinality::containsNull() const
+{
+    return getDictionary().nestedColumnIsNullable() && idx.containsDefault();
+}
 
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
-ColumnLowCardinality::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(MutableColumnPtr && positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }
 
-ColumnLowCardinality::Index::Index(ColumnPtr positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(ColumnPtr positions_) : positions(std::move(positions_))
 {
     updateSizeOfType();
 }
@@ -527,11 +519,11 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
     while (position > getMaxPositionForCurrentType())
         expandType();
 
-    positions->assumeMutableRef().insert(position);
+    positions->insert(position);
     checkSizeOfType();
 }
 
-void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, size_t offset, size_t limit)
+void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit)
 {
     auto insertForType = [&](auto type)
     {
@@ -545,7 +537,7 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, s
             convertPositions<ColumnType>();
 
         if (size_of_type == sizeof(ColumnType))
-            positions->assumeMutableRef().insertRangeFrom(column, offset, limit);
+            positions->insertRangeFrom(column, offset, limit);
         else
         {
             auto copy = [&](auto cur_type)
@@ -554,10 +546,10 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, s
                 auto & positions_data = getPositionsData<CurIndexType>();
                 const auto & column_data = column_ptr->getData();
 
-                size_t size = positions_data.size();
+                UInt64 size = positions_data.size();
                 positions_data.resize(size + limit);
 
-                for (size_t i = 0; i < limit; ++i)
+                for (UInt64 i = 0; i < limit; ++i)
                     positions_data[size + i] = column_data[offset + i];
             };
 
@@ -620,6 +612,28 @@ void ColumnLowCardinality::Index::countKeys(ColumnUInt64::Container & counts) co
     callForType(std::move(counter), size_of_type);
 }
 
+bool ColumnLowCardinality::Index::containsDefault() const
+{
+    bool contains = false;
+
+    auto check_contains_default = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        for (auto pos : data)
+        {
+            if (pos == 0)
+            {
+                contains = true;
+                break;
+            }
+        }
+    };
+
+    callForType(std::move(check_contains_default), size_of_type);
+    return contains;
+}
+
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
@@ -639,11 +653,11 @@ void ColumnLowCardinality::Dictionary::checkColumn(const IColumn & column)
         throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
-void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & dictionary)
+void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)
 {
-    checkColumn(*dictionary);
+    checkColumn(*column_unique_);
 
-    column_unique = dictionary;
+    column_unique = column_unique_;
     shared = true;
 }
 

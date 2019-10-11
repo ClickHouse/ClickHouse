@@ -56,7 +56,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-
 /// Just *
 class ParserAsterisk : public IParserBase
 {
@@ -64,7 +63,6 @@ protected:
     const char * getName() const { return "asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
-
 
 /** Something like t.* or db.table.*
   */
@@ -75,6 +73,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** COLUMNS('<regular expression>')
+  */
+class ParserColumnsMatcher : public IParserBase
+{
+protected:
+    const char * getName() const { return "COLUMNS matcher"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
 
 /** A function, for example, f(x, y + 1, g(z)).
   * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.
@@ -89,10 +95,55 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+class ParserCodecDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const { return "codec declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/** Parse compression codec
+  * CODEC(ZSTD(2))
+  */
+class ParserCodec : public IParserBase
+{
+protected:
+    const char * getName() const { return "codec"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
 class ParserCastExpression : public IParserBase
 {
 protected:
     const char * getName() const override { return "CAST expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserSubstringExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "SUBSTRING expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserTrimExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "TRIM expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserLeftExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "LEFT expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserRightExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "RIGHT expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -103,6 +154,19 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserDateAddExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "DATE_ADD expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserDateDiffExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "DATE_DIFF expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** NULL literal.
   */
@@ -184,6 +248,17 @@ private:
 };
 
 
+/** Prepared statements.
+  * Parse query with parameter expression {name:type}.
+  */
+class ParserSubstitution : public IParserBase
+{
+protected:
+    const char * getName() const { return "substitution"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
 /** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
   */
 class ParserExpressionElement : public IParserBase
@@ -199,13 +274,12 @@ protected:
 class ParserWithOptionalAlias : public IParserBase
 {
 public:
-    ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
-    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_),
-      prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
+    ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
+    {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
-    bool prefer_alias_to_column_name;
 
     const char * getName() const { return "element of expression with optional alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
@@ -215,11 +289,32 @@ protected:
 /** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
   *  and optionally, NULLS LAST|FIRST
   *  and optionally, COLLATE 'locale'.
+  *  and optionally, WITH FILL [FROM x] [TO y] [STEP z]
   */
 class ParserOrderByElement : public IParserBase
 {
 protected:
     const char * getName() const { return "element of ORDER BY expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/** Parser for function with arguments like KEY VALUE (space separated)
+  * no commas alowed, just space-separated pairs.
+  */
+class ParserFunctionWithKeyValueArguments : public IParserBase
+{
+protected:
+    const char * getName() const override { return "function with key-value arguments"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters
+  * Parse result is ASTFunction, with or without arguments.
+  */
+class ParserIdentifierWithOptionalParameters : public IParserBase
+{
+protected:
+    const char * getName() const { return "identifier with optional parameters"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 

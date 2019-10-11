@@ -1,7 +1,7 @@
 #pragma once
 
-#include "INamesProvider.h"
 #include <IO/ReadBuffer.h>
+#include "INamesProvider.h"
 
 
 // Reads regions names list in geoexport format
@@ -11,9 +11,7 @@ private:
     DB::ReadBufferPtr input;
 
 public:
-    LanguageRegionsNamesFormatReader(DB::ReadBufferPtr input_)
-        : input(std::move(input_))
-    {}
+    LanguageRegionsNamesFormatReader(DB::ReadBufferPtr input_) : input(std::move(input_)) {}
 
     bool readNext(RegionNameEntry & entry) override;
 };

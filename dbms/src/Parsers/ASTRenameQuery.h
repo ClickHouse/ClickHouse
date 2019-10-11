@@ -3,10 +3,11 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Common/quoteString.h>
+
 
 namespace DB
 {
-
 
 /** RENAME query
   */
@@ -29,7 +30,7 @@ public:
     Elements elements;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "Rename"; }
+    String getID(char) const override { return "Rename"; }
 
     ASTPtr clone() const override
     {
@@ -41,7 +42,7 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
         auto query_ptr = clone();
-        auto & query = static_cast<ASTRenameQuery &>(*query_ptr);
+        auto & query = query_ptr->as<ASTRenameQuery &>();
 
         query.cluster.clear();
         for (Element & elem : query.elements)

@@ -4,8 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserRenameQuery.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -31,8 +29,9 @@ static bool parseDatabaseAndTable(
             return false;
     }
 
-    db_and_table.database = database ? typeid_cast<const ASTIdentifier &>(*database).name : "";
-    db_and_table.table = typeid_cast<const ASTIdentifier &>(*table).name;
+    db_and_table.database.clear();
+    tryGetIdentifierNameInto(database, db_and_table.database);
+    tryGetIdentifierNameInto(table, db_and_table.table);
 
     return true;
 }

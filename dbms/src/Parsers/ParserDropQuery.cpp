@@ -4,8 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -36,7 +34,7 @@ bool ParserDropQuery::parseDetachQuery(Pos & pos, ASTPtr & node, Expected & expe
 {
     if (parseDropQuery(pos, node, expected))
     {
-        ASTDropQuery * drop_query = static_cast<ASTDropQuery*>(node.get());
+        auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Detach;
         return true;
     }
@@ -47,7 +45,7 @@ bool ParserDropQuery::parseTruncateQuery(Pos & pos, ASTPtr & node, Expected & ex
 {
     if (parseDropQuery(pos, node, expected))
     {
-        ASTDropQuery * drop_query = static_cast<ASTDropQuery*>(node.get());
+        auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Truncate;
         return true;
     }
@@ -58,6 +56,7 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
 {
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
+    ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
@@ -68,6 +67,7 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     String cluster_str;
     bool if_exists = false;
     bool temporary = false;
+    bool is_dictionary = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -89,7 +89,11 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
             temporary = true;
 
         if (!s_table.ignore(pos, expected))
-            return false;
+        {
+            if (!s_dictionary.ignore(pos, expected))
+                return false;
+            is_dictionary = true;
+        }
 
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
@@ -117,10 +121,11 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     query->kind = ASTDropQuery::Kind::Drop;
     query->if_exists = if_exists;
     query->temporary = temporary;
-    if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
-    if (table)
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    query->is_dictionary = is_dictionary;
+
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(table, query->table);
+
     query->cluster = cluster_str;
 
     return true;

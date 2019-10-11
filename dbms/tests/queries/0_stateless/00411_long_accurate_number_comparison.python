@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
-import os, itertools, urllib
+import os, itertools, urllib, urllib2, sys
 
 def get_ch_answer(query):
     return urllib.urlopen(os.environ.get('CLICKHOUSE_URL', 'http://localhost:' + os.environ.get('CLICKHOUSE_PORT_HTTP', '8123') ), data=query).read()
@@ -124,17 +124,23 @@ def main():
         sql_file = open(base_name + '.sql', 'wt')
         ref_file = open(base_name + '.reference', 'wt')
 
-    for (v1, v2) in itertools.combinations(VALUES, 2):
-        q, a = test_pair(v1, v2)
-        if GENERATE_TEST_FILES:
-            sql_file.write(q + ";\n")
-            ref_file.write(a + "\n")
+    num_int_tests = len(list(itertools.combinations(VALUES, 2)))
 
-    for (i, f) in itertools.product(VALUES_INT, VALUES_FLOAT):
-        q, a = test_float_pair(i, f)
-        if GENERATE_TEST_FILES:
-            sql_file.write(q + ";\n")
-            ref_file.write(a + "\n")
+    num_parts = 4
+    for part in xrange(0, num_parts):
+        if 'int' + str(part + 1) in sys.argv[1:]:
+            for (v1, v2) in itertools.islice(itertools.combinations(VALUES, 2), part * num_int_tests / num_parts, (part + 1) * num_int_tests / num_parts):
+                q, a = test_pair(v1, v2)
+                if GENERATE_TEST_FILES:
+                    sql_file.write(q + ";\n")
+                    ref_file.write(a + "\n")
+
+    if 'float' in sys.argv[1:]:
+        for (i, f) in itertools.product(VALUES_INT, VALUES_FLOAT):
+            q, a = test_float_pair(i, f)
+            if GENERATE_TEST_FILES:
+                sql_file.write(q + ";\n")
+                ref_file.write(a + "\n")
 
     print("PASSED")
 

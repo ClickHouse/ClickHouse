@@ -52,6 +52,22 @@ def test_single_endpoint_connections_count(start_small_cluster):
 
     assert node2.query("SELECT value FROM system.events where event='CreatedHTTPConnections'") == '1\n'
 
+def test_keepalive_timeout(start_small_cluster):
+    current_count = int(node1.query("select count() from test_table").strip())
+    node1.query("insert into test_table values ('2017-06-16', 777, 0)")
+    assert_eq_with_retry(node2, "select count() from test_table", str(current_count + 1))
+    # Server keepAliveTimeout is 3 seconds, default client session timeout is 8
+    # lets sleep in that interval
+    time.sleep(4)
+
+    node1.query("insert into test_table values ('2017-06-16', 888, 0)")
+
+    time.sleep(3)
+
+    assert_eq_with_retry(node2, "select count() from test_table", str(current_count + 2))
+
+    assert not node2.contains_in_log("No message received"), "Found 'No message received' in clickhouse-server.log"
+
 node3 = cluster.add_instance('node3', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
 node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
 node5 = cluster.add_instance('node5', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)

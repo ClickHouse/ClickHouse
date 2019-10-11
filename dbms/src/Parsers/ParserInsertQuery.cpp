@@ -7,8 +7,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserInsertQuery.h>
-#include <Parsers/ASTFunction.h>
-
+#include <Parsers/ParserSetQuery.h>
 #include <Common/typeid_cast.h>
 
 
@@ -29,6 +28,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values("VALUES");
     ParserKeyword s_format("FORMAT");
+    ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_select("SELECT");
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -43,6 +43,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr format;
     ASTPtr select;
     ASTPtr table_function;
+    ASTPtr settings_ast;
     /// Insertion data
     const char * data = nullptr;
 
@@ -88,12 +89,36 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_format.ignore(pos, expected))
     {
-        auto name_pos = pos;
-
         if (!name_p.parse(pos, format, expected))
             return false;
+    }
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
+    {
+        pos = before_select;
+        ParserSelectWithUnionQuery select_p;
+        select_p.parse(pos, select, expected);
 
-        data = name_pos->end;
+        /// FORMAT section is expected if we have input() in SELECT part
+        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
+            return false;
+    }
+    else
+    {
+        return false;
+    }
+
+    if (s_settings.ignore(pos, expected))
+    {
+        ParserSetQuery parser_settings(true);
+        if (!parser_settings.parse(pos, settings_ast, expected))
+            return false;
+    }
+
+    if (format)
+    {
+        Pos last_token = pos;
+        --last_token;
+        data = last_token->end;
 
         if (data < end && *data == ';')
             throw Exception("You have excessive ';' symbol before data for INSERT.\n"
@@ -116,16 +141,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (data < end && *data == '\n')
             ++data;
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
-    {
-        pos = before_select;
-        ParserSelectWithUnionQuery select_p;
-        select_p.parse(pos, select, expected);
-    }
-    else
-    {
-        return false;
-    }
 
     auto query = std::make_shared<ASTInsertQuery>();
     node = query;
@@ -136,17 +151,15 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        if (database)
-            query->database = typeid_cast<ASTIdentifier &>(*database).name;
-
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
+        tryGetIdentifierNameInto(database, query->database);
+        tryGetIdentifierNameInto(table, query->table);
     }
 
-    if (format)
-        query->format = typeid_cast<ASTIdentifier &>(*format).name;
+    tryGetIdentifierNameInto(format, query->format);
 
     query->columns = columns;
     query->select = select;
+    query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = end;
 
@@ -154,6 +167,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (settings_ast)
+        query->children.push_back(settings_ast);
 
     return true;
 }

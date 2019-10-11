@@ -13,9 +13,10 @@
             <!-- How to choose between replicas during distributed query processing.
                  random - choose random replica from set of replicas with minimum number of errors
                  nearest_hostname - from set of replicas with minimum number of errors, choose replica
-                  with minumum number of different symbols between replica's hostname and local hostname
+                  with minimum number of different symbols between replica's hostname and local hostname
                   (Hamming distance).
-                 in_order - first live replica is choosen in specified order.
+                 in_order - first live replica is chosen in specified order.
+                 first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
             -->
             <load_balancing>random</load_balancing>
         </default>
@@ -38,10 +39,18 @@
 
                  If you want to specify SHA256, place it in 'password_sha256_hex' element.
                  Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+                 Restrictions of SHA256: impossibility to connect to ClickHouse using MySQL JS client (as of July 2019).
+
+                 If you want to specify double SHA1, place it in 'password_double_sha1_hex' element.
+                 Example: <password_double_sha1_hex>e395796d6546b1b65db9d665cd43f0e858dd4303</password_double_sha1_hex>
 
                  How to generate decent password:
                  Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
                  In first line will be password and in second - corresponding SHA256.
+
+                 How to generate double SHA1:
+                 Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | openssl dgst -sha1 -binary | openssl dgst -sha1
+                 In first line will be password and in second - corresponding double SHA1.
             -->
             <password></password>
 
@@ -74,10 +83,30 @@
 
             <!-- Quota for user. -->
             <quota>default</quota>
+
+            <!-- For testing the table filters -->
+            <databases>
+                <test>
+                    <!-- Simple expression filter -->
+                    <filtered_table1>
+                        <filter>a = 1</filter>
+                    </filtered_table1>
+
+                    <!-- Complex expression filter -->
+                    <filtered_table2>
+                        <filter>a + b &lt; 1 or c - d &gt; 5</filter>
+                    </filtered_table2>
+
+                    <!-- Filter with ALIAS column -->
+                    <filtered_table3>
+                        <filter>c = 1</filter>
+                    </filtered_table3>
+                </test>
+            </databases>
         </default>
 
         <!-- Example of user with readonly access. -->
-        <readonly>
+        <!-- <readonly>
             <password></password>
             <networks incl="networks" replace="replace">
                 <ip>::1</ip>
@@ -85,7 +114,7 @@
             </networks>
             <profile>readonly</profile>
             <quota>default</quota>
-        </readonly>
+        </readonly> -->
     </users>
 
     <!-- Quotas. -->

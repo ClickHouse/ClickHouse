@@ -1,6 +1,6 @@
 #include <Common/Config/ConfigProcessor.h>
-#include <Interpreters/SecurityManager.h>
-#include <boost/filesystem.hpp>
+#include <Interpreters/UsersManager.h>
+#include <filesystem>
 #include <vector>
 #include <string>
 #include <tuple>
@@ -14,7 +14,7 @@
 namespace
 {
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 struct TestEntry
 {
@@ -161,11 +161,6 @@ TestSet test_set =
     }
 };
 
-std::string createTmpPath(const std::string & filename);
-void createFile(const std::string & filename, const char * data);
-void runOneTest(const TestDescriptor & test_descriptor);
-auto runTestSet(const TestSet & test_set);
-
 std::string createTmpPath(const std::string & filename)
 {
     char pattern[] = "/tmp/fileXXXXXX";
@@ -202,11 +197,11 @@ void runOneTest(const TestDescriptor & test_descriptor)
         throw std::runtime_error(os.str());
     }
 
-    DB::SecurityManager security_manager;
+    DB::UsersManager users_manager;
 
     try
     {
-        security_manager.loadFromConfig(*config);
+        users_manager.loadFromConfig(*config);
     }
     catch (const Poco::Exception & ex)
     {
@@ -221,7 +216,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
 
         try
         {
-            res = security_manager.hasAccessToDatabase(entry.user_name, entry.database_name);
+            res = users_manager.hasAccessToDatabase(entry.user_name, entry.database_name);
         }
         catch (const Poco::Exception &)
         {
@@ -241,7 +236,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
     fs::remove_all(fs::path(path_name).parent_path().string());
 }
 
-auto runTestSet(const TestSet & test_set)
+auto runTestSet()
 {
     size_t test_num = 1;
     size_t failure_count = 0;
@@ -277,7 +272,7 @@ int main()
     size_t test_count;
     size_t failure_count;
 
-    std::tie(test_count, failure_count) = runTestSet(test_set);
+    std::tie(test_count, failure_count) = runTestSet();
 
     std::cout << (test_count - failure_count) << " test(s) passed out of " << test_count << "\n";
 

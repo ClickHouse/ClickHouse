@@ -4,8 +4,11 @@
 
 #include <common/DateLUT.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -25,7 +28,7 @@ DataTypeDateTime::DataTypeDateTime(const std::string & time_zone_name)
 {
 }
 
-std::string DataTypeDateTime::getName() const
+std::string DataTypeDateTime::doGetName() const
 {
     if (!has_explicit_time_zone)
         return "DateTime";
@@ -37,7 +40,7 @@ std::string DataTypeDateTime::getName() const
 
 void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeDateTimeText(static_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr, time_zone);
+    writeDateTimeText(assert_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr, time_zone);
 }
 
 void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -56,17 +59,20 @@ static inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings 
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
             return;
-        default:
-            __builtin_unreachable();
     }
 }
 
+
+void DataTypeDateTime::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextEscaped(column, istr, settings);
+}
 
 void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x;
     readText(x, istr, settings, time_zone, utc_time_zone);
-    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -88,7 +94,7 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
     {
         readIntText(x, istr);
     }
-    static_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -110,7 +116,7 @@ void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     {
         readIntText(x, istr);
     }
-    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -137,7 +143,31 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
 
-    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt32 &>(column).getData().push_back(x);
+}
+
+void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDateTime(assert_cast<const ColumnUInt32 &>(column).getData()[row_num]));
+}
+
+void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    time_t t;
+    if (!protobuf.readDateTime(t))
+        return;
+
+    auto & container = assert_cast<ColumnUInt32 &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(t);
+        row_added = true;
+    }
+    else
+        container.back() = t;
 }
 
 bool DataTypeDateTime::equals(const IDataType & rhs) const
@@ -162,7 +192,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (arguments->children.size() != 1)
         throw Exception("DateTime data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const auto * arg = arguments->children[0]->as<ASTLiteral>();
     if (!arg || arg->value.getType() != Field::Types::String)
         throw Exception("Parameter for DateTime data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

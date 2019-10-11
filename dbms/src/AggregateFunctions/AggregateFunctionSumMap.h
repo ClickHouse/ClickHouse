@@ -12,6 +12,7 @@
 #include <Columns/ColumnDecimal.h>
 
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
 
@@ -50,9 +51,9 @@ struct AggregateFunctionSumMapData
   *  ([1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20])
   */
 
-template <typename T>
-class AggregateFunctionSumMap final : public IAggregateFunctionDataHelper<
-    AggregateFunctionSumMapData<NearestFieldType<T>>, AggregateFunctionSumMap<T>>
+template <typename T, typename Derived, typename OverflowPolicy>
+class AggregateFunctionSumMapBase : public IAggregateFunctionDataHelper<
+    AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>
 {
 private:
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
@@ -61,8 +62,11 @@ private:
     DataTypes values_types;
 
 public:
-    AggregateFunctionSumMap(const DataTypePtr & keys_type, const DataTypes & values_types)
-        : keys_type(keys_type), values_types(values_types) {}
+    AggregateFunctionSumMapBase(
+        const DataTypePtr & keys_type_, const DataTypes & values_types_,
+        const DataTypes & argument_types_, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>(argument_types_, params_)
+        , keys_type(keys_type_), values_types(values_types_) {}
 
     String getName() const override { return "sumMap"; }
 
@@ -72,7 +76,7 @@ public:
         types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
 
         for (const auto & value_type : values_types)
-            types.emplace_back(std::make_shared<DataTypeArray>(value_type));
+            types.emplace_back(std::make_shared<DataTypeArray>(OverflowPolicy::promoteType(value_type)));
 
         return std::make_shared<DataTypeTuple>(types);
     }
@@ -80,20 +84,20 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         // Column 0 contains array of keys of known type
-        const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[0]);
-        const IColumn::Offsets & offsets = array_column.getOffsets();
-        const auto & keys_vec = static_cast<const ColVecType &>(array_column.getData());
-        const size_t keys_vec_offset = row_num == 0 ? 0 : offsets[row_num - 1];
-        const size_t keys_vec_size = (offsets[row_num] - keys_vec_offset);
+        const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets & offsets0 = array_column0.getOffsets();
+        const auto & keys_vec = static_cast<const ColVecType &>(array_column0.getData());
+        const size_t keys_vec_offset = offsets0[row_num - 1];
+        const size_t keys_vec_size = (offsets0[row_num] - keys_vec_offset);
 
         // Columns 1..n contain arrays of numeric values to sum
         auto & merged_maps = this->data(place).merged_maps;
         for (size_t col = 0, size = values_types.size(); col < size; ++col)
         {
             Field value;
-            const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[col + 1]);
+            const ColumnArray & array_column = assert_cast<const ColumnArray &>(*columns[col + 1]);
             const IColumn::Offsets & offsets = array_column.getOffsets();
-            const size_t values_vec_offset = row_num == 0 ? 0 : offsets[row_num - 1];
+            const size_t values_vec_offset = offsets[row_num - 1];
             const size_t values_vec_size = (offsets[row_num] - values_vec_offset);
 
             // Expect key and value arrays to be of same length
@@ -107,7 +111,12 @@ public:
                 using IteratorType = typename MapType::iterator;
 
                 array_column.getData().get(values_vec_offset + i, value);
-                const auto & key = keys_vec.getData()[keys_vec_offset + i];
+                const auto & key = keys_vec.getElement(keys_vec_offset + i);
+
+                if (!keepKey(key))
+                {
+                    continue;
+                }
 
                 IteratorType it;
                 if constexpr (IsDecimalNumber<T>)
@@ -220,20 +229,20 @@ public:
 
         size_t size = merged_maps.size();
 
-        auto & to_tuple = static_cast<ColumnTuple &>(to);
-        auto & to_keys_arr = static_cast<ColumnArray &>(to_tuple.getColumn(0));
+        auto & to_tuple = assert_cast<ColumnTuple &>(to);
+        auto & to_keys_arr = assert_cast<ColumnArray &>(to_tuple.getColumn(0));
         auto & to_keys_col = to_keys_arr.getData();
 
         // Advance column offsets
         auto & to_keys_offsets = to_keys_arr.getOffsets();
-        to_keys_offsets.push_back((to_keys_offsets.empty() ? 0 : to_keys_offsets.back()) + size);
+        to_keys_offsets.push_back(to_keys_offsets.back() + size);
         to_keys_col.reserve(size);
 
         for (size_t col = 0; col < values_types.size(); ++col)
         {
-            auto & to_values_arr = static_cast<ColumnArray &>(to_tuple.getColumn(col + 1));
+            auto & to_values_arr = assert_cast<ColumnArray &>(to_tuple.getColumn(col + 1));
             auto & to_values_offsets = to_values_arr.getOffsets();
-            to_values_offsets.push_back((to_values_offsets.empty() ? 0 : to_values_offsets.back()) + size);
+            to_values_offsets.push_back(to_values_offsets.back() + size);
             to_values_arr.getData().reserve(size);
         }
 
@@ -246,13 +255,61 @@ public:
             // Write 0..n arrays of values
             for (size_t col = 0; col < values_types.size(); ++col)
             {
-                auto & to_values_col = static_cast<ColumnArray &>(to_tuple.getColumn(col + 1)).getData();
+                auto & to_values_col = assert_cast<ColumnArray &>(to_tuple.getColumn(col + 1)).getData();
                 to_values_col.insert(elem.second[col]);
             }
         }
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+
+    bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
+};
+
+template <typename T, typename OverflowPolicy>
+class AggregateFunctionSumMap final :
+    public AggregateFunctionSumMapBase<T, AggregateFunctionSumMap<T, OverflowPolicy>, OverflowPolicy>
+{
+private:
+    using Self = AggregateFunctionSumMap<T, OverflowPolicy>;
+    using Base = AggregateFunctionSumMapBase<T, Self, OverflowPolicy>;
+
+public:
+    AggregateFunctionSumMap(const DataTypePtr & keys_type_, DataTypes & values_types_, const DataTypes & argument_types_)
+        : Base{keys_type_, values_types_, argument_types_, {}}
+    {}
+
+    String getName() const override { return "sumMap"; }
+
+    bool keepKey(const T &) const { return true; }
+};
+
+template <typename T, typename OverflowPolicy>
+class AggregateFunctionSumMapFiltered final :
+    public AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T, OverflowPolicy>, OverflowPolicy>
+{
+private:
+    using Self = AggregateFunctionSumMapFiltered<T, OverflowPolicy>;
+    using Base = AggregateFunctionSumMapBase<T, Self, OverflowPolicy>;
+
+    std::unordered_set<T> keys_to_keep;
+
+public:
+    AggregateFunctionSumMapFiltered(
+        const DataTypePtr & keys_type_, const DataTypes & values_types_, const Array & keys_to_keep_,
+        const DataTypes & argument_types_, const Array & params_)
+        : Base{keys_type_, values_types_, argument_types_, params_}
+    {
+        keys_to_keep.reserve(keys_to_keep_.size());
+        for (const Field & f : keys_to_keep_)
+        {
+            keys_to_keep.emplace(f.safeGet<NearestFieldType<T>>());
+        }
+    }
+
+    String getName() const override { return "sumMapFiltered"; }
+
+    bool keepKey(const T & key) const { return keys_to_keep.count(key); }
 };
 
 }

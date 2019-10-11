@@ -10,7 +10,7 @@
 
 namespace DB
 {
-    inline void readBinary(Array & x, ReadBuffer & buf)
+    void readBinary(Array & x, ReadBuffer & buf)
     {
         size_t size;
         UInt8 type;
@@ -75,7 +75,15 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
-            };
+                case Field::Types::AggregateFunctionState:
+                {
+                    AggregateFunctionStateData value;
+                    DB::readStringBinary(value.name, buf);
+                    DB::readStringBinary(value.data, buf);
+                    x.push_back(value);
+                    break;
+                }
+            }
         }
     }
 
@@ -128,7 +136,13 @@ namespace DB
                     DB::writeBinary(get<Tuple>(*it), buf);
                     break;
                 }
-            };
+                case Field::Types::AggregateFunctionState:
+                {
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
+                    break;
+                }
+            }
         }
     }
 
@@ -137,12 +151,8 @@ namespace DB
         DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
         buf.write(res.data(), res.size());
     }
-}
 
-
-namespace DB
-{
-    inline void readBinary(Tuple & x_def, ReadBuffer & buf)
+    void readBinary(Tuple & x_def, ReadBuffer & buf)
     {
         auto & x = x_def.toUnderType();
         size_t size;
@@ -209,7 +219,15 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
-            };
+                case Field::Types::AggregateFunctionState:
+                {
+                    AggregateFunctionStateData value;
+                    DB::readStringBinary(value.name, buf);
+                    DB::readStringBinary(value.data, buf);
+                    x.push_back(value);
+                    break;
+                }
+            }
         }
     }
 
@@ -262,7 +280,13 @@ namespace DB
                     DB::writeBinary(get<Tuple>(*it), buf);
                     break;
                 }
-            };
+                case Field::Types::AggregateFunctionState:
+                {
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
+                    break;
+                }
+            }
         }
     }
 

@@ -13,12 +13,12 @@
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#if __SSE4_1__
+#ifdef __SSE4_2__
     #include <smmintrin.h>
 #endif
 
@@ -164,7 +164,7 @@ struct FNV1a
 };
 
 
-#if __SSE4_1__
+#ifdef __SSE4_2__
 
 struct CrapWow
 {
@@ -254,7 +254,7 @@ struct SimpleHash
 
         if (size < 8)
         {
-#if __SSE4_1__
+#ifdef __SSE4_2__
             return hashLessThan8(x.data, x.size);
 #endif
         }
@@ -291,7 +291,7 @@ struct VerySimpleHash
 
         if (size < 8)
         {
-#if __SSE4_1__
+#ifdef __SSE4_2__
             return hashLessThan8(x.data, x.size);
 #endif
         }
@@ -325,7 +325,7 @@ struct FarmHash64
 
 
 template <void metrohash64(const uint8_t * key, uint64_t len, uint32_t seed, uint8_t * out)>
-struct MetroHash64
+struct SMetroHash64
 {
     size_t operator() (StringRef x) const
     {
@@ -342,7 +342,7 @@ struct MetroHash64
 };
 
 
-#if __SSE4_1__
+#ifdef __SSE4_2__
 
 /*struct CRC32Hash
 {
@@ -435,15 +435,15 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
     using Map = HashMapWithSavedHash<Key, Value, Hash>;
 
     Map map;
-    typename Map::iterator it;
+    typename Map::LookupResult it;
     bool inserted;
 
     for (size_t i = 0, size = data.size(); i < size; ++i)
     {
         map.emplace(static_cast<const Key &>(data[i]), it, inserted);
         if (inserted)
-            it->second = 0;
-        ++it->second;
+            *lookupResultGetMapped(it) = 0;
+        ++*lookupResultGetMapped(it);
     }
 
     watch.stop();
@@ -499,7 +499,7 @@ int main(int argc, char ** argv)
     if (!m || m == 3) bench<StringRef, SimpleHash>     (data, "StringRef_SimpleHash");
     if (!m || m == 4) bench<StringRef, FNV1a>          (data, "StringRef_FNV1a");
 
-#if __SSE4_1__
+#ifdef __SSE4_2__
     if (!m || m == 5) bench<StringRef, CrapWow>        (data, "StringRef_CrapWow");
     if (!m || m == 6) bench<StringRef, CRC32Hash>      (data, "StringRef_CRC32Hash");
     if (!m || m == 7) bench<StringRef, CRC32ILPHash>   (data, "StringRef_CRC32ILPHash");
@@ -507,8 +507,8 @@ int main(int argc, char ** argv)
 
     if (!m || m == 8) bench<StringRef, VerySimpleHash> (data, "StringRef_VerySimpleHash");
     if (!m || m == 9) bench<StringRef, FarmHash64>     (data, "StringRef_FarmHash64");
-    if (!m || m == 10) bench<StringRef, MetroHash64<metrohash64_1>>(data, "StringRef_MetroHash64_1");
-    if (!m || m == 11) bench<StringRef, MetroHash64<metrohash64_2>>(data, "StringRef_MetroHash64_2");
+    if (!m || m == 10) bench<StringRef, SMetroHash64<metrohash64_1>>(data, "StringRef_MetroHash64_1");
+    if (!m || m == 11) bench<StringRef, SMetroHash64<metrohash64_2>>(data, "StringRef_MetroHash64_2");
 
     return 0;
 }

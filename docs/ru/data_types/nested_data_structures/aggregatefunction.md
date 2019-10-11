@@ -1,6 +1,4 @@
-<a name="data_type-aggregatefunction"></a>
-
-# AggregateFunction(name, types_of_arguments...)
+# AggregateFunction(name, types_of_arguments...) {#data_type-aggregatefunction}
 
 Промежуточное состояние агрегатной функции. Чтобы его получить, используются агрегатные функции с суффиксом `-State`. Чтобы в дальнейшем получить агрегированные данные необходимо использовать те же агрегатные функции с суффиксом `-Merge`.
 
@@ -25,7 +23,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) и [quantiles](../../query_language/agg_functions/reference.md#agg_function-quantiles) — агрегатные функции, поддержанные в ClickHouse.
+[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) и [quantiles](../../query_language/agg_functions/reference.md) — агрегатные функции, поддержанные в ClickHouse.
 
 ## Особенности использования
 
@@ -35,7 +33,7 @@ CREATE TABLE t
 
 **Примеры функций**
 
-```
+```sql
 uniqState(UserID)
 quantilesState(0.5, 0.9)(SendTiming)
 ```
@@ -60,6 +58,6 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 ## Пример использования
 
-Смотрите в описании движка [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md#table_engine-aggregatingmergetree).
+Смотрите в описании движка [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md).
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

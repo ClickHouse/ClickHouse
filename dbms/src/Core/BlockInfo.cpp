@@ -25,7 +25,7 @@ void BlockInfo::write(WriteBuffer & out) const
     writeVarUInt(FIELD_NUM, out); \
     writeBinary(NAME, out);
 
-    APPLY_FOR_BLOCK_INFO_FIELDS(WRITE_FIELD);
+    APPLY_FOR_BLOCK_INFO_FIELDS(WRITE_FIELD)
 
 #undef WRITE_FIELD
     writeVarUInt(0, out);
@@ -49,13 +49,29 @@ void BlockInfo::read(ReadBuffer & in)
                 readBinary(NAME, in); \
                 break;
 
-            APPLY_FOR_BLOCK_INFO_FIELDS(READ_FIELD);
+            APPLY_FOR_BLOCK_INFO_FIELDS(READ_FIELD)
 
         #undef READ_FIELD
             default:
                 throw Exception("Unknown BlockInfo field number: " + toString(field_num), ErrorCodes::UNKNOWN_BLOCK_INFO_FIELD);
         }
     }
+}
+
+void BlockMissingValues::setBit(size_t column_idx, size_t row_idx)
+{
+    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
+    mask.resize(row_idx + 1);
+    mask[row_idx] = true;
+}
+
+const BlockMissingValues::RowsBitMask & BlockMissingValues::getDefaultsBitmask(size_t column_idx) const
+{
+    static RowsBitMask none;
+    auto it = rows_mask_by_column_id.find(column_idx);
+    if (it != rows_mask_by_column_id.end())
+        return it->second;
+    return none;
 }
 
 }

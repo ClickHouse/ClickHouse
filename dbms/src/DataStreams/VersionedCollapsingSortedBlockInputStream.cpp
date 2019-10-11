@@ -1,4 +1,5 @@
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 #include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -16,8 +17,8 @@ namespace ErrorCodes
 VersionedCollapsingSortedBlockInputStream::VersionedCollapsingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
     const String & sign_column_, size_t max_block_size_,
-    WriteBuffer * out_row_sources_buf_)
-    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
+    WriteBuffer * out_row_sources_buf_, bool average_block_sizes_)
+    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_, false, average_block_sizes_)
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 2)
     , current_keys(max_rows_in_queue + 1)
 {
@@ -46,7 +47,7 @@ void VersionedCollapsingSortedBlockInputStream::insertGap(size_t gap_size)
     }
 }
 
-void VersionedCollapsingSortedBlockInputStream::insertRow(size_t skip_rows, const RowRef & row, MutableColumns & merged_columns)
+void VersionedCollapsingSortedBlockInputStream::insertRow(size_t skip_rows, const SharedBlockRowRef & row, MutableColumns & merged_columns)
 {
     const auto & columns = row.shared_block->all_columns;
     for (size_t i = 0; i < num_columns; ++i)
@@ -83,7 +84,7 @@ Block VersionedCollapsingSortedBlockInputStream::readImpl()
 
 void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
-    size_t merged_rows = 0;
+    MergeStopCondition stop_condition(average_block_sizes, max_block_size);
 
     auto update_queue = [this, & queue](SortCursor & cursor)
     {
@@ -108,10 +109,11 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
     while (!queue.empty())
     {
         SortCursor current = queue.top();
+        size_t current_block_granularity = current->rows;
 
-        RowRef next_key;
+        SharedBlockRowRef next_key;
 
-        Int8 sign = static_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
+        Int8 sign = assert_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
 
         setPrimaryKeyRef(next_key, current);
 
@@ -154,10 +156,10 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
 
             current_keys.popFront();
 
-            ++merged_rows;
+            stop_condition.addRowWithGranularity(current_block_granularity);
             --rows_to_merge;
 
-            if (merged_rows >= max_block_size)
+            if (stop_condition.checkStop())
             {
                 ++blocks_written;
                 return;
@@ -173,7 +175,6 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
         insertRow(gap, row, merged_columns);
 
         current_keys.popFront();
-        ++merged_rows;
     }
 
     /// Write information about last collapsed rows.

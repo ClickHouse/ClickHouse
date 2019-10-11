@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -25,8 +26,9 @@ class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 public:
     CollapsingSortedBlockInputStream(
             BlockInputStreams inputs_, const SortDescription & description_,
-            const String & sign_column, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
+            const String & sign_column, size_t max_block_size_,
+            WriteBuffer * out_row_sources_buf_ = nullptr, bool average_block_sizes_ = false)
+        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_, false, average_block_sizes_)
     {
         sign_column_number = header.getPositionByName(sign_column);
     }
@@ -45,12 +47,12 @@ private:
     /// Read is finished.
     bool finished = false;
 
-    RowRef current_key;         /// The current primary key.
-    RowRef next_key;            /// The primary key of the next row.
+    SharedBlockRowRef current_key;         /// The current primary key.
+    SharedBlockRowRef next_key;            /// The primary key of the next row.
 
-    RowRef first_negative;        /// The first negative row for the current primary key.
-    RowRef last_positive;         /// The last positive row for the current primary key.
-    RowRef last_negative;         /// Last negative row. It is only stored if there is not one row is written to output.
+    SharedBlockRowRef first_negative;        /// The first negative row for the current primary key.
+    SharedBlockRowRef last_positive;         /// The last positive row for the current primary key.
+    SharedBlockRowRef last_negative;         /// Last negative row. It is only stored if there is not one row is written to output.
 
     size_t count_positive = 0;    /// The number of positive rows for the current primary key.
     size_t count_negative = 0;    /// The number of negative rows for the current primary key.
@@ -74,7 +76,7 @@ private:
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Output to result rows for the current primary key.
-    void insertRows(MutableColumns & merged_columns, size_t & merged_rows);
+    void insertRows(MutableColumns & merged_columns, size_t block_size, MergeStopCondition & condition);
 
     void reportIncorrectData();
 };

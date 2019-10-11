@@ -27,16 +27,17 @@ struct AggregateFunctionArgMinMaxData
 };
 
 /// Returns the first arg value found for the minimum/maximum value. Example: argMax(arg, value).
-template <typename Data>
-class AggregateFunctionArgMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data>>
+template <typename Data, bool AllocatesMemoryInArena>
+class AggregateFunctionArgMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, AllocatesMemoryInArena>>
 {
 private:
-    DataTypePtr type_res;
-    DataTypePtr type_val;
+    const DataTypePtr & type_res;
+    const DataTypePtr & type_val;
 
 public:
-    AggregateFunctionArgMinMax(const DataTypePtr & type_res, const DataTypePtr & type_val)
-        : type_res(type_res), type_val(type_val)
+    AggregateFunctionArgMinMax(const DataTypePtr & type_res_, const DataTypePtr & type_val_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, AllocatesMemoryInArena>>({type_res_, type_val_}, {}),
+        type_res(this->argument_types[0]), type_val(this->argument_types[1])
     {
         if (!type_val->isComparable())
             throw Exception("Illegal type " + type_val->getName() + " of second argument of aggregate function " + getName()
@@ -72,6 +73,11 @@ public:
     {
         this->data(place).result.read(buf, *type_res, arena);
         this->data(place).value.read(buf, *type_val, arena);
+    }
+
+    bool allocatesMemoryInArena() const override
+    {
+        return AllocatesMemoryInArena;
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

@@ -8,10 +8,10 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/config.h>
+#include "config_functions.h"
 
 /** More efficient implementations of mathematical functions are possible when using a separate library.
-  * Disabled due to licence compatibility limitations.
+  * Disabled due to license compatibility limitations.
   * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
   * Then rebuild with -DENABLE_VECTORCLASS=1
   */
@@ -22,8 +22,8 @@
         #pragma clang diagnostic ignored "-Wshift-negative-value"
     #endif
 
-    #include <vectorf128.h> // Y_IGNORE
-    #include <vectormath_exp.h> // Y_IGNORE
+    #include <vectorf128.h>
+    #include <vectormath_exp.h>
 
     #ifdef __clang__
         #pragma clang diagnostic pop
@@ -59,7 +59,7 @@ private:
     {
         const auto check_argument_type = [this] (const IDataType * arg)
         {
-            if (!isNumber(arg))
+            if (!isNativeNumber(arg))
                 throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         };
@@ -146,7 +146,7 @@ private:
             block.getByPosition(result).column = std::move(dst);
             return true;
         }
-        else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
 
@@ -205,7 +205,7 @@ private:
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN};
             }
-            else if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
+            if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
                 if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
                     return true;

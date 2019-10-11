@@ -5,7 +5,7 @@
 类型与以下 C 语言中类型是相同的：
 
 - `Float32` - `float`
-- `Float64`  - `double`
+- `Float64` - `double`
 
 我们建议您尽可能以整数形式存储数据。例如，将固定精度的数字转换为整数值，例如货币数量或页面加载时间用毫秒为单位表示
 
@@ -29,7 +29,7 @@ SELECT 1 - 0.9
 
 - 当一行行阅读浮点数的时候，浮点数的结果可能不是机器最近显示的数值。
 
-## NaN and Inf
+## NaN and Inf {#data_type-float-nan-inf}
 
 与标准SQL相比，ClickHouse 支持以下类别的浮点数：
 
@@ -69,4 +69,4 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-可以在[ORDER BY 子句](../query_language/select.md#query_language-queries-order_by) 查看更多关于 ` NaN` 排序的规则。
+可以在 [ORDER BY 子句](../query_language/select.md) 查看更多关于 ` NaN` 排序的规则。

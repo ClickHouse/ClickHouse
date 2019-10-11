@@ -10,6 +10,7 @@
 #include <Columns/ColumnVector.h>
 
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -54,12 +55,14 @@ class AggregateFunctionGroupArrayInsertAtGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>
 {
 private:
-    DataTypePtr type;
+    DataTypePtr & type;
     Field default_value;
     UInt64 length_to_resize = 0;    /// zero means - do not do resizing.
 
 public:
     AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
+        , type(argument_types[0])
     {
         if (!params.empty())
         {
@@ -76,13 +79,8 @@ public:
             }
         }
 
-        if (arguments.size() != 2)
-            throw Exception("Aggregate function " + getName() + " requires two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         if (!isUnsignedInteger(arguments[1]))
             throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        type = arguments.front();
 
         if (default_value.isNull())
             default_value = type->getDefault();
@@ -183,7 +181,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & to_array = static_cast<ColumnArray &>(to);
+        ColumnArray & to_array = assert_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();
         ColumnArray::Offsets & to_offsets = to_array.getOffsets();
 
@@ -203,7 +201,7 @@ public:
         for (size_t i = arr.size(); i < result_array_size; ++i)
             to_data.insert(default_value);
 
-        to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + result_array_size);
+        to_offsets.push_back(to_offsets.back() + result_array_size);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

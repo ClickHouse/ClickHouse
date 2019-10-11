@@ -1,25 +1,28 @@
 #pragma once
 
-#include <map>
+
+#include <Core/Defines.h>
+#include <DataStreams/BlockIO.h>
+#include <IO/Progress.h>
+#include <Interpreters/CancellationCode.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/QueryPriorities.h>
+#include <Storages/IStorage_fwd.h>
+#include <Poco/Condition.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
+
+#include <condition_variable>
 #include <list>
+#include <map>
 #include <memory>
 #include <mutex>
-#include <condition_variable>
-#include <unordered_map>
 #include <shared_mutex>
-#include <Poco/Condition.h>
-#include <Common/Stopwatch.h>
-#include <Core/Defines.h>
-#include <IO/Progress.h>
-#include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Throttler.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/QueryPriorities.h>
-#include <Interpreters/ClientInfo.h>
-#include <DataStreams/BlockIO.h>
+#include <unordered_map>
 
 
 namespace CurrentMetrics
@@ -30,9 +33,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
 class Context;
 struct Settings;
 class IAST;
@@ -66,10 +66,10 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by request
     std::vector<UInt32> thread_numbers;
+    std::vector<UInt32> os_thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 };
-
 
 /// Query and information about its execution.
 class QueryStatus
@@ -192,6 +192,8 @@ public:
     /// Get query in/out pointers from BlockIO
     bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
 
+    CancellationCode cancelQuery(bool kill);
+
     bool isKilled() const { return is_killed; }
 };
 
@@ -202,7 +204,7 @@ struct ProcessListForUser
     ProcessListForUser();
 
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
-    using QueryToElement = std::unordered_multimap<String, QueryStatus *>;
+    using QueryToElement = std::unordered_map<String, QueryStatus *>;
     QueryToElement queries;
 
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
@@ -308,21 +310,14 @@ public:
 
     void setMaxSize(size_t max_size_)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         max_size = max_size_;
     }
 
-    enum class CancellationCode
-    {
-        NotFound = 0,                     /// already cancelled
-        QueryIsNotInitializedYet = 1,
-        CancelCannotBeSent = 2,
-        CancelSent = 3,
-        Unknown
-    };
-
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
+
+    void killAllQueries();
 };
 
 }

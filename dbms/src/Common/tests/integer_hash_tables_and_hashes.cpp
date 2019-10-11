@@ -14,7 +14,7 @@
 
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
 
@@ -171,7 +171,7 @@ namespace Hashes
         }
     };
 
-    #if __SSE4_2__
+    #ifdef __SSE4_2__
     #include <nmmintrin.h>
     #endif
 
@@ -179,7 +179,7 @@ namespace Hashes
     {
         size_t operator()(Key x) const
         {
-    #if __SSE4_2__
+    #ifdef __SSE4_2__
             return _mm_crc32_u64(-1ULL, x);
     #else
             /// On other platforms we do not have CRC32. NOTE This can be confusing.
@@ -331,8 +331,8 @@ void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 
     testForEachHash<HashMap>(data, size, nothing);
     testForEachHash<std::unordered_map>(data, size, nothing);
-    testForEachHash<GOOGLE_NAMESPACE::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
-    testForEachHash<GOOGLE_NAMESPACE::sparse_hash_map>(data, size, nothing);
+    testForEachHash<::google::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
+    testForEachHash<::google::sparse_hash_map>(data, size, nothing);
 }
 
 

@@ -80,9 +80,9 @@ public:
     operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; }
 
 private:
-    MYSQL_ROW row = nullptr;
-    ResultBase * res = nullptr;
-    MYSQL_LENGTHS lengths;
+    MYSQL_ROW row{};
+    ResultBase * res{};
+    MYSQL_LENGTHS lengths{};
 };
 
 }

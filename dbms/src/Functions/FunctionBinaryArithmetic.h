@@ -1,5 +1,10 @@
 #pragma once
 
+// Include this first, because `#define _asan_poison_address` from
+// llvm/Support/Compiler.h conflicts with its forward declaration in
+// sanitizer/asan_interface.h
+#include <Common/Arena.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
@@ -7,23 +12,24 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Native.h>
+#include <DataTypes/NumberTraits.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <DataTypes/NumberTraits.h>
+#include "IFunction.h"
+#include "FunctionHelpers.h"
+#include "intDiv.h"
+#include "castTypeToEither.h"
+#include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
-#include <Common/Arena.h>
-#include <Functions/intDiv.h>
-#include <Functions/castTypeToEither.h>
+#include <Common/assert_cast.h>
 #include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h> // Y_IGNORE
+#include <llvm/IR/IRBuilder.h>
 #pragma GCC diagnostic pop
 #endif
 
@@ -96,11 +102,6 @@ template <typename, typename> struct LeastBaseImpl;
 template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
 
-
-template <typename T> struct NativeType { using Type = T; };
-template <> struct NativeType<Decimal32> { using Type = Int32; };
-template <> struct NativeType<Decimal64> { using Type = Int64; };
-template <> struct NativeType<Decimal128> { using Type = Int128; };
 
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
@@ -288,7 +289,7 @@ private:
     }
 
     template <bool scale_left>
-    static NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_plus_minus_compare)
         {
@@ -323,7 +324,7 @@ private:
         }
     }
 
-    static NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_division)
         {
@@ -358,27 +359,27 @@ template <bool V, typename T> struct Case : std::bool_constant<V> { using type =
 template <typename... Ts> using Switch = typename std::disjunction<Ts..., Case<true, InvalidType>>::type;
 
 template <typename DataType> constexpr bool IsIntegral = false;
-template <> constexpr bool IsIntegral<DataTypeUInt8> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt16> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt32> = true;
-template <> constexpr bool IsIntegral<DataTypeUInt64> = true;
-template <> constexpr bool IsIntegral<DataTypeInt8> = true;
-template <> constexpr bool IsIntegral<DataTypeInt16> = true;
-template <> constexpr bool IsIntegral<DataTypeInt32> = true;
-template <> constexpr bool IsIntegral<DataTypeInt64> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt8> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt16> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt32> = true;
+template <> inline constexpr bool IsIntegral<DataTypeUInt64> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt8> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt16> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt32> = true;
+template <> inline constexpr bool IsIntegral<DataTypeInt64> = true;
 
 template <typename DataType> constexpr bool IsFloatingPoint = false;
-template <> constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
-template <> constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
+template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
+template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
-template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
-template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
+template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
 
 template <typename T> using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>, InvalidType, DataTypeNumber<T>>;
 
@@ -542,25 +543,30 @@ class FunctionBinaryArithmetic : public IFunction
         if (WhichDataType(block.getByPosition(new_arguments[1]).type).isAggregateFunction())
             std::swap(new_arguments[0], new_arguments[1]);
 
-        if (!block.getByPosition(new_arguments[1]).column->isColumnConst())
+        if (!isColumnConst(*block.getByPosition(new_arguments[1]).column))
             throw Exception{"Illegal column " + block.getByPosition(new_arguments[1]).column->getName()
                 + " of argument of aggregation state multiply. Should be integer constant", ErrorCodes::ILLEGAL_COLUMN};
 
-        const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(new_arguments[0]).column.get());
-        IAggregateFunction * function = column->getAggregateFunction().get();
+        const IColumn & agg_state_column = *block.getByPosition(new_arguments[0]).column;
+        bool agg_state_is_const = isColumnConst(agg_state_column);
+        const ColumnAggregateFunction & column = typeid_cast<const ColumnAggregateFunction &>(
+            agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
-        auto arena = std::make_shared<Arena>();
+        AggregateFunctionPtr function = column.getAggregateFunction();
 
-        auto column_to = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
-        column_to->reserve(input_rows_count);
 
-        auto column_from = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
-        column_from->reserve(input_rows_count);
+        size_t size = agg_state_is_const ? 1 : input_rows_count;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        auto column_to = ColumnAggregateFunction::create(function);
+        column_to->reserve(size);
+
+        auto column_from = ColumnAggregateFunction::create(function);
+        column_from->reserve(size);
+
+        for (size_t i = 0; i < size; ++i)
         {
             column_to->insertDefault();
-            column_from->insertFrom(column->getData()[i]);
+            column_from->insertFrom(column.getData()[i]);
         }
 
         auto & vec_to = column_to->getData();
@@ -568,44 +574,67 @@ class FunctionBinaryArithmetic : public IFunction
 
         UInt64 m = typeid_cast<const ColumnConst *>(block.getByPosition(new_arguments[1]).column.get())->getValue<UInt64>();
 
+        // Since we merge the function states by ourselves, we have to have an
+        // Arena for this. Pass it to the resulting column so that the arena
+        // has a proper lifetime.
+        auto arena = std::make_shared<Arena>();
+        column_to->addArena(arena);
+
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
         while (m)
         {
             if (m % 2)
             {
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (size_t i = 0; i < size; ++i)
                     function->merge(vec_to[i], vec_from[i], arena.get());
                 --m;
             }
             else
             {
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (size_t i = 0; i < size; ++i)
                     function->merge(vec_from[i], vec_from[i], arena.get());
                 m /= 2;
             }
         }
 
-        block.getByPosition(result).column = std::move(column_to);
+        if (agg_state_is_const)
+            block.getByPosition(result).column = ColumnConst::create(std::move(column_to), input_rows_count);
+        else
+            block.getByPosition(result).column = std::move(column_to);
     }
 
     /// Merge two aggregation states together.
     void executeAggregateAddition(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
-        const ColumnAggregateFunction * columns[2];
-        for (size_t i = 0; i < 2; ++i)
-            columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        const IColumn & lhs_column = *block.getByPosition(arguments[0]).column;
+        const IColumn & rhs_column = *block.getByPosition(arguments[1]).column;
 
-        auto column_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
-        column_to->reserve(input_rows_count);
+        bool lhs_is_const = isColumnConst(lhs_column);
+        bool rhs_is_const = isColumnConst(rhs_column);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        const ColumnAggregateFunction & lhs = typeid_cast<const ColumnAggregateFunction &>(
+            lhs_is_const ? assert_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
+        const ColumnAggregateFunction & rhs = typeid_cast<const ColumnAggregateFunction &>(
+            rhs_is_const ? assert_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
+
+        AggregateFunctionPtr function = lhs.getAggregateFunction();
+
+        size_t size = (lhs_is_const && rhs_is_const) ? 1 : input_rows_count;
+
+        auto column_to = ColumnAggregateFunction::create(function);
+        column_to->reserve(size);
+
+        for (size_t i = 0; i < size; ++i)
         {
-            column_to->insertFrom(columns[0]->getData()[i]);
-            column_to->insertMergeFrom(columns[1]->getData()[i]);
+            column_to->insertFrom(lhs.getData()[lhs_is_const ? 0 : i]);
+            column_to->insertMergeFrom(rhs.getData()[rhs_is_const ? 0 : i]);
         }
 
-        block.getByPosition(result).column = std::move(column_to);
+        if (lhs_is_const && rhs_is_const)
+            block.getByPosition(result).column = ColumnConst::create(std::move(column_to), input_rows_count);
+        else
+            block.getByPosition(result).column = std::move(column_to);
     }
 
     void executeDateTimeIntervalPlusMinus(Block & block, const ColumnNumbers & arguments,

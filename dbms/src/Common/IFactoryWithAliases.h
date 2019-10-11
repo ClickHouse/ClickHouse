@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/NamePrompter.h>
 #include <Core/Types.h>
 #include <Poco/String.h>
 
@@ -19,7 +20,7 @@ namespace ErrorCodes
  * template parameter is available as Creator
  */
 template <typename CreatorFunc>
-class IFactoryWithAliases
+class IFactoryWithAliases : public IHints<2, IFactoryWithAliases<CreatorFunc>>
 {
 protected:
     using Creator = CreatorFunc;
@@ -75,7 +76,7 @@ public:
             throw Exception(factory_name + ": alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
     }
 
-    std::vector<String> getAllRegisteredNames() const
+    std::vector<String> getAllRegisteredNames() const override
     {
         std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
@@ -105,7 +106,7 @@ public:
         return aliases.count(name) || case_insensitive_aliases.count(name);
     }
 
-    virtual ~IFactoryWithAliases() {}
+    virtual ~IFactoryWithAliases() override {}
 
 private:
     using InnerMap = std::unordered_map<String, Creator>; // name -> creator

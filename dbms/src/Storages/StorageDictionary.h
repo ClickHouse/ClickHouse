@@ -2,7 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Core/Defines.h>
-#include <common/MultiVersion.h>
+#include <Common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -21,9 +21,12 @@ class ExternalDictionaries;
 
 class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageDictionary>;
 public:
     std::string getName() const override { return "Dictionary"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
+
     BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -31,7 +34,6 @@ public:
         size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
-    void drop() override {}
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
     template <typename ForwardIterator>
@@ -58,15 +60,19 @@ private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
     String table_name;
+    String database_name;
     String dictionary_name;
     Poco::Logger * logger;
 
     void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const;
 
 protected:
-    StorageDictionary(const String & table_name_,
+    StorageDictionary(
+        const String & database_name_,
+        const String & table_name_,
         const ColumnsDescription & columns_,
-        const DictionaryStructure & dictionary_structure_,
+        const Context & context,
+        bool attach,
         const String & dictionary_name_);
 };
 

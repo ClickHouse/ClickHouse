@@ -2,17 +2,19 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Common/ThreadPool.h>
 
-
-class ThreadPool;
 
 namespace DB
 {
+
 class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
+class ASTConstraintDeclaration;
 
 
 /** Allows to create new table or database,
@@ -29,10 +31,8 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
 
-    void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
-    {
-        thread_pool = &thread_pool_;
-    }
+    static ASTPtr formatIndices(const IndicesDescription & indices);
+    static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
 
     void setForceRestoreData(bool has_force_restore_data_flag_)
     {
@@ -46,23 +46,19 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments, for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context);
-    /// Check that column types are allowed for usage in table according to settings.
-    static void checkSupportedTypes(const ColumnsDescription & columns, const Context & context);
+    static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
 private:
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 
-    /// Calculate list of columns of table and return it.
-    ColumnsDescription setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
+    /// Calculate list of columns, constraints, indices, etc... of table and return columns.
+    ColumnsDescription setProperties(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
     void setEngine(ASTCreateQuery & create) const;
     void checkAccess(const ASTCreateQuery & create);
 
     ASTPtr query_ptr;
     Context & context;
-
-    /// Using while loading database.
-    ThreadPool * thread_pool = nullptr;
 
     /// Skip safety threshold when loading tables.
     bool has_force_restore_data_flag = false;

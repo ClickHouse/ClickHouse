@@ -14,7 +14,7 @@ public:
     static constexpr bool is_parametric = true;
 
     explicit DataTypeNullable(const DataTypePtr & nested_data_type_);
-    std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
+    std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 
@@ -45,14 +45,15 @@ public:
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override { nested_data_type->serializeBinary(field, ostr); }
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override { nested_data_type->deserializeBinary(field, istr); }
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
@@ -60,7 +61,8 @@ public:
       * 1. \N
       * 2. empty string (without quotes)
       * 3. NULL
-      * Now we support only first.
+      * We support all of them (however, second variant is supported by CSVRowInputStream, not by deserializeTextCSV).
+      * (see also input_format_defaults_for_omitted_fields and input_format_csv_unquoted_null_literal_as_null settings)
       * In CSV, non-NULL string value, starting with \N characters, must be placed in quotes, to avoid ambiguity.
       */
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -70,9 +72,12 @@ public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
+
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override { return Null(); }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 

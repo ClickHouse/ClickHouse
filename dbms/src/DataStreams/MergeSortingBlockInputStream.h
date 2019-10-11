@@ -1,23 +1,28 @@
 #pragma once
 
 #include <queue>
-#include <Poco/TemporaryFile.h>
 
 #include <common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
 
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/TemporaryFileStream.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+}
 /** Merges stream of sorted each-separately blocks to sorted as-a-whole stream of blocks.
   * If data to sort is too much, could use external sorting, with temporary files.
   */
@@ -25,12 +30,12 @@ namespace DB
 /** Part of implementation. Merging array of ready (already read from somewhere) blocks.
   * Returns result of merge as stream of blocks, not more than 'max_merged_block_size' rows in each.
   */
-class MergeSortingBlocksBlockInputStream : public IProfilingBlockInputStream
+class MergeSortingBlocksBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlocksBlockInputStream(Blocks & blocks_, SortDescription & description_,
-        size_t max_merged_block_size_, size_t limit_ = 0);
+        size_t max_merged_block_size_, UInt64 limit_ = 0);
 
     String getName() const override { return "MergeSortingBlocks"; }
 
@@ -47,7 +52,7 @@ private:
     Block header;
     SortDescription description;
     size_t max_merged_block_size;
-    size_t limit;
+    UInt64 limit;
     size_t total_merged_rows = 0;
 
     using CursorImpls = std::vector<SortCursorImpl>;
@@ -66,14 +71,15 @@ private:
 };
 
 
-class MergeSortingBlockInputStream : public IProfilingBlockInputStream
+class MergeSortingBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_,
-        size_t max_merged_block_size_, size_t limit_,
+        size_t max_merged_block_size_, UInt64 limit_,
         size_t max_bytes_before_remerge_,
-        size_t max_bytes_before_external_sort_, const std::string & tmp_path_);
+        size_t max_bytes_before_external_sort_, const std::string & tmp_path_,
+        size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSorting"; }
 
@@ -88,11 +94,12 @@ protected:
 private:
     SortDescription description;
     size_t max_merged_block_size;
-    size_t limit;
+    UInt64 limit;
 
     size_t max_bytes_before_remerge;
     size_t max_bytes_before_external_sort;
     const std::string tmp_path;
+    size_t min_free_disk_space;
 
     Logger * log = &Logger::get("MergeSortingBlockInputStream");
 
@@ -108,19 +115,7 @@ private:
     Block header_without_constants;
 
     /// Everything below is for external sorting.
-    std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
-
-    /// For reading data from temporary file.
-    struct TemporaryFileStream
-    {
-        ReadBufferFromFile file_in;
-        CompressedReadBuffer compressed_in;
-        BlockInputStreamPtr block_in;
-
-        TemporaryFileStream(const std::string & path, const Block & header)
-            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0)) {}
-    };
-
+    std::vector<std::unique_ptr<TemporaryFile>> temporary_files;
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 
     BlockInputStreams inputs_to_merge;

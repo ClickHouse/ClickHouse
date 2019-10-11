@@ -1,9 +1,9 @@
 #pragma once
 
 #include "IDictionarySource.h"
+#include <Core/Block.h>
 
 #include <unordered_map>
-#include <ext/singleton.h>
 
 namespace Poco
 {
@@ -21,9 +21,11 @@ class Context;
 struct DictionaryStructure;
 
 /// creates IDictionarySource instance from config and DictionaryStructure
-class DictionarySourceFactory : public ext::singleton<DictionarySourceFactory>
+class DictionarySourceFactory : private boost::noncopyable
 {
 public:
+    static DictionarySourceFactory & instance();
+
     using Creator = std::function<DictionarySourcePtr(
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,

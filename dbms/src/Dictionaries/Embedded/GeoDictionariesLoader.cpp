@@ -4,8 +4,7 @@
 #include "GeodataProviders/HierarchiesProvider.h"
 #include "GeodataProviders/NamesProvider.h"
 
-std::unique_ptr<RegionsHierarchies> GeoDictionariesLoader::reloadRegionsHierarchies(
-    const Poco::Util::AbstractConfiguration & config)
+std::unique_ptr<RegionsHierarchies> GeoDictionariesLoader::reloadRegionsHierarchies(const Poco::Util::AbstractConfiguration & config)
 {
     static constexpr auto config_key = "path_to_regions_hierarchy_file";
 
@@ -17,8 +16,7 @@ std::unique_ptr<RegionsHierarchies> GeoDictionariesLoader::reloadRegionsHierarch
     return std::make_unique<RegionsHierarchies>(std::move(data_provider));
 }
 
-std::unique_ptr<RegionsNames> GeoDictionariesLoader::reloadRegionsNames(
-    const Poco::Util::AbstractConfiguration & config)
+std::unique_ptr<RegionsNames> GeoDictionariesLoader::reloadRegionsNames(const Poco::Util::AbstractConfiguration & config)
 {
     static constexpr auto config_key = "path_to_regions_names_files";
 

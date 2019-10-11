@@ -54,7 +54,7 @@ public:
     template <typename Callback>
     Int64 add(Int64 delta, Callback && locked_callback, bool create_if_need = false)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         Int64 res = -1;
 
@@ -67,13 +67,13 @@ public:
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0666);
         if (-1 == fd)
-            DB::throwFromErrno("Cannot open file " + path, DB::ErrorCodes::CANNOT_OPEN_FILE);
+            DB::throwFromErrnoWithPath("Cannot open file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
         try
         {
             int flock_ret = flock(fd, LOCK_EX);
             if (-1 == flock_ret)
-                DB::throwFromErrno("Cannot lock file " + path, DB::ErrorCodes::CANNOT_OPEN_FILE);
+                DB::throwFromErrnoWithPath("Cannot lock file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
             if (!file_doesnt_exists)
             {
@@ -141,7 +141,7 @@ public:
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0666);
         if (-1 == fd)
-            DB::throwFromErrno("Cannot open file " + path, DB::ErrorCodes::CANNOT_OPEN_FILE);
+            DB::throwFromErrnoWithPath("Cannot open file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
         try
         {

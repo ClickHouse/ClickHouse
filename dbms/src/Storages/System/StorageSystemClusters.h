@@ -17,6 +17,7 @@ class Context;
   */
 class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemClusters>, public IStorageSystemOneBlock<StorageSystemClusters>
 {
+    friend struct ext::shared_ptr_helper<StorageSystemClusters>;
 public:
     std::string getName() const override { return "SystemClusters"; }
 

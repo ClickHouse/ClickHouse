@@ -18,6 +18,7 @@ public:
     String format;
     ASTPtr select;
     ASTPtr table_function;
+    ASTPtr settings_ast;
 
     // Set to true if the data should only be inserted into attached views
     bool no_destination = false;
@@ -26,8 +27,14 @@ public:
     const char * data = nullptr;
     const char * end = nullptr;
 
+    /// Query has additional data, which will be sent later
+    bool has_tail = false;
+
+    /// Try to find table function input() in SELECT part
+    void tryFindInputFunction(ASTPtr & input_function) const;
+
     /** Get the text that identifies this element. */
-    String getID() const override { return "InsertQuery_" + database + "_" + table; }
+    String getID(char delim) const override { return "InsertQuery" + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {
@@ -36,10 +43,8 @@ public:
 
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
-        if (table_function)
-        {
-            res->table_function = table_function->clone(); res->children.push_back(res->table_function);
-        }
+        if (table_function) { res->table_function = table_function->clone(); res->children.push_back(res->table_function); }
+        if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
 
         return res;
     }

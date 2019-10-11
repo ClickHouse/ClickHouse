@@ -1,8 +1,7 @@
 #include <Poco/Net/NetException.h>
 
-#include <Common/Exception.h>
-
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 

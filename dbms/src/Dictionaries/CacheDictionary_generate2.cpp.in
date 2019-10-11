@@ -15,11 +15,9 @@ void CacheDictionary::get@NAME@(const std::string & attribute_name,
       ResultArrayType<TYPE> & out) const
 {
     auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::@NAME@))
-        throw Exception {name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                         ErrorCodes::TYPE_MISMATCH};
+    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut@NAME@);
 
-    getItemsNumber<TYPE>(attribute, ids, out, [&](const size_t row) { return def[row]; });
+    getItemsNumberImpl<TYPE, TYPE>(attribute, ids, out, [&](const size_t row) { return def[row]; });
 }
 
 }

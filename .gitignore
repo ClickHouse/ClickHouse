@@ -90,7 +90,6 @@ dbms/src/Core/tests/field
 dbms/src/Core/tests/rvo_test
 dbms/src/Core/tests/string_pool
 dbms/src/DataStreams/tests/aggregating_stream
-dbms/src/DataStreams/tests/block_row_transforms
 dbms/src/DataStreams/tests/block_tab_separated_streams
 dbms/src/DataStreams/tests/collapsing_sorted_stream
 dbms/src/DataStreams/tests/expression_stream
@@ -180,18 +179,10 @@ utils/zookeeper-create-entry-to-download-part/zookeeper-create-entry-to-download
 utils/zookeeper-dump-tree/zookeeper-dump-tree
 utils/zookeeper-remove-by-list/zookeeper-remove-by-list
 dbms/src/Storages/tests/remove_symlink_directory
-debian/control
-debian/copyright
-debian/tmp/
 libs/libcommon/src/tests/json_test
 utils/compressor/zstd_test
 utils/wikistat-loader/wikistat-loader
 dbms/src/Common/tests/pod_array
-debian/clickhouse-benchmark/
-debian/clickhouse-client/
-debian/clickhouse-server-base/
-debian/clickhouse-server-common/
-debian/files
 
 dbms/src/Server/data/*
 dbms/src/Server/metadata/*
@@ -210,12 +201,10 @@ vgcore*
 *.changes
 build-stamp
 configure-stamp
-debian/*.debhelper.log
-debian/*.debhelper
-debian/*.substvars
 
 *.bin
 *.mrk
+*.mrk2
 
 .dupload.conf
 
@@ -248,3 +237,11 @@ website/package-lock.json
 
 # Ignore files for locally disabled tests
 /dbms/tests/queries/**/*.disabled
+
+# cquery cache
+/.cquery-cache
+
+# ccls cache
+/.ccls-cache
+
+/compile_commands.json

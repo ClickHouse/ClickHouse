@@ -1,3 +1,6 @@
+set any_join_distinct_right_table_keys = 1;
+set joined_subquery_requires_alias = 0;
+
 SELECT
     CounterID,
     hits,
@@ -5,14 +8,14 @@ SELECT
 FROM
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         count() AS hits
     FROM test.hits
     GROUP BY CounterID
 ) ANY FULL OUTER JOIN
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         sum(Sign) AS visits
     FROM test.visits
     GROUP BY CounterID
@@ -32,14 +35,14 @@ SELECT
 FROM
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         count() AS hits
     FROM test.hits
     GROUP BY CounterID
 ) ANY LEFT JOIN
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         sum(Sign) AS visits
     FROM test.visits
     GROUP BY CounterID
@@ -59,14 +62,14 @@ SELECT
 FROM
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         count() AS hits
     FROM test.hits
     GROUP BY CounterID
 ) ANY RIGHT JOIN
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         sum(Sign) AS visits
     FROM test.visits
     GROUP BY CounterID
@@ -86,14 +89,14 @@ SELECT
 FROM
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         count() AS hits
     FROM test.hits
     GROUP BY CounterID
 ) ANY INNER JOIN
 (
     SELECT
-        CounterID,
+        (CounterID % 100000) AS CounterID,
         sum(Sign) AS visits
     FROM test.visits
     GROUP BY CounterID

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/HashTable/Hash.h>
-#include <Common/MemoryTracker.h>
 #include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -382,13 +381,13 @@ namespace detail
                     if (index == BIG_THRESHOLD)
                         break;
 
-                    UInt64 count = 0;
-                    readBinary(count, buf);
+                    UInt64 elem_count = 0;
+                    readBinary(elem_count, buf);
 
                     if (index < SMALL_THRESHOLD)
-                        count_small[index] = count;
+                        count_small[index] = elem_count;
                     else
-                        count_big[index - SMALL_THRESHOLD] = count;
+                        count_big[index - SMALL_THRESHOLD] = elem_count;
                 }
             }
         }
@@ -513,8 +512,6 @@ private:
 
     void mediumToLarge()
     {
-        CurrentMemoryTracker::alloc(sizeof(detail::QuantileTimingLarge));
-
         /// While the data is copied from medium, it is not possible to set `large` value (otherwise it will overwrite some data).
         detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
@@ -528,8 +525,6 @@ private:
 
     void tinyToLarge()
     {
-        CurrentMemoryTracker::alloc(sizeof(detail::QuantileTimingLarge));
-
         /// While the data is copied from `medium` it is not possible to set `large` value (otherwise it will overwrite some data).
         detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
@@ -562,8 +557,6 @@ public:
         else if (kind == Kind::Large)
         {
             delete large;
-
-            CurrentMemoryTracker::free(sizeof(detail::QuantileTimingLarge));
         }
     }
 

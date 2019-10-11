@@ -22,13 +22,16 @@ namespace ErrorCodes
 }
 
 
-StorageXDBC::StorageXDBC(const std::string & table_name_,
+StorageXDBC::StorageXDBC(
+    const std::string & database_name_,
+    const std::string & table_name_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const ColumnsDescription & columns_,
     const Context & context_,
     const BridgeHelperPtr bridge_helper_)
-    : IStorageURLBase(Poco::URI(), context_, table_name_, IXDBCBridgeHelper::DEFAULT_FORMAT, columns_)
+    /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
+    : IStorageURLBase(Poco::URI(), context_, database_name_, table_name_, IXDBCBridgeHelper::DEFAULT_FORMAT, columns_, ConstraintsDescription{})
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
@@ -64,7 +67,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const N
     size_t /*max_block_size*/) const
 {
     String query = transformQueryForExternalDatabase(*query_info.query,
-        getColumns().ordinary,
+        getColumns().getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
         remote_table_name,
@@ -115,10 +118,10 @@ namespace
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.context,
                 args.context.getSettingsRef().http_receive_timeout.value,
-                static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>());
-            return std::make_shared<StorageXDBC>(args.table_name,
-                static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>(),
-                static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>(),
+                engine_args[0]->as<ASTLiteral &>().value.safeGet<String>());
+            return std::make_shared<StorageXDBC>(args.database_name, args.table_name,
+                engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
+                engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
                 args.columns,
                 args.context,
                 bridge_helper);

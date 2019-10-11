@@ -1,12 +1,16 @@
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
+
+#include <common/unaligned.h>
 
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <DataStreams/ColumnGathererStream.h>
+
 
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
@@ -23,10 +27,12 @@ namespace ErrorCodes
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
-    auto other = static_cast<const Self &>(rhs_);
+    auto & other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
     const T & b = other.data[m];
 
+    if (scale == other.scale)
+        return a > b ? 1 : (a < b ? -1 : 0);
     return decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0);
 }
 
@@ -41,7 +47,7 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(*reinterpret_cast<const T *>(pos));
+    data.push_back(unalignedLoad<T>(pos));
     return pos + sizeof(T);
 }
 
@@ -91,7 +97,7 @@ ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t li
     for (size_t i = 0; i < size; ++i)
         res_data[i] = data[perm[i]];
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -114,7 +120,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         }
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -128,7 +134,7 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 template <typename T>
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnDecimal & src_vec = static_cast<const ColumnDecimal &>(src);
+    const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
     if (start + length > src_vec.data.size())
         throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length) +
@@ -137,7 +143,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>
@@ -166,7 +172,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
         ++data_pos;
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -199,7 +205,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
             res_data.push_back(data[i]);
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>

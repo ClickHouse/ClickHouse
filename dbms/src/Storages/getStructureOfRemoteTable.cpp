@@ -1,13 +1,17 @@
 #include "getStructureOfRemoteTable.h"
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/quoteString.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -36,8 +40,9 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         if (shard_info.isLocal())
         {
-            auto table_function = static_cast<const ASTFunction *>(table_func_ptr.get());
-            return TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context)->getColumns();
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
+            return table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName())->getColumns();
         }
 
         auto table_func_name = queryToString(table_func_ptr);
@@ -54,7 +59,19 @@ ColumnsDescription getStructureOfRemoteTable(
 
     ColumnsDescription res;
 
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context);
+    auto new_context = ClusterProxy::removeUserRestrictionsFromSettings(context, context.getSettingsRef());
+
+    /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
+    Block sample_block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "name" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "type" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "default_type" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "default_expression" },
+    };
+
+    /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
         input->setMainTable(QualifiedTableName{database, table});
@@ -74,29 +91,23 @@ ColumnsDescription getStructureOfRemoteTable(
 
         for (size_t i = 0; i < size; ++i)
         {
-            String column_name = (*name)[i].get<const String &>();
+            ColumnDescription column;
+
+            column.name = (*name)[i].get<const String &>();
+
             String data_type_name = (*type)[i].get<const String &>();
+            column.type = data_type_factory.get(data_type_name);
+
             String kind_name = (*default_kind)[i].get<const String &>();
-
-            auto data_type = data_type_factory.get(data_type_name);
-
-            if (kind_name.empty())
-                res.ordinary.emplace_back(column_name, std::move(data_type));
-            else
+            if (!kind_name.empty())
             {
-                auto kind = columnDefaultKindFromString(kind_name);
-
+                column.default_desc.kind = columnDefaultKindFromString(kind_name);
                 String expr_str = (*default_expr)[i].get<const String &>();
-                ASTPtr expr = parseQuery(expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0);
-                res.defaults.emplace(column_name, ColumnDefault{kind, expr});
-
-                if (ColumnDefaultKind::Default == kind)
-                    res.ordinary.emplace_back(column_name, std::move(data_type));
-                else if (ColumnDefaultKind::Materialized == kind)
-                    res.materialized.emplace_back(column_name, std::move(data_type));
-                else if (ColumnDefaultKind::Alias == kind)
-                    res.aliases.emplace_back(column_name, std::move(data_type));
+                column.default_desc.expression = parseQuery(
+                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0);
             }
+
+            res.add(column);
         }
     }
 

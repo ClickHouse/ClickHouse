@@ -9,8 +9,9 @@
 namespace DB
 {
 
+class AnalyzedJoin;
 class Join;
-using JoinPtr = std::shared_ptr<Join>;
+using HashJoinPtr = std::shared_ptr<Join>;
 
 
 /** Allows you save the state for later use on the right side of the JOIN.
@@ -22,23 +23,36 @@ using JoinPtr = std::shared_ptr<Join>;
   */
 class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
+    friend struct ext::shared_ptr_helper<StorageJoin>;
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     /// Access the innards.
-    JoinPtr & getJoin() { return join; }
+    HashJoinPtr & getJoin() { return join; }
 
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
+    BlockInputStreams read(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
 private:
-    const Names & key_names;
+    Block sample_block;
+    const Names key_names;
+    bool use_nulls;
+    SizeLimits limits;
     ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
     ASTTableJoin::Strictness strictness;        /// ANY | ALL
 
-    JoinPtr join;
+    std::shared_ptr<AnalyzedJoin> table_join;
+    HashJoinPtr join;
 
     void insertBlock(const Block & block) override;
     size_t getSize() const override;
@@ -46,10 +60,15 @@ private:
 protected:
     StorageJoin(
         const String & path_,
-        const String & name_,
+        const String & database_name_,
+        const String & table_name_,
         const Names & key_names_,
+        bool use_nulls_,
+        SizeLimits limits_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        bool overwrite);
 };
 
 }

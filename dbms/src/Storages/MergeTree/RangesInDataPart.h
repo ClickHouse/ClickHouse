@@ -16,14 +16,27 @@ struct RangesInDataPart
 
     RangesInDataPart() = default;
 
-    RangesInDataPart(const MergeTreeData::DataPartPtr & data_part, const size_t part_index_in_query,
-                     const MarkRanges & ranges = MarkRanges{})
-        : data_part{data_part}, part_index_in_query{part_index_in_query}, ranges{ranges}
+    RangesInDataPart(const MergeTreeData::DataPartPtr & data_part_, const size_t part_index_in_query_,
+                     const MarkRanges & ranges_ = MarkRanges{})
+        : data_part{data_part_}, part_index_in_query{part_index_in_query_}, ranges{ranges_}
     {
+    }
+
+    size_t getMarksCount() const
+    {
+        size_t total = 0;
+        for (const auto & range : ranges)
+            total += range.end - range.begin;
+
+        return total;
+    }
+
+    size_t getRowsCount() const
+    {
+        return data_part->index_granularity.getRowsCountInRanges(ranges);
     }
 };
 
 using RangesInDataParts = std::vector<RangesInDataPart>;
-
 
 }

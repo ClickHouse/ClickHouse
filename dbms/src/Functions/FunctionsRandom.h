@@ -24,7 +24,7 @@ namespace ErrorCodes
   *
   * Non-cryptographic generators:
   *
-  * rand   - linear congruental generator 0 .. 2^32 - 1.
+  * rand   - linear congruential generator 0 .. 2^32 - 1.
   * rand64 - combines several rand values to get values from the range 0 .. 2^64 - 1.
   *
   * randConstant - service function, produces a constant column with a random value.
@@ -53,9 +53,11 @@ public:
         return name;
     }
 
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

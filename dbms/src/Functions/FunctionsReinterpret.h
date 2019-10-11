@@ -10,9 +10,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/memcpySmall.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/memcpySmall.h>
 
 
 namespace DB
@@ -198,12 +198,12 @@ public:
 
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnFixedString * col_from_fixed = typeid_cast<const ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = ColumnVector<ToFieldType>::create();
 
-            const ColumnString::Chars & data_from = col_from->getChars();
-            size_t step = col_from->getN();
+            const ColumnString::Chars & data_from = col_from_fixed->getChars();
+            size_t step = col_from_fixed->getN();
             size_t size = data_from.size() / step;
             typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();
             vec_res.resize(size);

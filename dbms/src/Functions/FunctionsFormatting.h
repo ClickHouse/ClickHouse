@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include <type_traits>
 
 
 namespace DB
@@ -73,16 +74,19 @@ private:
     template <typename T>
     inline static void writeBitmask(T x, WriteBuffer & out)
     {
+        using UnsignedT = std::make_unsigned_t<T>;
+        UnsignedT u_x = x;
+
         bool first = true;
-        while (x)
+        while (u_x)
         {
-            T y = (x & (x - 1));
-            T bit = x ^ y;
-            x = y;
+            UnsignedT y = u_x & (u_x - 1);
+            UnsignedT bit = u_x ^ y;
+            u_x = y;
             if (!first)
-                out.write(",", 1);
+                writeChar(',', out);
             first = false;
-            writeIntText(bit, out);
+            writeIntText(T(bit), out);
         }
     }
 
@@ -139,7 +143,7 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (!isNumber(type))
+        if (!isNativeNumber(type))
             throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -183,7 +187,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                formatReadableSizeWithBinarySuffix(vec_from[i], buf_to);
+                formatReadableSizeWithBinarySuffix(static_cast<double>(vec_from[i]), buf_to);
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }

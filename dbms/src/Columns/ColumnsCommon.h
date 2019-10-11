@@ -22,7 +22,7 @@ std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns,
 
 /// Returns true, if the memory contains only zeros.
 bool memoryIsZero(const void * data, size_t size);
-
+bool memoryIsByte(const void * data, size_t size, uint8_t byte);
 
 /// The general implementation of `filter` function for ColumnArray and ColumnString.
 template <typename T>
@@ -44,7 +44,7 @@ namespace detail
     const PaddedPODArray<T> * getIndexesData(const IColumn & indexes);
 }
 
-/// Check limit <= indexes->size() and call column.indexImpl(const PaddedPodArray<Type> & indexes, size_t limit).
+/// Check limit <= indexes->size() and call column.indexImpl(const PaddedPodArray<Type> & indexes, UInt64 limit).
 template <typename Column>
 ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t limit)
 {

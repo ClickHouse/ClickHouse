@@ -4,6 +4,8 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
+#include <common/sleep.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -69,10 +71,10 @@ public:
     {
         const IColumn * col = block.getByPosition(arguments[0]).column.get();
 
-        if (!col->isColumnConst())
+        if (!isColumnConst(*col))
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-        Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const ColumnConst &>(*col).getField());
+        Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
         if (seconds < 0)
             throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
@@ -82,13 +84,12 @@ public:
         /// We do not sleep if the block is empty.
         if (size > 0)
         {
-            unsigned useconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
-
             /// When sleeping, the query cannot be cancelled. For abitily to cancel query, we limit sleep time.
-            if (useconds > 3000000)   /// The choice is arbitrary
-                throw Exception("The maximum sleep time is 3000000 microseconds. Requested: " + toString(useconds), ErrorCodes::TOO_SLOW);
+            if (seconds > 3.0)   /// The choice is arbitrary
+                throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
-            ::usleep(useconds);
+            UInt64 microseconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
+            sleepForMicroseconds(microseconds);
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.

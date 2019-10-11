@@ -1,12 +1,13 @@
 #pragma once
 
 #include <tuple>
-
+#include <sstream>
+#include <iomanip>
 #include <city.h>
 
 #include <Core/Types.h>
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 #include <nmmintrin.h>
 #endif
 
@@ -28,10 +29,17 @@ struct UInt128
     UInt64 high;
 
     UInt128() = default;
-    explicit UInt128(const UInt64 low, const UInt64 high) : low(low), high(high) {}
+    explicit UInt128(const UInt64 low_, const UInt64 high_) : low(low_), high(high_) {}
     explicit UInt128(const UInt64 rhs) : low(rhs), high() {}
 
     auto tuple() const { return std::tie(high, low); }
+
+    String toHexString() const
+    {
+        std::ostringstream os;
+        os << std::setw(16) << std::setfill('0') << std::hex << high << low;
+        return String(os.str());
+    }
 
     bool inline operator== (const UInt128 rhs) const { return tuple() == rhs.tuple(); }
     bool inline operator!= (const UInt128 rhs) const { return tuple() != rhs.tuple(); }
@@ -63,7 +71,7 @@ template <typename T> bool inline operator>  (T a, const UInt128 b) { return UIn
 template <typename T> bool inline operator<= (T a, const UInt128 b) { return UInt128(a) <= b; }
 template <typename T> bool inline operator<  (T a, const UInt128 b) { return UInt128(a) < b; }
 
-template <> constexpr bool IsNumber<UInt128> = true;
+template <> inline constexpr bool IsNumber<UInt128> = true;
 template <> struct TypeName<UInt128> { static const char * get() { return "UInt128"; } };
 template <> struct TypeId<UInt128> { static constexpr const TypeIndex value = TypeIndex::UInt128; };
 
@@ -75,7 +83,7 @@ struct UInt128Hash
     }
 };
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 
 struct UInt128HashCRC32
 {
@@ -153,7 +161,7 @@ struct UInt256Hash
     }
 };
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 
 struct UInt256HashCRC32
 {

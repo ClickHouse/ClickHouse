@@ -44,13 +44,13 @@ void reinsert(const Value & x)
 memcpy(&buf[place_value], &x, sizeof(x));
 ```
 
-**6.**  В выражениях `if`, `for`, `while` и т.д. перед открывающей скобкой ставится пробел (в отличие от вызовов функций).
+**6.** В выражениях `if`, `for`, `while` и т.д. перед открывающей скобкой ставится пробел (в отличие от вызовов функций).
 
 ```cpp
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.**  Вокруг бинарных операторов (`+`, `-`, `*`, `/`, `%`, ...), а также тернарного оператора `?:` ставятся пробелы.
+**7.** Вокруг бинарных операторов (`+`, `-`, `*`, `/`, `%`, ...), а также тернарного оператора `?:` ставятся пробелы.
 
 ```cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -58,7 +58,7 @@ UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
 UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 ```
 
-**8.**  Если ставится перенос строки, то оператор пишется на новой строке, и перед ним увеличивается отступ.
+**8.** Если ставится перенос строки, то оператор пишется на новой строке, и перед ним увеличивается отступ.
 
 ```cpp
 if (elapsed_ns)
@@ -67,7 +67,7 @@ if (elapsed_ns)
         << bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 ```
 
-**9.**  Внутри строки можно, выполнять выравнивание с помощью пробелов.
+**9.** Внутри строки можно, выполнять выравнивание с помощью пробелов.
 
 ```cpp
 dst.ClickLogID         = click.LogID;
@@ -85,7 +85,7 @@ dst.ClickGoodEvent     = click.GoodEvent;
 
 **13.** Оператор `[]` не отделяется пробелами.
 
-**14.** В выражении `template <...>`, между `template` и `<` ставится пробел, а после `<` и до `>`  не ставится.
+**14.** В выражении `template <...>`, между `template` и `<` ставится пробел, а после `<` и до `>` не ставится.
 
 ```cpp
 template <typename TKey, typename TValue>
@@ -257,7 +257,7 @@ void executeQuery(
 */
 ```
 
-Пример взят с ресурса  [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/).
+Пример взят с ресурса [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/).
 
 **7.** Нельзя писать мусорные комментарии (автор, дата создания...) в начале каждого файла.
 
@@ -305,16 +305,17 @@ void executeQuery(
 size_t max_block_size;
 ```
 
-**2.** Имена функций (методов)  camelCase с маленькой буквы.
+**2.** Имена функций (методов) camelCase с маленькой буквы.
 
-    ```cpp
-    std::string getName() const override { return "Memory"; }
-    ```
+```cpp
+std::string getName() const override { return "Memory"; }
+```
+
 **3.** Имена классов (структур) - CamelCase с большой буквы. Префиксы кроме I для интерфейсов - не используются.
 
-    ```cpp
-    class StorageMemory : public IStorage
-    ```
+```cpp
+class StorageMemory : public IStorage
+```
 
 **4.** `using` называются также, как классы, либо с `_t` на конце.
 
@@ -348,7 +349,7 @@ class IBlockInputStream
 bool info_successfully_loaded = false;
 ```
 
-**9.**  В именах `define` и глобальных констант используется ALL_CAPS с подчёркиванием.
+**9.** В именах `define` и глобальных констант используется ALL_CAPS с подчёркиванием.
 
 ```cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -400,13 +401,13 @@ enum class CompressionMethod
 
 **15.** Все имена - по английски. Транслит с русского использовать нельзя.
 
-```
+```text
 не Stroka
 ```
 
 **16.** Сокращения (из нескольких букв разных слов) в именах можно использовать только если они являются общепринятыми (если для сокращения можно найти расшифровку в английской википедии или сделав поисковый запрос).
 
-```
+```text
 `AST`, `SQL`.
 
 Не `NVDH` (что-то неведомое)

@@ -1,15 +1,16 @@
 #pragma once
 
-#include "IDictionarySource.h"
+#include <memory>
+#include <Poco/Logger.h>
+#include <Client/ConnectionPoolWithFailover.h>
+#include <Interpreters/Context.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
-#include <Client/ConnectionPoolWithFailover.h>
-#include <memory>
+#include "IDictionarySource.h"
 
 
 namespace DB
 {
-
 /** Allows loading dictionaries from local or remote ClickHouse instance
   *    @todo use ConnectionPoolWithFailover
   *    @todo invent a way to keep track of source modifications
@@ -17,13 +18,16 @@ namespace DB
 class ClickHouseDictionarySource final : public IDictionarySource
 {
 public:
-    ClickHouseDictionarySource(const DictionaryStructure & dict_struct_,
+    ClickHouseDictionarySource(
+        const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const Block & sample_block, Context & context);
+        const Block & sample_block_,
+        Context & context);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
+    ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 
@@ -31,8 +35,7 @@ public:
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(
-        const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
@@ -65,10 +68,11 @@ private:
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
-    Context & context;
+    Context context;
     const bool is_local;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
+    Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
 };
 
 }

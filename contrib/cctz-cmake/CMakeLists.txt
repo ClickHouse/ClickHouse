@@ -1,6 +1,6 @@
 SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/cctz)
 
-add_library(cctz ${LINK_MODE}
+add_library(cctz
     ${LIBRARY_DIR}/src/civil_time_detail.cc
     ${LIBRARY_DIR}/src/time_zone_fixed.cc
     ${LIBRARY_DIR}/src/time_zone_format.cc

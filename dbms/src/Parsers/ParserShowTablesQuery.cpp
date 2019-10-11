@@ -5,6 +5,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserShowTablesQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 
 #include <Common/typeid_cast.h>
 
@@ -22,8 +23,10 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_from("FROM");
     ParserKeyword s_not("NOT");
     ParserKeyword s_like("LIKE");
+    ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
     ParserIdentifier name_p;
+    ParserExpressionWithOptionalAlias limit_p(false);
 
     ASTPtr like;
     ASTPtr database;
@@ -60,15 +63,20 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
             else if (query->not_like)
                 return false;
+
+            if (s_limit.ignore(pos, expected))
+            {
+                if (!limit_p.parse(pos, query->limit_length, expected))
+                    return false;
+            }
         }
         else
             return false;
     }
 
-    if (database)
-        query->from = typeid_cast<ASTIdentifier &>(*database).name;
+    tryGetIdentifierNameInto(database, query->from);
     if (like)
-        query->like = safeGet<const String &>(typeid_cast<ASTLiteral &>(*like).value);
+        query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
 
     node = query;
 

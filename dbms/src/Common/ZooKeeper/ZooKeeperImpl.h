@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 #include <IO/ReadBuffer.h>
@@ -41,7 +42,7 @@
   * - extremely creepy code for implementation of "chroot" feature.
   *
   * As of 2018, there are no active maintainers of libzookeeper:
-  * - bugs in JIRA are fixed only occasionaly with ad-hoc patches by library users.
+  * - bugs in JIRA are fixed only occasionally with ad-hoc patches by library users.
   *
   * libzookeeper is a classical example of bad code written in C.
   *
@@ -107,9 +108,9 @@ public:
         const String & root_path,
         const String & auth_scheme,
         const String & auth_data,
-        Poco::Timespan session_timeout,
+        Poco::Timespan session_timeout_,
         Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout);
+        Poco::Timespan operation_timeout_);
 
     ~ZooKeeper() override;
 
@@ -209,8 +210,8 @@ private:
     Watches watches;
     std::mutex watches_mutex;
 
-    std::thread send_thread;
-    std::thread receive_thread;
+    ThreadFromGlobalPool send_thread;
+    ThreadFromGlobalPool receive_thread;
 
     void connect(
         const Addresses & addresses,
@@ -252,7 +253,9 @@ struct ZooKeeperRequest : virtual Request
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
 
-    virtual ~ZooKeeperRequest() {}
+    ZooKeeperRequest() = default;
+    ZooKeeperRequest(const ZooKeeperRequest &) = default;
+    virtual ~ZooKeeperRequest() = default;
 
     virtual ZooKeeper::OpNum getOpNum() const = 0;
 

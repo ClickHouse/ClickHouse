@@ -1,5 +1,9 @@
 #pragma once
 
+#if __has_include(<sanitizer/asan_interface.h>)
+#   include <sanitizer/asan_interface.h>
+#endif
+#include <Core/Defines.h>
 #include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 
@@ -55,7 +59,7 @@ public:
     char * alloc(const size_t size)
     {
         if (size > max_fixed_block_size)
-            return static_cast<char *>(Allocator::alloc(size));
+            return static_cast<char *>(Allocator<false>::alloc(size));
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -63,7 +67,13 @@ public:
         /// If there is a free block.
         if (auto & free_block_ptr = free_lists[list_idx])
         {
-            /// Let's take it. And change the head of the list to the next item in the list.
+            /// Let's take it. And change the head of the list to the next
+            /// item in the list. We poisoned the free block before putting
+            /// it into the free list, so we have to unpoison it before
+            /// reading anything.
+            ASAN_UNPOISON_MEMORY_REGION(free_block_ptr,
+                                        std::max(size, sizeof(Block)));
+
             const auto res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
             return res;
@@ -76,7 +86,7 @@ public:
     void free(char * ptr, const size_t size)
     {
         if (size > max_fixed_block_size)
-            return Allocator::free(ptr, size);
+            return Allocator<false>::free(ptr, size);
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -86,6 +96,14 @@ public:
         const auto old_head = free_block_ptr;
         free_block_ptr = reinterpret_cast<Block *>(ptr);
         free_block_ptr->next = old_head;
+
+        /// The requested size may be less than the size of the block, but
+        /// we still want to poison the entire block.
+        /// Strictly speaking, the free blocks must be unpoisoned in
+        /// destructor, to support an underlying allocator that doesn't
+        /// integrate with asan. We don't do that, and rely on the fact that
+        /// our underlying allocator is Arena, which does have asan integration.
+        ASAN_POISON_MEMORY_REGION(ptr, 1ULL << (list_idx + 1));
     }
 
     /// Size of the allocated pool in bytes

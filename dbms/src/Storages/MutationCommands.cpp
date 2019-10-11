@@ -5,7 +5,9 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -35,12 +37,22 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
         res.predicate = command->predicate;
         for (const ASTPtr & assignment_ast : command->update_assignments->children)
         {
-            const auto & assignment = typeid_cast<const ASTAssignment &>(*assignment_ast);
+            const auto & assignment = assignment_ast->as<ASTAssignment &>();
             auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression);
             if (!insertion.second)
-                throw Exception("Multiple assignments in the single statement to column `" + assignment.column_name + "`",
+                throw Exception("Multiple assignments in the single statement to column " + backQuote(assignment.column_name),
                     ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
         }
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_INDEX;
+        res.partition = command->partition;
+        res.predicate = nullptr;
+        res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
     else
@@ -71,7 +83,7 @@ void MutationCommands::readText(ReadBuffer & in)
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0);
-    for (ASTAlterCommand * command_ast : typeid_cast<const ASTAlterCommandList &>(*commands_ast).commands)
+    for (ASTAlterCommand * command_ast : commands_ast->as<ASTAlterCommandList &>().commands)
     {
         auto command = MutationCommand::parse(command_ast);
         if (!command)

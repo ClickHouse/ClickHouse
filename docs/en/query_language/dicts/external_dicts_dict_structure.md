@@ -1,4 +1,3 @@
-<a name="dicts-external_dicts_dict_structure"></a>
 
 # Dictionary Key and Fields
 
@@ -25,12 +24,11 @@ Overall structure:
 
 Columns are described in the structure:
 
-- `<id>` - [key column](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-key).
-- `<attribute>` - [data column](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). There can be a large number of columns.
+- `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
+- `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a large number of columns.
 
-<a name="dicts-external_dicts_dict_structure-key"></a>
 
-## Key
+## Key {#ext_dict_structure-key}
 
 ClickHouse supports the following types of keys:
 
@@ -44,7 +42,7 @@ A structure can contain either `<id>` or `<key>` .
 
 ### Numeric Key
 
-Format: `UInt64`.
+Type: `UInt64`.
 
 Configuration example:
 
@@ -56,16 +54,16 @@ Configuration example:
 
 Configuration fields:
 
-- name – The name of the column with keys.
+- `name` – The name of the column with keys.
 
 ### Composite Key
 
-The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) in this case must be `complex_key_hashed` or `complex_key_cache`.
+The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
 !!! tip
     A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
 
-The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Example:
+The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external_dicts_dict_structure.md). Example:
 
 ```xml
 <structure>
@@ -85,9 +83,8 @@ The key structure is set in the element `<key>`. Key fields are specified in the
 
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-<a name="dicts-external_dicts_dict_structure-attributes"></a>
 
-## Attributes
+## Attributes {#ext_dict_structure-attributes}
 
 Configuration example:
 
@@ -96,7 +93,7 @@ Configuration example:
     ...
     <attribute>
         <name>Name</name>
-        <type>Type</type>
+        <type>ClickHouseDataType</type>
         <null_value></null_value>
         <expression>rand64()</expression>
         <hierarchical>true</hierarchical>
@@ -108,12 +105,14 @@ Configuration example:
 
 Configuration fields:
 
-- `name` – The column name.
-- `type` – The column type. Sets the method for interpreting data in the source. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the source table, but it can be uploaded as `String`.
-- `null_value` – The default value for a non-existing element. In the example, it is an empty string.
-- `expression` – The attribute can be an expression. The tag is not required.
-- `hierarchical` – Hierarchical support. Mirrored to the parent identifier. By default, ` false`.
-- `injective` – Whether the `id -> attribute` image is injective. If ` true`, then you can optimize the ` GROUP BY` clause. By default, `false`.
-- `is_object_id` – Whether the query is executed for a MongoDB document by `ObjectID`.
+Tag | Description | Required
+----|-------------|---------
+`name`| Column name. | Yes
+`type`| ClickHouse data type.<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../data_types/nullable.md) is not supported. | Yes
+`null_value` | Default value for a non-existing element.<br/>In the example, it is an empty string. You cannot use `NULL` in this field. | Yes
+`expression` | [Expression](../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression. | No
+`hierarchical` | Hierarchical support. Mirrored to the parent identifier.<br/><br/>Default value: `false`. | No
+`injective` | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No
+`is_object_id` | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`. | No
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

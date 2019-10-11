@@ -1,6 +1,4 @@
-<a name="quotas"></a>
-
-# Quotas
+# Quotas {#quotas}
 
 Quotas allow you to limit resource usage over a period of time, or simply track the use of resources.
 Quotas are set up in the user config. This is usually 'users.xml'.

@@ -1,6 +1,4 @@
-<a name="data_type-datetime"></a>
-
-# DateTime
+# DateTime {#data_type-datetime}
 
 Date with time. Stored in four bytes as a Unix timestamp (unsigned). Allows storing values in the same range as for the Date type. The minimal value is output as 0000-00-00 00:00:00.
 The time is stored with accuracy up to one second (without leap seconds).

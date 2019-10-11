@@ -1,3 +1,5 @@
+#include "StorageSystemPartsColumns.h"
+
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -5,8 +7,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Storages/System/StorageSystemPartsColumns.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -15,8 +15,8 @@ namespace DB
 {
 
 
-StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
-    : StorageSystemPartsBase(name,
+StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
+    : StorageSystemPartsBase(name_,
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
@@ -43,22 +43,23 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name)
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
         {"engine",                                     std::make_shared<DataTypeString>()},
+        {"disk_name",                                  std::make_shared<DataTypeString>()},
         {"path",                                       std::make_shared<DataTypeString>()},
 
         {"column",                                     std::make_shared<DataTypeString>()},
-        {"type",                                       std::make_shared<DataTypeString>() },
-        {"default_kind",                               std::make_shared<DataTypeString>() },
-        {"default_expression",                         std::make_shared<DataTypeString>() },
-        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>() },
-        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>() },
-        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>() },
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>() },
+        {"type",                                       std::make_shared<DataTypeString>()},
+        {"default_kind",                               std::make_shared<DataTypeString>()},
+        {"default_expression",                         std::make_shared<DataTypeString>()},
+        {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
+        {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
+        {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
     }
     )
 {
 }
 
-void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
+void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -67,29 +68,27 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         String default_expression;
     };
 
-    NamesAndTypesList columns_list = info.storage->getColumns().getAll();
-    const auto & column_defaults = info.storage->getColumns().defaults;
     std::unordered_map<String, ColumnInfo> columns_info;
-
-    for (const auto & column : columns_list)
+    for (const auto & column : info.storage->getColumns())
     {
         ColumnInfo column_info;
-
-        const auto it = column_defaults.find(column.name);
-        if (it != std::end(column_defaults))
+        if (column.default_desc.expression)
         {
-            column_info.default_kind = toString(it->second.kind);
-            column_info.default_expression = queryToString(it->second.expression);
+            column_info.default_kind = toString(column.default_desc.kind);
+            column_info.default_expression = queryToString(column.default_desc.expression);
         }
 
         columns_info[column.name] = column_info;
     }
 
     /// Go through the list of parts.
-    for (size_t part_number = 0; part_number < info.all_parts.size(); ++part_number)
+    MergeTreeData::DataPartStateVector all_parts_state;
+    MergeTreeData::DataPartsVector all_parts;
+    all_parts = info.getParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        const auto & part = info.all_parts[part_number];
-        auto part_state = info.all_parts_state[part_number];
+        const auto & part = all_parts[part_number];
+        auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
@@ -102,64 +101,67 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         using State = MergeTreeDataPart::State;
 
         for (const auto & column : part->columns)
+
         {
             size_t j = 0;
             {
                 WriteBufferFromOwnString out;
                 part->partition.serializeText(*info.data, out, format_settings);
-                columns[j++]->insert(out.str());
+                columns_[j++]->insert(out.str());
             }
-            columns[j++]->insert(part->name);
-            columns[j++]->insert(part_state == State::Committed);
-            columns[j++]->insert(part->marks_count);
+            columns_[j++]->insert(part->name);
+            columns_[j++]->insert(part_state == State::Committed);
+            columns_[j++]->insert(part->getMarksCount());
 
-            columns[j++]->insert(part->rows_count);
-            columns[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
-            columns[j++]->insert(columns_size.data_compressed);
-            columns[j++]->insert(columns_size.data_uncompressed);
-            columns[j++]->insert(columns_size.marks);
-            columns[j++]->insert(UInt64(part->modification_time));
-            columns[j++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
+            columns_[j++]->insert(part->rows_count);
+            columns_[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
+            columns_[j++]->insert(columns_size.data_compressed);
+            columns_[j++]->insert(columns_size.data_uncompressed);
+            columns_[j++]->insert(columns_size.marks);
+            columns_[j++]->insert(UInt64(part->modification_time));
+            columns_[j++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
 
-            columns[j++]->insert(UInt64(use_count));
+            columns_[j++]->insert(UInt64(use_count));
 
-            columns[j++]->insert(min_date);
-            columns[j++]->insert(max_date);
-            columns[j++]->insert(part->info.partition_id);
-            columns[j++]->insert(part->info.min_block);
-            columns[j++]->insert(part->info.max_block);
-            columns[j++]->insert(part->info.level);
-            columns[j++]->insert(UInt64(part->info.getDataVersion()));
-            columns[j++]->insert(index_size_in_bytes);
-            columns[j++]->insert(index_size_in_allocated_bytes);
+            columns_[j++]->insert(min_date);
+            columns_[j++]->insert(max_date);
+            columns_[j++]->insert(part->info.partition_id);
+            columns_[j++]->insert(part->info.min_block);
+            columns_[j++]->insert(part->info.max_block);
+            columns_[j++]->insert(part->info.level);
+            columns_[j++]->insert(UInt64(part->info.getDataVersion()));
+            columns_[j++]->insert(index_size_in_bytes);
+            columns_[j++]->insert(index_size_in_allocated_bytes);
 
-            columns[j++]->insert(info.database);
-            columns[j++]->insert(info.table);
-            columns[j++]->insert(info.engine);
-            columns[j++]->insert(part->getFullPath());
-            columns[j++]->insert(column.name);
-            columns[j++]->insert(column.type->getName());
+            columns_[j++]->insert(info.database);
+            columns_[j++]->insert(info.table);
+            columns_[j++]->insert(info.engine);
+            columns_[j++]->insert(part->disk->getName());
+            columns_[j++]->insert(part->getFullPath());
+
+            columns_[j++]->insert(column.name);
+            columns_[j++]->insert(column.type->getName());
 
             auto column_info_it = columns_info.find(column.name);
             if (column_info_it != columns_info.end())
             {
-                columns[j++]->insert(column_info_it->second.default_kind);
-                columns[j++]->insert(column_info_it->second.default_expression);
+                columns_[j++]->insert(column_info_it->second.default_kind);
+                columns_[j++]->insert(column_info_it->second.default_expression);
             }
             else
             {
-                columns[j++]->insertDefault();
-                columns[j++]->insertDefault();
+                columns_[j++]->insertDefault();
+                columns_[j++]->insertDefault();
             }
 
-            MergeTreeDataPart::ColumnSize column_size = part->getColumnSize(column.name, *column.type);
-            columns[j++]->insert(column_size.data_compressed + column_size.marks);
-            columns[j++]->insert(column_size.data_compressed);
-            columns[j++]->insert(column_size.data_uncompressed);
-            columns[j++]->insert(column_size.marks);
+            ColumnSize column_size = part->getColumnSize(column.name, *column.type);
+            columns_[j++]->insert(column_size.data_compressed + column_size.marks);
+            columns_[j++]->insert(column_size.data_compressed);
+            columns_[j++]->insert(column_size.data_uncompressed);
+            columns_[j++]->insert(column_size.marks);
 
             if (has_state_column)
-                columns[j++]->insert(part->stateString());
+                columns_[j++]->insert(part->stateString());
         }
     }
 }

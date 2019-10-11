@@ -1,32 +1,31 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include "ExternalResultDescription.h"
+#include <DataStreams/IBlockInputStream.h>
+#include <Core/ExternalResultDescription.h>
 
 
 namespace Poco
 {
-    namespace MongoDB
-    {
-        class Connection;
-        class Cursor;
-    }
+namespace MongoDB
+{
+    class Connection;
+    class Cursor;
+}
 }
 
 
 namespace DB
 {
-
 /// Converts MongoDB Cursor to a stream of Blocks
-class MongoDBBlockInputStream final : public IProfilingBlockInputStream
+class MongoDBBlockInputStream final : public IBlockInputStream
 {
 public:
     MongoDBBlockInputStream(
         std::shared_ptr<Poco::MongoDB::Connection> & connection_,
         std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
         const Block & sample_block,
-        const size_t max_block_size);
+        const UInt64 max_block_size_);
 
     ~MongoDBBlockInputStream() override;
 
@@ -39,7 +38,7 @@ private:
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
     std::unique_ptr<Poco::MongoDB::Cursor> cursor;
-    const size_t max_block_size;
+    const UInt64 max_block_size;
     ExternalResultDescription description;
     bool all_read = false;
 };

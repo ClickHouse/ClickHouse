@@ -1,9 +1,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
-#include <Common/MemoryTracker.h>
-#include <IO/CachedCompressedReadBuffer.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
@@ -33,24 +31,21 @@ namespace ErrorCodes
 MergeTreeReader::~MergeTreeReader() = default;
 
 
-MergeTreeReader::MergeTreeReader(const String & path,
-    const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-    UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
-    const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
-    size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback,
-    clockid_t clock_type)
-    : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
-    , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
+MergeTreeReader::MergeTreeReader(const String & path_,
+    const MergeTreeData::DataPartPtr & data_part_, const NamesAndTypesList & columns_,
+    UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_, bool save_marks_in_cache_,
+    const MergeTreeData & storage_, const MarkRanges & all_mark_ranges_,
+    size_t aio_threshold_, size_t max_read_buffer_size_, const ValueSizeMap & avg_value_size_hints_,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
+    clockid_t clock_type_)
+    : data_part(data_part_), avg_value_size_hints(avg_value_size_hints_), path(path_), columns(columns_)
+    , uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_), storage(storage_)
+    , all_mark_ranges(all_mark_ranges_), aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
 {
     try
     {
-        if (!Poco::File(path).exists())
-            throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
-
         for (const NameAndTypePair & column : columns)
-            addStreams(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
+            addStreams(column.name, *column.type, profile_callback_, clock_type_);
     }
     catch (...)
     {
@@ -155,206 +150,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
     return read_rows;
 }
 
-
-MergeTreeReader::Stream::Stream(
-    const String & path_prefix_, const String & extension_, size_t marks_count_,
-    const MarkRanges & all_mark_ranges,
-    MarkCache * mark_cache_, bool save_marks_in_cache_,
-    UncompressedCache * uncompressed_cache,
-    size_t aio_threshold, size_t max_read_buffer_size,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-    : path_prefix(path_prefix_), extension(extension_), marks_count(marks_count_)
-    , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
-{
-    /// Compute the size of the buffer.
-    size_t max_mark_range = 0;
-
-    for (size_t i = 0; i < all_mark_ranges.size(); ++i)
-    {
-        size_t right = all_mark_ranges[i].end;
-        /// NOTE: if we are reading the whole file, then right == marks_count
-        /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
-
-        /// If the end of range is inside the block, we will need to read it too.
-        if (right < marks_count && getMark(right).offset_in_decompressed_block > 0)
-        {
-            while (right < marks_count
-                   && getMark(right).offset_in_compressed_file
-                       == getMark(all_mark_ranges[i].end).offset_in_compressed_file)
-            {
-                ++right;
-            }
-        }
-
-        /// If there are no marks after the end of range, just use max_read_buffer_size
-        if (right >= marks_count
-            || (right + 1 == marks_count
-                && getMark(right).offset_in_compressed_file
-                    == getMark(all_mark_ranges[i].end).offset_in_compressed_file))
-        {
-            max_mark_range = max_read_buffer_size;
-            break;
-        }
-
-        max_mark_range = std::max(max_mark_range,
-            getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
-    }
-
-    /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
-    /// For example: part has single dictionary and all marks point to the same position.
-    if (max_mark_range == 0)
-        max_mark_range = max_read_buffer_size;
-
-    size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
-
-    /// Estimate size of the data to be read.
-    size_t estimated_size = 0;
-    if (aio_threshold > 0)
-    {
-        for (const auto & mark_range : all_mark_ranges)
-        {
-            size_t offset_begin = (mark_range.begin > 0)
-                ? getMark(mark_range.begin).offset_in_compressed_file
-                : 0;
-
-            size_t offset_end = (mark_range.end < marks_count)
-                ? getMark(mark_range.end).offset_in_compressed_file
-                : Poco::File(path_prefix + extension).getSize();
-
-            if (offset_end > offset_begin)
-                estimated_size += offset_end - offset_begin;
-        }
-    }
-
-    /// Initialize the objects that shall be used to perform read operations.
-    if (uncompressed_cache)
-    {
-        auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            path_prefix + extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
-
-        if (profile_callback)
-            buffer->setProfileCallback(profile_callback, clock_type);
-
-        cached_buffer = std::move(buffer);
-        data_buffer = cached_buffer.get();
-    }
-    else
-    {
-        auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            path_prefix + extension, estimated_size, aio_threshold, buffer_size);
-
-        if (profile_callback)
-            buffer->setProfileCallback(profile_callback, clock_type);
-
-        non_cached_buffer = std::move(buffer);
-        data_buffer = non_cached_buffer.get();
-    }
-}
-
-
-const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
-{
-    if (!marks)
-        loadMarks();
-    return (*marks)[index];
-}
-
-
-void MergeTreeReader::Stream::loadMarks()
-{
-    std::string path = path_prefix + ".mrk";
-
-    auto load = [&]() -> MarkCache::MappedPtr
-    {
-        /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
-        size_t file_size = Poco::File(path).getSize();
-        size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
-        if (expected_file_size != file_size)
-            throw Exception(
-                "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
-                ErrorCodes::CORRUPTED_DATA);
-
-        auto res = std::make_shared<MarksInCompressedFile>(marks_count);
-
-        /// Read directly to marks.
-        ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(res->data()));
-
-        if (buffer.eof() || buffer.buffer().size() != file_size)
-            throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
-
-        return res;
-    };
-
-    if (mark_cache)
-    {
-        auto key = mark_cache->hash(path);
-        if (save_marks_in_cache)
-        {
-            marks = mark_cache->getOrSet(key, load);
-        }
-        else
-        {
-            marks = mark_cache->get(key);
-            if (!marks)
-                marks = load();
-        }
-    }
-    else
-        marks = load();
-
-    if (!marks)
-        throw Exception("Failed to load marks: " + path, ErrorCodes::LOGICAL_ERROR);
-}
-
-
-void MergeTreeReader::Stream::seekToMark(size_t index)
-{
-    MarkInCompressedFile mark = getMark(index);
-
-    try
-    {
-        if (cached_buffer)
-            cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
-    }
-    catch (Exception & e)
-    {
-        /// Better diagnostics.
-        if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
-            e.addMessage("(while seeking to mark " + toString(index)
-                + " of column " + path_prefix + "; offsets are: "
-                + toString(mark.offset_in_compressed_file) + " "
-                + toString(mark.offset_in_decompressed_block) + ")");
-
-        throw;
-    }
-}
-
-
-void MergeTreeReader::Stream::seekToStart()
-{
-    try
-    {
-        if (cached_buffer)
-            cached_buffer->seek(0, 0);
-        if (non_cached_buffer)
-            non_cached_buffer->seek(0, 0);
-    }
-    catch (Exception & e)
-    {
-        /// Better diagnostics.
-        if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
-            e.addMessage("(while seeking to start of column " + path_prefix + ")");
-
-        throw;
-    }
-}
-
-
-void MergeTreeReader::addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+void MergeTreeReader::addStreams(const String & name, const IDataType & type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
@@ -364,7 +160,7 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
         if (streams.count(stream_name))
             return;
 
-        bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
+        bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -372,14 +168,17 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
         if (!data_file_exists)
             return;
 
-        streams.emplace(stream_name, std::make_unique<Stream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
+        streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
+            path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, mark_cache, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+            uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+            aio_threshold, max_read_buffer_size,
+            &data_part->index_granularity_info,
+            profile_callback, clock_type));
     };
 
-    IDataType::SubstreamPath path;
-    type.enumerateStreams(callback, path);
+    IDataType::SubstreamPath substream_path;
+    type.enumerateStreams(callback, substream_path);
 }
 
 
@@ -390,19 +189,19 @@ void MergeTreeReader::readData(
 {
     auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
-        return [&, stream_for_prefix](const IDataType::SubstreamPath & path) -> ReadBuffer *
+        return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
         {
             /// If offsets for arrays have already been read.
-            if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
+            if (!with_offsets && substream_path.size() == 1 && substream_path[0].type == IDataType::Substream::ArraySizes)
                 return nullptr;
 
-            String stream_name = IDataType::getFileNameForStream(name, path);
+            String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
             auto it = streams.find(stream_name);
             if (it == streams.end())
                 return nullptr;
 
-            Stream & stream = *it->second;
+            MergeTreeReaderStream & stream = *it->second;
 
             if (stream_for_prefix)
             {
@@ -499,7 +298,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
             if (!has_column)
             {
                 should_reorder = true;
-                if (storage.getColumns().defaults.count(requested_column.name) != 0)
+                if (storage.getColumns().hasDefault(requested_column.name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
@@ -514,8 +313,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
                 {
                     ColumnPtr offsets_column = offset_columns[offsets_name];
                     DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
-                    size_t nested_rows = offsets_column->empty() ? 0
-                        : typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
+                    size_t nested_rows = typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
                     ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
 
@@ -567,7 +365,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block & res)
 {
     try
     {
-        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.context);
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().getDefaults(), storage.global_context);
     }
     catch (Exception & e)
     {

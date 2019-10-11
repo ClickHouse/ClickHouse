@@ -15,7 +15,7 @@ namespace DB
 class HexWriteBuffer final : public WriteBuffer
 {
 protected:
-    char buf[DBMS_HEX_WRITE_BUFFER_SIZE];
+    char buf[DBMS_HEX_WRITE_BUFFER_SIZE]; //-V730
     WriteBuffer & out;
 
     void nextImpl() override;

@@ -6,11 +6,12 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
+#include <Common/ActionBlocker.h>
 
 
 namespace DB
@@ -28,6 +29,7 @@ class StorageDistributedDirectoryMonitor;
   */
 class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
@@ -51,6 +53,8 @@ public:
 
     std::string getName() const override { return "Distributed"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
+
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
@@ -71,22 +75,28 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop() override {}
+    void drop(TableStructureWriteLockHolder &) override {}
 
     /// Removes temporary data in local filesystem.
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { table_name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
+
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(
+        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;
 
-    String getDataPath() const override { return path; }
+    Strings getDataPaths() const override { return {path}; }
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
@@ -103,15 +113,19 @@ public:
     /// ensure connection pool creation and return it
     ConnectionPoolPtr requireConnectionPool(const std::string & name);
 
+    void flushClusterNodesAllData();
+
     ClusterPtr getCluster() const;
 
+    ActionLock getActionLock(StorageActionBlockType type) override;
 
     String table_name;
+    String database_name;
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    const Context & context;
+    Context global_context;
     Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.
@@ -133,7 +147,9 @@ public:
         /// Creates connection_pool if not exists.
         void requireConnectionPool(const std::string & name, const StorageDistributed & storage);
         /// Creates directory_monitor if not exists.
-        void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
+        void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage, ActionBlocker & monitor_blocker);
+
+        void flushAllData();
 
         void shutdownAndDropAllData();
     };
@@ -143,29 +159,35 @@ public:
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
 
+    ActionBlocker monitors_blocker;
+
 protected:
     StorageDistributed(
-        const String & database_name,
+        const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
         const String & data_path_,
-        bool attach);
+        bool attach_);
 
     StorageDistributed(
         const String & database_name,
         const String & table_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         ASTPtr remote_table_function_ptr_,
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
         const String & data_path_,
         bool attach);
+
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
 };
 
 }

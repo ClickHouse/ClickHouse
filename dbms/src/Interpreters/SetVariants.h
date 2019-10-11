@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
-
+#include <Common/ColumnsHashing.h>
+#include <Common/assert_cast.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/ClearableHashSet.h>
+#include <Common/HashTable/FixedClearableHashSet.h>
+#include <Common/HashTable/FixedHashSet.h>
 #include <Common/UInt128.h>
 
 
@@ -19,7 +20,7 @@ namespace DB
 
 
 /// For the case where there is one numeric key.
-template <typename FieldType, typename TData>    /// UInt8/16/32/64 for any types with corresponding bit width.
+template <typename FieldType, typename TData, bool use_cache = true>    /// UInt8/16/32/64 for any types with corresponding bit width.
 struct SetMethodOneNumber
 {
     using Data = TData;
@@ -27,33 +28,8 @@ struct SetMethodOneNumber
 
     Data data;
 
-    /// To use one `Method` in different threads, use different `State`.
-    struct State
-    {
-        const FieldType * vec;
-
-        /** Called at the start of each block processing.
-          * Sets the variables required for the other methods called in inner loops.
-          */
-        void init(const ColumnRawPtrs & key_columns)
-        {
-            vec = static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData().data();
-        }
-
-        /// Get key from key columns for insertion into hash table.
-        Key getKey(
-            const ColumnRawPtrs & /*key_columns*/,
-            size_t /*keys_size*/,                 /// Number of key columns.
-            size_t i,                             /// From what row of the block I get the key.
-            const Sizes & /*key_sizes*/) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
-        {
-            return unionCastToUInt64(vec[i]);
-        }
-    };
-
-    /** Place additional data, if necessary, in case a new key was inserted into the hash table.
-      */
-    static void onNewKey(typename Data::value_type & /*value*/, size_t /*keys_size*/, Arena & /*pool*/) {}
+    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
+        void, FieldType, use_cache>;
 };
 
 /// For the case where there is one string key.
@@ -65,35 +41,7 @@ struct SetMethodString
 
     Data data;
 
-    struct State
-    {
-        const ColumnString::Offsets * offsets;
-        const ColumnString::Chars * chars;
-
-        void init(const ColumnRawPtrs & key_columns)
-        {
-            const IColumn & column = *key_columns[0];
-            const ColumnString & column_string = static_cast<const ColumnString &>(column);
-            offsets = &column_string.getOffsets();
-            chars = &column_string.getChars();
-        }
-
-        Key getKey(
-            const ColumnRawPtrs &,
-            size_t,
-            size_t i,
-            const Sizes &) const
-        {
-            return StringRef(
-                &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
-                (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
-    {
-        value.data = pool.insert(value.data, value.size);
-    }
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void, true, false>;
 };
 
 /// For the case when there is one fixed-length string key.
@@ -105,33 +53,7 @@ struct SetMethodFixedString
 
     Data data;
 
-    struct State
-    {
-        size_t n;
-        const ColumnFixedString::Chars * chars;
-
-        void init(const ColumnRawPtrs & key_columns)
-        {
-            const IColumn & column = *key_columns[0];
-            const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
-            n = column_string.getN();
-            chars = &column_string.getChars();
-        }
-
-        Key getKey(
-            const ColumnRawPtrs &,
-            size_t,
-            size_t i,
-            const Sizes &) const
-        {
-            return StringRef(&(*chars)[i * n], n);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
-    {
-        value.data = pool.insert(value.data, value.size);
-    }
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void, true, false>;
 };
 
 namespace set_impl
@@ -155,11 +77,10 @@ protected:
 
         for (const auto & col : key_columns)
         {
-            if (col->isColumnNullable())
+            if (auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
             {
-                const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                actual_columns.push_back(&nullable_col.getNestedColumn());
-                null_maps.push_back(&nullable_col.getNullMapColumn());
+                actual_columns.push_back(&nullable->getNestedColumn());
+                null_maps.push_back(&nullable->getNullMapColumn());
             }
             else
             {
@@ -187,7 +108,7 @@ protected:
         {
             if (null_maps[k] != nullptr)
             {
-                const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_maps[k]).getData();
                 if (null_map[row] == 1)
                 {
                     size_t bucket = k / 8;
@@ -241,34 +162,7 @@ struct SetMethodKeysFixed
 
     Data data;
 
-    class State : private set_impl::BaseStateKeysFixed<Key, has_nullable_keys>
-    {
-    public:
-        using Base = set_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
-
-        void init(const ColumnRawPtrs & key_columns)
-        {
-            if (has_nullable_keys)
-                Base::init(key_columns);
-        }
-
-        Key getKey(
-            const ColumnRawPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes & key_sizes) const
-        {
-            if (has_nullable_keys)
-            {
-                auto bitmap = Base::createBitmap(i);
-                return packFixed<Key>(i, keys_size, Base::getActualColumns(), key_sizes, bitmap);
-            }
-            else
-                return packFixed<Key>(i, keys_size, key_columns, key_sizes);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type &, size_t, Arena &) {}
+    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, void, has_nullable_keys, false>;
 };
 
 /// For other cases. 128 bit hash from the key.
@@ -280,23 +174,7 @@ struct SetMethodHashed
 
     Data data;
 
-    struct State
-    {
-        void init(const ColumnRawPtrs &)
-        {
-        }
-
-        Key getKey(
-            const ColumnRawPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes &) const
-        {
-            return hash128(i, keys_size, key_columns);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type &, size_t, Arena &) {}
+    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, void>;
 };
 
 
@@ -304,9 +182,12 @@ struct SetMethodHashed
   */
 struct NonClearableSet
 {
-    /// TODO Use either bit- or byte-set for these two options.
-    std::unique_ptr<SetMethodOneNumber<UInt8, HashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>            key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, HashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>         key16;
+    /*
+     * As in Aggregator, using consecutive keys cache doesn't improve performance
+     * for FixedHashTables.
+     */
+    std::unique_ptr<SetMethodOneNumber<UInt8, FixedHashSet<UInt8>, false /* use_cache */>>                                             key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedHashSet<UInt16>, false /* use_cache */>>                                           key16;
 
     /** Also for the experiment was tested the ability to use SmallSet,
       *  as long as the number of elements in the set is small (and, if necessary, converted to a full-fledged HashSet).
@@ -331,9 +212,8 @@ struct NonClearableSet
 
 struct ClearableSet
 {
-    /// TODO Use either bit- or byte-set for these two options.
-    std::unique_ptr<SetMethodOneNumber<UInt8, ClearableHashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>       key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, ClearableHashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>    key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, FixedClearableHashSet<UInt8>, false /* use_cache */>>                                        key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedClearableHashSet<UInt16>, false /*use_cache */>>                                      key16;
 
     std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>                        key32;
     std::unique_ptr<SetMethodOneNumber<UInt64, ClearableHashSet<UInt64, HashCRC32<UInt64>>>>                        key64;

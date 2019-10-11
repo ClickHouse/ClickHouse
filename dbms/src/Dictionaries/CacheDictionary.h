@@ -1,36 +1,35 @@
 #pragma once
 
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryStructure.h"
-#include <Common/ArenaWithFreeLists.h>
-#include <Common/CurrentMetrics.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <ext/bit_cast.h>
-#include <cmath>
 #include <atomic>
 #include <chrono>
-#include <vector>
+#include <cmath>
 #include <map>
-#include <variant>
-#include <pcg_random.hpp>
 #include <shared_mutex>
+#include <variant>
+#include <vector>
+#include <common/logger_useful.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <pcg_random.hpp>
+#include <Common/ArenaWithFreeLists.h>
+#include <Common/CurrentMetrics.h>
+#include <ext/bit_cast.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
 
 
 namespace DB
 {
-
 class CacheDictionary final : public IDictionary
 {
 public:
-    CacheDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
-        const size_t size);
-
-    CacheDictionary(const CacheDictionary & other);
-
-    std::exception_ptr getCreationException() const override { return {}; }
+    CacheDictionary(
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        const size_t size_);
 
     std::string getName() const override { return name; }
 
@@ -42,31 +41,25 @@ public:
 
     double getHitRate() const override
     {
-        return static_cast<double>(hit_count.load(std::memory_order_acquire)) /
-            query_count.load(std::memory_order_relaxed);
+        return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
     }
 
     size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
 
-    double getLoadFactor() const override
-    {
-        return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size;
-    }
+    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; }
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<CacheDictionary>(*this); }
+    std::shared_ptr<const IExternalLoadable> clone() const override
+    {
+        return std::make_shared<CacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
-    {
-        return creation_time;
-    }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -77,14 +70,17 @@ public:
 
     void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
-    void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+    void isInVectorVector(
+        const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+
+    std::exception_ptr getLastException() const override;
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-#define DECLARE(TYPE)\
+#define DECLARE(TYPE) \
     void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -104,9 +100,11 @@ public:
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
 
-#define DECLARE(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const PaddedPODArray<Key> & ids, \
+        const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -124,11 +122,11 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def,
-        ColumnString * const out) const;
+    void
+    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
+        const;
 
-#define DECLARE(TYPE)\
+#define DECLARE(TYPE) \
     void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -146,17 +144,17 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def,
-        ColumnString * const out) const;
+    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    template <typename Value> using ContainerType = Value[];
-    template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+    template <typename Value>
+    using ContainerType = Value[];
+    template <typename Value>
+    using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
     struct CellMetadata final
     {
@@ -183,51 +181,54 @@ private:
     {
         AttributeUnderlyingType type;
         std::variant<
-            UInt8, UInt16, UInt32, UInt64,
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
             UInt128,
-            Int8, Int16, Int32, Int64,
-            Decimal32, Decimal64, Decimal128,
-            Float32, Float64,
-            String> null_values;
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            String>
+            null_values;
         std::variant<
-            ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
+            ContainerPtrType<UInt8>,
+            ContainerPtrType<UInt16>,
+            ContainerPtrType<UInt32>,
+            ContainerPtrType<UInt64>,
             ContainerPtrType<UInt128>,
-            ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
-            ContainerPtrType<Decimal32>, ContainerPtrType<Decimal64>, ContainerPtrType<Decimal128>,
-            ContainerPtrType<Float32>, ContainerPtrType<Float64>,
-            ContainerPtrType<StringRef>> arrays;
+            ContainerPtrType<Int8>,
+            ContainerPtrType<Int16>,
+            ContainerPtrType<Int32>,
+            ContainerPtrType<Int64>,
+            ContainerPtrType<Decimal32>,
+            ContainerPtrType<Decimal64>,
+            ContainerPtrType<Decimal128>,
+            ContainerPtrType<Float32>,
+            ContainerPtrType<Float64>,
+            ContainerPtrType<StringRef>>
+            arrays;
     };
 
     void createAttributes();
 
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-
-    template <typename OutputType, typename DefaultGetter>
-    void getItemsNumber(
-        Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ResultArrayType<OutputType> & out,
-        DefaultGetter && get_default) const;
-
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
-        Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ResultArrayType<OutputType> & out,
-        DefaultGetter && get_default) const;
+        Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
-    void getItemsString(
-        Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ColumnString * out,
-        DefaultGetter && get_default) const;
+    void getItemsString(Attribute & attribute, const PaddedPODArray<Key> & ids, ColumnString * out, DefaultGetter && get_default) const;
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
-    void update(
-        const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
-        AbsentIdHandler && on_id_not_found) const;
+    void update(const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated, AbsentIdHandler && on_id_not_found) const;
 
     PaddedPODArray<Key> getCachedIds() const;
 
@@ -251,15 +252,13 @@ private:
     FindResult findCellIdx(const Key & id, const CellMetadata::time_point_t now) const;
 
     template <typename AncestorType>
-    void isInImpl(
-        const PaddedPODArray<Key> & child_ids,
-        const AncestorType & ancestor_ids,
-        PaddedPODArray<UInt8> & out) const;
+    void isInImpl(const PaddedPODArray<Key> & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;
-    const DictionarySourcePtr source_ptr;
+    mutable DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
+    Logger * const log;
 
     mutable std::shared_mutex rw_lock;
 
@@ -279,14 +278,16 @@ private:
     Attribute * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
+    mutable std::exception_ptr last_exception;
+    mutable size_t error_count = 0;
+    mutable std::chrono::system_clock::time_point backoff_end_time;
+
     mutable pcg64 rnd_engine;
 
     mutable size_t bytes_allocated = 0;
     mutable std::atomic<size_t> element_count{0};
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
-
-    const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/ProcessList.h>
 
 

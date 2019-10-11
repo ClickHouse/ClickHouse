@@ -5,6 +5,7 @@
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <common/logger_useful.h>
+#include <Common/SharedBlockRowRef.h>
 
 #include <Core/Row.h>
 #include <Core/SortDescription.h>
@@ -12,8 +13,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -25,42 +25,9 @@ namespace ErrorCodes
 }
 
 
-/// Allows you refer to the row in the block and hold the block ownership,
-///  and thus avoid creating a temporary row object.
-/// Do not use std::shared_ptr, since there is no need for a place for `weak_count` and `deleter`;
-///  does not use Poco::SharedPtr, since you need to allocate a block and `refcount` in one piece;
-///  does not use Poco::AutoPtr, since it does not have a `move` constructor and there are extra checks for nullptr;
-/// The reference counter is not atomic, since it is used from one thread.
-namespace detail
-{
-struct SharedBlock : Block
-{
-    int refcount = 0;
-
-    ColumnRawPtrs all_columns;
-    ColumnRawPtrs sort_columns;
-
-    SharedBlock(Block && block) : Block(std::move(block)) {}
-};
-}
-
-using SharedBlockPtr = boost::intrusive_ptr<detail::SharedBlock>;
-
-inline void intrusive_ptr_add_ref(detail::SharedBlock * ptr)
-{
-    ++ptr->refcount;
-}
-
-inline void intrusive_ptr_release(detail::SharedBlock * ptr)
-{
-    if (0 == --ptr->refcount)
-        delete ptr;
-}
-
-
 /** Merges several sorted streams into one sorted stream.
   */
-class MergingSortedBlockInputStream : public IProfilingBlockInputStream
+class MergingSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /** limit - if isn't 0, then we can produce only first limit rows in sorted order.
@@ -69,7 +36,7 @@ public:
       */
     MergingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
+        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false, bool average_block_sizes_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -79,44 +46,37 @@ public:
     Block getHeader() const override { return header; }
 
 protected:
-    struct RowRef
+    /// Simple class, which allows to check stop condition during merge process
+    /// in simple case it just compare amount of merged rows with max_block_size
+    /// in `count_average` case it compares amount of merged rows with linear combination
+    /// of block sizes from which these rows were taken.
+    struct MergeStopCondition
     {
-        ColumnRawPtrs * columns = nullptr;
-        size_t row_num;
-        SharedBlockPtr shared_block;
+        size_t sum_blocks_granularity = 0;
+        size_t sum_rows_count = 0;
+        bool count_average;
+        size_t max_block_size;
 
-        void swap(RowRef & other)
+        MergeStopCondition(bool count_average_, size_t max_block_size_)
+            : count_average(count_average_)
+            , max_block_size(max_block_size_)
+        {}
+
+        /// add single row from block size `granularity`
+        void addRowWithGranularity(size_t granularity)
         {
-            std::swap(columns, other.columns);
-            std::swap(row_num, other.row_num);
-            std::swap(shared_block, other.shared_block);
+            sum_blocks_granularity += granularity;
+            sum_rows_count++;
         }
 
-        /// The number and types of columns must match.
-        bool operator==(const RowRef & other) const
-        {
-            size_t size = columns->size();
-            for (size_t i = 0; i < size; ++i)
-                if (0 != (*columns)[i]->compareAt(row_num, other.row_num, *(*other.columns)[i], 1))
-                    return false;
-            return true;
-        }
+        /// check that sum_rows_count is enough
+        bool checkStop() const;
 
-        bool operator!=(const RowRef & other) const
+        bool empty() const
         {
-            return !(*this == other);
+            return sum_blocks_granularity == 0;
         }
-
-        void reset()
-        {
-            RowRef empty;
-            swap(empty);
-        }
-
-        bool empty() const { return columns == nullptr; }
-        size_t size() const { return empty() ? 0 : columns->size(); }
     };
-
 
     Block readImpl() override;
 
@@ -134,12 +94,13 @@ protected:
 
     const SortDescription description;
     const size_t max_block_size;
-    size_t limit;
-    size_t total_merged_rows = 0;
+    UInt64 limit;
+    UInt64 total_merged_rows = 0;
 
     bool first = true;
     bool has_collation = false;
     bool quiet = false;
+    bool average_block_sizes = false;
 
     /// May be smaller or equal to max_block_size. To do 'reserve' for columns.
     size_t expected_block_size = 0;
@@ -157,7 +118,7 @@ protected:
     using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
     QueueWithCollation queue_with_collation;
 
-    /// Used in Vertical merge algorithm to gather non-PK columns (on next step)
+    /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf;
 
@@ -198,7 +159,7 @@ protected:
     }
 
     template <typename TSortCursor>
-    void setRowRef(RowRef & row_ref, TSortCursor & cursor)
+    void setRowRef(SharedBlockRowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;
         row_ref.shared_block = source_blocks[cursor.impl->order];
@@ -206,7 +167,7 @@ protected:
     }
 
     template <typename TSortCursor>
-    void setPrimaryKeyRef(RowRef & row_ref, TSortCursor & cursor)
+    void setPrimaryKeyRef(SharedBlockRowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;
         row_ref.shared_block = source_blocks[cursor.impl->order];

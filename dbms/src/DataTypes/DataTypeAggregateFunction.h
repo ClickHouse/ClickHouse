@@ -29,13 +29,14 @@ public:
     std::string getFunctionName() const { return function->getName(); }
     AggregateFunctionPtr getFunction() const { return function; }
 
-    std::string getName() const override;
+    std::string doGetName() const override;
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
     bool canBeInsideNullable() const override { return false; }
 
     DataTypePtr getReturnType() const { return function->getReturnType(); }
+    DataTypePtr getReturnTypeToPredict() const { return function->getReturnTypeToPredict(); }
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
@@ -51,11 +52,15 @@ public:
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 

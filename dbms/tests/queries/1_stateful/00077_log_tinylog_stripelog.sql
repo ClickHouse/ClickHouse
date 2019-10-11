@@ -1,3 +1,5 @@
+SET check_query_single_value_result = 1;
+
 DROP TABLE IF EXISTS test.hits_log;
 DROP TABLE IF EXISTS test.hits_tinylog;
 DROP TABLE IF EXISTS test.hits_stripelog;

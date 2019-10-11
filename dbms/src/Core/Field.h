@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <vector>
 #include <algorithm>
 #include <type_traits>
@@ -23,12 +24,54 @@ namespace ErrorCodes
     extern const int BAD_GET;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+template <typename T>
+struct NearestFieldTypeImpl;
+
+template <typename T>
+using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 
 class Field;
 using Array = std::vector<Field>;
 using TupleBackend = std::vector<Field>;
 STRONG_TYPEDEF(TupleBackend, Tuple) /// Array and Tuple are different types with equal representation inside Field.
+
+struct AggregateFunctionStateData
+{
+    String name; /// Name with arguments.
+    String data;
+
+    bool operator < (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator < is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator <= (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator <= is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator > (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator > is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator >= (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator >= is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator == (const AggregateFunctionStateData & rhs) const
+    {
+        if (name != rhs.name)
+            throw Exception("Comparing aggregate functions with different types: " + name + " and " + rhs.name,
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return data == rhs.data;
+    }
+};
 
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -131,6 +174,7 @@ public:
             Decimal32  = 19,
             Decimal64  = 20,
             Decimal128 = 21,
+            AggregateFunctionState = 22,
         };
 
         static const int MIN_NON_POD = 16;
@@ -151,6 +195,7 @@ public:
                 case Decimal32:  return "Decimal32";
                 case Decimal64:  return "Decimal64";
                 case Decimal128: return "Decimal128";
+                case AggregateFunctionState: return "AggregateFunctionState";
             }
 
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -325,6 +370,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
+            case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -356,6 +402,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
+            case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -385,6 +432,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
+            case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -398,7 +446,7 @@ public:
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple,
-        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, AggregateFunctionStateData
         > storage;
 
     Types::Which which;
@@ -408,9 +456,16 @@ private:
     template <typename T>
     void createConcrete(T && x)
     {
-        using JustT = std::decay_t<T>;
-        new (&storage) JustT(std::forward<T>(x));
-        which = TypeToEnum<JustT>::value;
+        using UnqualifiedType = std::decay_t<T>;
+        which = TypeToEnum<UnqualifiedType>::value;
+
+        // In both Field and PODArray, small types may be stored as wider types,
+        // e.g. char is stored as UInt64. Field can return this extended value
+        // with get<StorageType>(). To avoid uninitialized results from get(),
+        // we must initialize the entire wide stored type, and not just the
+        // nominal type.
+        using StorageType = NearestFieldType<UnqualifiedType>;
+        new (&storage) StorageType(std::forward<T>(x));
     }
 
     /// Assuming same types.
@@ -418,6 +473,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
+        assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
@@ -449,9 +505,7 @@ private:
             case Types::Decimal32:  f(field.template get<DecimalField<Decimal32>>()); return;
             case Types::Decimal64:  f(field.template get<DecimalField<Decimal64>>()); return;
             case Types::Decimal128: f(field.template get<DecimalField<Decimal128>>()); return;
-
-            default:
-                throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
+            case Types::AggregateFunctionState: f(field.template get<AggregateFunctionStateData>()); return;
         }
     }
 
@@ -504,6 +558,9 @@ private:
             case Types::Tuple:
                 destroy<Tuple>();
                 break;
+            case Types::AggregateFunctionState:
+                destroy<AggregateFunctionStateData>();
+                break;
             default:
                  break;
         }
@@ -534,6 +591,7 @@ template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value 
 template <> struct Field::TypeToEnum<DecimalField<Decimal32>>{ static const Types::Which value = Types::Decimal32; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal64>>{ static const Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static const Types::Which value = Types::Decimal128; };
+template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static const Types::Which value = Types::AggregateFunctionState; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
@@ -547,6 +605,7 @@ template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple
 template <> struct Field::EnumToType<Field::Types::Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
+template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
 
 
 template <typename T>
@@ -576,9 +635,9 @@ T safeGet(Field & field)
 
 template <> struct TypeName<Array> { static std::string get() { return "Array"; } };
 template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; } };
+template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
 
 
-template <typename T> struct NearestFieldTypeImpl;
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
@@ -619,11 +678,10 @@ template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
 template <> struct NearestFieldTypeImpl<bool> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 
-template <typename T>
-using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
+template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
 template <typename T>
-decltype(auto) nearestFieldType(T && x)
+decltype(auto) castToNearestFieldType(T && x)
 {
     using U = NearestFieldType<std::decay_t<T>>;
     if constexpr (std::is_same_v<std::decay_t<T>, U>)
@@ -642,7 +700,7 @@ decltype(auto) nearestFieldType(T && x)
 template <typename T>
 Field::Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *>)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
@@ -650,7 +708,7 @@ template <typename T>
 std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
 Field::operator= (T && rhs)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     using U = decltype(val);
     if (which != TypeToEnum<std::decay_t<U>>::value)
     {
@@ -670,24 +728,25 @@ class WriteBuffer;
 /// It is assumed that all elements of the array have the same type.
 void readBinary(Array & x, ReadBuffer & buf);
 
-inline void readText(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
-inline void readQuoted(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readText(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readQuoted(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
 /// It is assumed that all elements of the array have the same type.
+/// Also write size and type into buf. UInt64 and Int64 is written in variadic size form
 void writeBinary(const Array & x, WriteBuffer & buf);
 
 void writeText(const Array & x, WriteBuffer & buf);
 
-inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
 void readBinary(Tuple & x, ReadBuffer & buf);
 
-inline void readText(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-inline void readQuoted(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readText(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readQuoted(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
 
 void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
 
-inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }

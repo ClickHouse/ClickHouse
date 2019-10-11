@@ -3,6 +3,8 @@
 #include <Core/Types.h>
 #include <Common/UInt128.h>
 
+#include <type_traits>
+
 
 /** Hash functions that are better than the trivial function std::hash.
   *
@@ -12,7 +14,7 @@
   * - in typical implementation of standard library, hash function for integers is trivial and just use lower bits;
   * - traffic is non-uniformly distributed across a day;
   * - we are using open-addressing linear probing hash tables that are most critical to hash function quality,
-  *   and trivial hash function gives disasterous results.
+  *   and trivial hash function gives disastrous results.
   */
 
 /** Taken from MurmurHash. This is Murmur finalizer.
@@ -35,20 +37,20 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
   *  due to high speed (latency 3 + 1 clock cycle, throughput 1 clock cycle).
   * Works only with SSE 4.2 support.
   */
-#if __SSE4_2__
+#ifdef __SSE4_2__
 #include <nmmintrin.h>
 #endif
 
-#if __aarch64__ && __ARM_FEATURE_CRC32
+#if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
 #include <arm_acle.h>
 #include <arm_neon.h>
 #endif
 
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 {
-#if __SSE4_2__
+#ifdef __SSE4_2__
     return _mm_crc32_u64(-1ULL, x);
-#elif __aarch64__ && __ARM_FEATURE_CRC32
+#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     return __crc32cd(-1U, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
@@ -56,8 +58,6 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 #endif
 }
 
-
-template <typename T> struct DefaultHash;
 
 template <typename T>
 inline size_t DefaultHash64(T key)
@@ -72,27 +72,17 @@ inline size_t DefaultHash64(T key)
     return intHash64(u.out);
 }
 
-#define DEFINE_HASH(T) \
-template <> struct DefaultHash<T>\
-{\
-    size_t operator() (T key) const\
-    {\
-        return DefaultHash64<T>(key);\
-    }\
+template <typename T, typename Enable = void>
+struct DefaultHash;
+
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<std::is_arithmetic_v<T>>>
+{
+    size_t operator() (T key) const
+    {
+        return DefaultHash64<T>(key);
+    }
 };
-
-DEFINE_HASH(DB::UInt8)
-DEFINE_HASH(DB::UInt16)
-DEFINE_HASH(DB::UInt32)
-DEFINE_HASH(DB::UInt64)
-DEFINE_HASH(DB::Int8)
-DEFINE_HASH(DB::Int16)
-DEFINE_HASH(DB::Int32)
-DEFINE_HASH(DB::Int64)
-DEFINE_HASH(DB::Float32)
-DEFINE_HASH(DB::Float64)
-
-#undef DEFINE_HASH
 
 
 template <typename T> struct HashCRC32;
@@ -160,7 +150,7 @@ struct TrivialHash
   * NOTE Salting is far from perfect, because it commutes with first steps of calculation.
   *
   * NOTE As mentioned, this function is slower than intHash64.
-  * But occasionaly, it is faster, when written in a loop and loop is vectorized.
+  * But occasionally, it is faster, when written in a loop and loop is vectorized.
   */
 template <DB::UInt64 salt>
 inline DB::UInt32 intHash32(DB::UInt64 key)

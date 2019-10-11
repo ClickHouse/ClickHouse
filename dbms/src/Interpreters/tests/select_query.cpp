@@ -31,6 +31,7 @@ try
     DateLUT::instance();
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     context.setPath("./");
 
@@ -38,14 +39,14 @@ try
 
     DatabasePtr system = std::make_shared<DatabaseOrdinary>("system", "./metadata/system/", context);
     context.addDatabase("system", system);
-    system->loadTables(context, nullptr, false);
+    system->loadTables(context, false);
     attachSystemTablesLocal(*context.getDatabase("system"));
     context.setCurrentDatabase("default");
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-    executeQuery(in, out, /* allow_into_outfile = */ false, context, {});
+    executeQuery(in, out, /* allow_into_outfile = */ false, context, {}, {});
 
     return 0;
 }

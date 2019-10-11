@@ -1,22 +1,20 @@
 #pragma once
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
-#include <ext/singleton.h>
 #include <condition_variable>
 #include <future>
 #include <mutex>
 #include <map>
 #include <IO/AIO.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
 {
 
-class AIOContextPool : public ext::singleton<AIOContextPool>
+class AIOContextPool : private boost::noncopyable
 {
-    friend class ext::singleton<AIOContextPool>;
-
     static const auto max_concurrent_events = 128;
     static const auto timeout_sec = 1;
 
@@ -32,7 +30,7 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
     std::map<ID, std::promise<BytesRead>> promises;
 
     std::atomic<bool> cancelled{false};
-    std::thread io_completion_monitor{&AIOContextPool::doMonitor, this};
+    ThreadFromGlobalPool io_completion_monitor{&AIOContextPool::doMonitor, this};
 
     ~AIOContextPool();
 
@@ -44,6 +42,8 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
     void reportExceptionToAnyProducer();
 
 public:
+    static AIOContextPool & instance();
+
     /// Request AIO read operation for iocb, returns a future with number of bytes read
     std::future<BytesRead> post(struct iocb & iocb);
 };

@@ -5,8 +5,6 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -60,10 +58,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
 
-    if (database)
-        query->database = typeid_cast<const ASTIdentifier &>(*database).name;
-    if (table)
-        query->table = typeid_cast<const ASTIdentifier &>(*table).name;
+    tryGetIdentifierNameInto(database, query->database);
+    tryGetIdentifierNameInto(table, query->table);
 
     query->cluster = cluster_str;
     query->partition = partition;

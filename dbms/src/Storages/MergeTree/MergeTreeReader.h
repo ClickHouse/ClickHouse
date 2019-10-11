@@ -1,10 +1,7 @@
 #pragma once
 
-#include <Storages/MarkCache.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <port/clock.h>
 
 
@@ -12,9 +9,6 @@ namespace DB
 {
 
 class IDataType;
-class CachedCompressedReadBuffer;
-class CompressedReadBufferFromFile;
-
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
@@ -25,16 +19,16 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
-    MergeTreeReader(const String & path, /// Path to the directory containing the part
-        const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-        UncompressedCache * uncompressed_cache,
-        MarkCache * mark_cache,
-        bool save_marks_in_cache,
-        const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
-        size_t aio_threshold, size_t max_read_buffer_size,
-        const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
-        clockid_t clock_type = CLOCK_MONOTONIC_COARSE);
+    MergeTreeReader(const String & path_, /// Path to the directory containing the part
+        const MergeTreeData::DataPartPtr & data_part_, const NamesAndTypesList & columns_,
+        UncompressedCache * uncompressed_cache_,
+        MarkCache * mark_cache_,
+        bool save_marks_in_cache_,
+        const MergeTreeData & storage_, const MarkRanges & all_mark_ranges_,
+        size_t aio_threshold_, size_t max_read_buffer_size_,
+        const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
+        clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
 
     ~MergeTreeReader();
 
@@ -57,45 +51,14 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
-private:
-    class Stream
+    MergeTreeData::DataPartPtr data_part;
+
+    size_t getFirstMarkToRead() const
     {
-    public:
-        Stream(
-            const String & path_prefix_, const String & extension_, size_t marks_count_,
-            const MarkRanges & all_mark_ranges,
-            MarkCache * mark_cache, bool save_marks_in_cache,
-            UncompressedCache * uncompressed_cache,
-            size_t aio_threshold, size_t max_read_buffer_size,
-            const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
-
-        void seekToMark(size_t index);
-        void seekToStart();
-
-        ReadBuffer * data_buffer;
-
-    private:
-        Stream() = default;
-
-        /// NOTE: lazily loads marks from the marks cache.
-        const MarkInCompressedFile & getMark(size_t index);
-
-        void loadMarks();
-
-        std::string path_prefix;
-        std::string extension;
-
-        size_t marks_count;
-
-        MarkCache * mark_cache;
-        bool save_marks_in_cache;
-        MarkCache::MappedPtr marks;
-
-        std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
-        std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
-    };
-
-    using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
+        return all_mark_ranges.back().begin;
+    }
+private:
+    using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -103,7 +66,6 @@ private:
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     /// Path to the directory containing the part
     String path;
-    MergeTreeData::DataPartPtr data_part;
 
     FileStreams streams;
 
@@ -119,9 +81,8 @@ private:
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;
-    size_t index_granularity;
 
-    void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+    void addStreams(const String & name, const IDataType & type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(

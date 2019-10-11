@@ -1,9 +1,13 @@
 #include <Core/Defines.h>
 #include <Common/Arena.h>
+#include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
+
+#include <common/unaligned.h>
 
 
 namespace DB
@@ -65,7 +69,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     if (length == 0)
         return;
 
-    const ColumnString & src_concrete = static_cast<const ColumnString &>(src);
+    const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
 
     if (start + length > src_concrete.offsets.size())
         throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
@@ -85,7 +89,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     else
     {
         size_t old_size = offsets.size();
-        size_t prev_max_offset = old_size ? offsets.back() : 0;
+        size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
         offsets.resize(old_size + length);
 
         for (size_t i = 0; i < length; ++i)
@@ -146,7 +150,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = perm[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -176,13 +180,13 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 {
-    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    const size_t string_size = unalignedLoad<size_t>(pos);
     pos += sizeof(string_size);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size;
     chars.resize(new_size);
-    memcpy(&chars[old_size], pos, string_size);
+    memcpy(chars.data() + old_size, pos, string_size);
 
     offsets.push_back(new_size);
     return pos + string_size;
@@ -217,7 +221,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -237,15 +241,11 @@ struct ColumnString::less
     explicit less(const ColumnString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        size_t left_len = parent.sizeAt(lhs);
-        size_t right_len = parent.sizeAt(rhs);
+        int res = memcmpSmallAllowOverflow15(
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
-        int res = memcmp(&parent.chars[parent.offsetAt(lhs)], &parent.chars[parent.offsetAt(rhs)], std::min(left_len, right_len));
-
-        if (res != 0)
-            return positive ? (res < 0) : (res > 0);
-        else
-            return positive ? (left_len < right_len) : (left_len > right_len);
+        return positive ? (res < 0) : (res > 0);
     }
 };
 
@@ -361,7 +361,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
 {
-    const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
+    const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
 
     return collator.compare(
         reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),
@@ -411,6 +411,13 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, bool r
         else
             std::sort(res.begin(), res.end(), lessWithCollation<true>(*this, collator));
     }
+}
+
+
+void ColumnString::protect()
+{
+    getChars().protect();
+    getOffsets().protect();
 }
 
 }

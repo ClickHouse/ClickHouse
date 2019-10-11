@@ -12,3 +12,7 @@ SELECT transform(1, [2, 3], ['Яндекс', 'Google'], 'Остальные') AS
 SELECT transform(2, [2, 3], ['Яндекс', 'Google'], 'Остальные') AS title;
 SELECT transform(3, [2, 3], ['Яндекс', 'Google'], 'Остальные') AS title;
 SELECT transform(4, [2, 3], ['Яндекс', 'Google'], 'Остальные') AS title;
+SELECT transform('hello', 'wrong', 1); -- { serverError 43 }
+SELECT transform('hello', ['wrong'], 1); -- { serverError 43 }
+SELECT transform('hello', ['wrong'], [1]); -- { serverError 43 }
+SELECT transform(tuple(1), ['sdf'], [1]); -- { serverError 43 }

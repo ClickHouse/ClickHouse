@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
@@ -27,17 +28,15 @@ ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicated
     , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeAlterThread)")
     , log(&Logger::get(log_name))
 {
-    task = storage_.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage_.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeAlterThread::run()
 {
-    bool force_recheck_parts = true;
-
     try
     {
         /** We have a description of columns in ZooKeeper, common for all replicas (Example: /clickhouse/tables/02-06/visits/columns),
-          *  as well as a description of columns in local file with metadata (storage.data.getColumnsList()).
+          *  as well as a description of columns in local file with metadata (storage.getColumnsList()).
           *
           * If these descriptions are different - you need to do ALTER.
           *
@@ -84,10 +83,11 @@ void ReplicatedMergeTreeAlterThread::run()
 
         const String & metadata_str = metadata_znode.contents;
         auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-        auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage.data).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
 
-        /// If you need to lock table structure, then suspend merges.
-        ActionLock merge_blocker = storage.merger_mutator.actions_blocker.cancel();
+        /// If you need to lock table structure, then suspend merges and moves.
+        ActionLock merge_blocker = storage.merger_mutator.merges_blocker.cancel();
+        ActionLock moves_blocker = storage.parts_mover.moves_blocker.cancel();
 
         MergeTreeData::DataParts parts;
 
@@ -107,7 +107,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
             LOG_INFO(log, "Version of metadata nodes in ZooKeeper changed. Waiting for structure write lock.");
 
-            auto table_lock = storage.lockStructureForAlter();
+            auto table_lock = storage.lockExclusively(RWLockImpl::NO_QUERY);
 
             if (columns_in_zk == storage.getColumns() && metadata_diff.empty())
             {
@@ -124,7 +124,7 @@ void ReplicatedMergeTreeAlterThread::run()
             }
 
             /// You need to get a list of parts under table lock to avoid race condition with merge.
-            parts = storage.data.getDataParts();
+            parts = storage.getDataParts();
 
             storage.columns_version = columns_version;
             storage.metadata_version = metadata_version;
@@ -133,7 +133,7 @@ void ReplicatedMergeTreeAlterThread::run()
         /// Update parts.
         if (changed_columns_version || force_recheck_parts)
         {
-            auto table_lock = storage.lockStructure(false);
+            auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
             if (changed_columns_version)
                 LOG_INFO(log, "ALTER-ing parts");
@@ -141,50 +141,28 @@ void ReplicatedMergeTreeAlterThread::run()
             int changed_parts = 0;
 
             if (!changed_columns_version)
-                parts = storage.data.getDataParts();
+                parts = storage.getDataParts();
 
             const auto columns_for_parts = storage.getColumns().getAllPhysical();
+            const auto indices_for_parts = storage.getIndices();
 
             for (const MergeTreeData::DataPartPtr & part : parts)
             {
                 /// Update the part and write result to temporary files.
                 /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                 /// node /flags/force_alter.
-                auto transaction = storage.data.alterDataPart(part, columns_for_parts, nullptr, false);
-
-                if (!transaction)
+                MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+                storage.alterDataPart(columns_for_parts, indices_for_parts.indices, false, transaction);
+                if (!transaction->isValid())
                     continue;
 
+                storage.updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
+
                 ++changed_parts;
-
-                /// Update part metadata in ZooKeeper.
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/checksums",
-                    storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
-                    -1));
-
-                try
-                {
-                    zookeeper->multi(ops);
-                }
-                catch (const Coordination::Exception & e)
-                {
-                    /// The part does not exist in ZK. We will add to queue for verification - maybe the part is superfluous, and it must be removed locally.
-                    if (e.code == Coordination::ZNONODE)
-                        storage.enqueuePartForCheck(part->name);
-
-                    throw;
-                }
-
-                /// Apply file changes.
-                transaction->commit();
             }
 
             /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN
-            storage.data.recalculateColumnSizes();
+            storage.recalculateColumnSizes();
 
             if (changed_columns_version)
             {

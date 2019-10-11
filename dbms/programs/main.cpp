@@ -1,3 +1,4 @@
+#include <new>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -9,21 +10,19 @@
 #if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
 #include <common/config_common.h>
 #endif
-#if __has_include(<Common/config.h>)
-#include <Common/config.h>
+#if __has_include("config_core.h")
+#include "config_core.h"
 #endif
 
 #if USE_TCMALLOC
-#include <gperftools/malloc_extension.h> // Y_IGNORE
+#include <gperftools/malloc_extension.h>
 #endif
 
-#if ENABLE_CLICKHOUSE_SERVER
-#include "server/Server.h"
-#endif
-#if ENABLE_CLICKHOUSE_LOCAL
-#include "local/LocalServer.h"
-#endif
 #include <Common/StringUtils/StringUtils.h>
+
+#include <common/phdr_cache.h>
+#include <ext/scope_guard.h>
+
 
 /// Universal executable for various clickhouse applications
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
@@ -38,7 +37,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
+#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
@@ -53,18 +52,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
+#if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_ODBC_BRIDGE || !defined(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-int mainEntryClickHouseODBCBridge(int argc, char ** argv);
-#endif
 
-
-#if USE_EMBEDDED_COMPILER
-    int mainEntryClickHouseClang(int argc, char ** argv);
-    int mainEntryClickHouseLLD(int argc, char ** argv);
-#endif
 
 namespace
 {
@@ -87,7 +78,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
     {"server", mainEntryClickHouseServer},
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
+#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
     {"performance-test", mainEntryClickHousePerformanceTest},
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
@@ -102,17 +93,8 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
     {"copier", mainEntryClickHouseClusterCopier},
 #endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
+#if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
     {"obfuscator", mainEntryClickHouseObfuscator},
-#endif
-#if ENABLE_CLICKHOUSE_ODBC_BRIDGE || !defined(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-    {"odbc-bridge", mainEntryClickHouseODBCBridge},
-#endif
-
-#if USE_EMBEDDED_COMPILER
-    {"clang", mainEntryClickHouseClang},
-    {"clang++", mainEntryClickHouseClang},
-    {"lld", mainEntryClickHouseLLD},
 #endif
 };
 
@@ -149,12 +131,27 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 }
 
 
+/// This allows to implement assert to forbid initialization of a class in static constructors.
+/// Usage:
+///
+/// extern bool inside_main;
+/// class C { C() { assert(inside_main); } };
+bool inside_main = false;
+
+
 int main(int argc_, char ** argv_)
 {
-#if USE_EMBEDDED_COMPILER
-    if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
-        return mainEntryClickHouseClang(argc_, argv_);
-#endif
+    inside_main = true;
+    SCOPE_EXIT({ inside_main = false; });
+
+    /// Reset new handler to default (that throws std::bad_alloc)
+    /// It is needed because LLVM library clobbers it.
+    std::set_new_handler(nullptr);
+
+    /// PHDR cache is required for query profiler to work reliably
+    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
+    ///  will work only after additional call of this function.
+    updatePHDRCache();
 
 #if USE_TCMALLOC
     /** Without this option, tcmalloc returns memory to OS too frequently for medium-sized memory allocations

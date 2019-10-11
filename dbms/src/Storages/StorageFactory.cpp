@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -46,6 +46,7 @@ StoragePtr StorageFactory::get(
     Context & local_context,
     Context & context,
     const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
     bool attach,
     bool has_force_restore_data_flag) const
 {
@@ -59,6 +60,14 @@ StoragePtr StorageFactory::get(
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
         name = "View";
+    }
+    else if (query.is_live_view)
+    {
+
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
+
+        name = "LiveView";
     }
     else
     {
@@ -86,19 +95,20 @@ StoragePtr StorageFactory::get(
 
             name = engine_def.name;
 
-            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka")
+            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join")
             {
                 throw Exception(
                     "Engine " + name + " doesn't support SETTINGS clause. "
-                    "Currently only the MergeTree family of engines and Kafka engine supports it",
+                    "Currently only the MergeTree family of engines, Kafka engine and Join engine support it",
                     ErrorCodes::BAD_ARGUMENTS);
             }
 
-            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
+            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by ||
+                 (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses. "
+                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses and skipping indices. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 
@@ -114,12 +124,24 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
+            else if (name == "LiveView")
+            {
+                throw Exception(
+                    "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
+                    ErrorCodes::INCORRECT_QUERY);
+            }
         }
     }
 
     auto it = storages.find(name);
     if (it == storages.end())
-        throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
+    {
+        auto hints = getHints(name);
+        if (!hints.empty())
+            throw Exception("Unknown table engine " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_STORAGE);
+        else
+            throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
+    }
 
     Arguments arguments
     {
@@ -133,11 +155,18 @@ StoragePtr StorageFactory::get(
         .local_context = local_context,
         .context = context,
         .columns = columns,
+        .constraints = constraints,
         .attach = attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 
     return it->second(arguments);
+}
+
+StorageFactory & StorageFactory::instance()
+{
+    static StorageFactory ret;
+    return ret;
 }
 
 }

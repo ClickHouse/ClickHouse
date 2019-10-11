@@ -13,7 +13,7 @@ Connected to ClickHouse server version 0.0.26176.
 
 The client supports command-line options and configuration files. For more information, see "[Configuring](#interfaces_cli_configuration)".
 
-## Usage
+## Usage {#cli_usage}
 
 The client can be used in interactive and non-interactive (batch) mode.
 To use batch mode, specify the 'query' parameter, or send data to 'stdin' (it verifies that 'stdin' is not a terminal), or both.
@@ -22,14 +22,14 @@ Similar to the HTTP interface, when using the 'query' parameter and sending data
 Example of using the client to insert data:
 
 ```bash
-echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 
-cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 3, 'some text', '2016-08-14 00:00:00'
 4, 'some more text', '2016-08-14 00:00:01'
 _EOF
 
-cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
@@ -65,9 +65,32 @@ You can cancel a long query by pressing Ctrl+C. However, you will still need to 
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
-<a name="interfaces_cli_configuration"></a>
+### Queries with Parameters {#cli-queries-with-parameters}
 
-## Configuring
+You can create a query with parameters and pass values to them from client application. This allows to avoid formatting query with specific dynamic values on client side. For example:
+
+```bash
+$ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+```
+
+#### Query Syntax {#cli-queries-with-parameters-syntax}
+
+Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
+
+```sql
+{<name>:<data type>}
+```
+
+- `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
+- `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+
+#### Example
+
+```bash
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+```
+
+## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 
@@ -81,7 +104,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 ### Command Line Options
 
-- `--host, -h` -– The server name, 'localhost' by default.  You can use either the name or the IPv4 or IPv6 address.
+- `--host, -h` -– The server name, 'localhost' by default. You can use either the name or the IPv4 or IPv6 address.
 - `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
 - `--user, -u` – The username. Default value: default.
 - `--password` – The password. Default value: empty string.
@@ -93,15 +116,18 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as '--format=Vertical'. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 - `--time, -t` – If specified, print the query execution time to 'stderr' in non-interactive mode.
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
-- `-config-file` – The name of the configuration file.
+- `--config-file` – The name of the configuration file.
+- `--secure` – If specified, will connect to server over secure connection.
+- `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+
 
 ### Configuration Files
 
-`clickhouse-client`  uses the first existing file of the following:
+`clickhouse-client` uses the first existing file of the following:
 
 - Defined in the `-config-file` parameter.
 - `./clickhouse-client.xml`
-- `\~/.clickhouse-client/config.xml`
+- `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`
 
 Example of a config file:
@@ -110,6 +136,7 @@ Example of a config file:
 <config>
     <user>username</user>
     <password>password</password>
+    <secure>False</secure>
 </config>
 ```
 

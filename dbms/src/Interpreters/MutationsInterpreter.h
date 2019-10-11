@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/IStorage.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/MutationCommands.h>
 
 
@@ -13,7 +13,7 @@ namespace DB
 
 class Context;
 
-/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs)
+/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
 {
@@ -25,20 +25,28 @@ public:
     {
     }
 
-    void validate();
+    void validate(TableStructureReadLockHolder & table_lock_holder);
+
+    size_t evaluateCommandsSize();
 
     /// Return false if the data isn't going to be changed by mutations.
     bool isStorageTouchedByMutations() const;
 
-    /// The resulting stream will return blocks containing changed columns only.
-    BlockInputStreamPtr execute();
+    /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
+    BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
+
+    /// Only changed columns.
+    const Block & getUpdatedHeader() const;
 
 private:
-    void prepare(bool dry_run);
+    ASTPtr prepare(bool dry_run);
 
-    BlockInputStreamPtr addStreamsForLaterStages(BlockInputStreamPtr in) const;
+    struct Stage;
 
-private:
+    ASTPtr prepareQueryAffectedAST() const;
+    ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
+    BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
+
     StoragePtr storage;
     std::vector<MutationCommand> commands;
     const Context & context;
@@ -59,7 +67,7 @@ private:
 
     struct Stage
     {
-        Stage(const Context & context) : expressions_chain(context) {}
+        Stage(const Context & context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -77,7 +85,7 @@ private:
         Names filter_column_names;
     };
 
-    std::unique_ptr<InterpreterSelectQuery> interpreter_select;
+    std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
 };

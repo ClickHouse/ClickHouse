@@ -6,13 +6,13 @@
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
     M(PartMutation, "Number of mutations (ALTER DELETE/UPDATE)") \
-    M(ReplicatedFetch, "Number of data parts fetching from replica") \
-    M(ReplicatedSend, "Number of data parts sending to replicas") \
+    M(ReplicatedFetch, "Number of data parts being fetched from replica") \
+    M(ReplicatedSend, "Number of data parts being sent to replicas") \
     M(ReplicatedChecks, "Number of data parts checking for consistency") \
-    M(BackgroundPoolTask, "Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches or replication queue bookkeeping)") \
-    M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic tasks of ReplicatedMergeTree like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
-    M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than total size of currently merging parts.") \
-    M(DistributedSend, "Number of connections sending data, that was INSERTed to Distributed tables, to remote servers. Both synchronous and asynchronous mode.") \
+    M(BackgroundPoolTask, "Number of active tasks in BackgroundProcessingPool (merges, mutations, fetches, or replication queue bookkeeping)") \
+    M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
+    M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
+    M(DistributedSend, "Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.") \
     M(QueryPreempted, "Number of queries that are stopped and waiting due to 'priority' setting.") \
     M(TCPConnection, "Number of connections to TCP server (clients with native interface)") \
     M(HTTPConnection, "Number of connections to HTTP server") \
@@ -45,6 +45,11 @@
     M(RWLockWaitingWriters, "Number of threads waiting for write on a table RWLock.") \
     M(RWLockActiveReaders, "Number of threads holding read lock in a table RWLock.") \
     M(RWLockActiveWriters, "Number of threads holding write lock in a table RWLock.") \
+    M(GlobalThread, "Number of threads in global thread pool.") \
+    M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
+    M(LocalThread, "Number of threads in local thread pools. Should be similar to GlobalThreadActive.") \
+    M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
+    M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
 
 
 namespace CurrentMetrics

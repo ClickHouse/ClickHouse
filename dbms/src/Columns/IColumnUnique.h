@@ -1,6 +1,5 @@
 #pragma once
 #include <Columns/IColumn.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/UInt128.h>
 
 namespace DB
@@ -51,7 +50,6 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     /// Parameter length could be ignored if column values have fixed size.
     virtual size_t uniqueInsertData(const char * pos, size_t length) = 0;
-    virtual size_t uniqueInsertDataWithTerminatingZero(const char * pos, size_t length) = 0;
 
     virtual size_t getDefaultValueIndex() const = 0;  /// Nullable ? getNullValueIndex : getNestedTypeDefaultValueIndex
     virtual size_t getNullValueIndex() const = 0;  /// Throws if not nullable.

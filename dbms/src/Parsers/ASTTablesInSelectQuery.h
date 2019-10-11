@@ -15,7 +15,7 @@ namespace DB
   * or
   *  (subquery)
   *
-  * Optionally with alias (correllation name):
+  * Optionally with alias (correlation name):
   *  [AS] alias
   *
   * Table may contain FINAL and SAMPLE modifiers:
@@ -53,7 +53,7 @@ struct ASTTableExpression : public IAST
     ASTPtr sample_offset;
 
     using IAST::IAST;
-    String getID() const override { return "TableExpression"; }
+    String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -75,18 +75,19 @@ struct ASTTableJoin : public IAST
     {
         Unspecified,
         Any,    /// If there are many suitable rows to join, use any from them (also known as unique JOIN).
-        All        /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
+        All,    /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
+        Asof,   /// For the last JOIN column, pick the latest value
     };
 
     /// Join method.
     enum class Kind
     {
-        Inner,    /// Leave ony rows that was JOINed.
-        Left,    /// If in "right" table there is no corresponding rows, use default values instead.
+        Inner, /// Leave only rows that was JOINed.
+        Left, /// If in "right" table there is no corresponding rows, use default values instead.
         Right,
         Full,
-        Cross,    /// Direct product. Strictness and condition doesn't matter.
-        Comma    /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
+        Cross, /// Direct product. Strictness and condition doesn't matter.
+        Comma /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
     };
 
     Locality locality = Locality::Unspecified;
@@ -98,13 +99,23 @@ struct ASTTableJoin : public IAST
     ASTPtr on_expression;
 
     using IAST::IAST;
-    String getID() const override { return "TableJoin"; }
+    String getID(char) const override { return "TableJoin"; }
     ASTPtr clone() const override;
 
     void formatImplBeforeTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
+
+inline bool isLeft(ASTTableJoin::Kind kind)         { return kind == ASTTableJoin::Kind::Left; }
+inline bool isRight(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Right; }
+inline bool isInner(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Inner; }
+inline bool isFull(ASTTableJoin::Kind kind)         { return kind == ASTTableJoin::Kind::Full; }
+inline bool isCross(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Cross; }
+inline bool isComma(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Comma; }
+inline bool isRightOrFull(ASTTableJoin::Kind kind)  { return kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full; }
+inline bool isLeftOrFull(ASTTableJoin::Kind kind)   { return kind == ASTTableJoin::Kind::Left  || kind == ASTTableJoin::Kind::Full; }
+inline bool isInnerOrRight(ASTTableJoin::Kind kind) { return kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right; }
 
 
 /// Specification of ARRAY JOIN.
@@ -122,7 +133,7 @@ struct ASTArrayJoin : public IAST
     ASTPtr expression_list;
 
     using IAST::IAST;
-    String getID() const override { return "ArrayJoin"; }
+    String getID(char) const override { return "ArrayJoin"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -139,7 +150,7 @@ struct ASTTablesInSelectQueryElement : public IAST
     ASTPtr array_join;       /// Arrays to JOIN.
 
     using IAST::IAST;
-    String getID() const override { return "TablesInSelectQueryElement"; }
+    String getID(char) const override { return "TablesInSelectQueryElement"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -149,7 +160,7 @@ struct ASTTablesInSelectQueryElement : public IAST
 struct ASTTablesInSelectQuery : public IAST
 {
     using IAST::IAST;
-    String getID() const override { return "TablesInSelectQuery"; }
+    String getID(char) const override { return "TablesInSelectQuery"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

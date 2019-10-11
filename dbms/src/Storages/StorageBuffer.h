@@ -4,6 +4,7 @@
 #include <thread>
 #include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/ThreadPool.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
@@ -38,6 +39,7 @@ class Context;
   */
 class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
+friend struct ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 
@@ -51,7 +53,8 @@ public:
     };
 
     std::string getName() const override { return "Buffer"; }
-    std::string getTableName() const override { return name; }
+    std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
@@ -63,29 +66,45 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
     void shutdown() override;
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
+    {
+        table_name = new_table_name;
+        database_name = new_database_name;
+    }
 
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override { return false; }
+    bool supportsPrewhere() const override
+    {
+        if (no_destination)
+            return false;
+        auto dest = global_context.tryGetTable(destination_database, destination_table);
+        if (dest && dest.get() != this)
+            return dest->supportsPrewhere();
+        return false;
+    }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(
+        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+
+    ~StorageBuffer() override;
 
 private:
-    String name;
+    String table_name;
+    String database_name;
 
-    Context & context;
+    Context global_context;
 
     struct Buffer
     {
@@ -110,7 +129,7 @@ private:
 
     Poco::Event shutdown_event;
     /// Resets data by timeout.
-    std::thread flush_thread;
+    ThreadFromGlobalPool flush_thread;
 
     void flushAllBuffers(bool check_thresholds = true);
     /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.
@@ -127,12 +146,11 @@ protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)
       * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
       */
-    StorageBuffer(const std::string & name_, const ColumnsDescription & columns_,
+    StorageBuffer(const std::string & database_name_, const std::string & table_name_,
+        const ColumnsDescription & columns_, const ConstraintsDescription & constraints_,
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_, bool allow_materialized_);
-
-    ~StorageBuffer() override;
 };
 
 }

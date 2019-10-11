@@ -1,6 +1,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
@@ -14,14 +14,8 @@ namespace DB
 namespace ClusterProxy
 {
 
-BlockInputStreams executeQuery(
-        IStreamFactory & stream_factory, const ClusterPtr & cluster,
-        const ASTPtr & query_ast, const Context & context, const Settings & settings)
+Context removeUserRestrictionsFromSettings(const Context & context, const Settings & settings)
 {
-    BlockInputStreams res;
-
-    const std::string query = queryToString(query_ast);
-
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
 
@@ -38,6 +32,19 @@ BlockInputStreams executeQuery(
 
     Context new_context(context);
     new_context.setSettings(new_settings);
+
+    return new_context;
+}
+
+BlockInputStreams executeQuery(
+    IStreamFactory & stream_factory, const ClusterPtr & cluster,
+    const ASTPtr & query_ast, const Context & context, const Settings & settings)
+{
+    BlockInputStreams res;
+
+    const std::string query = queryToString(query_ast);
+
+    Context new_context = removeUserRestrictionsFromSettings(context, settings);
 
     ThrottlerPtr user_level_throttler;
     if (auto process_list_element = context.getProcessListElement())

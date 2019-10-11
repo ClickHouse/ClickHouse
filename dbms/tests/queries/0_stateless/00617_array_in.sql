@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS test_array_ops;
 CREATE TABLE test_array_ops(arr Array(Nullable(Int64))) ENGINE = Memory;
 

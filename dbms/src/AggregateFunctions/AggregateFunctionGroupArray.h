@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -36,7 +37,7 @@ template <typename T>
 struct GroupArrayNumericData
 {
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedArenaAllocator<4096>;
+    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
 
     Array value;
@@ -48,12 +49,13 @@ class GroupArrayNumericImpl final
     : public IAggregateFunctionDataHelper<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
-    DataTypePtr data_type;
+    DataTypePtr & data_type;
     UInt64 max_elems;
 
 public:
     explicit GroupArrayNumericImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : data_type(data_type_), max_elems(max_elems_) {}
+        : IAggregateFunctionDataHelper<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>({data_type_}, {})
+        , data_type(this->argument_types[0]), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
@@ -67,7 +69,7 @@ public:
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
 
-        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], arena);
+        this->data(place).value.push_back(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -77,12 +79,14 @@ public:
 
         if (!limit_num_elems)
         {
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+            if (rhs_elems.value.size())
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
         }
         else
         {
             UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+            if (elems_to_insert)
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
         }
     }
 
@@ -116,13 +120,16 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
 
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
-        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-        data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        }
     }
 
     bool allocatesMemoryInArena() const override
@@ -185,7 +192,7 @@ struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNo
     /// Create node from string
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        StringRef string = static_cast<const ColumnString &>(column).getDataAt(row_num);
+        StringRef string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
         node->next = nullptr;
@@ -197,7 +204,7 @@ struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNo
 
     void insertInto(IColumn & column)
     {
-        static_cast<ColumnString &>(column).insertData(data(), size);
+        assert_cast<ColumnString &>(column).insertData(data(), size);
     }
 };
 
@@ -243,12 +250,13 @@ class GroupArrayGeneralListImpl final
     static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
-    DataTypePtr data_type;
+    DataTypePtr & data_type;
     UInt64 max_elems;
 
 public:
-    GroupArrayGeneralListImpl(const DataTypePtr & data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : data_type(data_type), max_elems(max_elems_) {}
+    GroupArrayGeneralListImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>({data_type_}, {})
+        , data_type(this->argument_types[0]), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
@@ -367,16 +375,16 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & column_array = static_cast<ColumnArray &>(to);
+        auto & column_array = assert_cast<ColumnArray &>(to);
 
         auto & offsets = column_array.getOffsets();
-        offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + data(place).elems);
+        offsets.push_back(offsets.back() + data(place).elems);
 
         auto & column_data = column_array.getData();
 
         if (std::is_same_v<Node, GroupArrayListNodeString>)
         {
-            auto & string_offsets = static_cast<ColumnString &>(column_data).getOffsets();
+            auto & string_offsets = assert_cast<ColumnString &>(column_data).getOffsets();
             string_offsets.reserve(string_offsets.size() + data(place).elems);
         }
 

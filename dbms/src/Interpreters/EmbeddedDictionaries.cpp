@@ -1,15 +1,11 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
-#include <Dictionaries/Embedded/IGeoDictionariesLoader.h>
+#include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
-#include <Common/config.h>
 #include <common/logger_useful.h>
-
 #include <Poco/Util/Application.h>
 
 
@@ -64,7 +60,7 @@ bool EmbeddedDictionaries::reloadDictionary(
 
 bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool force_reload)
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
 
     /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
       * If there are no old correct directories, then when using functions that depend on them,
@@ -75,22 +71,6 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
     LOG_INFO(log, "Loading dictionaries.");
 
     bool was_exception = false;
-
-#if USE_MYSQL
-    DictionaryReloader<TechDataHierarchy> reload_tech_data = [=] (const Poco::Util::AbstractConfiguration & config)
-        -> std::unique_ptr<TechDataHierarchy>
-    {
-        if (!TechDataHierarchy::isConfigured(config))
-            return {};
-
-        auto dictionary = std::make_unique<TechDataHierarchy>();
-        dictionary->reload();
-        return dictionary;
-    };
-
-    if (!reloadDictionary<TechDataHierarchy>(tech_data_hierarchy, reload_tech_data, throw_on_error, force_reload))
-        was_exception = true;
-#endif
 
     DictionaryReloader<RegionsHierarchies> reload_regions_hierarchies = [=] (const Poco::Util::AbstractConfiguration & config)
     {
@@ -141,7 +121,7 @@ void EmbeddedDictionaries::reloadPeriodically()
 
 
 EmbeddedDictionaries::EmbeddedDictionaries(
-    std::unique_ptr<IGeoDictionariesLoader> geo_dictionaries_loader_,
+    std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader_,
     Context & context_,
     const bool throw_on_error)
     : log(&Logger::get("EmbeddedDictionaries"))
@@ -150,7 +130,7 @@ EmbeddedDictionaries::EmbeddedDictionaries(
     , reload_period(context_.getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
 {
     reloadImpl(throw_on_error);
-    reloading_thread = std::thread([this] { reloadPeriodically(); });
+    reloading_thread = ThreadFromGlobalPool([this] { reloadPeriodically(); });
 }
 
 

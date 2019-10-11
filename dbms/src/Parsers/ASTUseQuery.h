@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ public:
     String database;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "UseQuery_" + database; }
+    String getID(char delim) const override { return "UseQuery" + (delim + database); }
 
     ASTPtr clone() const override { return std::make_shared<ASTUseQuery>(*this); }
 

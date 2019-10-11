@@ -4,8 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -n --query="
-    DROP TABLE IF EXISTS test.test_readonly;
-    CREATE TABLE test.test_readonly (
+    DROP TABLE IF EXISTS test_readonly;
+    CREATE TABLE test_readonly (
         ID Int
     ) Engine=Memory;
 ";
@@ -27,7 +27,7 @@ CODE=$?;
 # Try to insert into exists (non temporary) table
 $CLICKHOUSE_CLIENT -n --query="
     SET readonly = 1;
-    INSERT INTO test.test_readonly (ID) VALUES (1);
+    INSERT INTO test_readonly (ID) VALUES (1);
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "164" ] && [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;
@@ -35,7 +35,7 @@ CODE=$?;
 # Try to drop exists (non temporary) table
 $CLICKHOUSE_CLIENT -n --query="
     SET readonly = 1;
-    DROP TABLE test.test_readonly;
+    DROP TABLE test_readonly;
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "164" ] && [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;
@@ -59,7 +59,7 @@ CODE=$?;
 # Try to insert into exists (non temporary) table
 $CLICKHOUSE_CLIENT -n --query="
     SET readonly = 2;
-    INSERT INTO test.test_readonly (ID) VALUES (1);
+    INSERT INTO test_readonly (ID) VALUES (1);
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "164" ] && [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;
@@ -67,7 +67,7 @@ CODE=$?;
 # Try to drop exists (non temporary) table
 $CLICKHOUSE_CLIENT -n --query="
     SET readonly = 2;
-    DROP TABLE test.test_readonly;
+    DROP TABLE test_readonly;
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "164" ] && [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;
@@ -91,7 +91,7 @@ CODE=$?;
 # Try to insert into exists (non temporary) table
 $CLICKHOUSE_CLIENT -n --query="
     SET readonly = 0;
-    INSERT INTO test.test_readonly (ID) VALUES (1);
+    INSERT INTO test_readonly (ID) VALUES (1);
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;
@@ -99,10 +99,10 @@ CODE=$?;
 # Try to drop exists (non temporary) table
 $CLICKHOUSE_CLIENT -n --query="
     SET readonly = 0;
-    DROP TABLE test.test_readonly;
+    DROP TABLE test_readonly;
 " 2> /dev/null;
 CODE=$?;
 [ "$CODE" -ne "0" ] && echo "Fail" && exit $CODE;
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.test_readonly;";
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_readonly;";
 

@@ -10,11 +10,11 @@
 
 #include <city.h>
 
-#if __SSE2__
+#if defined(__SSE2__)
     #include <emmintrin.h>
 #endif
 
-#if __SSE4_2__
+#if defined(__SSE4_2__)
     #include <smmintrin.h>
     #include <nmmintrin.h>
 #endif
@@ -39,7 +39,7 @@ struct StringRef
 using StringRefs = std::vector<StringRef>;
 
 
-#if __SSE2__
+#if defined(__SSE2__)
 
 /** Compare strings for equality.
   * The approach is controversial and does not win in all cases.
@@ -133,7 +133,7 @@ inline bool operator== (StringRef lhs, StringRef rhs)
     if (lhs.size == 0)
         return true;
 
-#if __SSE2__
+#if defined(__SSE2__)
     return memequalSSE2Wide(lhs.data, rhs.data, lhs.size);
 #else
     return 0 == memcmp(lhs.data, rhs.data, lhs.size);
@@ -174,7 +174,7 @@ struct StringRefHash64
     }
 };
 
-#if __SSE4_2__
+#if defined(__SSE4_2__)
 
 /// Parts are taken from CityHash.
 
@@ -288,7 +288,7 @@ namespace std
 
 namespace ZeroTraits
 {
-    inline bool check(StringRef x) { return 0 == x.size; }
+    inline bool check(const StringRef & x) { return 0 == x.size; }
     inline void set(StringRef & x) { x.size = 0; }
 }
 

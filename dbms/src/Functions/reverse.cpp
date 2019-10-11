@@ -97,10 +97,10 @@ public:
             ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            auto col_res = ColumnFixedString::create(col->getN());
-            ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
+            auto col_res = ColumnFixedString::create(col_fixed->getN());
+            ReverseImpl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
             block.getByPosition(result).column = std::move(col_res);
         }
         else
@@ -118,7 +118,7 @@ public:
     static constexpr auto name = "reverse";
     static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderReverse>(context); }
 
-    FunctionBuilderReverse(const Context & context) : context(context) {}
+    FunctionBuilderReverse(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -147,7 +147,7 @@ private:
 
 void registerFunctionReverse(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderReverse>();
+    factory.registerFunction<FunctionBuilderReverse>(FunctionFactory::CaseInsensitive);
 }
 
 }

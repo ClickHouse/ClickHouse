@@ -1,6 +1,5 @@
 # Server settings
 
-<a name="server_settings-builtin_dictionaries_reload_interval"></a>
 
 ## builtin_dictionaries_reload_interval
 
@@ -16,7 +15,6 @@ Default value: 3600.
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-<a name="server_settings-compression"></a>
 
 ## compression
 
@@ -44,7 +42,7 @@ Block field `<case>`:
 - ``min_part_size_ratio`` – The ratio of the minimum size of a table part to the full size of the table.
 - ``method`` – Compression method. Acceptable values ​: ``lz4`` or ``zstd``(experimental).
 
-ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
+ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
 
 **Example**
 
@@ -58,13 +56,12 @@ ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the 
 </compression>
 ```
 
-<a name="server_settings-default_database"></a>
 
 ## default_database
 
 The default database.
 
-To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/show.md#show-databases) query.
 
 **Example**
 
@@ -72,13 +69,12 @@ To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.
 <default_database>default</default_database>
 ```
 
-<a name="server_settings-default_profile"></a>
 
 ## default_profile
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config](#server_settings-users_config).
+Settings profiles are located in the file specified in the parameter `user_config`.
 
 **Example**
 
@@ -86,9 +82,8 @@ Settings profiles are located in the file specified in the parameter [user_confi
 <default_profile>default</default_profile>
 ```
 
-<a name="server_settings-dictionaries_config"></a>
 
-## dictionaries_config
+## dictionaries_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -97,7 +92,7 @@ Path:
 - Specify the absolute path or the path relative to the server config file.
 - The path can contain wildcards \* and ?.
 
-See also "[External dictionaries](../../query_language/dicts/external_dicts.md#dicts-external_dicts)".
+See also "[External dictionaries](../../query_language/dicts/external_dicts.md)".
 
 **Example**
 
@@ -105,9 +100,8 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md#d
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-<a name="server_settings-dictionaries_lazy_load"></a>
 
-## dictionaries_lazy_load
+## dictionaries_lazy_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -123,11 +117,10 @@ The default is `true`.
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-<a name="server_settings-format_schema_path"></a>
 
-## format_schema_path
+## format_schema_path {#server_settings-format_schema_path}
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#format_capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
 **Example**
 
@@ -136,9 +129,7 @@ The path to the directory with the schemes for the input data, such as schemas f
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-<a name="server_settings-graphite"></a>
-
-## graphite
+## graphite {#server_settings-graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -150,7 +141,8 @@ Settings:
 - timeout – The timeout for sending data, in seconds.
 - root_path – Prefix for keys.
 - metrics – Sending data from a :ref:`system_tables-system.metrics` table.
-- events – Sending data from a :ref:`system_tables-system.events` table.
+- events – Sending deltas data accumulated for the time period from a :ref:`system_tables-system.events` table
+- events_cumulative – Sending cumulative data from a :ref:`system_tables-system.events` table
 - asynchronous_metrics – Sending data from a :ref:`system_tables-system.asynchronous_metrics` table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
@@ -166,17 +158,17 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
     <root_path>one_min</root_path>
     <metrics>true</metrics>
     <events>true</events>
+    <events_cumulative>false</events_cumulative>
     <asynchronous_metrics>true</asynchronous_metrics>
 </graphite>
 ```
 
-<a name="server_settings-graphite_rollup"></a>
 
-## graphite_rollup
+## graphite_rollup {#server_settings-graphite_rollup}
 
 Settings for thinning data for Graphite.
 
-For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#table_engines-graphitemergetree).
+For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
 
 **Example**
 
@@ -200,13 +192,12 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 </graphite_rollup_example>
 ```
 
-<a name="server_settings-http_port"></a>
 
 ## http_port/https_port
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#server_settings-openSSL) must be configured.
+If `https_port` is specified, [openSSL](#server_settings-openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
@@ -216,7 +207,6 @@ If `http_port` is specified, the openSSL configuration is ignored even if it is 
 <https>0000</https>
 ```
 
-<a name="server_settings-http_server_default_response"></a>
 
 ## http_server_default_response
 
@@ -232,9 +222,7 @@ Opens `https://tabix.io/` when accessing ` http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-<a name="server_settings-include_from"></a>
-
-## include_from
+## include_from {#server_settings-include_from}
 
 The path to the file with substitutions.
 
@@ -246,7 +234,6 @@ For more information, see the section "[Configuration files](../configuration_fi
 <include_from>/etc/metrica.xml</include_from>
 ```
 
-<a name="server_settings-interserver_http_port"></a>
 
 ## interserver_http_port
 
@@ -258,7 +245,6 @@ Port for exchanging data between ClickHouse servers.
 <interserver_http_port>9009</interserver_http_port>
 ```
 
-<a name="server_settings-interserver_http_host"></a>
 
 ## interserver_http_host
 
@@ -274,21 +260,38 @@ Useful for breaking away from a specific network interface.
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-<a name="server_settings-keep_alive_timeout"></a>
+## interserver_http_credentials {#server-settings-interserver_http_credentials}
 
-## keep_alive_timeout
+The username and password used to authenticate during [replication](../table_engines/replication.md) with the Replicated* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
+By default, the authentication is not used.
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds
+This section contains the following parameters:
+
+- `user` — username.
+- `password` — password.
 
 **Example**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+</interserver_http_credentials>
 ```
 
-<a name="server_settings-listen_host"></a>
 
-## listen_host
+## keep_alive_timeout
+
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
+
+**Example**
+
+```xml
+<keep_alive_timeout>3</keep_alive_timeout>
+```
+
+
+## listen_host {#server_settings-listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -299,9 +302,8 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-<a name="server_settings-logger"></a>
 
-## logger
+## logger {#server_settings-logger}
 
 Logging settings.
 
@@ -341,15 +343,13 @@ Writing to the syslog is also supported. Config example:
 
 Keys:
 
-- user_syslog — Required setting if you want to write to the syslog.
-- address — The host[:порт] of syslogd. If omitted, the local daemon is used.
+- use_syslog — Required setting if you want to write to the syslog.
+- address — The host[:port] of syslogd. If omitted, the local daemon is used.
 - hostname — Optional. The name of the host that logs are sent from.
-- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility)
-in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
+- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
 Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
 - format – Message format. Possible values: ``bsd`` and ``syslog.``
 
-<a name="server_settings-macros"></a>
 
 ## macros
 
@@ -357,7 +357,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section "[Creating replicated tables](../../operations/table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
+For more information, see the section "[Creating replicated tables](../../operations/table_engines/replication.md)".
 
 **Example**
 
@@ -365,11 +365,10 @@ For more information, see the section "[Creating replicated tables](../../operat
 <macros incl="macros" optional="true" />
 ```
 
-<a name="server_settings-mark_cache_size"></a>
 
 ## mark_cache_size
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md).
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -379,7 +378,6 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-<a name="server_settings-max_concurrent_queries"></a>
 
 ## max_concurrent_queries
 
@@ -391,7 +389,6 @@ The maximum number of simultaneously processed requests.
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
-<a name="server_settings-max_connections"></a>
 
 ## max_connections
 
@@ -403,7 +400,6 @@ The maximum number of inbound connections.
 <max_connections>4096</max_connections>
 ```
 
-<a name="server_settings-max_open_files"></a>
 
 ## max_open_files
 
@@ -419,13 +415,12 @@ We recommend using this option in Mac OS X, since the `getrlimit()` function ret
 <max_open_files>262144</max_open_files>
 ```
 
-<a name="server_settings-max_table_size_to_drop"></a>
 
 ## max_table_size_to_drop
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../../operations/table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
 If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
@@ -439,11 +434,10 @@ The value 0 means that you can delete all tables without any restrictions.
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-<a name="server_settings-merge_tree"></a>
 
-## merge_tree
+## merge_tree {#server_settings-merge_tree}
 
-Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Fine tuning for tables in the [MergeTree](../../operations/table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -455,9 +449,8 @@ For more information, see the MergeTreeSettings.h header file.
 </merge_tree>
 ```
 
-<a name="server_settings-openSSL"></a>
 
-## openSSL
+## openSSL {#server_settings-openssl}
 
 SSL client/server configuration.
 
@@ -482,7 +475,7 @@ Keys for server/client settings:
 - requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name>  </invalidCertificateHandler>`` .
+- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
 - disableProtocols – Protocols that are not allowed to use.
 - preferServerCiphers – Preferred server ciphers on the client.
 
@@ -516,33 +509,19 @@ Keys for server/client settings:
 </openSSL>
 ```
 
-<a name="server_settings-part_log"></a>
 
-## part_log
+## part_log {#server_settings-part-log}
 
-Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
-Queries are logged in the ClickHouse table, not in a separate file.
-
-Columns in the log:
-
-- event_time – Date of the event.
-- duration_ms – Duration of the event.
-- event_type – Type of event. 1 – new data part; 2 – merge result; 3 – data part downloaded from replica; 4 – data part deleted.
-- database_name – The name of the database.
-- table_name – Name of the table.
-- part_name – Name of the data part.
-- partition_id – The identifier of the partition.
-- size_in_bytes – Size of the data part in bytes.
-- merged_from – An array of names of data parts that make up the merge (also used when downloading a merged part).
-- merge_time_ms – Time spent on the merge.
+Queries are logged in the [system.part_log](../system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 **Example**
 
@@ -555,9 +534,8 @@ Use the following parameters to configure logging:
 </part_log>
 ```
 
-<a name="server_settings-path"></a>
 
-## path
+## path {#server_settings-path}
 
 The path to the directory containing data.
 
@@ -570,20 +548,19 @@ The path to the directory containing data.
 <path>/var/lib/clickhouse/</path>
 ```
 
-<a name="server_settings-query_log"></a>
 
-## query_log
+## query_log {#server_settings-query-log}
 
-Setting for logging queries received with the [log_queries=1](../settings/settings.md#settings_settings-log_queries) setting.
+Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
-Queries are logged in the ClickHouse table, not in a separate file.
+Queries are logged in the [system.query_log](../system_tables.md#system_tables-query-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table the queries will be logged in.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -598,13 +575,40 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_log>
 ```
 
-<a name="server_settings-remote_servers"></a>
+## query_masking_rules
 
-## remote_servers
+Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
+`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to client. That allows preventing
+sensitive data leakage from SQL queries (like names / emails / personal
+identifiers / credit card numbers etc) to logs.
 
-Configuration of clusters used by the Distributed table engine.
+**Example**
 
-For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md#table_engines-distributed)".
+```xml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```
+
+Config fields:
+- `name` - name for the rule (optional)
+- `regexp` - RE2 compatible regular expression (mandatory)
+- `replace` - substitution string for sensitive data (optional, by default - six asterisks)
+
+The masking rules are applied on whole query (to prevent leaks of sensitive data from malformed / non parsable queries).
+
+`system.events` table have counter `QueryMaskingRulesMatch` which have overall number of query masking rules matches.
+
+For distributed queries each server have to be configured separately, otherwise subquries passed to other
+nodes will be stored without masking.
+
+## remote_servers {#server_settings_remote_servers}
+
+Configuration of clusters used by the [Distributed](../../operations/table_engines/distributed.md) table engine and by the `cluster` table function.
 
 **Example**
 
@@ -614,7 +618,9 @@ For more information, see the section "[Table engines/Distributed](../../operati
 
 For the value of the `incl` attribute, see the section "[Configuration files](../configuration_files.md#configuration_files)".
 
-<a name="server_settings-timezone"></a>
+**See Also**
+
+- [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone
 
@@ -630,9 +636,8 @@ The time zone is necessary for conversions between String and DateTime formats w
 <timezone>Europe/Moscow</timezone>
 ```
 
-<a name="server_settings-tcp_port"></a>
 
-## tcp_port
+## tcp_port {#server_settings-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -642,7 +647,19 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-<a name="server_settings-tmp_path"></a>
+## tcp_port_secure {#server_settings-tcp_port_secure}
+
+TCP port for secure communication with clients. Use it with [OpenSSL](#server_settings-openssl) settings.
+
+**Possible values**
+
+Positive integer.
+
+**Default value**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
 
 ## tmp_path
 
@@ -657,13 +674,12 @@ Path to temporary data for processing large queries.
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-<a name="server_settings-uncompressed_cache_size"></a>
 
-## uncompressed_cache_size
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
 
-There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#settings-use_uncompressed_cache) is enabled.
+There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
@@ -673,9 +689,9 @@ The uncompressed cache is advantageous for very short queries in individual case
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user_files_path
+## user_files_path {#server_settings-user_files_path}
 
-The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md#table_functions-file).
+The directory with user files. Used in the table function [file()](../../query_language/table_functions/file.md).
 
 **Example**
 
@@ -683,7 +699,6 @@ The directory with user files. Used in the  table function [file()](../../query_
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-<a name="server_settings-users_config"></a>
 
 ## users_config
 
@@ -700,23 +715,98 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
-<a name="server_settings-zookeeper"></a>
 
-## zookeeper
+## zookeeper {#server-settings_zookeeper}
 
-Configuration of ZooKeeper servers.
+Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing replica metadata when using replicated tables.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This parameter can be omitted if replicated tables are not used.
+This section contains the following parameters:
 
-For more information, see the section "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
-**Example**
+    For example:
+
+    ```xml
+    <node index="1">
+        <host>example_host</host>
+        <port>2181</port>
+    </node>
+    ```
+
+    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
+
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
+
+**Example configuration**
 
 ```xml
-<zookeeper incl="zookeeper-servers" optional="true" />
+<zookeeper>
+    <node>
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node>
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
+</zookeeper>
 ```
 
+**See Also**
+
+- [Replication](../../operations/table_engines/replication.md)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+
+Storage method for data part headers in ZooKeeper.
+
+This setting only applies to the `MergeTree` family. It can be specified:
+
+- Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
+
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior when the setting changes.
+
+- For each individual table.
+
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behavior of an existing table with this setting does not change, even if the global setting changes.
+
+**Possible values**
+
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
+
+If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
+
+!!! attention
+    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can't downgrade the ClickHouse server to a version that doesn't support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don't upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+
+    Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+
+**Default value:** 0.
+
+## disable_internal_dns_cache {#server-settings-disable_internal_dns_cache}
+
+Disables the internal DNS cache. Recommended for operating ClickHouse in systems
+with frequently changing infrastructure such as Kubernetes.
+
+**Default value:** 0.
+
+## dns_cache_update_period {#server-settings-dns_cache_update_period}
+
+The period of updating IP addresses stored in the ClickHouse internal DNS cache (in seconds).
+The update is performed asynchronously, in a separate system thread.
+
+**Default value**: 15.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

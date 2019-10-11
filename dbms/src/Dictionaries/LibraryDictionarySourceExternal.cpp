@@ -45,7 +45,5 @@ void ClickHouseLibrary::log(ClickHouseLibrary::LogLevel level, ClickHouseLibrary
             if (logger.fatal())
                 logger.fatal(msg);
             break;
-        default:
-            break;
     }
 }

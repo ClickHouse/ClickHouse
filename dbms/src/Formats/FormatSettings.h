@@ -27,6 +27,9 @@ struct FormatSettings
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
+        bool unquoted_null_literal_as_null = false;
+        bool empty_as_default = false;
+        bool null_as_default = false;
     };
 
     CSV csv;
@@ -43,11 +46,23 @@ struct FormatSettings
     struct Values
     {
         bool interpret_expressions = true;
+        bool deduce_templates_of_expressions = true;
+        bool accurate_types_of_literals = true;
     };
 
     Values values;
 
+    struct Template
+    {
+        String resultset_format;
+        String row_format;
+        String row_between_delimiter;
+    };
+
+    Template template_settings;
+
     bool skip_unknown_fields = false;
+    bool with_names_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
 
@@ -60,7 +75,13 @@ struct FormatSettings
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
 
     UInt64 input_allow_errors_num = 0;
-    Float64 input_allow_errors_ratio = 0;
+    Float32 input_allow_errors_ratio = 0;
+
+    struct Parquet
+    {
+        UInt64 row_group_size = 1000000;
+    } parquet;
+
 };
 
 }

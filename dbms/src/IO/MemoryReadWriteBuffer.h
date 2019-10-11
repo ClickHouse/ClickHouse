@@ -11,7 +11,7 @@
 namespace DB
 {
 
-/// Stores data in memory chunks, size of cunks are exponentially increasing during write
+/// Stores data in memory chunks, size of chunks are exponentially increasing during write
 /// Written data could be reread after write
 class MemoryWriteBuffer : public WriteBuffer, public IReadableWriteBuffer, boost::noncopyable, private Allocator<false>
 {

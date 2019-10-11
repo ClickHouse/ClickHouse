@@ -1,9 +1,13 @@
 #include <IO/HTTPCommon.h>
 
-#include <Poco/Version.h>
+#include <Common/config.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
-#include <Common/config.h>
+#include <Common/PoolBase.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
+
+#include <Poco/Version.h>
 
 #if USE_POCO_NETSSL
 #include <Poco/Net/AcceptCertificateHandler.h>
@@ -15,14 +19,11 @@
 #include <Poco/Net/SSLManager.h>
 #endif
 
-#include <tuple>
-#include <unordered_map>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
-#include <Common/PoolBase.h>
-#include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 
+#include <tuple>
+#include <unordered_map>
 #include <sstream>
 
 
@@ -39,6 +40,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int UNSUPPORTED_URI_SCHEME;
+    extern const int TOO_MANY_REDIRECTS;
 }
 
 
@@ -46,11 +48,12 @@ namespace
 {
     void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
-#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
+#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 #else
         session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
 #endif
+        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
     }
 
     bool isHTTPS(const Poco::URI & uri)
@@ -82,7 +85,7 @@ namespace
         session->setPort(port);
 
         /// doesn't work properly without patch
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
         session->setKeepAlive(keep_alive);
 #else
         (void)keep_alive; // Avoid warning: unused parameter
@@ -98,7 +101,6 @@ namespace
         const UInt16 port;
         bool https;
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
-
         ObjectPtr allocObject() override
         {
             return makeHTTPSessionImpl(host, port, https, true);
@@ -111,14 +113,12 @@ namespace
         }
     };
 
-    class HTTPSessionPool : public ext::singleton<HTTPSessionPool>
+    class HTTPSessionPool : private boost::noncopyable
     {
     private:
         using Key = std::tuple<std::string, UInt16, bool>;
         using PoolPtr = std::shared_ptr<SingleEndpointHTTPSessionPool>;
         using Entry = SingleEndpointHTTPSessionPool::Entry;
-
-        friend class ext::singleton<HTTPSessionPool>;
 
         struct Hasher
         {
@@ -139,9 +139,18 @@ namespace
         HTTPSessionPool() = default;
 
     public:
-        Entry getSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t max_connections_per_endpoint)
+        static auto & instance()
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            static HTTPSessionPool instance;
+            return instance;
+        }
+
+        Entry getSession(
+            const Poco::URI & uri,
+            const ConnectionTimeouts & timeouts,
+            size_t max_connections_per_endpoint)
+        {
+            std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
@@ -154,7 +163,28 @@ namespace
             auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
 
+            /// We store exception messages in session data.
+            /// Poco HTTPSession also stores exception, but it can be removed at any time.
+            const auto & sessionData = session->sessionData();
+            if (!sessionData.empty())
+            {
+                auto msg = Poco::AnyCast<std::string>(sessionData);
+                if (!msg.empty())
+                {
+                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session");
+                    /// Host can change IP
+                    const auto ip = DNSResolver::instance().resolveHost(host).toString();
+                    if (ip != session->getHost())
+                    {
+                        session->reset();
+                        session->setHost(ip);
+                        session->attachSessionData({});
+                    }
+                }
+            }
+
             setTimeouts(*session, timeouts);
+
             return session;
         }
     };
@@ -187,24 +217,30 @@ PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Connecti
     return HTTPSessionPool::instance().getSession(uri, timeouts, per_endpoint_pool_size);
 }
 
+bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
 
 std::istream * receiveResponse(
-    Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response)
+    Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, const bool allow_redirects)
 {
-    auto istr = &session.receiveResponse(response);
+    auto & istr = session.receiveResponse(response);
+    assertResponseIsOk(request, response, istr, allow_redirects);
+    return &istr;
+}
+
+void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, const bool allow_redirects)
+{
     auto status = response.getStatus();
 
-    if (status != Poco::Net::HTTPResponse::HTTP_OK)
+    if (!(status == Poco::Net::HTTPResponse::HTTP_OK || (isRedirect(status) && allow_redirects)))
     {
         std::stringstream error_message;
         error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
-                      << response.getReason() << ", body: " << istr->rdbuf();
+                      << response.getReason() << ", body: " << istr.rdbuf();
 
         throw Exception(error_message.str(),
             status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
                                              : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
     }
-    return istr;
 }
 
 }

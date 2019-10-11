@@ -1,11 +1,11 @@
-DROP TABLE IF EXISTS test.clicks;
-DROP TABLE IF EXISTS test.transactions;
+DROP TABLE IF EXISTS clicks;
+DROP TABLE IF EXISTS transactions;
 
-CREATE TABLE test.clicks (domain String) ENGINE = Memory;
-CREATE TABLE test.transactions (domain String) ENGINE = Memory;
+CREATE TABLE clicks (domain String) ENGINE = Memory;
+CREATE TABLE transactions (domain String) ENGINE = Memory;
 
-INSERT INTO test.clicks VALUES ('facebook.com'), ('yandex.ru'), ('google.com');
-INSERT INTO test.transactions VALUES ('facebook.com'), ('yandex.ru'), ('baidu.com');
+INSERT INTO clicks VALUES ('facebook.com'), ('yandex.ru'), ('google.com');
+INSERT INTO transactions VALUES ('facebook.com'), ('yandex.ru'), ('baidu.com');
 
 
 SELECT 
@@ -17,14 +17,14 @@ FROM
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
     UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 ) 
 GROUP BY domain
@@ -42,14 +42,14 @@ FROM
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
 ) 
 GROUP BY domain
@@ -69,14 +69,14 @@ FROM
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
     UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 ) 
 GROUP BY domain
@@ -94,14 +94,14 @@ FROM
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
 ) 
 GROUP BY domain
@@ -122,14 +122,14 @@ FROM
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
     UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 ) 
 GROUP BY domain
@@ -148,14 +148,14 @@ FROM
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
 ) 
 GROUP BY domain
@@ -176,20 +176,20 @@ FROM
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
     UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 ) 
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js1
 ALL FULL OUTER JOIN
 (
 SELECT 
@@ -201,20 +201,20 @@ FROM
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
 ) 
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js2
 USING (total, domain)
 ORDER BY total, domain;
 
@@ -230,20 +230,20 @@ FROM
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
     UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 ) 
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js1
 ALL FULL OUTER JOIN
 (
 SELECT 
@@ -255,20 +255,20 @@ FROM
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
 ) 
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js2
 USING (total, domain)
 ORDER BY total, domain;
 
@@ -284,20 +284,20 @@ FROM
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
     UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 ) 
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js1
 ALL FULL OUTER JOIN
 (
 SELECT 
@@ -309,23 +309,23 @@ FROM
         COUNT(*) AS total_count, 
         SUM(if(domain = 'facebook.com', 1, 0)) AS facebookHits, 
         domain
-    FROM test.clicks 
+    FROM clicks 
     GROUP BY domain
 UNION ALL 
     SELECT 
         COUNT(*) AS total_count, 
         toUInt64(0) AS facebookHits, 
         domain
-    FROM test.transactions 
+    FROM transactions 
     GROUP BY domain
 ) 
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-)
+) js2
 USING (total, domain)
 ORDER BY total, domain;
 
 
-DROP TABLE test.clicks;
-DROP TABLE test.transactions;
+DROP TABLE clicks;
+DROP TABLE transactions;

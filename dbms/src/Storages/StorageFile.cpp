@@ -12,16 +12,24 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Common/parseGlobs.h>
 
 #include <fcntl.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
+
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -38,21 +46,68 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
+namespace
+{
 
-static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
+/* Recursive directory listing with matched paths as a result.
+ * Have the same method in StorageHDFS.
+ */
+std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+{
+    const size_t first_glob = for_match.find_first_of("*?{");
+
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+    const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+
+    const size_t next_slash = suffix_with_globs.find('/', 1);
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
+
+    std::vector<std::string> result;
+    const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
+    if (!fs::exists(fs::path(prefix_without_globs.data())))
+    {
+        return result;
+    }
+    const fs::directory_iterator end;
+    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
+    {
+        const std::string full_path = it->path().string();
+        const size_t last_slash = full_path.rfind('/');
+        const String file_name = full_path.substr(last_slash);
+        const bool looking_for_directory = next_slash != std::string::npos;
+        /// Condition is_directory means what kind of path is it in current iteration of ls
+        if (!fs::is_directory(it->path()) && !looking_for_directory)
+        {
+            if (re2::RE2::FullMatch(file_name, matcher))
+            {
+                result.push_back(it->path().string());
+            }
+        }
+        else if (fs::is_directory(it->path()) && looking_for_directory)
+        {
+            if (re2::RE2::FullMatch(file_name, matcher))
+            {
+                /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
+                Strings result_part = listFilesWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
+                std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
+            }
+        }
+    }
+    return result;
+}
+
+std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
 {
     return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-static void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path, int table_fd)
+void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
 
-    if (table_fd >= 0)
-        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
-    else if (!startsWith(table_path, db_dir_path))
+    if (!startsWith(table_path, db_dir_path))
         throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
 
     Poco::File table_path_poco_file = Poco::File(table_path);
@@ -61,19 +116,24 @@ static void checkCreationIsAllowed(Context & context_global, const std::string &
     else if (table_path_poco_file.isDirectory())
         throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
-
+}
 
 StorageFile::StorageFile(
         const std::string & table_path_,
         int table_fd_,
         const std::string & db_dir_path,
+        const std::string & database_name_,
         const std::string & table_name_,
         const std::string & format_name_,
         const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_)
-    : IStorage(columns_),
-    table_name(table_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
+    :
+    table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (table_fd < 0) /// Will use file
     {
         use_table_fd = false;
@@ -84,8 +144,10 @@ StorageFile::StorageFile(
             if (poco_path.isRelative())
                 poco_path = Poco::Path(db_dir_path, poco_path);
 
-            path = poco_path.absolute().toString();
-            checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+            const std::string path = poco_path.absolute().toString();
+            paths = listFilesWithRegexpMatching("/", path);
+            for (const auto & cur_path : paths)
+                checkCreationIsAllowed(context_global, db_dir_path, cur_path);
             is_db_table = false;
         }
         else /// Is DB's file
@@ -93,14 +155,15 @@ StorageFile::StorageFile(
             if (db_dir_path.empty())
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-            path = getTablePath(db_dir_path, table_name, format_name);
+            paths = {getTablePath(db_dir_path, table_name, format_name)};
             is_db_table = true;
-            Poco::File(Poco::Path(path).parent()).createDirectories();
+            Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
         }
     }
     else /// Will use FD
     {
-        checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+        if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
+            throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
         is_db_table = false;
         use_table_fd = true;
@@ -112,15 +175,15 @@ StorageFile::StorageFile(
 }
 
 
-class StorageFileBlockInputStream : public IProfilingBlockInputStream
+class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size, std::string file_path)
         : storage(storage_)
     {
         if (storage.use_table_fd)
         {
-            storage.rwlock.lock();
+            unique_lock = std::unique_lock(storage.rwlock);
 
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
@@ -130,7 +193,7 @@ public:
                 if (storage.table_fd_init_offset < 0)
                     throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-                /// ReadBuffer's seek() doesn't make sence, since cache is empty
+                /// ReadBuffer's seek() doesn't make sense, since cache is empty
                 if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
                     throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
             }
@@ -140,20 +203,11 @@ public:
         }
         else
         {
-            storage.rwlock.lock_shared();
-
-            read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
+            shared_lock = std::shared_lock(storage.rwlock);
+            read_buf = std::make_unique<ReadBufferFromFile>(file_path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
-    }
-
-    ~StorageFileBlockInputStream() override
-    {
-        if (storage.use_table_fd)
-            storage.rwlock.unlock();
-        else
-            storage.rwlock.unlock_shared();
     }
 
     String getName() const override
@@ -183,6 +237,9 @@ private:
     Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
+
+    std::shared_lock<std::shared_mutex> shared_lock;
+    std::unique_lock<std::shared_mutex> unique_lock;
 };
 
 
@@ -194,7 +251,18 @@ BlockInputStreams StorageFile::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
+    const ColumnsDescription & columns_ = getColumns();
+    auto column_defaults = columns_.getDefaults();
+    BlockInputStreams blocks_input;
+    if (use_table_fd)   /// need to call ctr BlockInputStream
+        paths = {""};   /// when use fd, paths are empty
+    blocks_input.reserve(paths.size());
+    for (const auto & file_path : paths)
+    {
+        BlockInputStreamPtr cur_block = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size, file_path);
+        blocks_input.push_back(column_defaults.empty() ? cur_block : std::make_shared<AddingDefaultsBlockInputStream>(cur_block, column_defaults, context));
+    }
+    return blocks_input;
 }
 
 
@@ -215,7 +283,9 @@ public:
         }
         else
         {
-            write_buf = std::make_unique<WriteBufferFromFile>(storage.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+            if (storage.paths.size() != 1)
+                throw Exception("Table '" + storage.table_name + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+            write_buf = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
         writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
@@ -252,30 +322,35 @@ private:
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
-    const Settings & /*settings*/)
+    const Context & /*context*/)
 {
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
 
-
-void StorageFile::drop()
+Strings StorageFile::getDataPaths() const
 {
-    /// Extra actions are not required.
+    if (paths.empty())
+        throw Exception("Table '" + table_name + "' is in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
+    return paths;
 }
 
-
-void StorageFile::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageFile::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+    if (paths.size() != 1)
+        throw Exception("Can't rename table '" + table_name + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     std::string path_new = getTablePath(new_path_to_db, new_table_name, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
-    Poco::File(path).renameTo(path_new);
+    Poco::File(paths[0]).renameTo(path_new);
 
-    path = std::move(path_new);
+    paths[0] = std::move(path_new);
+    table_name = new_table_name;
+    database_name = new_database_name;
 }
 
 
@@ -291,7 +366,7 @@ void registerStorageFile(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         int source_fd = -1;
         String source_path;
@@ -299,19 +374,19 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(engine_args[1].get()))
+            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
             {
-                if (identifier->name == "stdin")
+                if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
-                else if (identifier->name == "stdout")
+                else if (*opt_name == "stdout")
                     source_fd = STDOUT_FILENO;
-                else if (identifier->name == "stderr")
+                else if (*opt_name == "stderr")
                     source_fd = STDERR_FILENO;
                 else
-                    throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+                    throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
-            else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
@@ -326,7 +401,7 @@ void registerStorageFile(StorageFactory & factory)
         return StorageFile::create(
             source_path, source_fd,
             args.data_path,
-            args.table_name, format_name, args.columns,
+            args.database_name, args.table_name, format_name, args.columns, args.constraints,
             args.context);
     });
 }

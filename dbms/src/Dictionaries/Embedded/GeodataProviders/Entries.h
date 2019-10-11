@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Types.h"
 #include <string>
+#include "Types.h"
 
 struct RegionEntry
 {
@@ -17,4 +17,3 @@ struct RegionNameEntry
     RegionID id;
     std::string name;
 };
-

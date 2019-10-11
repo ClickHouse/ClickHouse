@@ -50,9 +50,9 @@ class QuantileTDigest
 
         Centroid() = default;
 
-        explicit Centroid(Value mean, Count count)
-            : mean(mean)
-            , count(count)
+        explicit Centroid(Value mean_, Count count_)
+            : mean(mean_)
+            , count(count_)
         {}
 
         Centroid & operator+=(const Centroid & other)
@@ -85,9 +85,8 @@ class QuantileTDigest
     Params params;
 
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
-    static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Centroid>) - sizeof(Count) - sizeof(UInt32);
-
-    using Summary = PODArray<Centroid, bytes_in_arena / sizeof(Centroid), AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
+    static constexpr size_t bytes_in_arena = 128 - sizeof(PODArray<Centroid>) - sizeof(Count) - sizeof(UInt32);
+    using Summary = PODArrayWithStackMemory<Centroid, bytes_in_arena>;
 
     Summary summary;
     Count count = 0;
@@ -136,7 +135,7 @@ class QuantileTDigest
     {
         if (unmerged > 0)
         {
-            RadixSort<RadixSortTraits>::execute(summary.data(), summary.size());
+            RadixSort<RadixSortTraits>::executeLSD(summary.data(), summary.size());
 
             if (summary.size() > 3)
             {
@@ -225,6 +224,10 @@ public:
 
         summary.resize(size);
         buf.read(reinterpret_cast<char *>(summary.data()), size * sizeof(summary[0]));
+
+        count = 0;
+        for (const auto & c : summary)
+            count += c.count;
     }
 
     /** Calculates the quantile q [0, 1] based on the digest.

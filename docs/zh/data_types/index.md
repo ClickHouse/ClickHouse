@@ -1,6 +1,4 @@
-<a name="data_types"></a>
-
-# 数据类型
+# 数据类型 {#data_types}
 
 ClickHouse 可以在数据表中存储多种数据类型。
 

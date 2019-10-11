@@ -9,7 +9,7 @@ namespace DB
 
 
 /** Query specifying table name and, possibly, the database and the FORMAT section.
-    */
+  */
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
 public:
@@ -18,11 +18,7 @@ public:
     bool temporary{false};
 
 protected:
-    void formatHelper(const FormatSettings & settings, const char * name) const
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << name << " " << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-    }
+    void formatHelper(const FormatSettings & settings, const char * name) const;
 };
 
 
@@ -30,7 +26,7 @@ template <typename AstIDAndQueryNames>
 class ASTQueryWithTableAndOutputImpl : public ASTQueryWithTableAndOutput
 {
 public:
-    String getID() const override { return AstIDAndQueryNames::ID + ("_" + database) + "_" + table; }
+    String getID(char delim) const override { return AstIDAndQueryNames::ID + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {
@@ -43,7 +39,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        formatHelper(settings, AstIDAndQueryNames::Query);
+        formatHelper(settings, temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query);
     }
 };
 

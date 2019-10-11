@@ -4,10 +4,11 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TaskStatsInfoGetter.h>
+#include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 
 #include <Poco/Logger.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 
 
 namespace DB
@@ -21,19 +22,19 @@ namespace ErrorCodes
 }
 
 
-extern SimpleObjectPool<TaskStatsInfoGetter> task_stats_info_getter_pool;
+thread_local ThreadStatus * current_thread = nullptr;
 
 
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    CurrentThread::get()->taskstats_getter->getStat(res.stat, CurrentThread::get()->os_thread_id);
+    CurrentThread::get().taskstats_getter->getStat(res.stat, CurrentThread::get().os_thread_id);
     return res;
 }
 
 ThreadStatus::ThreadStatus()
 {
-    thread_number = Poco::ThreadNumber::get();
+    thread_number = getThreadNumber();
     os_thread_id = TaskStatsInfoGetter::getCurrentTID();
 
     last_rusage = std::make_unique<RUsageCounters>();
@@ -42,16 +43,31 @@ ThreadStatus::ThreadStatus()
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");
 
+    current_thread = this;
+
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
 }
 
-ThreadStatusPtr ThreadStatus::create()
+ThreadStatus::~ThreadStatus()
 {
-    return ThreadStatusPtr(new ThreadStatus);
-}
+    try
+    {
+        if (untracked_memory > 0)
+            memory_tracker.alloc(untracked_memory);
+        else
+            memory_tracker.free(-untracked_memory);
+    }
+    catch (const DB::Exception &)
+    {
+        /// It's a minor tracked memory leak here (not the memory itself but it's counter).
+        /// We've already allocated a little bit more then the limit and cannot track it in the thread memory tracker or its parent.
+    }
 
-ThreadStatus::~ThreadStatus() = default;
+    if (deleter)
+        deleter();
+    current_thread = nullptr;
+}
 
 void ThreadStatus::initPerformanceCounters()
 {
@@ -74,7 +90,7 @@ void ThreadStatus::initPerformanceCounters()
         if (TaskStatsInfoGetter::checkPermissions())
         {
             if (!taskstats_getter)
-                taskstats_getter = task_stats_info_getter_pool.getDefault();
+                taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
 
             *last_taskstats = TasksStatsCounters::current();
         }
@@ -115,15 +131,17 @@ void ThreadStatus::assertState(const std::initializer_list<int> & permitted_stat
     throw Exception(ss.str(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue)
+void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                               LogsLevel client_logs_level)
 {
     logs_queue_ptr = logs_queue;
 
     if (!thread_group)
         return;
 
-    std::unique_lock lock(thread_group->mutex);
+    std::lock_guard lock(thread_group->mutex);
     thread_group->logs_queue_ptr = logs_queue;
+    thread_group->client_logs_level = client_logs_level;
 }
 
 }

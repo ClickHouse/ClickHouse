@@ -9,6 +9,7 @@
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
+#include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/System/StorageSystemEvents.h>
 #include <Storages/System/StorageSystemFormats.h>
@@ -33,6 +34,8 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
+#include <Storages/System/StorageSystemDisks.h>
+#include <Storages/System/StorageSystemStoragePolicies.h>
 
 
 namespace DB
@@ -64,7 +67,10 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
 {
     attachSystemTablesLocal(system_database);
     system_database.attachTable("parts", StorageSystemParts::create("parts"));
+    system_database.attachTable("detached_parts", createDetachedPartsTable());
     system_database.attachTable("parts_columns", StorageSystemPartsColumns::create("parts_columns"));
+    system_database.attachTable("disks", StorageSystemDisks::create("disks"));
+    system_database.attachTable("storage_policies", StorageSystemStoragePolicies::create("storage_policies"));
     system_database.attachTable("processes", StorageSystemProcesses::create("processes"));
     system_database.attachTable("metrics", StorageSystemMetrics::create("metrics"));
     system_database.attachTable("merges", StorageSystemMerges::create("merges"));

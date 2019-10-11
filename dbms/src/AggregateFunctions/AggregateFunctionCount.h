@@ -1,12 +1,13 @@
 #pragma once
 
 #include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -28,6 +29,8 @@ namespace ErrorCodes
 class AggregateFunctionCount final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCount>
 {
 public:
+    AggregateFunctionCount(const DataTypes & argument_types_) : IAggregateFunctionDataHelper(argument_types_, {}) {}
+
     String getName() const override { return "count"; }
 
     DataTypePtr getReturnType() const override
@@ -57,13 +60,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
-    }
-
-    /// May be used for optimization.
-    void addDelta(AggregateDataPtr place, UInt64 x) const
-    {
-        data(place).count += x;
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -74,7 +71,8 @@ public:
 class AggregateFunctionCountNotNullUnary final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>
 {
 public:
-    AggregateFunctionCountNotNullUnary(const DataTypePtr & argument)
+    AggregateFunctionCountNotNullUnary(const DataTypePtr & argument, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>({argument}, params)
     {
         if (!argument->isNullable())
             throw Exception("Logical error: not Nullable data type passed to AggregateFunctionCountNotNullUnary", ErrorCodes::LOGICAL_ERROR);
@@ -89,7 +87,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        data(place).count += !static_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
+        data(place).count += !assert_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -109,7 +107,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -120,7 +118,8 @@ public:
 class AggregateFunctionCountNotNullVariadic final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullVariadic>
 {
 public:
-    AggregateFunctionCountNotNullVariadic(const DataTypes & arguments)
+    AggregateFunctionCountNotNullVariadic(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullVariadic>(arguments, params)
     {
         number_of_arguments = arguments.size();
 
@@ -145,7 +144,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         for (size_t i = 0; i < number_of_arguments; ++i)
-            if (is_nullable[i] && static_cast<const ColumnNullable &>(*columns[i]).isNullAt(row_num))
+            if (is_nullable[i] && assert_cast<const ColumnNullable &>(*columns[i]).isNullAt(row_num))
                 return;
 
         ++data(place).count;
@@ -168,7 +167,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

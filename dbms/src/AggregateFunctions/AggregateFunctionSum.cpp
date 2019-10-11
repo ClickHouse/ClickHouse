@@ -50,9 +50,9 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     AggregateFunctionPtr res;
     DataTypePtr data_type = argument_types[0];
     if (isDecimal(data_type))
-        res.reset(createWithDecimalType<Function>(*data_type, *data_type));
+        res.reset(createWithDecimalType<Function>(*data_type, *data_type, argument_types));
     else
-        res.reset(createWithNumericType<Function>(*data_type));
+        res.reset(createWithNumericType<Function>(*data_type, argument_types));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,

@@ -3,30 +3,20 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
-
 #include <IO/WriteHelpers.h>
-
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
-
-#if USE_MYSQL
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
-#endif
 
 
 namespace DB
@@ -36,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -102,41 +93,6 @@ struct RegionHierarchyImpl
 };
 
 
-#if USE_MYSQL
-
-struct OSToRootImpl
-{
-    static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToMostAncestor(x); }
-};
-
-struct SEToRootImpl
-{
-    static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToMostAncestor(x); }
-};
-
-struct OSInImpl
-{
-    static bool apply(UInt32 x, UInt32 y, const TechDataHierarchy & hierarchy) { return hierarchy.isOSIn(x, y); }
-};
-
-struct SEInImpl
-{
-    static bool apply(UInt32 x, UInt32 y, const TechDataHierarchy & hierarchy) { return hierarchy.isSEIn(x, y); }
-};
-
-struct OSHierarchyImpl
-{
-    static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToParent(x); }
-};
-
-struct SEHierarchyImpl
-{
-    static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToParent(x); }
-};
-
-#endif
-
-
 /** Auxiliary thing, allowing to get from the dictionary a specific dictionary, corresponding to the point of view
   *  (the dictionary key passed as function argument).
   * Example: when calling regionToCountry(x, 'ua'), a dictionary can be used, in which Crimea refers to Ukraine.
@@ -186,7 +142,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -280,7 +236,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -418,7 +374,7 @@ public:
     : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -519,18 +475,6 @@ struct NameRegionHierarchy             { static constexpr auto name = "regionHie
 struct NameRegionIn                    { static constexpr auto name = "regionIn"; };
 
 
-#if USE_MYSQL
-
-struct NameOSToRoot                    { static constexpr auto name = "OSToRoot"; };
-struct NameSEToRoot                    { static constexpr auto name = "SEToRoot"; };
-struct NameOSIn                        { static constexpr auto name = "OSIn"; };
-struct NameSEIn                        { static constexpr auto name = "SEIn"; };
-struct NameOSHierarchy                 { static constexpr auto name = "OSHierarchy"; };
-struct NameSEHierarchy                 { static constexpr auto name = "SEHierarchy"; };
-
-#endif
-
-
 struct FunctionRegionToCity :
     public FunctionTransformWithDictionary<UInt32, RegionToCityImpl,    RegionsHierarchyGetter,    NameRegionToCity>
 {
@@ -613,65 +557,6 @@ struct FunctionRegionHierarchy :
 };
 
 
-#if USE_MYSQL
-
-struct FunctionOSToRoot :
-    public FunctionTransformWithDictionary<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionSEToRoot :
-    public FunctionTransformWithDictionary<UInt8, SEToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEToRoot>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionOSIn :
-    public FunctionIsInWithDictionary<UInt8,    OSInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionSEIn :
-    public FunctionIsInWithDictionary<UInt8,    SEInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionOSHierarchy :
-    public FunctionHierarchyWithDictionary<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-struct FunctionSEHierarchy :
-    public FunctionHierarchyWithDictionary<UInt8, SEHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy>
-{
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<base_type>(context.getEmbeddedDictionaries().getTechDataHierarchy());
-    }
-};
-
-#endif
-
-
 /// Converts a region's numeric identifier to a name in the specified language using a dictionary.
 class FunctionRegionToName : public IFunction
 {
@@ -690,7 +575,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -10,7 +10,7 @@ namespace DB
   * This is needed, for example, to read from a table that will be populated
   *  after creation of LazyBlockInputStream object, but before the first `read` call.
   */
-class LazyBlockInputStream : public IProfilingBlockInputStream
+class LazyBlockInputStream : public IBlockInputStream
 {
 public:
     using Generator = std::function<BlockInputStreamPtr()>;
@@ -32,6 +32,9 @@ public:
         return header;
     }
 
+    /// We call readPrefix lazily. Suppress default behaviour.
+    void readPrefix() override {}
+
 protected:
     Block readImpl() override
     {
@@ -42,7 +45,7 @@ protected:
             if (!input)
                 return Block();
 
-            auto * p_input = dynamic_cast<IProfilingBlockInputStream *>(input.get());
+            auto * p_input = dynamic_cast<IBlockInputStream *>(input.get());
 
             if (p_input)
             {

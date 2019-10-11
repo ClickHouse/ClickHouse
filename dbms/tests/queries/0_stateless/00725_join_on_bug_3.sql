@@ -1,14 +1,14 @@
-drop table if exists test.t;
-drop table if exists test.z;
+drop table if exists t_00725_3;
+drop table if exists z_00725_3;
 
-create table test.t(a Int64, b Int64) engine = TinyLog;
-insert into test.t values(1,1);
-insert into test.t values(2,2);
-create table test.z(c Int64, d Int64, e Int64) engine = TinyLog;
-insert into test.z values(1,1,1);
+create table t_00725_3(a Int64, b Int64) engine = TinyLog;
+insert into t_00725_3 values(1,1);
+insert into t_00725_3 values(2,2);
+create table z_00725_3(c Int64, d Int64, e Int64) engine = TinyLog;
+insert into z_00725_3 values(1,1,1);
 
-select * from test.t all left join test.z on (z.c = t.a and z.d = t.b);
+select * from t_00725_3 all left join z_00725_3 on (z_00725_3.c = t_00725_3.a and z_00725_3.d = t_00725_3.b);
 
-drop table if exists test.t;
-drop table if exists test.z;
+drop table if exists t_00725_3;
+drop table if exists z_00725_3;
 

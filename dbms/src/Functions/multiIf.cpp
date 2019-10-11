@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -23,12 +24,7 @@ namespace ErrorCodes
 /// where N >= 1.
 ///
 /// For all 1 <= i <= N, "cond_i" has type UInt8.
-/// Types of all the branches "then_i" and "else" are either of the following:
-///    - numeric types for which there exists a common type;
-///    - dates;
-///    - dates with time;
-///    - strings;
-///    - arrays of such types.
+/// Types of all the branches "then_i" and "else" have a common type.
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
 /// and the NULL value, with a NULL condition treated as false.
@@ -37,13 +33,20 @@ class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(context); }
-    FunctionMultiIf(const Context & context) : context(context) {}
+    FunctionMultiIf(const Context & context_) : context(context_) {}
 
 public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    {
+        ColumnNumbers args;
+        for (size_t i = 0; i + 1 < number_of_arguments; i += 2)
+            args.push_back(i);
+        return args;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
@@ -68,16 +71,12 @@ public:
             throw Exception{"Invalid number of arguments for function " + getName(),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        /// Conditions must be UInt8, Nullable(UInt8) or Null. If one of conditions is Nullable, the result is also Nullable.
-        bool have_nullable_condition = false;
 
         for_conditions([&](const DataTypePtr & arg)
         {
             const IDataType * nested_type;
             if (arg->isNullable())
             {
-                have_nullable_condition = true;
-
                 if (arg->onlyNull())
                     return;
 
@@ -103,11 +102,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        DataTypePtr common_type_of_branches = getLeastSupertype(types_of_branches);
-
-        return have_nullable_condition
-            ? makeNullable(common_type_of_branches)
-            : common_type_of_branches;
+        return getLeastSupertype(types_of_branches);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
@@ -154,7 +149,7 @@ public:
                 if (cond_col.column->onlyNull())
                     continue;
 
-                if (cond_col.column->isColumnConst())
+                if (isColumnConst(*cond_col.column))
                 {
                     Field value = typeid_cast<const ColumnConst &>(*cond_col.column).getField();
                     if (value.isNull())
@@ -165,7 +160,7 @@ public:
                 }
                 else
                 {
-                    if (cond_col.column->isColumnNullable())
+                    if (isColumnNullable(*cond_col.column))
                         instruction.condition_is_nullable = true;
 
                     instruction.condition = cond_col.column.get();
@@ -184,7 +179,7 @@ public:
                 instruction.source = converted_columns_holder.back().get();
             }
 
-            if (instruction.source && instruction.source->isColumnConst())
+            if (instruction.source && isColumnConst(*instruction.source))
                 instruction.source_is_constant = true;
 
             instructions.emplace_back(std::move(instruction));
@@ -205,11 +200,11 @@ public:
                 if (instruction.condition_always_true)
                     insert = true;
                 else if (!instruction.condition_is_nullable)
-                    insert = static_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
+                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
                 else
                 {
-                    const ColumnNullable & condition_nullable = static_cast<const ColumnNullable &>(*instruction.condition);
-                    const ColumnUInt8 & condition_nested = static_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                    const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
+                    const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
                     const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
                     insert = !condition_null_map[i] && condition_nested.getData()[i];
@@ -220,7 +215,7 @@ public:
                     if (!instruction.source_is_constant)
                         res->insertFrom(*instruction.source, i);
                     else
-                        res->insertFrom(static_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
+                        res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
 
                     break;
                 }

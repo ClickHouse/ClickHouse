@@ -1,6 +1,4 @@
-<a name="functions_arrayjoin"></a>
-
-# arrayJoin function
+# arrayJoin function {#functions_arrayjoin}
 
 This is a very unusual function.
 
@@ -21,7 +19,7 @@ Example:
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
-```
+```text
 ┌─dst─┬─\'Hello\'─┬─src─────┐
 │   1 │ Hello     │ [1,2,3] │
 │   2 │ Hello     │ [1,2,3] │

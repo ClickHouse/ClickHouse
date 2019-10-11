@@ -5,11 +5,14 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/PODArray.h>
 #include <Common/SharedLibrary.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -51,12 +54,16 @@ struct CatBoostWrapperAPI
                                                       double * result, size_t resultSize);
 
     int (* GetStringCatFeatureHash)(const char * data, size_t size);
-
     int (* GetIntegerCatFeatureHash)(long long val);
 
     size_t (* GetFloatFeaturesCount)(ModelCalcerHandle* calcer);
-
     size_t (* GetCatFeaturesCount)(ModelCalcerHandle* calcer);
+    size_t (* GetTreeCount)(ModelCalcerHandle* modelHandle);
+    size_t (* GetDimensionsCount)(ModelCalcerHandle* modelHandle);
+
+    bool (* CheckModelMetadataHasKey)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
+    size_t (*GetModelInfoValueSize)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
+    const char* (*GetModelInfoValue)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
 };
 
 
@@ -69,7 +76,7 @@ private:
     CatBoostWrapperAPI::ModelCalcerHandle * handle;
     const CatBoostWrapperAPI * api;
 public:
-    explicit CatBoostModelHolder(const CatBoostWrapperAPI * api) : api(api) { handle = api->ModelCalcerCreate(); }
+    explicit CatBoostModelHolder(const CatBoostWrapperAPI * api_) : api(api_) { handle = api->ModelCalcerCreate(); }
     ~CatBoostModelHolder() { api->ModelCalcerDelete(handle); }
 
     CatBoostWrapperAPI::ModelCalcerHandle * get() { return handle; }
@@ -79,7 +86,7 @@ public:
 class CatBoostModelImpl : public ICatBoostModel
 {
 public:
-    CatBoostModelImpl(const CatBoostWrapperAPI * api, const std::string & model_path) : api(api)
+    CatBoostModelImpl(const CatBoostWrapperAPI * api_, const std::string & model_path) : api(api_)
     {
         auto handle_ = std::make_unique<CatBoostModelHolder>(api);
         if (!handle_)
@@ -95,6 +102,9 @@ public:
 
         float_features_count = api->GetFloatFeaturesCount(handle_->get());
         cat_features_count = api->GetCatFeaturesCount(handle_->get());
+        tree_count = 1;
+        if (api->GetDimensionsCount)
+            tree_count = api->GetDimensionsCount(handle_->get());
 
         handle = std::move(handle_);
     }
@@ -122,7 +132,7 @@ public:
                 std::string msg;
                 {
                     WriteBufferFromString buffer(msg);
-                    buffer << "Column " << i << "should be numeric to make float feature.";
+                    buffer << "Column " << i << " should be numeric to make float feature.";
                 }
                 throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
             }
@@ -140,23 +150,54 @@ public:
                 std::string msg;
                 {
                     WriteBufferFromString buffer(msg);
-                    buffer << "Column " << i << "should be numeric or string.";
+                    buffer << "Column " << i << " should be numeric or string.";
                 }
                 throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
-        return evalImpl(columns, float_features_count, cat_features_count, cat_features_are_strings);
+        auto result = evalImpl(columns, cat_features_are_strings);
+
+        if (tree_count == 1)
+            return result;
+
+        size_t column_size = columns.front()->size();
+        auto result_buf = result->getData().data();
+
+        /// Multiple trees case. Copy data to several columns.
+        MutableColumns mutable_columns(tree_count);
+        std::vector<Float64 *> column_ptrs(tree_count);
+        for (size_t i = 0; i < tree_count; ++i)
+        {
+            auto col = ColumnFloat64::create(column_size);
+            column_ptrs[i] = col->getData().data();
+            mutable_columns[i] = std::move(col);
+        }
+
+        Float64 * data = result_buf;
+        for (size_t row = 0; row < column_size; ++row)
+        {
+            for (size_t i = 0; i < tree_count; ++i)
+            {
+                *column_ptrs[i] = *data;
+                ++column_ptrs[i];
+                ++data;
+            }
+        }
+
+        return ColumnTuple::create(std::move(mutable_columns));
     }
 
     size_t getFloatFeaturesCount() const override { return float_features_count; }
     size_t getCatFeaturesCount() const override { return cat_features_count; }
+    size_t getTreeCount() const override { return tree_count; }
 
 private:
     std::unique_ptr<CatBoostModelHolder> handle;
     const CatBoostWrapperAPI * api;
     size_t float_features_count;
     size_t cat_features_count;
+    size_t tree_count;
 
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place column elements in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
@@ -308,13 +349,13 @@ private:
 
     /// buffer[column_size * cat_features_count] -> char * => cat_features[column_size][cat_features_count] -> char *
     void fillCatFeaturesBuffer(const char *** cat_features, const char ** buffer,
-                               size_t column_size, size_t cat_features_count_current) const
+                               size_t column_size) const
     {
         for (size_t i = 0; i < column_size; ++i)
         {
             *cat_features = buffer;
             ++cat_features;
-            buffer += cat_features_count_current;
+            buffer += cat_features_count;
         }
     }
 
@@ -322,26 +363,30 @@ private:
     ///  * CalcModelPredictionFlat if no cat features
     ///  * CalcModelPrediction if all cat features are strings
     ///  * CalcModelPredictionWithHashedCatFeatures if has int cat features.
-    ColumnPtr evalImpl(const ColumnRawPtrs & columns, size_t float_features_count_current, size_t cat_features_count_current,
-                       bool cat_features_are_strings) const
+    ColumnFloat64::MutablePtr evalImpl(
+        const ColumnRawPtrs & columns,
+        bool cat_features_are_strings) const
     {
         std::string error_msg = "Error occurred while applying CatBoost model: ";
         size_t column_size = columns.front()->size();
 
-        auto result = ColumnFloat64::create(column_size);
+        auto result = ColumnFloat64::create(column_size * tree_count);
         auto result_buf = result->getData().data();
+
+        if (!column_size)
+            return result;
 
         /// Prepare float features.
         PODArray<const float *> float_features(column_size);
         auto float_features_buf = float_features.data();
         /// Store all float data into single column. float_features is a list of pointers to it.
-        auto float_features_col = placeNumericColumns<float>(columns, 0, float_features_count_current, float_features_buf);
+        auto float_features_col = placeNumericColumns<float>(columns, 0, float_features_count, float_features_buf);
 
-        if (cat_features_count_current == 0)
+        if (cat_features_count == 0)
         {
             if (!api->CalcModelPredictionFlat(handle->get(), column_size,
-                                              float_features_buf, float_features_count_current,
-                                              result_buf, column_size))
+                                              float_features_buf, float_features_count,
+                                              result_buf, column_size * tree_count))
             {
 
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
@@ -353,19 +398,19 @@ private:
         if (cat_features_are_strings)
         {
             /// cat_features_holder stores pointers to ColumnString data or fixed_strings_data.
-            PODArray<const char *> cat_features_holder(cat_features_count_current * column_size);
+            PODArray<const char *> cat_features_holder(cat_features_count * column_size);
             PODArray<const char **> cat_features(column_size);
             auto cat_features_buf = cat_features.data();
 
-            fillCatFeaturesBuffer(cat_features_buf, cat_features_holder.data(), column_size, cat_features_count_current);
+            fillCatFeaturesBuffer(cat_features_buf, cat_features_holder.data(), column_size);
             /// Fixed strings are stored without termination zero, so have to copy data into fixed_strings_data.
-            auto fixed_strings_data = placeStringColumns(columns, float_features_count_current,
-                                                         cat_features_count_current, cat_features_holder.data());
+            auto fixed_strings_data = placeStringColumns(columns, float_features_count,
+                                                         cat_features_count, cat_features_holder.data());
 
             if (!api->CalcModelPrediction(handle->get(), column_size,
-                                          float_features_buf, float_features_count_current,
-                                          cat_features_buf, cat_features_count_current,
-                                          result_buf, column_size))
+                                          float_features_buf, float_features_count,
+                                          cat_features_buf, cat_features_count,
+                                          result_buf, column_size * tree_count))
             {
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
             }
@@ -374,14 +419,14 @@ private:
         {
             PODArray<const int *> cat_features(column_size);
             auto cat_features_buf = cat_features.data();
-            auto cat_features_col = placeNumericColumns<int>(columns, float_features_count_current,
-                                                             cat_features_count_current, cat_features_buf);
-            calcHashes(columns, float_features_count_current, cat_features_count_current, cat_features_buf);
+            auto cat_features_col = placeNumericColumns<int>(columns, float_features_count,
+                                                             cat_features_count, cat_features_buf);
+            calcHashes(columns, float_features_count, cat_features_count, cat_features_buf);
             if (!api->CalcModelPredictionWithHashedCatFeatures(
                     handle->get(), column_size,
-                    float_features_buf, float_features_count_current,
-                    cat_features_buf, cat_features_count_current,
-                    result_buf, column_size))
+                    float_features_buf, float_features_count,
+                    cat_features_buf, cat_features_count,
+                    result_buf, column_size * tree_count))
             {
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
             }
@@ -410,6 +455,9 @@ private:
 
     template <typename T>
     void load(T& func, const std::string & name) { func = lib.get<T>(name); }
+
+    template <typename T>
+    void tryLoad(T& func, const std::string & name) { func = lib.tryGet<T>(name); }
 };
 
 void CatBoostLibHolder::initAPI()
@@ -425,6 +473,11 @@ void CatBoostLibHolder::initAPI()
     load(api.GetIntegerCatFeatureHash, "GetIntegerCatFeatureHash");
     load(api.GetFloatFeaturesCount, "GetFloatFeaturesCount");
     load(api.GetCatFeaturesCount, "GetCatFeaturesCount");
+    tryLoad(api.CheckModelMetadataHasKey, "CheckModelMetadataHasKey");
+    tryLoad(api.GetModelInfoValueSize, "GetModelInfoValueSize");
+    tryLoad(api.GetModelInfoValue, "GetModelInfoValue");
+    tryLoad(api.GetTreeCount, "GetTreeCount");
+    tryLoad(api.GetDimensionsCount, "GetDimensionsCount");
 }
 
 std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & lib_path)
@@ -432,7 +485,7 @@ std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & 
     static std::weak_ptr<CatBoostLibHolder> ptr;
     static std::mutex mutex;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     auto result = ptr.lock();
 
     if (!result || result->getCurrentPath() != lib_path)
@@ -449,28 +502,15 @@ std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & 
 
 
 CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::string lib_path_,
-                             const ExternalLoadableLifetime & lifetime)
-    : name(std::move(name_)), model_path(std::move(model_path_)), lib_path(std::move(lib_path_)), lifetime(lifetime)
-{
-    try
-    {
-        init();
-    }
-    catch (...)
-    {
-        creation_exception = std::current_exception();
-    }
-
-    creation_time = std::chrono::system_clock::now();
-}
-
-void CatBoostModel::init()
+                             const ExternalLoadableLifetime & lifetime_)
+    : name(std::move(name_)), model_path(std::move(model_path_)), lib_path(std::move(lib_path_)), lifetime(lifetime_)
 {
     api_provider = getCatBoostWrapperHolder(lib_path);
     api = &api_provider->getAPI();
     model = std::make_unique<CatBoostModelImpl>(api, model_path);
     float_features_count = model->getFloatFeaturesCount();
     cat_features_count = model->getCatFeaturesCount();
+    tree_count = model->getTreeCount();
 }
 
 const ExternalLoadableLifetime & CatBoostModel::getLifetime() const
@@ -483,9 +523,9 @@ bool CatBoostModel::isModified() const
     return true;
 }
 
-std::unique_ptr<IExternalLoadable> CatBoostModel::clone() const
+std::shared_ptr<const IExternalLoadable> CatBoostModel::clone() const
 {
-    return std::make_unique<CatBoostModel>(name, model_path, lib_path, lifetime);
+    return std::make_shared<CatBoostModel>(name, model_path, lib_path, lifetime);
 }
 
 size_t CatBoostModel::getFloatFeaturesCount() const
@@ -496,6 +536,22 @@ size_t CatBoostModel::getFloatFeaturesCount() const
 size_t CatBoostModel::getCatFeaturesCount() const
 {
     return cat_features_count;
+}
+
+size_t CatBoostModel::getTreeCount() const
+{
+    return tree_count;
+}
+
+DataTypePtr CatBoostModel::getReturnType() const
+{
+    auto type = std::make_shared<DataTypeFloat64>();
+    if (tree_count == 1)
+        return type;
+
+    DataTypes types(tree_count, type);
+
+    return std::make_shared<DataTypeTuple>(types);
 }
 
 ColumnPtr CatBoostModel::evaluate(const ColumnRawPtrs & columns) const

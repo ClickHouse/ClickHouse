@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
 #include <ext/size.h>
 
@@ -105,5 +105,10 @@ DataTypePtr FieldToDataType::operator() (const Tuple & x) const
     return std::make_shared<DataTypeTuple>(element_types);
 }
 
+DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const
+{
+    auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
+    return DataTypeFactory::instance().get(name);
+}
 
 }

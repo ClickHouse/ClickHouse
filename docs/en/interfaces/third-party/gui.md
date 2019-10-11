@@ -38,7 +38,28 @@ The following features are planned for development:
 - Cluster management.
 - Monitoring replicated and Kafka tables.
 
-## Commercial
+### LightHouse
+
+[LightHouse](https://github.com/VKCOM/lighthouse) is a lightweight web interface for ClickHouse.
+
+Features:
+
+- Table list with filtering and metadata.
+- Table preview with filtering and sorting.
+- Read-only queries execution.
+
+### Redash
+
+[Redash](https://github.com/getredash/redash) is an insights platform.
+
+Features:
+
+- Connect with multiple sources (including ClickHouse).
+- Autocompletion query editor.
+- Schema/Database explorer.
+- Data plotting.
+- Create snippets for elements you frequently use.
+- Use query results as data sources to join different databases.
 
 ### DBeaver
 
@@ -46,9 +67,26 @@ The following features are planned for development:
 
 Features:
 
-- Query development with syntax highlight.
-- Table preview.
+- Query development with syntax highlight and autocompletion.
+- Table list with filters and metadata search.
+- Table data preview.
+- Full text search.
+
+### clickhouse-cli
+
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command line client for ClickHouse, written in Python 3.
+
+Features:
 - Autocompletion.
+- Syntax highlighting for the queries and data output.
+- Pager support for the data output.
+- Custom PostgreSQL-like commands.
+
+### clickhouse-flamegraph
+
+[clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) is a specialized tool to visualize the `system.trace_log` as [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
+## Commercial
 
 ### DataGrip
 
@@ -63,4 +101,4 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party_gui/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/gui/) <!--hide-->

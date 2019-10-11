@@ -1,26 +1,28 @@
+#include "HTTPHandler.h"
+
 #include <chrono>
 #include <iomanip>
-
 #include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerRequestImpl.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/NetException.h>
-
 #include <ext/scope_guard.h>
-
 #include <Core/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/config.h>
+#include <Common/SettingsChanges.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
+#include <IO/BrotliReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ConcatReadBuffer.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromFile.h>
@@ -30,16 +32,11 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
-
-#include <DataStreams/IProfilingBlockInputStream.h>
-
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
-
 #include <Poco/Net/HTTPStream.h>
-
-#include "HTTPHandler.h"
 
 namespace DB
 {
@@ -64,6 +61,9 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
 
     extern const int SYNTAX_ERROR;
+
+    extern const int INCORRECT_DATA;
+    extern const int TYPE_MISMATCH;
 
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_FUNCTION;
@@ -103,15 +103,18 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
-             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER)
-        return HTTPResponse::HTTP_BAD_REQUEST;
-    else if (exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
+             exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
+
+             exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
              exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
-             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
-        return HTTPResponse::HTTP_BAD_REQUEST;
-    else if (exception_code == ErrorCodes::SYNTAX_ERROR)
+             exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
+
+             exception_code == ErrorCodes::SYNTAX_ERROR ||
+
+             exception_code == ErrorCodes::INCORRECT_DATA ||
+             exception_code == ErrorCodes::TYPE_MISMATCH)
         return HTTPResponse::HTTP_BAD_REQUEST;
     else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
@@ -123,9 +126,9 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNKNOWN_DIRECTION_OF_SORTING ||
              exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_FORMAT ||
-             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE)
-        return HTTPResponse::HTTP_NOT_FOUND;
-    else if (exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+             exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
+
+             exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
         return HTTPResponse::HTTP_NOT_FOUND;
     else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
         return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
@@ -215,7 +218,6 @@ void HTTPHandler::processQuery(
     Output & used_output)
 {
     Context context = server.context();
-    context.setGlobalContext(server.context());
 
     CurrentThread::QueryScope query_scope(context);
 
@@ -300,7 +302,7 @@ void HTTPHandler::processQuery(
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
     bool client_supports_http_compression = false;
-    ZlibCompressionMethod http_response_compression_method {};
+    CompressionMethod http_response_compression_method {};
 
     if (!http_response_compression_methods.empty())
     {
@@ -309,13 +311,20 @@ void HTTPHandler::processQuery(
         if (std::string::npos != http_response_compression_methods.find("gzip"))
         {
             client_supports_http_compression = true;
-            http_response_compression_method = ZlibCompressionMethod::Gzip;
+            http_response_compression_method = CompressionMethod::Gzip;
         }
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
         {
             client_supports_http_compression = true;
-            http_response_compression_method = ZlibCompressionMethod::Zlib;
+            http_response_compression_method = CompressionMethod::Zlib;
         }
+#if USE_BROTLI
+        else if (http_response_compression_methods == "br")
+        {
+            client_supports_http_compression = true;
+            http_response_compression_method = CompressionMethod::Brotli;
+        }
+#endif
     }
 
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
@@ -396,19 +405,25 @@ void HTTPHandler::processQuery(
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     if (!http_request_compression_method_str.empty())
     {
-        ZlibCompressionMethod method;
         if (http_request_compression_method_str == "gzip")
         {
-            method = ZlibCompressionMethod::Gzip;
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Gzip);
         }
         else if (http_request_compression_method_str == "deflate")
         {
-            method = ZlibCompressionMethod::Zlib;
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Zlib);
         }
+#if USE_BROTLI
+        else if (http_request_compression_method_str == "br")
+        {
+            in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
+        }
+#endif
         else
+        {
             throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
-                ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, method);
+                    ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+        }
     }
     else
         in_post = std::move(in_post_raw);
@@ -446,30 +461,6 @@ void HTTPHandler::processQuery(
         return false;
     };
 
-    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
-    std::string full_query;
-
-    /// Support for "external data for query processing".
-    if (startsWith(request.getContentType().data(), "multipart/form-data"))
-    {
-        ExternalTablesHandler handler(context, params);
-        params.load(request, istr, handler);
-
-        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-        reserved_param_suffixes.emplace_back("_format");
-        reserved_param_suffixes.emplace_back("_types");
-        reserved_param_suffixes.emplace_back("_structure");
-
-        /// Params are of both form params POST and uri (GET params)
-        for (const auto & it : params)
-            if (it.first == "query")
-                full_query += it.second;
-
-        in = std::make_unique<ReadBufferFromString>(full_query);
-    }
-    else
-        in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
-
     /// Settings can be overridden in the query.
     /// Some parameters (database, default_format, everything used in the code above) do not
     /// belong to the Settings class.
@@ -490,38 +481,68 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    auto readonly_before_query = settings.readonly;
+    bool has_external_data = startsWith(request.getContentType().data(), "multipart/form-data");
 
-    for (auto it = params.begin(); it != params.end(); ++it)
+    if (has_external_data)
     {
-        if (it->first == "database")
+        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
+        reserved_param_suffixes.reserve(3);
+        /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+        reserved_param_suffixes.emplace_back("_format");
+        reserved_param_suffixes.emplace_back("_types");
+        reserved_param_suffixes.emplace_back("_structure");
+    }
+
+    SettingsChanges settings_changes;
+    for (const auto & [key, value] : params)
+    {
+        if (key == "database")
         {
-            context.setCurrentDatabase(it->second);
+            context.setCurrentDatabase(value);
         }
-        else if (it->first == "default_format")
+        else if (key == "default_format")
         {
-            context.setDefaultFormat(it->second);
+            context.setDefaultFormat(value);
         }
-        else if (param_could_be_skipped(it->first))
+        else if (param_could_be_skipped(key))
         {
+        }
+        else if (startsWith(key, "param_"))
+        {
+            /// Save name and values of substitution in dictionary.
+            const String parameter_name = key.substr(strlen("param_"));
+            context.setQueryParameter(parameter_name, value);
         }
         else
         {
             /// All other query parameters are treated as settings.
-            String value;
-            /// Setting is skipped if value wasn't changed.
-            if (!settings.tryGet(it->first, value) || it->second != value)
-            {
-                if (readonly_before_query == 1)
-                    throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
-
-                if (readonly_before_query && it->first == "readonly")
-                    throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
-
-                context.setSetting(it->first, it->second);
-            }
+            settings_changes.push_back({key, value});
         }
     }
+
+    /// For external data we also want settings
+    context.checkSettingsConstraints(settings_changes);
+    context.applySettingsChanges(settings_changes);
+
+    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
+    std::string full_query;
+
+    /// Support for "external data for query processing".
+    if (has_external_data)
+    {
+        ExternalTablesHandler handler(context, params);
+        params.load(request, istr, handler);
+
+        /// Params are of both form params POST and uri (GET params)
+        for (const auto & it : params)
+            if (it.first == "query")
+                full_query += it.second;
+
+        in = std::make_unique<ReadBufferFromString>(full_query);
+    }
+    else
+        in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
@@ -558,12 +579,53 @@ void HTTPHandler::processQuery(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
 
+    auto appendCallback = [&context] (ProgressCallback callback)
+    {
+        auto prev = context.getProgressCallback();
+
+        context.setProgressCallback([prev, callback] (const Progress & progress)
+        {
+            if (prev)
+                prev(progress);
+
+            callback(progress);
+        });
+    };
+
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     if (settings.send_progress_in_http_headers)
-        context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+        appendCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+
+    if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
+    {
+        Poco::Net::StreamSocket & socket = dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket();
+
+        appendCallback([&context, &socket](const Progress &)
+        {
+            /// Assume that at the point this method is called no one is reading data from the socket any more.
+            /// True for read-only queries.
+            try
+            {
+                char b;
+                int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
+                if (status == 0)
+                    context.killCurrentQuery();
+            }
+            catch (Poco::TimeoutException &)
+            {
+            }
+            catch (...)
+            {
+                context.killCurrentQuery();
+            }
+        });
+    }
+
+    customizeContext(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type) { response.setContentType(content_type); });
+        [&response] (const String & content_type) { response.setContentType(content_type); },
+        [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); });
 
     if (used_output.hasDelayed())
     {
@@ -647,6 +709,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     setThreadName("HTTPHandler");
+    ThreadStatus thread_status;
 
     Output used_output;
 

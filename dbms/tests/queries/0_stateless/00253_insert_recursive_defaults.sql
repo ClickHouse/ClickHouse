@@ -1,11 +1,11 @@
-DROP TABLE IF EXISTS test.defaults;
-CREATE TABLE test.defaults (a UInt8, b DEFAULT 0, c DEFAULT identity(b)) ENGINE = Memory;
-INSERT INTO test.defaults (a) VALUES (1);
-SELECT * FROM test.defaults;
-DROP TABLE test.defaults;
+DROP TABLE IF EXISTS defaults;
+CREATE TABLE defaults (a UInt8, b DEFAULT 0, c DEFAULT identity(b)) ENGINE = Memory;
+INSERT INTO defaults (a) VALUES (1);
+SELECT * FROM defaults;
+DROP TABLE defaults;
 
-DROP TABLE IF EXISTS test.elog_cut;
-CREATE TABLE test.elog_cut
+DROP TABLE IF EXISTS elog_cut;
+CREATE TABLE elog_cut
 (
     date Date DEFAULT toDate(uts),
     uts DateTime,
@@ -18,6 +18,6 @@ CREATE TABLE test.elog_cut
     sample_key UInt64 ALIAS page_session
 ) ENGINE = MergeTree(date, cityHash64(adf_uid, ya_uid, pr), (owner_id, date, cityHash64(adf_uid, ya_uid, pr)), 8192);
 
-INSERT INTO test.elog_cut (uts, pr, ya_uid, adf_uid, owner_id) VALUES ('2015-01-01 01:02:03', 111, 123, 456, 789);
-SELECT date, uts, pr, ya_uid, adf_uid, owner_id, eff_uid, page_session, sample_key FROM test.elog_cut;
-DROP TABLE test.elog_cut;
+INSERT INTO elog_cut (uts, pr, ya_uid, adf_uid, owner_id) VALUES ('2015-01-01 01:02:03', 111, 123, 456, 789);
+SELECT date, uts, pr, ya_uid, adf_uid, owner_id, eff_uid, page_session, sample_key FROM elog_cut;
+DROP TABLE elog_cut;

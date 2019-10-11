@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Common/CurrentMetrics.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 #include <Common/CurrentThread.h>
 
 
@@ -13,19 +14,32 @@ namespace CurrentMetrics
 namespace DB
 {
 
-MergeListElement::MergeListElement(const std::string & database, const std::string & table, const std::string & result_part_name,
-    const MergeTreeData::DataPartsVector & source_parts)
-        : database{database}, table{table}, result_part_name{result_part_name}, num_parts{source_parts.size()},
-        thread_number{Poco::ThreadNumber::get()}
+MergeListElement::MergeListElement(const std::string & database_, const std::string & table_, const FutureMergedMutatedPart & future_part)
+    : database{database_}, table{table_}, partition_id{future_part.part_info.partition_id}
+    , result_part_name{future_part.name}
+    , result_data_version{future_part.part_info.getDataVersion()}
+    , num_parts{future_part.parts.size()}
+    , thread_number{getThreadNumber()}
 {
-    for (const auto & source_part : source_parts)
+    for (const auto & source_part : future_part.parts)
+    {
         source_part_names.emplace_back(source_part->name);
 
-    if (!source_parts.empty())
-        partition_id = source_parts[0]->info.partition_id;
+        std::shared_lock<std::shared_mutex> part_lock(source_part->columns_lock);
+
+        total_size_bytes_compressed += source_part->bytes_on_disk;
+        total_size_marks += source_part->getMarksCount();
+        total_rows_count += source_part->index_granularity.getTotalRows();
+    }
+
+    if (!future_part.parts.empty())
+    {
+        source_data_version = future_part.parts[0]->info.getDataVersion();
+        is_mutation = (result_data_version != source_data_version);
+    }
 
     /// Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = &CurrentThread::getMemoryTracker();
+    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
         memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
@@ -41,11 +55,13 @@ MergeInfo MergeListElement::getInfo() const
     res.table = table;
     res.result_part_name = result_part_name;
     res.partition_id = partition_id;
+    res.is_mutation = is_mutation;
     res.elapsed = watch.elapsedSeconds();
     res.progress = progress.load(std::memory_order_relaxed);
     res.num_parts = num_parts;
     res.total_size_bytes_compressed = total_size_bytes_compressed;
     res.total_size_marks = total_size_marks;
+    res.total_rows_count = total_rows_count;
     res.bytes_read_uncompressed = bytes_read_uncompressed.load(std::memory_order_relaxed);
     res.bytes_written_uncompressed = bytes_written_uncompressed.load(std::memory_order_relaxed);
     res.rows_read = rows_read.load(std::memory_order_relaxed);

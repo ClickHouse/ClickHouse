@@ -22,6 +22,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -36,6 +37,7 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
+#include <Common/TerminalSize.h>
 
 
 static const char * documantation = R"(
@@ -51,7 +53,7 @@ It is designed to retain the following properties of data:
 - probability distributions of length of strings;
 - probability of zero values of numbers; empty strings and arrays, NULLs;
 - data compression ratio when compressed with LZ77 and entropy family of codecs;
-- continuouty (magnitude of difference) of time values across table; continuouty of floating point values.
+- continuity (magnitude of difference) of time values across table; continuity of floating point values.
 - date component of DateTime values;
 - UTF-8 validity of string values;
 - string values continue to look somewhat natural.
@@ -123,7 +125,7 @@ UInt64 hash(Ts... xs)
 
 UInt64 maskBits(UInt64 x, size_t num_bits)
 {
-    return x & ((1 << num_bits) - 1);
+    return x & ((1ULL << num_bits) - 1);
 }
 
 
@@ -149,7 +151,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
         bits = feistelRound(bits, num_bits, seed, i);
-    return (x & ~((1 << num_bits) - 1)) ^ bits;
+    return (x & ~((1ULL << num_bits) - 1)) ^ bits;
 }
 
 
@@ -176,7 +178,7 @@ private:
     const UInt64 seed;
 
 public:
-    UnsignedIntegerModel(UInt64 seed) : seed(seed) {}
+    UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -212,7 +214,7 @@ private:
     const UInt64 seed;
 
 public:
-    SignedIntegerModel(UInt64 seed) : seed(seed) {}
+    SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -246,7 +248,7 @@ Float transformFloatMantissa(Float x, UInt64 seed)
 
 
 /// Transform difference from previous number by applying pseudorandom permutation to mantissa part of it.
-/// It allows to retain some continuouty property of source data.
+/// It allows to retain some continuity property of source data.
 template <typename Float>
 class FloatModel : public IModel
 {
@@ -256,18 +258,18 @@ private:
     Float res_prev_value = 0;
 
 public:
-    FloatModel(UInt64 seed) : seed(seed) {}
+    FloatModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<Float> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<Float> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<Float>::create(size);
-        auto & res_data = static_cast<ColumnVector<Float> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<Float> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -317,8 +319,8 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
         if (size >= 16)
         {
-            char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(dst);
+            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+            hash.get128(hash_dst);
         }
         else
         {
@@ -348,14 +350,14 @@ private:
     const UInt64 seed;
 
 public:
-    FixedStringModel(UInt64 seed) : seed(seed) {}
+    FixedStringModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnFixedString & column_fixed_string = static_cast<const ColumnFixedString &>(column);
+        const ColumnFixedString & column_fixed_string = assert_cast<const ColumnFixedString &>(column);
         const size_t string_size = column_fixed_string.getN();
 
         const auto & src_data = column_fixed_string.getChars();
@@ -385,18 +387,18 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    DateTimeModel(UInt64 seed) : seed(seed), date_lut(DateLUT::instance()) {}
+    DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const auto & src_data = static_cast<const ColumnVector<UInt32> &>(column).getData();
+        const auto & src_data = assert_cast<const ColumnVector<UInt32> &>(column).getData();
         size_t size = src_data.size();
 
         auto res_column = ColumnVector<UInt32>::create(size);
-        auto & res_data = static_cast<ColumnVector<UInt32> &>(*res_column).getData();
+        auto & res_data = assert_cast<ColumnVector<UInt32> &>(*res_column).getData();
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -533,8 +535,8 @@ private:
     }
 
 public:
-    MarkovModel(MarkovModelParameters params)
-        : params(std::move(params)), code_points(params.order, BEGIN) {}
+    MarkovModel(MarkovModelParameters params_)
+        : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
     {
@@ -577,7 +579,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
 
                 if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
@@ -591,7 +593,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -623,7 +625,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -639,7 +641,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -668,13 +670,13 @@ public:
 
         while (pos < end)
         {
-            Table::iterator it = table.end();
+            Table::LookupResult it;
 
             size_t context_size = params.order;
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (table.end() != it && it->second.total + it->second.count_end != 0)
+                if (it && lookupResultGetMapped(it)->total + lookupResultGetMapped(it)->count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -682,7 +684,7 @@ public:
                 --context_size;
             }
 
-            if (table.end() == it)
+            if (!it)
                 throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
 
             size_t offset_from_begin_of_string = pos - data;
@@ -708,7 +710,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = it->second.sample(determinator, end_probability_multiplier);
+            CodePoint code = lookupResultGetMapped(it)->sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
@@ -745,11 +747,11 @@ private:
     MarkovModel markov_model;
 
 public:
-    StringModel(UInt64 seed, MarkovModelParameters params) : seed(seed), markov_model(std::move(params)) {}
+    StringModel(UInt64 seed_, MarkovModelParameters params_) : seed(seed_), markov_model(std::move(params_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         for (size_t i = 0; i < size; ++i)
@@ -766,7 +768,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
+        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
         size_t size = column_string.size();
 
         auto res_column = ColumnString::create();
@@ -797,11 +799,11 @@ private:
     ModelPtr nested_model;
 
 public:
-    ArrayModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         nested_model->train(nested_column);
@@ -814,7 +816,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
         const IColumn & nested_column = column_array.getData();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
@@ -830,11 +832,11 @@ private:
     ModelPtr nested_model;
 
 public:
-    NullableModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+    NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         nested_model->train(nested_column);
@@ -847,7 +849,7 @@ public:
 
     ColumnPtr generate(const IColumn & column) override
     {
-        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
         const IColumn & nested_column = column_nullable.getNestedColumn();
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
@@ -912,8 +914,8 @@ public:
         size_t columns = header.columns();
         models.reserve(columns);
 
-        for (size_t i = 0; i < columns; ++i)
-            models.emplace_back(factory.get(*header.getByPosition(i).type, hash(seed, i), markov_model_params));
+        for (const auto & elem : header)
+            models.emplace_back(factory.get(*elem.type, hash(seed, elem.name), markov_model_params));
     }
 
     void train(const Columns & columns)
@@ -948,13 +950,13 @@ try
     using namespace DB;
     namespace po = boost::program_options;
 
-    po::options_description description("Options");
+    po::options_description description = createOptionsDescription("Options", getTerminalWidth());
     description.add_options()
         ("help", "produce help message")
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
-        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length")
+        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length; note that a seed for each column is derived from this seed and a column name: you can obfuscate data for different tables and as long as you use identical seed and identical column names, the data for corresponding non-text columns for different tables will be transformed in the same way, so the data for different tables can be JOINed after obfuscation")
         ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")
@@ -1024,6 +1026,7 @@ try
     }
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
@@ -1037,7 +1040,7 @@ try
 
     Obfuscator obfuscator(header, seed, markov_model_params);
 
-    size_t max_block_size = 8192;
+    UInt64 max_block_size = 8192;
 
     /// Train step
     {

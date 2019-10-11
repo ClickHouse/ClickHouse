@@ -2,6 +2,7 @@
 
 #include <string>
 #include <IO/WriteBufferFromVector.h>
+#include <common/StringRef.h>
 
 
 namespace DB
@@ -28,6 +29,8 @@ class WriteBufferFromOwnString : public detail::StringHolder, public WriteBuffer
 {
 public:
     WriteBufferFromOwnString() : WriteBufferFromString(value) {}
+
+    StringRef stringRef() const { return isFinished() ? StringRef(value) : StringRef(value.data(), pos - value.data()); }
 
     std::string & str()
     {

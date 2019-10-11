@@ -1,7 +1,12 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
+
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -9,10 +14,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 
 #include <Common/typeid_cast.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Parsers/ASTAsterisk.h>
-#include <iostream>
-#include <Parsers/queryToString.h>
+
 
 namespace DB
 {
@@ -25,11 +27,14 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
+    const String & database_name_,
     const String & table_name_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage{columns_}, table_name(table_name_)
+    : table_name(table_name_), database_name(database_name_)
 {
+    setColumns(columns_);
+
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
@@ -53,7 +58,7 @@ BlockInputStreams StorageView::read(
     {
         auto new_inner_query = inner_query->clone();
         auto new_outer_query = query_info.query->clone();
-        auto new_outer_select = typeid_cast<ASTSelectQuery *>(new_outer_query.get());
+        auto * new_outer_select = new_outer_query->as<ASTSelectQuery>();
 
         replaceTableNameWithSubquery(new_outer_select, new_inner_query);
 
@@ -61,7 +66,7 @@ BlockInputStreams StorageView::read(
             current_inner_query = new_inner_query;
     }
 
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, column_names).executeWithMultipleStreams();
+    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams();
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
@@ -73,12 +78,12 @@ BlockInputStreams StorageView::read(
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
 {
-    ASTTablesInSelectQueryElement * select_element = static_cast<ASTTablesInSelectQueryElement *>(select_query->tables->children[0].get());
+    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
-    ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(select_element->table_expression.get());
+    auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
 
     if (!table_expression->database_and_table_name)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
@@ -99,7 +104,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(args.table_name, args.query, args.columns);
+        return StorageView::create(args.database_name, args.table_name, args.query, args.columns);
     });
 }
 

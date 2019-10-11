@@ -92,6 +92,10 @@
         <div class="clear"></div>
     </div>
 </div>
+<div id="announcement" class="colored-block">
+     <div class="page">
+     </div>
+</div>
 <div class="page">
     <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
 
@@ -192,6 +196,8 @@
                rel="external nofollow" target="_blank">Column Store Database Benchmarks</a> by Percona</li>
         <li><a href="http://tech.marksblogg.com/billion-nyc-taxi-clickhouse.html"
                rel="external nofollow" target="_blank">1.1 Billion Taxi Rides on ClickHouse & an Intel Core i5</a> by Mark Litwintschik</li>
+        <li><a href="https://tech.marksblogg.com/billion-nyc-taxi-rides-clickhouse-cluster.html"
+               rel="external nofollow" target="_blank">1.1 Billion Taxi Rides: 108-core ClickHouse Cluster</a> by Mark Litwintschik</li>
         <li><a href="https://www.altinity.com/blog/2017/6/20/clickhouse-vs-redshift"
                rel="external nofollow" target="_blank">ClickHouse vs Amazon RedShift Benchmark</a> by Altinity</li>
         <li><a href="https://carto.com/blog/inside/geospatial-processing-with-clickhouse"
@@ -218,7 +224,7 @@
 
     <h2 id="hardware-efficient">Hardware Efficient</h2>
 
-    <p>ClickHouse processes typical analytical queries two to three orders of magnitude faster than traditional
+    <p>ClickHouse processes typical analytical queries two to three orders of magnitude faster than traditional
         row-oriented systems with the same available I/O throughput. The system's columnar storage format allows fitting
         more hot data in RAM, which leads to a shorter response times.</p>
 
@@ -311,6 +317,8 @@
                rel="external nofollow" target="_blank">DNS Analytics</a> at CloudFlare</li>
         <li><a href="https://www.slideshare.net/glebus/using-clickhouse-for-experimentation-104247173"
                rel="external nofollow" target="_blank">ClickHouse for Experimentation</a> at Spotify</li>
+        <li><a href="https://blog.qrator.net/en/clickhouse-ddos-mitigation_37/"
+               rel="external nofollow" target="_blank">ClickHouse DB in DDoS mitigation</a> at Qrator</li>
         <li><a href="https://translate.yandex.com/translate?url=https%3A%2F%2Fhabrahabr.ru%2Fpost%2F322620%2F&amp;lang=ru-en"
                rel="external nofollow" target="_blank">Migrating to Yandex ClickHouse</a> by LifeStreet <span class="grey">(machine translation from Russian)</span></li>
         <li><a href="https://translate.yandex.com/translate?url=http%3A%2F%2Fsouslecapot.net%2F2018%2F11%2F21%2Fpatrick-chatain-vp-engineering-chez-contentsquare-penser-davantage-amelioration-continue-que-revolution-constante%2F&lang=fr-en"
@@ -390,11 +398,12 @@
 
     <p>System requirements: Linux, x86_64 with SSE 4.2.</p>
 
-    <p>Install packages for Ubuntu/Debian:</p>
+    <p>Install packages for <span class="distributive_selected" id="repo_deb">Ubuntu/Debian</span> or <span class="distributive_not_selected" id="repo_rpm">CentOS/RedHat</span>:</p>
 
     <code id="packages-install">
-<pre>
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+<pre id="instruction_deb">
+sudo apt-get install dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
 
 echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
@@ -404,20 +413,27 @@ sudo apt-get install -y clickhouse-server clickhouse-client
 sudo service clickhouse-server start
 clickhouse-client
 </pre>
+<pre id="instruction_rpm" style="display: none;">
+sudo yum install yum-utils
+sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+sudo yum install clickhouse-server clickhouse-client
+
+sudo /etc/init.d/clickhouse-server start
+clickhouse-client
+</pre>
     </code>
 
     <p>For other operating systems the easiest way to get started is using
         <a href="https://hub.docker.com/r/yandex/clickhouse-server/" rel="external nofollow"
            target="_blank">
-            official Docker images of ClickHouse</a>
-        . Alternatively you can build ClickHouse from <a
-            href="https://github.com/yandex/ClickHouse" rel="external nofollow"
-            target="_blank">sources</a>
-        according to the <a
-                href="https://clickhouse.yandex/docs/en/development/build.html" rel="external nofollow"
-                target="_blank">instruction</a>.</p>
+            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.yandex/docs/en/getting_started/">option</a> though.
+        Alternatively, you can easily get a running ClickHouse instance or cluster at 
+        <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link1" rel="external nofollow" target="_blank">
+            Yandex Managed Service for ClickHouse</a>.
+    </p>
 
-    <p>After installation proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="docs/en/">full
+    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="docs/en/">full
         documentation</a></strong>.</p>
 
     <h2 id="contacts">Contacts</h2>
@@ -434,11 +450,15 @@ clickhouse-client
                rel="external nofollow" target="_blank">English</a> or in
             <a href="https://telegram.me/clickhouse_ru"
                rel="external nofollow" target="_blank">Russian</a>.</li>
+        <li>Watch video content on <a href="https://www.youtube.com/c/ClickHouseDB"
+                              rel="external nofollow" target="_blank">YouTube channel</a>.</li>
         <li>Follow official <a
                href="https://twitter.com/ClickHouseDB"
                rel="external nofollow" target="_blank">Twitter account</a>.</li>
-        <li>Or email Yandex ClickHouse team directly at 
-            <a id="feedback_email" href="">turn on JavaScript to see email address</a>. 
+        <li>Open <a href="https://github.com/ClickHouse/ClickHouse/issues/new/choose"
+                    rel="external nofollow" target="_blank">GitHub issue</a> if you have a bug report or feature request.</li>
+        <li>Or email Yandex ClickHouse team directly at
+            <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
             You can also <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a> to meet us in person.</li>
     </ul>
 
@@ -450,28 +470,60 @@ clickhouse-client
         <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.yandex">Twitter</a> and
         <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.yandex">LinkedIn</a>!</p>
 
-    <p>Also hosting ClickHouse Meetups is very appreciated, <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a> 
-        if you are interested and we'll get in touch. 
+    <p>Also hosting ClickHouse Meetups is very appreciated, <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a>
+        if you are interested and we'll get in touch.
         Short reports about previous meetups are <a href="https://clickhouse.yandex/blog/en?tag=meetup" target="_blank">published in official ClickHouse blog</a>.</p>
 
-    <p class="warranty"><a href="https://github.com/yandex/ClickHouse/blob/master/LICENSE"
+    <p class="warranty"><a href="https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE"
                            rel="external nofollow" target="_blank">
         ClickHouse source code is published under Apache 2.0 License.</a> Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND, either express or implied.</p>
 
-    <p id="footer">&copy; 2016–2018 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+    <p id="footer">&copy; 2016–2019 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
 
 </div>
 
 <a id="github_link"
-   href="https://github.com/yandex/ClickHouse"
+   href="https://github.com/ClickHouse/ClickHouse"
    rel="external nofollow"
    target="_blank"
 ><div id="github">Fork me on GitHub</div></a>
 
-<script type="text/javascript" src="//yastatic.net/jquery/3.1.1/jquery.min.js"></script>
+<script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
 <script type="text/javascript">
     $(document).ready(function () {
+        $.get('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/README.md', function(e) {
+            var skip = true;
+            var lines = e.split('\n');
+            var result = [];
+            $.each(lines, function(idx) {
+                var line = lines[idx];
+                if (skip) {
+                    if (line.includes('Upcoming Events')) {
+                        skip = false;
+                    }
+                } else {
+                    if (!line) { return; };
+                    line = line.split('](');
+                    var tail = line[1].split(') ');
+                    result.push(
+                        '<a class="announcement-link" rel="external nofollow" target="_blank" href="' + 
+                        tail[0] + '">' + line[0].replace('* [', '').replace('ClickHouse Meetup in ', '') + 
+                        '</a> ' + tail[1].slice(0, -1)
+                    );
+                }
+            });
+            if (result.length) {
+                if (result.length == 1) {
+                    result = 'Upcoming Meetup: ' + result[0]; 
+                } else {
+                    result = 'Upcoming Meetups: ' + result.join(', ');
+                    var offset = result.lastIndexOf(', ');
+                    result = result.slice(0, offset) + result.slice(offset).replace(', ', ' and ');
+                }
+                $('#announcement>.page').html(result);
+            }
+        });
         var name = $('#main-title').text().trim().toLowerCase();
         var feedback_address = name + '-feedback' + '@yandex-team.com';
         var feedback_email = $('#feedback_email');
@@ -496,6 +548,30 @@ clickhouse-client
         if (hostParts.length > 2 && hostParts[0] != 'test') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
+
+        var available_distributives = ['deb', 'rpm'];
+        var selected_distributive = 'deb';
+
+        function refresh_distributives() {
+            available_distributives.forEach(function (name) {
+                if (name == selected_distributive) {
+                    $('#repo_' + name).attr("class", "distributive_selected");
+                    $('#instruction_' + name).show();
+                } else {
+                    $('#repo_' + name).attr("class", "distributive_not_selected");
+                    $('#instruction_' + name).hide();
+                }
+            });
+        };
+
+        refresh_distributives();
+
+        available_distributives.forEach(function (name) {
+            $('#repo_' + name).on('click', function () {
+                selected_distributive = name;
+                refresh_distributives();
+            });
+        });
     });
 </script>
 

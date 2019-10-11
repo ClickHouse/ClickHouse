@@ -1,4 +1,3 @@
-<a name="settings_profiles"></a>
 
 # Профили настроек
 
@@ -9,7 +8,7 @@
 
 Установить профиль `web`.
 
-``` sql
+```sql
 SET profile = 'web'
 ```
 

@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -27,7 +27,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreePartCheckThread)")
     , log(&Logger::get(log_name))
 {
-    task = storage.context.getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.global_context.getSchedulePool().createTask(log_name, [this] { run(); });
     task->schedule();
 }
 
@@ -38,24 +38,24 @@ ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
-    std::lock_guard<std::mutex> lock(start_stop_mutex);
+    std::lock_guard lock(start_stop_mutex);
     need_stop = false;
     task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
 {
-    //based on discussion on https://github.com/yandex/ClickHouse/pull/1489#issuecomment-344756259
+    //based on discussion on https://github.com/ClickHouse/ClickHouse/pull/1489#issuecomment-344756259
     //using the schedule pool there is no problem in case stop is called two time in row and the start multiple times
 
-    std::lock_guard<std::mutex> lock(start_stop_mutex);
+    std::lock_guard lock(start_stop_mutex);
     need_stop = true;
     task->deactivate();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
-    std::lock_guard<std::mutex> lock(parts_mutex);
+    std::lock_guard lock(parts_mutex);
 
     if (parts_set.count(name))
         return;
@@ -68,7 +68,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {
-    std::lock_guard<std::mutex> lock(parts_mutex);
+    std::lock_guard lock(parts_mutex);
     return parts_set.size();
 }
 
@@ -90,7 +90,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     }
 
     /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
-    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.data.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
 
     /** The logic is as follows:
         * - if some live or inactive replica has such a part, or a part covering it
@@ -126,7 +126,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         Strings parts = zookeeper->getChildren(storage.zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.data.format_version);
+            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.format_version);
 
             if (part_on_replica_info.contains(part_info))
             {
@@ -181,7 +181,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 }
 
 
-void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
+CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 {
     LOG_WARNING(log, "Checking part " << part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
@@ -189,48 +189,61 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     /// If the part is still in the PreCommitted -> Committed transition, it is not lost
     /// and there is no need to go searching for it on other replicas. To definitely find the needed part
     /// if it exists (or a part containing it) we first search among the PreCommitted parts.
-    auto part = storage.data.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
+    auto part = storage.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
     if (!part)
-        part = storage.data.getActiveContainingPart(part_name);
+        part = storage.getActiveContainingPart(part_name);
 
     /// We do not have this or a covering part.
     if (!part)
     {
         searchForMissingPart(part_name);
+        return {part_name, false, "Part is missing, will search for it"};
     }
     /// We have this part, and it's active. We will check whether we need this part and whether it has the right data.
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false);
+        auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
+        auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
+            part->columns, part->checksums);
+
+        String part_path = storage.replica_path + "/parts/" + part_name;
+        String part_znode;
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
-        if (zookeeper->exists(storage.replica_path + "/parts/" + part_name))
+        if (zookeeper->tryGet(part_path, part_znode))
         {
             LOG_WARNING(log, "Checking data of part " << part_name << ".");
 
             try
             {
-                auto zk_checksums = MinimalisticDataPartChecksums::deserializeFrom(
-                    zookeeper->get(storage.replica_path + "/parts/" + part_name + "/checksums"));
-                zk_checksums.checkEqual(part->checksums, true);
+                ReplicatedMergeTreePartHeader zk_part_header;
+                if (!part_znode.empty())
+                    zk_part_header = ReplicatedMergeTreePartHeader::fromString(part_znode);
+                else
+                {
+                    String columns_znode = zookeeper->get(part_path + "/columns");
+                    String checksums_znode = zookeeper->get(part_path + "/checksums");
+                    zk_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(
+                        columns_znode, checksums_znode);
+                }
 
-                auto zk_columns = NamesAndTypesList::parse(
-                    zookeeper->get(storage.replica_path + "/parts/" + part_name + "/columns"));
-                if (part->columns != zk_columns)
+                if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
                     throw Exception("Columns of local part " + part_name + " are different from ZooKeeper", ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
 
+                zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
+
                 checkDataPart(
-                    storage.data.getFullPath() + part_name,
-                    storage.data.index_granularity,
+                    part,
                     true,
-                    storage.data.primary_key_data_types,
+                    storage.primary_key_data_types,
+                    storage.skip_indices,
                     [this] { return need_stop.load(); });
 
                 if (need_stop)
                 {
                     LOG_INFO(log, "Checking part was cancelled.");
-                    return;
+                    return {part_name, false, "Checking part was cancelled"};
                 }
 
                 LOG_INFO(log, "Part " << part_name << " looks good.");
@@ -241,13 +254,15 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-                LOG_ERROR(log, "Part " << part_name << " looks broken. Removing it and queueing a fetch.");
+                String message = "Part " + part_name + " looks broken. Removing it and queueing a fetch.";
+                LOG_ERROR(log, message);
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
                 storage.removePartAndEnqueueFetch(part_name);
 
                 /// Delete part locally.
-                storage.data.forgetPartAndMoveToDetached(part, "broken_");
+                storage.forgetPartAndMoveToDetached(part, "broken");
+                return {part_name, false, message};
             }
         }
         else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
@@ -257,8 +272,10 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             /// Therefore, delete only if the part is old (not very reliable).
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
-            LOG_ERROR(log, "Unexpected part " << part_name << " in filesystem. Removing.");
-            storage.data.forgetPartAndMoveToDetached(part, "unexpected_");
+            String message = "Unexpected part " + part_name + " in filesystem. Removing.";
+            LOG_ERROR(log, message);
+            storage.forgetPartAndMoveToDetached(part, "unexpected");
+            return {part_name, false, message};
         }
         else
         {
@@ -278,6 +295,8 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
         /// In the worst case, errors will still appear `old_parts_lifetime` seconds in error log until the part is removed as the old one.
         LOG_WARNING(log, "We have part " << part->name << " covering part " << part_name);
     }
+
+    return {part_name, true, ""};
 }
 
 
@@ -295,7 +314,7 @@ void ReplicatedMergeTreePartCheckThread::run()
         time_t min_check_time = std::numeric_limits<time_t>::max();
 
         {
-            std::lock_guard<std::mutex> lock(parts_mutex);
+            std::lock_guard lock(parts_mutex);
 
             if (parts_queue.empty())
             {
@@ -331,7 +350,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         /// Remove the part from check queue.
         {
-            std::lock_guard<std::mutex> lock(parts_mutex);
+            std::lock_guard lock(parts_mutex);
 
             if (parts_queue.empty())
             {

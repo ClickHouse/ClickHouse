@@ -1,19 +1,21 @@
-DROP TABLE IF EXISTS test.left_table;
-DROP TABLE IF EXISTS test.right_table;
+set joined_subquery_requires_alias = 0;
 
-CREATE TABLE test.left_table(APIKey Int32, SomeColumn String) ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE IF EXISTS left_table;
+DROP TABLE IF EXISTS right_table;
 
-INSERT INTO test.left_table VALUES(1, 'somestr');
+CREATE TABLE left_table(APIKey Int32, SomeColumn String) ENGINE = MergeTree ORDER BY tuple();
 
-CREATE TABLE test.right_table(APIKey Int32, EventValueForPostback String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO left_table VALUES(1, 'somestr');
 
-INSERT INTO test.right_table VALUES(1, 'hello'), (2, 'WORLD');
+CREATE TABLE right_table(APIKey Int32, EventValueForPostback String) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO right_table VALUES(1, 'hello'), (2, 'WORLD');
 
 SELECT
     APIKey,
     ConversionEventValue
 FROM
-    test.left_table AS left_table
+    left_table AS left_table
 ALL INNER JOIN
     (
         SELECT *
@@ -23,18 +25,18 @@ ALL INNER JOIN
                     APIKey,
                     EventValueForPostback AS ConversionEventValue
                 FROM
-                    test.right_table AS right_table
+                    right_table AS right_table
             )
             ALL INNER JOIN
             (
                 SELECT
                     APIKey
                 FROM
-                    test.left_table as left_table
+                    left_table as left_table
                 GROUP BY
                     APIKey
             ) USING (APIKey)
     ) USING (APIKey);
 
-DROP TABLE IF EXISTS test.left_table;
-DROP TABLE IF EXISTS test.right_table;
+DROP TABLE IF EXISTS left_table;
+DROP TABLE IF EXISTS right_table;

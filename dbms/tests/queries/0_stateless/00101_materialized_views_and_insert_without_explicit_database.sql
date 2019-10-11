@@ -6,7 +6,7 @@ CREATE TABLE default.test_table (EventDate Date, CounterID UInt32,  UserID UInt6
 CREATE MATERIALIZED VIEW default.test_view (Rows UInt64,  MaxHitTime DateTime) ENGINE = Memory AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM default.test_table;
 CREATE MATERIALIZED VIEW default.test_view_filtered (EventDate Date, CounterID UInt32) ENGINE = Memory POPULATE AS SELECT CounterID, EventDate FROM default.test_table WHERE EventDate < '2013-01-01';
 
-INSERT INTO test_table (EventDate, UTCEventTime) VALUES ('2014-01-02', '2014-01-02 03:04:06');
+INSERT INTO default.test_table (EventDate, UTCEventTime) VALUES ('2014-01-02', '2014-01-02 03:04:06');
 
 SELECT * FROM default.test_table;
 SELECT * FROM default.test_view;

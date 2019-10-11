@@ -44,13 +44,14 @@ WriteBufferFromFile::WriteBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
 
     if (-1 == fd)
-        throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
+                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 
 #ifdef __APPLE__
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrno("Cannot set F_NOCACHE on file " + file_name, ErrorCodes::CANNOT_OPEN_FILE);
+            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
     }
 #endif
 }
@@ -58,14 +59,14 @@ WriteBufferFromFile::WriteBufferFromFile(
 
 /// Use pre-opened file descriptor.
 WriteBufferFromFile::WriteBufferFromFile(
-    int fd,
+    int fd_,
     const std::string & original_file_name,
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
     :
-    WriteBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment),
-    file_name(original_file_name.empty() ? "(fd = " + toString(fd) + ")" : original_file_name)
+    WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment),
+    file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
 }
 

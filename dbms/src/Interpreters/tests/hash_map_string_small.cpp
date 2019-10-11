@@ -15,7 +15,7 @@
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
@@ -23,7 +23,7 @@
 
 struct SmallStringRef
 {
-    UInt32 size;
+    UInt32 size = 0;
 
     union
     {
@@ -64,7 +64,7 @@ inline bool operator==(SmallStringRef lhs, SmallStringRef rhs)
     if (lhs.size == 0)
         return true;
 
-#if __SSE2__
+#ifdef __SSE2__
     return memequalSSE2Wide(lhs.data(), rhs.data(), lhs.size);
 #else
     return false;
@@ -137,15 +137,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<StringRef, Value>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();
@@ -166,15 +166,15 @@ int main(int argc, char ** argv)
         using Map = HashMapWithSavedHash<SmallStringRef, Value>;
 
         Map map;
-        Map::iterator it;
+        Map::LookupResult it;
         bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
             map.emplace(SmallStringRef(data[i].data, data[i].size), it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                *lookupResultGetMapped(it) = 0;
+            ++*lookupResultGetMapped(it);
         }
 
         watch.stop();

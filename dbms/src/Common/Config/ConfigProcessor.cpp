@@ -23,8 +23,8 @@ using namespace Poco::XML;
 namespace DB
 {
 
-/// For cutting prerpocessed path to this base
-std::string main_config_path;
+/// For cutting preprocessed path to this base
+static std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
@@ -210,7 +210,13 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
 
 void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 {
-    mergeRecursive(config, getRootNode(&*config), getRootNode(&*with));
+    Node * config_root = getRootNode(config.get());
+    Node * with_root = getRootNode(with.get());
+
+    if (config_root->nodeName() != with_root->nodeName())
+        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
+
+    mergeRecursive(config, config_root, with_root);
 }
 
 std::string ConfigProcessor::layerFromHost()
@@ -447,6 +453,11 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             merge(config, with);
             contributing_files.push_back(merge_file);
         }
+        catch (Exception & e)
+        {
+            e.addMessage("while merging config '" + path + "' with '" + merge_file + "'");
+            throw;
+        }
         catch (Poco::Exception & e)
         {
             throw Poco::Exception("Failed to merge config with '" + merge_file + "': " + e.displayText());
@@ -478,6 +489,11 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
 
         doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while preprocessing config '" + path + "'");
+        throw;
     }
     catch (Poco::Exception & e)
     {
@@ -517,7 +533,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
     XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
 
     if (has_zk_includes && !allow_zk_includes)
-        throw Poco::Exception("Error while loading config `" + path + "': from_zk includes are not allowed!");
+        throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
@@ -561,41 +577,41 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
-    if (preprocessed_path.empty())
+    try
     {
-        auto new_path = loaded_config.config_path;
-        if (new_path.substr(0, main_config_path.size()) == main_config_path)
-            new_path.replace(0, main_config_path.size(), "");
-        std::replace(new_path.begin(), new_path.end(), '/', '_');
-
-        if (preprocessed_dir.empty())
+        if (preprocessed_path.empty())
         {
-            if (!loaded_config.configuration->has("path"))
+            auto new_path = loaded_config.config_path;
+            if (new_path.substr(0, main_config_path.size()) == main_config_path)
+                new_path.replace(0, main_config_path.size(), "");
+            std::replace(new_path.begin(), new_path.end(), '/', '_');
+
+            if (preprocessed_dir.empty())
             {
-                // Will use current directory
-                auto parent_path = Poco::Path(loaded_config.config_path).makeParent();
-                preprocessed_dir = parent_path.toString();
-                Poco::Path poco_new_path(new_path);
-                poco_new_path.setBaseName(poco_new_path.getBaseName() + PREPROCESSED_SUFFIX);
-                new_path = poco_new_path.toString();
+                if (!loaded_config.configuration->has("path"))
+                {
+                    // Will use current directory
+                    auto parent_path = Poco::Path(loaded_config.config_path).makeParent();
+                    preprocessed_dir = parent_path.toString();
+                    Poco::Path poco_new_path(new_path);
+                    poco_new_path.setBaseName(poco_new_path.getBaseName() + PREPROCESSED_SUFFIX);
+                    new_path = poco_new_path.toString();
+                }
+                else
+                {
+                    preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
+                }
             }
             else
             {
-                preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
+                preprocessed_dir += "/preprocessed_configs/";
             }
-        }
-        else
-        {
-            preprocessed_dir += "/preprocessed_configs/";
-        }
 
-        preprocessed_path = preprocessed_dir + new_path;
-        auto path = Poco::Path(preprocessed_path).makeParent();
-        if (!path.toString().empty())
-            Poco::File(path).createDirectories();
-    }
-    try
-    {
+            preprocessed_path = preprocessed_dir + new_path;
+            auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
+            if (!preprocessed_path_parent.toString().empty())
+                Poco::File(preprocessed_path_parent).createDirectories();
+        }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
     }
     catch (Poco::Exception & e)

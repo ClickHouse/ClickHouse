@@ -1,5 +1,5 @@
-#if __has_include(<mariadb/mysql.h>)
-#include <mariadb/mysql.h> // Y_IGNORE
+#if __has_include(<mysql.h>)
+#include <mysql.h>
 #else
 #include <mysql/mysql.h>
 #endif
@@ -40,6 +40,9 @@ Query::Query(const Query & other) : std::ostream(0), conn(other.conn)
 
 Query & Query::operator= (const Query & other)
 {
+    if (this == &other)
+        return *this;
+
     conn = other.conn;
 
     seekp(0);

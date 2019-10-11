@@ -1,15 +1,17 @@
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <iostream>
 
 
-class IColumn : public COWPtr<IColumn>
+class IColumn : public COW<IColumn>
 {
 private:
-    friend class COWPtr<IColumn>;
+    friend class COW<IColumn>;
     virtual MutablePtr clone() const = 0;
 
 public:
-    virtual ~IColumn() {}
+    IColumn() = default;
+    IColumn(const IColumn &) = default;
+    virtual ~IColumn() = default;
 
     virtual int get() const = 0;
     virtual void set(int value) = 0;
@@ -20,13 +22,13 @@ public:
 using ColumnPtr = IColumn::Ptr;
 using MutableColumnPtr = IColumn::MutablePtr;
 
-class ConcreteColumn : public COWPtrHelper<IColumn, ConcreteColumn>
+class ConcreteColumn : public COWHelper<IColumn, ConcreteColumn>
 {
 private:
-    friend class COWPtrHelper<IColumn, ConcreteColumn>;
+    friend class COWHelper<IColumn, ConcreteColumn>;
 
     int data;
-    ConcreteColumn(int data) : data(data) {}
+    ConcreteColumn(int data_) : data(data_) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
     MutableColumnPtr test() const override
@@ -51,7 +53,7 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = y->mutate();
+        MutableColumnPtr mut = std::move(*y).mutate();
         mut->set(2);
 
         std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
@@ -70,7 +72,7 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = y->mutate();
+        MutableColumnPtr mut = std::move(*y).mutate();
         mut->set(3);
 
         std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";

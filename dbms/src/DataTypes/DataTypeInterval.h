@@ -25,6 +25,7 @@ public:
         Day,
         Week,
         Month,
+        Quarter,
         Year
     };
 
@@ -46,14 +47,16 @@ public:
             case Day: return "Day";
             case Week: return "Week";
             case Month: return "Month";
+            case Quarter: return "Quarter";
             case Year: return "Year";
-            default: __builtin_unreachable();
         }
+
+        __builtin_unreachable();
     }
 
-    DataTypeInterval(Kind kind) : kind(kind) {}
+    DataTypeInterval(Kind kind_) : kind(kind_) {}
 
-    std::string getName() const override { return std::string("Interval") + kindToString(); }
+    std::string doGetName() const override { return std::string("Interval") + kindToString(); }
     const char * getFamilyName() const override { return "Interval"; }
     TypeIndex getTypeId() const override { return TypeIndex::Interval; }
 

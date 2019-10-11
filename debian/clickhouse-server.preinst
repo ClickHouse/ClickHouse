@@ -4,3 +4,5 @@ if [ "$1" = "upgrade" ]; then
     # Return etc/cron.d/clickhouse-server to original state
     service clickhouse-server disable_cron ||:
 fi
+
+#DEBHELPER#

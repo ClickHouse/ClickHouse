@@ -10,7 +10,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-通过  URL 中的 `query` 参数来发送请求，或者发送 POST 请求，或者将查询的开头部分放在 URL 的 `query` 参数中，其他部分放在 POST 中（我们会在后面解释为什么这样做是有必要的）。URL 的大小会限制在 16 KB，所以发送大型查询时要时刻记住这点。
+通过 URL 中的 `query` 参数来发送请求，或者发送 POST 请求，或者将查询的开头部分放在 URL 的 `query` 参数中，其他部分放在 POST 中（我们会在后面解释为什么这样做是有必要的）。URL 的大小会限制在 16 KB，所以发送大型查询时要时刻记住这点。
 
 如果请求成功，将会收到 200 的响应状态码和响应主体中的结果。
 如果发生了某个异常，将会收到 500 的响应状态码和响应主体中的异常描述信息。
@@ -192,11 +192,11 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 相比起 TCP 原生接口，HTTP 接口不支持会话和会话设置的概念，不允许中止查询（准确地说，只在少数情况下允许），不显示查询处理的进展。执行解析和数据格式化都是在服务端处理，网络上会比 TCP 原生接口更低效。
 
-可选的 `query_id` 参数可能当做 query ID 传入（或者任何字符串）。更多信息，参见 "[设置 replace_running_query](../operations/settings/settings.md#replace-running-query)" 部分。
+可选的 `query_id` 参数可能当做 query ID 传入（或者任何字符串）。更多信息，参见 "[设置 replace_running_query](../operations/settings/settings.md)" 部分。
 
 可选的 `quota_key` 参数可能当做 quota key 传入（或者任何字符串）。更多信息，参见 "[配额](../operations/quotas.md#quotas)" 部分。
 
-HTTP 接口允许传入额外的数据（外部临时表）来查询。更多信息，参见 "[外部数据查询处理](../operations/table_engines/external_data.md#external-data)" 部分。
+HTTP 接口允许传入额外的数据（外部临时表）来查询。更多信息，参见 "[外部数据查询处理](../operations/table_engines/external_data.md)" 部分。
 
 ## 响应缓冲
 

@@ -1,4 +1,5 @@
 #include <Parsers/ASTDropQuery.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -10,14 +11,14 @@ namespace ErrorCodes
 }
 
 
-String ASTDropQuery::getID() const
+String ASTDropQuery::getID(char delim) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
-        return "DropQuery_" + database + "_" + table;
+        return "DropQuery" + (delim + database) + delim + table;
     else if (kind == ASTDropQuery::Kind::Detach)
-        return "DetachQuery_" + database + "_" + table;
+        return "DetachQuery" + (delim + database) + delim + table;
     else if (kind == ASTDropQuery::Kind::Truncate)
-        return "TruncateQuery_" + database + "_" + table;
+        return "TruncateQuery" + (delim + database) + delim + table;
     else
         throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
 }
@@ -44,7 +45,12 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (temporary)
         settings.ostr << "TEMPORARY ";
 
-    settings.ostr << ((table.empty() && !database.empty()) ? "DATABASE " : "TABLE ");
+    if (table.empty() && !database.empty())
+        settings.ostr << "DATABASE ";
+    else if (!is_dictionary)
+        settings.ostr << "TABLE ";
+    else
+        settings.ostr << "DICTIONARY ";
 
     if (if_exists)
         settings.ostr << "IF EXISTS ";
@@ -60,4 +66,3 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 }
 
 }
-

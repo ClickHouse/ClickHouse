@@ -1,14 +1,19 @@
 #include <iostream>
-
+#include <optional>
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string/join.hpp>
 
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/CompressedWriteBuffer.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Compression/CompressionFactory.h>
+#include <Common/TerminalSize.h>
 
 
 namespace DB
@@ -16,6 +21,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int TOO_LARGE_SIZE_COMPRESSED;
+        extern const int BAD_ARGUMENTS;
     }
 }
 
@@ -54,14 +60,15 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
-    boost::program_options::options_description desc("Allowed options");
+    boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
         ("help,h", "produce help message")
         ("decompress,d", "decompress")
         ("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
-        ("level", "compression level")
+        ("codec", boost::program_options::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
+        ("level", boost::program_options::value<int>(), "compression level for codecs spicified via flags")
         ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;
@@ -84,17 +91,42 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
         unsigned block_size = options["block-size"].as<unsigned>();
+        std::vector<std::string> codecs;
+        if (options.count("codec"))
+            codecs = options["codec"].as<std::vector<std::string>>();
 
-        DB::CompressionMethod method = DB::CompressionMethod::LZ4;
+        if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
+            throw DB::Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", DB::ErrorCodes::BAD_ARGUMENTS);
+
+        if (!codecs.empty() && options.count("level"))
+            throw DB::Exception("Wrong options, --level is not compatible with --codec list", DB::ErrorCodes::BAD_ARGUMENTS);
+
+        std::string method_family = "LZ4";
 
         if (use_lz4hc)
-            method = DB::CompressionMethod::LZ4HC;
+            method_family = "LZ4HC";
         else if (use_zstd)
-            method = DB::CompressionMethod::ZSTD;
+            method_family = "ZSTD";
         else if (use_none)
-            method = DB::CompressionMethod::NONE;
+            method_family = "NONE";
 
-        DB::CompressionSettings settings(method, options.count("level") > 0 ? options["level"].as<int>() : DB::CompressionSettings::getDefaultLevel(method));
+        std::optional<int> level = std::nullopt;
+        if (options.count("level"))
+            level = options["level"].as<int>();
+
+
+        DB::CompressionCodecPtr codec;
+        if (!codecs.empty())
+        {
+            DB::ParserCodec codec_parser;
+
+            std::string codecs_line = boost::algorithm::join(codecs, ",");
+            auto ast = DB::parseQuery(codec_parser, "(" + codecs_line + ")", 0);
+            codec = DB::CompressionCodecFactory::instance().get(ast, nullptr);
+        }
+        else
+            codec = DB::CompressionCodecFactory::instance().get(method_family, level);
+
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
         DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
@@ -113,7 +145,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else
         {
             /// Compression
-            DB::CompressedWriteBuffer to(wb, settings, block_size);
+            DB::CompressedWriteBuffer to(wb, codec, block_size);
             DB::copyData(rb, to);
         }
     }

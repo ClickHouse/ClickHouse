@@ -1,8 +1,10 @@
 #pragma once
 
+#include <common/StringRef.h>
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
-#include <Common/ObjectPool.h>
+
+#include <Core/SettingsCommon.h>
 
 #include <IO/Progress.h>
 
@@ -10,6 +12,8 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <functional>
+#include <boost/noncopyable.hpp>
 
 
 namespace Poco
@@ -24,7 +28,8 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
-using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
+class QueryProfilerReal;
+class QueryProfilerCpu;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RUsageCounters;
@@ -45,7 +50,7 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 class ThreadGroupStatus
 {
 public:
-    mutable std::shared_mutex mutex;
+    mutable std::mutex mutex;
 
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
@@ -55,12 +60,14 @@ public:
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
-    /// Key is Poco's thread_id
-    using QueryThreadStatuses = std::map<UInt32, ThreadStatusPtr>;
-    QueryThreadStatuses thread_statuses;
+    std::vector<UInt32> thread_numbers;
+    std::vector<UInt32> os_thread_ids;
 
     /// The first thread created this thread group
-    ThreadStatusPtr master_thread;
+    UInt32 master_thread_number = 0;
+    Int32 master_thread_os_id = -1;
+
+    LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
 };
@@ -68,29 +75,39 @@ public:
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
 
+extern thread_local ThreadStatus * current_thread;
+
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
-  * Used inside thread-local variable. See variables in CurrentThread.cpp
+  * The object must be created in thread function and destroyed in the same thread before the exit.
+  * It is accessed through thread-local pointer.
   *
   * This object should be used only via "CurrentThread", see CurrentThread.h
   */
-class ThreadStatus : public std::enable_shared_from_this<ThreadStatus>
+class ThreadStatus : public boost::noncopyable
 {
 public:
+    ThreadStatus();
+    ~ThreadStatus();
+
     /// Poco's thread number (the same number is used in logs)
     UInt32 thread_number = 0;
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     Int32 os_thread_id = -1;
+    /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
+    Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
     MemoryTracker memory_tracker{VariableContext::Thread};
+    /// Small amount of untracked memory (per thread atomic-less counter)
+    Int64 untracked_memory = 0;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
     Progress progress_out;
 
-public:
-    static ThreadStatusPtr create();
+    using Deleter = std::function<void()>;
+    Deleter deleter;
 
     ThreadGroupStatusPtr getThreadGroup() const
     {
@@ -109,7 +126,10 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    String getQueryID();
+    StringRef getQueryId() const
+    {
+        return query_id;
+    }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -122,7 +142,8 @@ public:
         return thread_state == Died ? nullptr : logs_queue_ptr.lock();
     }
 
-    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue);
+    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                     LogsLevel client_logs_level);
 
     /// Sets query context for current thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
@@ -137,12 +158,12 @@ public:
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
-    ~ThreadStatus();
-
 protected:
-    ThreadStatus();
-
     void initPerformanceCounters();
+
+    void initQueryProfiler();
+
+    void finalizeQueryProfiler();
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
@@ -157,6 +178,8 @@ protected:
     /// Use it only from current thread
     Context * query_context = nullptr;
 
+    String query_id;
+
     /// A logs queue used by TCPHandler to pass logs to a client
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
@@ -164,6 +187,10 @@ protected:
     UInt64 query_start_time_nanoseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
+
+    // CPU and Real time query profilers
+    std::unique_ptr<QueryProfilerReal> query_profiler_real;
+    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
 
     Poco::Logger * log = nullptr;
 
@@ -175,8 +202,7 @@ protected:
     std::unique_ptr<TasksStatsCounters> last_taskstats;
 
     /// Set to non-nullptr only if we have enough capabilities.
-    /// We use pool because creation and destruction of TaskStatsInfoGetter objects are expensive.
-    SimpleObjectPool<TaskStatsInfoGetter>::Pointer taskstats_getter;
+    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
 };
 
 }

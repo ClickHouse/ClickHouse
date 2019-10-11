@@ -1,12 +1,12 @@
 #pragma once
 
+#include <IO/ConnectionTimeouts.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
+#include <Common/XDBCBridgeHelper.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "IDictionarySource.h"
-#include <IO/ConnectionTimeouts.h>
-#include <Common/XDBCBridgeHelper.h>
 
 
 namespace Poco
@@ -26,7 +26,8 @@ namespace DB
 class XDBCDictionarySource final : public IDictionarySource
 {
 public:
-    XDBCDictionarySource(const DictionaryStructure & dict_struct_,
+    XDBCDictionarySource(
+        const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix_,
         const Block & sample_block_,
@@ -35,6 +36,7 @@ public:
 
     /// copy-constructor is provided in order to support cloneability
     XDBCDictionarySource(const XDBCDictionarySource & other);
+    XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

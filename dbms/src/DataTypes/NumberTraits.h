@@ -188,7 +188,7 @@ template <typename A> struct ToInteger
 
 
 // CLICKHOUSE-29. The same depth, different signs
-// NOTE: This case is applied for 64-bit integers only (for backward compability), but could be used for any-bit integers
+// NOTE: This case is applied for 64-bit integers only (for backward compatibility), but could be used for any-bit integers
 template <typename A, typename B>
 constexpr bool LeastGreatestSpecialCase =
     std::is_integral_v<A> && std::is_integral_v<B>

@@ -49,6 +49,7 @@ typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F &&
         case Field::Types::Decimal32: return visitor(field.template get<DecimalField<Decimal32>>());
         case Field::Types::Decimal64: return visitor(field.template get<DecimalField<Decimal64>>());
         case Field::Types::Decimal128: return visitor(field.template get<DecimalField<Decimal128>>());
+        case Field::Types::AggregateFunctionState: return visitor(field.template get<AggregateFunctionStateData>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -72,6 +73,7 @@ static typename std::decay_t<Visitor>::ResultType applyBinaryVisitorImpl(Visitor
         case Field::Types::Decimal32:  return visitor(field1, field2.template get<DecimalField<Decimal32>>());
         case Field::Types::Decimal64:  return visitor(field1, field2.template get<DecimalField<Decimal64>>());
         case Field::Types::Decimal128: return visitor(field1, field2.template get<DecimalField<Decimal128>>());
+        case Field::Types::AggregateFunctionState: return visitor(field1, field2.template get<AggregateFunctionStateData>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -116,6 +118,9 @@ typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F1 &
         case Field::Types::Decimal128:
             return applyBinaryVisitorImpl(
                 std::forward<Visitor>(visitor), field1.template get<DecimalField<Decimal128>>(), std::forward<F2>(field2));
+        case Field::Types::AggregateFunctionState:
+            return applyBinaryVisitorImpl(
+                    std::forward<Visitor>(visitor), field1.template get<AggregateFunctionStateData>(), std::forward<F2>(field2));
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -138,6 +143,7 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const AggregateFunctionStateData & x) const;
 };
 
 
@@ -156,6 +162,7 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const AggregateFunctionStateData & x) const;
 };
 
 
@@ -201,6 +208,11 @@ public:
         else
             return x.getValue() / x.getScaleMultiplier();
     }
+
+    T operator() (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
 };
 
 
@@ -210,7 +222,7 @@ class FieldVisitorHash : public StaticVisitor<>
 private:
     SipHash & hash;
 public:
-    FieldVisitorHash(SipHash & hash);
+    FieldVisitorHash(SipHash & hash_);
 
     void operator() (const Null & x) const;
     void operator() (const UInt64 & x) const;
@@ -222,6 +234,7 @@ public:
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
+    void operator() (const AggregateFunctionStateData & x) const;
 };
 
 
@@ -246,6 +259,7 @@ public:
     bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Array & r)     const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Int64 & l, const Null & r)       const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::equalsOp(l, r); }
@@ -255,6 +269,7 @@ public:
     bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Array & r)      const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Float64 & l, const Null & r)     const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::equalsOp(l, r); }
@@ -264,6 +279,7 @@ public:
     bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Array & r)    const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Tuple & r)    const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     template <typename T>
     bool operator() (const Null &, const T &) const
@@ -321,6 +337,14 @@ public:
     template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }
     template <typename T> bool operator() (const Float64 & l, const DecimalField<T> & r) const { return cantCompare(l, r); }
 
+    template <typename T>
+    bool operator() (const AggregateFunctionStateData & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, AggregateFunctionStateData>)
+            return l == r;
+        return cantCompare(l, r);
+    }
+
 private:
     template <typename T, typename U>
     bool cantCompare(const T &, const U &) const
@@ -344,6 +368,7 @@ public:
     bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Array & r)     const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Int64 & l, const Null & r)       const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::lessOp(l, r); }
@@ -353,6 +378,7 @@ public:
     bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Array & r)      const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Float64 & l, const Null & r)     const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::lessOp(l, r); }
@@ -362,6 +388,7 @@ public:
     bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Array & r)    const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Tuple & r)    const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     template <typename T>
     bool operator() (const Null &, const T &) const
@@ -419,6 +446,12 @@ public:
     template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
     template <typename T> bool operator() (const Float64 &, const DecimalField<T> &) const { return false; }
 
+    template <typename T>
+    bool operator() (const AggregateFunctionStateData & l, const T & r) const
+    {
+        return cantCompare(l, r);
+    }
+
 private:
     template <typename T, typename U>
     bool cantCompare(const T &, const U &) const
@@ -447,6 +480,7 @@ public:
     bool operator() (String &) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const

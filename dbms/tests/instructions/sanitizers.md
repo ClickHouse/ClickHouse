@@ -3,7 +3,7 @@
 Note: We use Address Sanitizer to run functional tests for every commit automatically.
 
 ```
-mkdir build && cd build
+mkdir build_asan && cd build_asan
 ```
 
 Note: using clang instead of gcc is strongly recommended.
@@ -29,20 +29,12 @@ sudo -u clickhouse ./clickhouse-asan server --config /etc/clickhouse-server/conf
 # How to use Thread Sanitizer
 
 ```
-mkdir build && cd build
+mkdir build_tsan && cd build_tsan
 ```
-
-## Note: All parameters are mandatory.
 
 ```
 CC=clang CXX=clang++ cmake -D SANITIZE=thread ..
 ninja
-```
-
-## Copy binary to your server
-
-```
-scp ./dbms/programs/clickhouse yourserver:~/clickhouse-tsan
 ```
 
 ## Start ClickHouse and run tests
@@ -52,26 +44,28 @@ sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1' ./clickhouse-tsan server --con
 ```
 
 
+# How to use Undefined Behaviour Sanitizer
+
+```
+mkdir build_ubsan && cd build_ubsan
+```
+
+Note: clang is mandatory, because gcc (in version 8) has false positives due to devirtualization and it has less amount of checks.
+
+```
+CC=clang CXX=clang++ cmake -D SANITIZE=undefined ..
+ninja
+```
+
+## Start ClickHouse and run tests
+
+```
+sudo -u clickhouse UBSAN_OPTIONS='print_stacktrace=1' ./clickhouse-ubsan server --config /etc/clickhouse-server/config.xml
+```
+
+
 # How to use Memory Sanitizer
 
-First, build libc++ with MSan:
-
 ```
-svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm
-(cd llvm/projects && svn co http://llvm.org/svn/llvm-project/libcxx/trunk libcxx)
-(cd llvm/projects && svn co http://llvm.org/svn/llvm-project/libcxxabi/trunk libcxxabi)
-
-mkdir libcxx_msan && cd libcxx_msan
-cmake ../llvm -DCMAKE_BUILD_TYPE=Release -DLLVM_USE_SANITIZER=Memory -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-make cxx -j24
-```
-
-Then, build ClickHouse:
-
-```
-mkdir build && cd build
-```
-
-```
-CC=clang CXX=clang++ cmake -D SANITIZE=memory -D LIBCXX_PATH=/home/milovidov/libcxx_msan ..
+CC=clang-8 CXX=clang++-8 cmake -D ENABLE_HDFS=0 -D ENABLE_CAPNP=0 -D ENABLE_RDKAFKA=0 -D ENABLE_ICU=0 -D ENABLE_POCO_MONGODB=0 -D ENABLE_POCO_NETSSL=0 -D ENABLE_POCO_ODBC=0 -D ENABLE_ODBC=0 -D ENABLE_MYSQL=0 -D ENABLE_EMBEDDED_COMPILER=0 -D USE_INTERNAL_CAPNP_LIBRARY=0 -D USE_SIMDJSON=0 -DENABLE_READLINE=0 -D SANITIZE=memory ..
 ```

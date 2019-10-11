@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 namespace DB
 {
@@ -11,11 +11,11 @@ namespace DB
   *    simplifies usage of ReadBufferFromFile (no need to manage buffer lifetime) etc.
   */
 template <typename OwnType>
-class OwningBlockInputStream : public IProfilingBlockInputStream
+class OwningBlockInputStream : public IBlockInputStream
 {
 public:
-    OwningBlockInputStream(const BlockInputStreamPtr & stream, std::unique_ptr<OwnType> own)
-        : stream{stream}, own{std::move(own)}
+    OwningBlockInputStream(const BlockInputStreamPtr & stream_, std::unique_ptr<OwnType> own_)
+        : stream{stream_}, own{std::move(own_)}
     {
         children.push_back(stream);
     }

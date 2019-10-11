@@ -38,7 +38,7 @@ protected:
 
         void operator()(T * owning_ptr) const
         {
-            std::lock_guard<std::mutex> lock{parent->mutex};
+            std::lock_guard lock{parent->mutex};
             parent->stack.emplace(owning_ptr);
         }
     };
@@ -51,7 +51,7 @@ public:
     template <typename Factory>
     Pointer get(Factory && f)
     {
-        std::unique_lock<std::mutex> lock(mutex);
+        std::unique_lock lock(mutex);
 
         if (stack.empty())
         {
@@ -94,7 +94,7 @@ public:
     template <typename Factory>
     Pointer get(const Key & key, Factory && f)
     {
-        std::unique_lock<std::mutex> lock(mutex);
+        std::unique_lock lock(mutex);
 
         auto it = container.find(key);
         if (container.end() == it)

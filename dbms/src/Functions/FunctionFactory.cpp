@@ -6,6 +6,8 @@
 
 #include <Poco/String.h>
 
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
 
@@ -43,7 +45,13 @@ FunctionBuilderPtr FunctionFactory::get(
 {
     auto res = tryGet(name, context);
     if (!res)
-        throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+    {
+        auto hints = this->getHints(name);
+        if (!hints.empty())
+            throw Exception("Unknown function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_FUNCTION);
+        else
+            throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+    }
     return res;
 }
 
@@ -63,6 +71,12 @@ FunctionBuilderPtr FunctionFactory::tryGet(
         return it->second(context);
 
     return {};
+}
+
+FunctionFactory & FunctionFactory::instance()
+{
+    static FunctionFactory ret;
+    return ret;
 }
 
 }

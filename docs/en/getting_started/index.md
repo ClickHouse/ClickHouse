@@ -18,31 +18,44 @@ Yandex ClickHouse team recommends using official pre-compiled `deb` packages for
 
 To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
 
-```
-deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
+```bash
+$ deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is not recommended for production environments).
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
 
 Then run these commands to actually install packages:
 
 ```bash
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
+$ sudo apt-get install dirmngr    # optional
+$ sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-client clickhouse-server
 ```
 
 You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
 
 ### From RPM Packages
 
-Yandex does not run ClickHouse on `rpm` based Linux distributions and `rpm` packages are not as thoroughly tested. So use them at your own risk, but there are many other companies that do successfully run them in production without any major issues.
+Yandex ClickHouse team recommends using official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
 
-For CentOS, RHEL or Fedora there are the following options:
+First you need to add the official repository:
 
-* Packages from <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64/> are generated from official `deb` packages by Yandex and have byte-identical binaries.
-* Packages from <https://github.com/Altinity/clickhouse-rpm-install> are built by independent company Altinity, but are used widely without any complaints.
-* Or you can use Docker (see below).
+```bash
+$ sudo yum install yum-utils
+$ sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+$ sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+```
+
+If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
+
+Then run these commands to actually install packages:
+
+```bash
+$ sudo yum install clickhouse-server clickhouse-client
+```
+
+You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
 
 ### From Docker Image
 
@@ -54,13 +67,13 @@ To manually compile ClickHouse, follow the instructions for [Linux](../developme
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
-```
+```text
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
 
 You'll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/dbms/programs/server/config.xml), by default they are:
-```
+```text
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```
@@ -74,6 +87,13 @@ To start the server as a daemon, run:
 ``` bash
 $ sudo service clickhouse-server start
 ```
+
+If you don't have `service` command, run as
+
+``` bash
+$ sudo /etc/init.d/clickhouse-server start
+```
+
 
 See the logs in the `/var/log/clickhouse-server/` directory.
 
@@ -109,18 +129,14 @@ $ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.18749.
-
-:) SELECT 1
-
+```
+```sql
 SELECT 1
-
+```
+```text
 ┌─1─┐
 │ 1 │
 └───┘
-
-1 rows in set. Elapsed: 0.003 sec.
-
-:)
 ```
 
 **Congratulations, the system works!**

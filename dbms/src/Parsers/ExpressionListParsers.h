@@ -19,8 +19,11 @@ using Operators_t = const char **;
 class ParserList : public IParserBase
 {
 public:
-    ParserList(ParserPtr && elem_parser_, ParserPtr && separator_parser_, bool allow_empty_ = true)
-        : elem_parser(std::move(elem_parser_)), separator_parser(std::move(separator_parser_)), allow_empty(allow_empty_)
+    ParserList(ParserPtr && elem_parser_, ParserPtr && separator_parser_, bool allow_empty_ = true, char result_separator_ = ',')
+        : elem_parser(std::move(elem_parser_))
+        , separator_parser(std::move(separator_parser_))
+        , allow_empty(allow_empty_)
+        , result_separator(result_separator_)
     {
     }
 protected:
@@ -30,6 +33,7 @@ private:
     ParserPtr elem_parser;
     ParserPtr separator_parser;
     bool allow_empty;
+    char result_separator;
 };
 
 
@@ -322,7 +326,7 @@ using ParserExpression = ParserLambdaExpression;
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-    ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool prefer_alias_to_column_name_ = false);
+    ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword);
 protected:
     ParserPtr impl;
 
@@ -339,12 +343,11 @@ protected:
 class ParserExpressionList : public IParserBase
 {
 public:
-    ParserExpressionList(bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
+    ParserExpressionList(bool allow_alias_without_as_keyword_)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 
 protected:
     bool allow_alias_without_as_keyword;
-    bool prefer_alias_to_column_name;
 
     const char * getName() const { return "list of expressions"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
@@ -354,8 +357,8 @@ protected:
 class ParserNotEmptyExpressionList : public IParserBase
 {
 public:
-    ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword, bool prefer_alias_to_column_name = false)
-        : nested_parser(allow_alias_without_as_keyword, prefer_alias_to_column_name) {}
+    ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword)
+        : nested_parser(allow_alias_without_as_keyword) {}
 private:
     ParserExpressionList nested_parser;
 protected:
@@ -371,5 +374,21 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+
+/// Parser for key-value pair, where value can be list of pairs.
+class ParserKeyValuePair : public IParserBase
+{
+protected:
+    const char * getName() const override { return "key-value pair"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// Parser for list of key-value pairs.
+class ParserKeyValuePairsList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "list of pairs"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 }

@@ -4,18 +4,18 @@
 #include <memory>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Dictionaries/ODBCBlockInputStream.h>
-#include <Formats/BinaryRowInputStream.h>
+#include "ODBCBlockInputStream.h"
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
 #include <common/logger_useful.h>
+#include <mutex>
+#include <Poco/ThreadPool.h>
 
 namespace DB
 {
@@ -31,13 +31,32 @@ namespace
     }
 }
 
+using PocoSessionPoolConstructor = std::function<std::shared_ptr<Poco::Data::SessionPool>()>;
+/** Is used to adjust max size of default Poco thread pool. See issue #750
+  * Acquire the lock, resize pool and construct new Session.
+  */
+std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
+{
+    static std::mutex mutex;
+
+    Poco::ThreadPool & pool = Poco::ThreadPool::defaultPool();
+
+    /// NOTE: The lock don't guarantee that external users of the pool don't change its capacity
+    std::unique_lock lock(mutex);
+
+    if (pool.available() == 0)
+        pool.addCapacity(2 * std::max(pool.capacity(), 1));
+
+    return pool_constr();
+}
 
 ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
 {
     std::lock_guard lock(mutex);
     if (!pool_map->count(connection_str))
     {
-        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str] {
+        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str]
+        {
             return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_str));
         }));
     }
@@ -75,7 +94,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         return;
     }
 
-    size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
     if (params.has("max_block_size"))
     {
         std::string max_block_size_str = params.get("max_block_size", "");

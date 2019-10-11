@@ -5,8 +5,6 @@
 
 #include <ext/bit_cast.h>
 
-#include <AggregateFunctions/UniquesHashSet.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -14,13 +12,14 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/AggregationCommon.h>
+
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
 #include <Common/CombinedCardinalityEstimator.h>
-#include <Common/MemoryTracker.h>
-
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
+#include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
@@ -172,7 +171,7 @@ struct OneAdder
         {
             if constexpr (!std::is_same_v<T, String>)
             {
-                const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+                const auto & value = assert_cast<const ColumnVector<T> &>(column).getElement(row_num);
                 data.set.insert(AggregateFunctionUniqTraits<T>::hash(value));
             }
             else
@@ -185,7 +184,7 @@ struct OneAdder
         {
             if constexpr (!std::is_same_v<T, String>)
             {
-                data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+                data.set.insert(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
             }
             else
             {
@@ -210,6 +209,9 @@ template <typename T, typename Data>
 class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
 public:
+    AggregateFunctionUniq(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {}) {}
+
     String getName() const override { return Data::getName(); }
 
     DataTypePtr getReturnType() const override
@@ -239,7 +241,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -258,6 +260,7 @@ private:
 
 public:
     AggregateFunctionUniqVariadic(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>(arguments, {})
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -294,7 +297,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

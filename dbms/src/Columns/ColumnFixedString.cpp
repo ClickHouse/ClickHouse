@@ -4,12 +4,14 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
+#include <Common/memcmpSmall.h>
+#include <Common/assert_cast.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
 #include <IO/WriteHelpers.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
@@ -32,7 +34,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 
     if (size > 0)
     {
-        auto & new_col = static_cast<ColumnFixedString &>(*new_col_holder);
+        auto & new_col = assert_cast<ColumnFixedString &>(*new_col_holder);
         new_col.chars.resize(size * n);
 
         size_t count = std::min(this->size(), size);
@@ -54,19 +56,19 @@ void ColumnFixedString::insert(const Field & x)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], s.data(), s.size());
+    memcpy(chars.data() + old_size, s.data(), s.size());
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 {
-    const ColumnFixedString & src = static_cast<const ColumnFixedString &>(src_);
+    const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
 
     if (n != src.getN())
         throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
 
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[n * index], n);
+    memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
 void ColumnFixedString::insertData(const char * pos, size_t length)
@@ -76,7 +78,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], pos, length);
+    memcpy(chars.data() + old_size, pos, length);
 }
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
@@ -90,7 +92,7 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(&chars[old_size], pos, n);
+    memcpy(chars.data() + old_size, pos, n);
     return pos + n;
 }
 
@@ -106,8 +108,7 @@ struct ColumnFixedString::less
     explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        /// TODO: memcmp slows down.
-        int res = memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
+        int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
         return positive ? (res < 0) : (res > 0);
     }
 };
@@ -140,7 +141,7 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const ColumnFixedString & src_concrete = static_cast<const ColumnFixedString &>(src);
+    const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
 
     if (start + length > src_concrete.size())
         throw Exception("Parameters start = "
@@ -151,7 +152,7 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
-    memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
+    memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
 ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
@@ -169,7 +170,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     const UInt8 * filt_end = filt_pos + col_size;
     const UInt8 * data_pos = chars.data();
 
-#if __SSE2__
+#ifdef __SSE2__
     /** A slightly more optimized version.
         * Based on the assumption that often pieces of consecutive values
         *  completely pass or do not pass the filter.

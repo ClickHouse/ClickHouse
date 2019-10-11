@@ -1,67 +1,80 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 
-#include <Common/typeid_cast.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Core/Names.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
 {
 
-/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
-/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
+class ASTIdentifier;
+class ASTQualifiedAsterisk;
+struct ASTTableJoin;
+class ASTSelectQuery;
+class ASTExpressionList;
+class ASTFunction;
 
-/// It visits nodes, find columns (general identifiers and asterisks) and translate their names according to tables' names.
-class TranslateQualifiedNamesVisitor
+/// Visit one node for names qualification. @sa InDepthNodeVisitor.
+class TranslateQualifiedNamesMatcher
 {
 public:
-    TranslateQualifiedNamesVisitor(const NameSet & source_columns_, const std::vector<DatabaseAndTableWithAlias> & tables_,
-                                   std::ostream * ostr_ = nullptr)
-    :   source_columns(source_columns_),
-        tables(tables_),
-        visit_depth(0),
-        ostr(ostr_)
-    {}
+    using Visitor = InDepthNodeVisitor<TranslateQualifiedNamesMatcher, true>;
 
-    void visit(ASTPtr & ast) const
+    struct Data
     {
-        if (!tryVisit<ASTIdentifier>(ast) &&
-            !tryVisit<ASTQualifiedAsterisk>(ast) &&
-            !tryVisit<ASTTableJoin>(ast) &&
-            !tryVisit<ASTSelectQuery>(ast))
-            visitChildren(ast); /// default: do nothing, visit children
-    }
+        const NameSet source_columns;
+        const std::vector<TableWithColumnNames> & tables;
+        std::unordered_set<String> join_using_columns;
+        bool has_columns;
+
+        Data(const NameSet & source_columns_, const std::vector<TableWithColumnNames> & tables_, bool has_columns_ = true)
+            : source_columns(source_columns_)
+            , tables(tables_)
+            , has_columns(has_columns_)
+        {}
+
+        static std::vector<TableWithColumnNames> tablesOnly(const std::vector<DatabaseAndTableWithAlias> & tables)
+        {
+            std::vector<TableWithColumnNames> tables_with_columns;
+            tables_with_columns.reserve(tables.size());
+
+            for (const auto & table : tables)
+                tables_with_columns.emplace_back(TableWithColumnNames{table, {}});
+            return tables_with_columns;
+        }
+
+        bool processAsterisks() const { return !tables.empty() && has_columns; }
+    };
+
+    static void visit(ASTPtr & ast, Data & data);
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    const NameSet & source_columns;
-    const std::vector<DatabaseAndTableWithAlias> & tables;
-    mutable size_t visit_depth;
-    std::ostream * ostr;
+    static void visit(ASTIdentifier & node, ASTPtr & ast, Data &);
+    static void visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
+    static void visit(ASTTableJoin & node, const ASTPtr & ast, Data &);
+    static void visit(ASTSelectQuery & node, const ASTPtr & ast, Data &);
+    static void visit(ASTExpressionList &, const ASTPtr &, Data &);
+    static void visit(ASTFunction &, const ASTPtr &, Data &);
 
-    void visit(ASTIdentifier & node, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTQualifiedAsterisk & node, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTTableJoin & node, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTSelectQuery & ast, ASTPtr &, const DumpASTNode & dump) const;
-
-    void visitChildren(ASTPtr &) const;
-
-    template <typename T>
-    bool tryVisit(ASTPtr & ast) const
-    {
-        if (T * t = typeid_cast<T *>(ast.get()))
-        {
-            DumpASTNode dump(*ast, ostr, visit_depth, "translateQualifiedNames");
-            visit(*t, ast, dump);
-            return true;
-        }
-        return false;
-    }
+    static void extractJoinUsingColumns(const ASTPtr ast, Data & data);
 };
+
+/// Visits AST for names qualification.
+/// It finds columns and translate their names to the normal form. Expand asterisks and qualified asterisks with column names.
+using TranslateQualifiedNamesVisitor = TranslateQualifiedNamesMatcher::Visitor;
+
+/// Restore ASTIdentifiers to long form
+struct RestoreQualifiedNamesData
+{
+    using TypeToVisit = ASTIdentifier;
+
+    void visit(ASTIdentifier & identifier, ASTPtr & ast);
+};
+
+using RestoreQualifiedNamesMatcher = OneTypeMatcher<RestoreQualifiedNamesData>;
+using RestoreQualifiedNamesVisitor = InDepthNodeVisitor<RestoreQualifiedNamesMatcher, true>;
 
 }

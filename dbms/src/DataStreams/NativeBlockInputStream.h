@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
 
@@ -57,7 +57,7 @@ struct IndexForNativeFormat
   * Can also be used to store data on disk.
   * In this case, can use the index.
   */
-class NativeBlockInputStream : public IProfilingBlockInputStream
+class NativeBlockInputStream : public IBlockInputStream
 {
 public:
     /// If a non-zero server_revision is specified, additional block information may be expected and read.

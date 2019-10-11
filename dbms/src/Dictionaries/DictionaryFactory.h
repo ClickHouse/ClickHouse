@@ -1,28 +1,33 @@
 #pragma once
 
-#include <ext/singleton.h>
 #include "IDictionary.h"
+
 
 namespace Poco
 {
+
 namespace Util
 {
     class AbstractConfiguration;
 }
 
 class Logger;
+
 }
+
 
 namespace DB
 {
+
 class Context;
 
-class DictionaryFactory : public ext::singleton<DictionaryFactory>
+class DictionaryFactory : private boost::noncopyable
 {
 public:
-    DictionaryPtr
-    create(const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context)
-        const;
+
+    static DictionaryFactory & instance();
+
+    DictionaryPtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context) const;
 
     using Creator = std::function<DictionaryPtr(
         const std::string & name,

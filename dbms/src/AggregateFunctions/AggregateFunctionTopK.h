@@ -10,18 +10,14 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/SpaceSaving.h>
-
 #include <Common/FieldVisitors.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
 {
-
-
-// Allow NxK more space before calculating top K to increase accuracy
-#define TOP_K_LOAD_FACTOR 3
 
 
 template <typename T>
@@ -38,21 +34,21 @@ struct AggregateFunctionTopKData
 };
 
 
-template <typename T>
+template <typename T, bool is_weighted>
 class AggregateFunctionTopK
-    : public IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>
 {
-private:
+protected:
     using State = AggregateFunctionTopKData<T>;
-
     UInt64 threshold;
     UInt64 reserved;
 
 public:
-    AggregateFunctionTopK(UInt64 threshold)
-        : threshold(threshold), reserved(TOP_K_LOAD_FACTOR * threshold) {}
+    AggregateFunctionTopK(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params)
+        , threshold(threshold_), reserved(load_factor * threshold) {}
 
-    String getName() const override { return "topK"; }
+    String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
     DataTypePtr getReturnType() const override
     {
@@ -64,7 +60,11 @@ public:
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
             set.resize(reserved);
-        set.insert(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+
+        if constexpr (is_weighted)
+            set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], columns[1]->getUInt(row_num));
+        else
+            set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -86,16 +86,16 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         const typename State::Set & set = this->data(place).value;
         auto result_vec = set.topK(threshold);
         size_t size = result_vec.size();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
-        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
         data_to.resize(old_size + size);
 
@@ -123,25 +123,27 @@ struct AggregateFunctionTopKGenericData
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
- *  For such columns topK() can be implemented more efficently (especially for small numeric arrays).
+ *  For such columns topK() can be implemented more efficiently (especially for small numeric arrays).
  */
-template <bool is_plain_column = false>
-class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column>>
+template <bool is_plain_column, bool is_weighted>
+class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>
 {
 private:
     using State = AggregateFunctionTopKGenericData;
 
     UInt64 threshold;
     UInt64 reserved;
-    DataTypePtr input_data_type;
+    DataTypePtr & input_data_type;
 
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
 public:
-    AggregateFunctionTopKGeneric(UInt64 threshold, const DataTypePtr & input_data_type)
-        : threshold(threshold), reserved(TOP_K_LOAD_FACTOR * threshold), input_data_type(input_data_type) {}
+    AggregateFunctionTopKGeneric(
+        UInt64 threshold_, UInt64 load_factor, const DataTypePtr & input_data_type_, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>({input_data_type_}, params)
+        , threshold(threshold_), reserved(load_factor * threshold), input_data_type(this->argument_types[0]) {}
 
-    String getName() const override { return "topK"; }
+    String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
     DataTypePtr getReturnType() const override
     {
@@ -189,13 +191,19 @@ public:
 
         if constexpr (is_plain_column)
         {
-            set.insert(columns[0]->getDataAt(row_num));
+            if constexpr (is_weighted)
+                set.insert(columns[0]->getDataAt(row_num), columns[1]->getUInt(row_num));
+            else
+                set.insert(columns[0]->getDataAt(row_num));
         }
         else
         {
             const char * begin = nullptr;
             StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
-            set.insert(str_serialized);
+            if constexpr (is_weighted)
+                set.insert(str_serialized, columns[1]->getUInt(row_num));
+            else
+                set.insert(str_serialized);
             arena->rollback(str_serialized.size);
         }
     }
@@ -207,12 +215,12 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
 
         auto result_vec = this->data(place).value.topK(threshold);
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + result_vec.size());
+        offsets_to.push_back(offsets_to.back() + result_vec.size());
 
         for (auto & elem : result_vec)
         {
@@ -225,8 +233,5 @@ public:
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
-
-
-#undef TOP_K_LOAD_FACTOR
 
 }

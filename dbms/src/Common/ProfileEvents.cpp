@@ -5,14 +5,14 @@
 
 /// Available events. Add something here as you wish.
 #define APPLY_FOR_EVENTS(M) \
-    M(Query, "Number of queries started to be interpreted and maybe executed. Does not include queries that are failed to parse, that are rejected due to AST size limits; rejected due to quota limits or limits on number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
+    M(Query, "Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.") \
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
     M(FileOpen, "Number of files opened.") \
     M(Seek, "Number of times the 'lseek' function was called.") \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.") \
     M(ReadBufferFromFileDescriptorReadFailed, "Number of times the read (read/pread) from a file descriptor have failed.") \
-    M(ReadBufferFromFileDescriptorReadBytes, "Number of bytes read from file descriptors. If the file is compressed, this will show compressed data size.") \
+    M(ReadBufferFromFileDescriptorReadBytes, "Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.") \
     M(WriteBufferFromFileDescriptorWrite, "Number of writes (write/pwrite) to a file descriptor. Does not include sockets.") \
     M(WriteBufferFromFileDescriptorWriteFailed, "Number of times the write (write/pwrite) to a file descriptor have failed.") \
     M(WriteBufferFromFileDescriptorWriteBytes, "Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.") \
@@ -36,13 +36,17 @@
     M(MarkCacheMisses, "") \
     M(CreatedReadBufferOrdinary, "") \
     M(CreatedReadBufferAIO, "") \
+    M(CreatedReadBufferAIOFailed, "") \
     M(CreatedWriteBufferOrdinary, "") \
     M(CreatedWriteBufferAIO, "") \
+    M(CreatedWriteBufferAIOFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
     M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "") \
     M(NetworkSendElapsedMicroseconds, "") \
     M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform the 'max_network_bandwidth' setting.") \
+    \
+    M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
     M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
     M(ReplicatedPartFailedFetches, "") \
@@ -110,6 +114,7 @@
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
     \
+    M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
     M(MergesTimeMilliseconds, "Total time spent for background merges.")\
@@ -171,6 +176,9 @@
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
+    \
+    M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
+    M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
 
 namespace ProfileEvents
 {
@@ -188,10 +196,10 @@ Counters global_counters(global_counters_array);
 const Event Counters::num_counters = END;
 
 
-Counters::Counters(VariableContext level, Counters * parent)
+Counters::Counters(VariableContext level_, Counters * parent_)
     : counters_holder(new Counter[num_counters] {}),
-      parent(parent),
-      level(level)
+      parent(parent_),
+      level(level_)
 {
     counters = counters_holder.get();
 }

@@ -3,6 +3,7 @@
 #include <array>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -68,8 +69,8 @@ protected:
     }
 
 public:
-    AggregateFunctionNullBase(AggregateFunctionPtr nested_function_)
-        : nested_function{nested_function_}
+    AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionHelper<Derived>(arguments, params), nested_function{nested_function_}
     {
         if (result_is_nullable)
             prefix_size = nested_function->alignOfData();
@@ -149,7 +150,7 @@ public:
     {
         if (result_is_nullable)
         {
-            ColumnNullable & to_concrete = static_cast<ColumnNullable &>(to);
+            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
                 nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
@@ -187,14 +188,14 @@ template <bool result_is_nullable>
 class AggregateFunctionNullUnary final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>
 {
 public:
-    AggregateFunctionNullUnary(AggregateFunctionPtr nested_function)
-        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(nested_function)
+    AggregateFunctionNullUnary(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(std::move(nested_function_), arguments, params)
     {
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const ColumnNullable * column = static_cast<const ColumnNullable *>(columns[0]);
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
@@ -209,8 +210,8 @@ template <bool result_is_nullable>
 class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>
 {
 public:
-    AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function, const DataTypes & arguments)
-        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(nested_function),
+    AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(std::move(nested_function_), arguments, params),
         number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
@@ -233,7 +234,7 @@ public:
         {
             if (is_nullable[i])
             {
-                const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
                 if (nullable_col.isNullAt(row_num))
                 {
                     /// If at least one column has a null value in the current row,

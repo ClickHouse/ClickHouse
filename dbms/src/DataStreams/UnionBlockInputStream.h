@@ -3,7 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <Common/ConcurrentBoundedQueue.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ParallelInputsProcessor.h>
 
 
@@ -26,7 +26,7 @@ namespace ErrorCodes
   * - the completed blocks are added to a limited queue of finished blocks;
   * - the main thread takes out completed blocks from the queue of finished blocks;
   */
-class UnionBlockInputStream final : public IProfilingBlockInputStream
+class UnionBlockInputStream final : public IBlockInputStream
 {
 private:
     /// A block or an exception.
@@ -43,10 +43,13 @@ private:
 public:
     using ExceptionCallback = std::function<void()>;
 
-    UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads,
-        ExceptionCallback exception_callback_ = ExceptionCallback()) :
-        output_queue(std::min(inputs.size(), max_threads)),
-        handler(*this),
+    UnionBlockInputStream(
+        BlockInputStreams inputs,
+        BlockInputStreamPtr additional_input_at_end,
+        size_t max_threads,
+        ExceptionCallback exception_callback_ = ExceptionCallback()
+    ) :
+        output_queue(std::min(inputs.size(), max_threads)), handler(*this),
         processor(inputs, additional_input_at_end, max_threads, handler),
         exception_callback(exception_callback_)
     {

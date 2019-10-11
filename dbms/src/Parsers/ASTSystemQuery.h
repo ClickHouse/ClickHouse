@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config_core.h"
 #include <Parsers/IAST.h>
 
 
@@ -33,13 +33,20 @@ public:
         RELOAD_CONFIG,
         STOP_MERGES,
         START_MERGES,
+        STOP_TTL_MERGES,
+        START_TTL_MERGES,
         STOP_FETCHES,
         START_FETCHES,
+        STOP_MOVES,
+        START_MOVES,
         STOP_REPLICATED_SENDS,
-        START_REPLICATEDS_SENDS,
+        START_REPLICATED_SENDS,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
         FLUSH_LOGS,
+        FLUSH_DISTRIBUTED,
+        STOP_DISTRIBUTED_SENDS,
+        START_DISTRIBUTED_SENDS,
         END
     };
 
@@ -51,7 +58,7 @@ public:
     String target_database;
     String target_table;
 
-    String getID() const override { return "SYSTEM query"; }
+    String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
 

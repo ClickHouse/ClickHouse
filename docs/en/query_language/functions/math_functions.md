@@ -14,7 +14,7 @@ Returns a Float64 number that is close to the number π.
 
 Accepts a numeric argument and returns a Float64 number close to the exponent of the argument.
 
-## log(x)
+## log(x), ln(x)
 
 Accepts a numeric argument and returns a Float64 number close to the natural logarithm of the argument.
 
@@ -48,11 +48,11 @@ If 'x' is non-negative, then erf(x / σ√2)<g> is the probability that a random
 
 Example (three sigma rule):
 
-``` sql
+```sql
 SELECT erf(3 / sqrt(2))
 ```
 
-```
+```text
 ┌─erf(divide(3, sqrt(2)))─┐
 │      0.9973002039367398 │
 └─────────────────────────┘
@@ -94,8 +94,16 @@ The arc cosine.
 
 The arc tangent.
 
-## pow(x, y)
+## pow(x, y), power(x, y)
 
 Takes two numeric arguments x and y. Returns a Float64 number close to x to the power of y.
+
+## intExp2
+
+Accepts a numeric argument and returns a UInt64 number close to 2 to the power of x.
+
+## intExp10
+
+Accepts a numeric argument and returns a UInt64 number close to 10 to the power of x.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/math_functions/) <!--hide-->

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <Core/Types.h>
 #include <Common/Exception.h>
+#include <Parsers/Lexer.h>
 
 
 namespace DB
@@ -27,25 +28,27 @@ public:
         if (!enabled_)
             return;
 
-        /// TODO: This is absolutely wrong. Fragment may be contained inside string literal.
-        size_t pos = query.find("--");
+        Lexer lexer(query.data(), query.data() + query.size());
 
-        if (pos != String::npos && query.find("--", pos + 2) != String::npos)
-            return; /// It's not last comment. Hint belongs to commented query. /// TODO Absolutely wrong: there maybe the following comment for the next query.
-
-        if (pos != String::npos)
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
         {
-            /// TODO: This is also wrong. Comment may already have ended by line break.
-            pos = query.find('{', pos + 2);
-
-            if (pos != String::npos)
+            if (token.type == TokenType::Comment)
             {
-                String hint = query.substr(pos + 1);
+                String comment(token.begin, token.begin + token.size());
 
-                /// TODO: And this is wrong for the same reason.
-                pos = hint.find('}');
-                hint.resize(pos);
-                parse(hint);
+                if (!comment.empty())
+                {
+                    size_t pos_start = comment.find('{', 0);
+                    if (pos_start != String::npos)
+                    {
+                        size_t pos_end = comment.find('}', pos_start);
+                        if (pos_end != String::npos)
+                        {
+                            String hint(comment.begin() + pos_start + 1, comment.begin() + pos_end);
+                            parse(hint);
+                        }
+                    }
+                }
             }
         }
     }
@@ -90,11 +93,12 @@ private:
     {
         std::stringstream ss;
         ss << hint;
+        String item;
+
         while (!ss.eof())
         {
-            String item;
             ss >> item;
-            if (item.empty())
+            if (ss.eof())
                 break;
 
             if (item == "serverError")

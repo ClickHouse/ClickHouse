@@ -20,20 +20,19 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
         const auto & column_name = columns[i];
 
         /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_name))
+        if (part->hasColumnFiles(column_name, *storage.getColumn(column_name).type))
         {
             all_column_files_missing = false;
             continue;
         }
 
-        const auto default_it = storage.getColumns().defaults.find(column_name);
-        /// columns has no explicit default expression
-        if (default_it == std::end(storage.getColumns().defaults))
+        const auto column_default = storage.getColumns().getDefault(column_name);
+        if (!column_default)
             continue;
 
         /// collect identifiers required for evaluation
         IdentifierNameSet identifiers;
-        default_it->second.expression->collectIdentifierNames(identifiers);
+        column_default->expression->collectIdentifierNames(identifiers);
 
         for (const auto & identifier : identifiers)
         {
@@ -67,13 +66,13 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
 
 MergeTreeReadTask::MergeTreeReadTask(
-    const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
-    const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
-    const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
-    MergeTreeBlockSizePredictorPtr && size_predictor)
-    : data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
-    ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-    remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{std::move(size_predictor)}
+    const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, const size_t part_index_in_query_,
+    const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
+    const NamesAndTypesList & pre_columns_, const bool remove_prewhere_column_, const bool should_reorder_,
+    MergeTreeBlockSizePredictorPtr && size_predictor_)
+    : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
+    ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
+    remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
 {}
 
 MergeTreeReadTask::~MergeTreeReadTask() = default;
@@ -84,7 +83,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     : data_part(data_part_)
 {
     number_of_rows_in_part = data_part->rows_count;
-    /// Initialize with sample block untill update won't called.
+    /// Initialize with sample block until update won't called.
     initialize(sample_block, columns);
 }
 
@@ -120,7 +119,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            MergeTreeDataPart::ColumnSize column_size = data_part->getColumnSize(
+            ColumnSize column_size = data_part->getColumnSize(
                 column_name, *column_with_type_and_name.type);
 
             info.bytes_per_row_global = column_size.data_uncompressed
@@ -173,7 +172,7 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
     block_size_rows = new_rows;
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
-    /// Use sum of gemetric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
+    /// Use sum of geometric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
     /// NOTE: DEFAULT and MATERIALIZED columns without data has inaccurate estimation of v_{target}
     double alpha = std::pow(1. - decay, diff_rows);
 
@@ -192,6 +191,66 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
 
         max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
     }
+}
+
+
+MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & data_part,
+    const Names & required_columns, const PrewhereInfoPtr & prewhere_info, bool check_columns)
+{
+    Names column_names = required_columns;
+    Names pre_column_names;
+
+    /// inject columns required for defaults evaluation
+    bool should_reorder = !injectRequiredColumns(storage, data_part, column_names).empty();
+
+    if (prewhere_info)
+    {
+        if (prewhere_info->alias_actions)
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+        else
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+
+        if (pre_column_names.empty())
+            pre_column_names.push_back(column_names[0]);
+
+        const auto injected_pre_columns = injectRequiredColumns(storage, data_part, pre_column_names);
+        if (!injected_pre_columns.empty())
+            should_reorder = true;
+
+        const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
+
+        Names post_column_names;
+        for (const auto & name : column_names)
+            if (!pre_name_set.count(name))
+                post_column_names.push_back(name);
+
+        column_names = post_column_names;
+    }
+
+    MergeTreeReadTaskColumns result;
+
+    if (check_columns)
+    {
+        /// Under owned_data_part->columns_lock we check that all requested columns are of the same type as in the table.
+        /// This may be not true in case of ALTER MODIFY.
+        if (!pre_column_names.empty())
+            storage.check(data_part->columns, pre_column_names);
+        if (!column_names.empty())
+            storage.check(data_part->columns, column_names);
+
+        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
+        result.pre_columns = physical_columns.addTypes(pre_column_names);
+        result.columns = physical_columns.addTypes(column_names);
+    }
+    else
+    {
+        result.pre_columns = data_part->columns.addTypes(pre_column_names);
+        result.columns = data_part->columns.addTypes(column_names);
+    }
+
+    result.should_reorder = should_reorder;
+
+    return result;
 }
 
 }

@@ -2,12 +2,14 @@
 
 #include <Core/Types.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 
 
 namespace DB
 {
 
 /// A mutation entry for non-replicated MergeTree storage engines.
+/// Stores information about mutation in file mutation_*.txt.
 struct MergeTreeMutationEntry
 {
     time_t create_time = 0;
@@ -18,6 +20,11 @@ struct MergeTreeMutationEntry
     bool is_temp = false;
 
     Int64 block_number = 0;
+
+    String latest_failed_part;
+    MergeTreePartInfo latest_failed_part_info;
+    time_t latest_fail_time = 0;
+    String latest_fail_reason;
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, const String & path_prefix_, Int64 tmp_number);

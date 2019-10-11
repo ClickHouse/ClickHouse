@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <common/DateLUT.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace DB
@@ -50,16 +51,10 @@ namespace
 template <typename From, typename To>
 static Field convertNumericTypeImpl(const Field & from)
 {
-    From value = from.get<From>();
-
-    /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
-    if (isNaN(value) && std::is_floating_point_v<To>)
-        return value;
-
-    if (!accurate::equalsOp(value, To(value)))
+    To result;
+    if (!accurate::convertNumeric(from.get<From>(), result))
         return {};
-
-    return To(value);
+    return result;
 }
 
 template <typename To>
@@ -77,30 +72,33 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 }
 
 
-template <typename From, typename To>
-static Field convertIntToDecimalType(const Field & from, const To & type)
+template <typename From, typename T>
+static Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    using FieldType = typename To::FieldType;
-
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
         throw Exception("Number is too much to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    FieldType scaled_value = type.getScaleMultiplier() * value;
-    return DecimalField<FieldType>(scaled_value, type.getScale());
+    T scaled_value = type.getScaleMultiplier() * value;
+    return DecimalField<T>(scaled_value, type.getScale());
 }
 
 
 template <typename T>
 static Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    using FieldType = typename DataTypeDecimal<T>::FieldType;
-
     const String & str_value = from.get<String>();
     T value = type.parseFromString(str_value);
-    return DecimalField<FieldType>(value, type.getScale());
+    return DecimalField<T>(value, type.getScale());
 }
 
+template <typename From, typename T>
+static Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+{
+    auto field = from.get<DecimalField<From>>();
+    T value = convertDecimals<DataTypeDecimal<From>, DataTypeDecimal<T>>(field.getValue(), field.getScale(), type.getScale());
+    return DecimalField<T>(value, type.getScale());
+}
 
 template <typename To>
 static Field convertDecimalType(const Field & from, const To & type)
@@ -111,6 +109,13 @@ static Field convertDecimalType(const Field & from, const To & type)
         return convertIntToDecimalType<Int64>(from, type);
     if (from.getType() == Field::Types::String)
         return convertStringToDecimalType(from, type);
+
+    if (from.getType() == Field::Types::Decimal32)
+        return convertDecimalToDecimalType<Decimal32>(from, type);
+    if (from.getType() == Field::Types::Decimal64)
+        return convertDecimalToDecimalType<Decimal64>(from, type);
+    if (from.getType() == Field::Types::Decimal128)
+        return convertDecimalToDecimalType<Decimal128>(from, type);
 
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
@@ -176,9 +181,17 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
             throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
-        /// Numeric values for Enums should not be used directly in IN section
-        if (src.getType() == Field::Types::UInt64 && !which_type.isEnum())
+        if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
+        {
+            /// Convert UInt64 or Int64 to Enum's value
+            return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
+        }
+
+        if (which_type.isDateOrDateTime() && src.getType() == Field::Types::UInt64)
+        {
+            /// We don't need any conversion UInt64 is under type of Date and DateTime
             return src;
+        }
 
         if (src.getType() == Field::Types::String)
         {
@@ -248,7 +261,30 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return res;
         }
     }
+    else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
+    {
+        if (src.getType() != Field::Types::AggregateFunctionState)
+            throw Exception(String("Cannot convert ") + src.getTypeName() + " to " + agg_func_type->getName(),
+                    ErrorCodes::TYPE_MISMATCH);
 
+        auto & name = src.get<AggregateFunctionStateData>().name;
+        if (agg_func_type->getName() != name)
+            throw Exception("Cannot convert " + name + " to " + agg_func_type->getName(), ErrorCodes::TYPE_MISMATCH);
+
+        return src;
+    }
+
+    if (src.getType() == Field::Types::String)
+    {
+        const auto col = type.createColumn();
+        ReadBufferFromString buffer(src.get<String>());
+        type.deserializeAsTextEscaped(*col, buffer, FormatSettings{});
+
+        return (*col)[0];
+    }
+
+
+    // TODO (nemkov): should we attempt to parse value using or `type.deserializeAsTextEscaped()` type.deserializeAsTextEscaped() ?
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 }
@@ -266,7 +302,12 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
         return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint);
     else if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
-        return convertFieldToTypeImpl(from_value, *nullable_type->getNestedType(), from_type_hint);
+    {
+        const IDataType & nested_type = *nullable_type->getNestedType();
+        if (from_type_hint && from_type_hint->equals(nested_type))
+            return from_value;
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint);
+    }
     else
         return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
 }

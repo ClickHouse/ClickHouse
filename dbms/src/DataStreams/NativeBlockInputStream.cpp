@@ -2,7 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
@@ -153,10 +153,15 @@ Block NativeBlockInputStream::readImpl()
 
         column.column = std::move(read_column);
 
-        if (server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+        if (header)
         {
-            column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
-            column.type = header.getByPosition(i).type;
+            /// Support insert from old clients without low cardinality type.
+            auto & header_column = header.getByName(column.name);
+            if (!header_column.type->equals(*column.type))
+            {
+                column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+                column.type = header.getByPosition(i).type;
+            }
         }
 
         res.insert(std::move(column));
@@ -173,6 +178,22 @@ Block NativeBlockInputStream::readImpl()
         ++index_block_it;
         if (index_block_it != index_block_end)
             index_column_it = index_block_it->columns.begin();
+    }
+
+    if (rows && header)
+    {
+        /// Allow to skip columns. Fill them with default values.
+        Block tmp_res;
+
+        for (auto & col : header)
+        {
+            if (res.has(col.name))
+                tmp_res.insert(std::move(res.getByName(col.name)));
+            else
+                tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
+        }
+
+        res.swap(tmp_res);
     }
 
     return res;

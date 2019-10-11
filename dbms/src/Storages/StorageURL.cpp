@@ -11,7 +11,8 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
 
@@ -23,18 +24,23 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-IStorageURLBase::IStorageURLBase(const Poco::URI & uri_,
+IStorageURLBase::IStorageURLBase(
+    const Poco::URI & uri_,
     const Context & context_,
+    const std::string & database_name_,
     const std::string & table_name_,
     const String & format_name_,
-    const ColumnsDescription & columns_)
-    : IStorage(columns_), uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_)
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_)
+    : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
 }
 
 namespace
 {
-    class StorageURLBlockInputStream : public IProfilingBlockInputStream
+    class StorageURLBlockInputStream : public IBlockInputStream
     {
     public:
         StorageURLBlockInputStream(const Poco::URI & uri,
@@ -44,12 +50,11 @@ namespace
             const String & name_,
             const Block & sample_block,
             const Context & context,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const ConnectionTimeouts & timeouts)
             : name(name_)
         {
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, method, callback, timeouts);
-
+            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, method, callback, timeouts, context.getSettingsRef().max_http_get_redirects);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -164,7 +169,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
-    return {std::make_shared<StorageURLBlockInputStream>(request_uri,
+    BlockInputStreamPtr block_input = std::make_shared<StorageURLBlockInputStream>(request_uri,
         getReadMethod(),
         getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
         format_name,
@@ -172,15 +177,25 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))};
+        ConnectionTimeouts::getHTTPTimeouts(context));
+
+
+    auto column_defaults = getColumns().getDefaults();
+    if (column_defaults.empty())
+        return {block_input};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
-void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
+void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+{
+    table_name = new_table_name;
+    database_name = new_database_name;
+}
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
+        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
 }
 
 void registerStorageURL(StorageFactory & factory)
@@ -195,14 +210,14 @@ void registerStorageURL(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
-        String url = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri(url);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        return StorageURL::create(uri, args.table_name, format_name, args.columns, args.context);
+        return StorageURL::create(uri, args.database_name, args.table_name, format_name, args.columns, args.constraints, args.context);
     });
 }
 }

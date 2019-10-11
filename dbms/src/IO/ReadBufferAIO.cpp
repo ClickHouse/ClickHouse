@@ -1,4 +1,4 @@
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <IO/ReadBufferAIO.h>
 #include <IO/AIOContextPool.h>
@@ -54,7 +54,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
     if (fd == -1)
     {
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-        throwFromErrno("Cannot open file " + filename, error_code);
+        throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
     }
 }
 
@@ -120,11 +120,19 @@ bool ReadBufferAIO::nextImpl()
     /// Create an asynchronous request.
     prepare();
 
+#if defined(__FreeBSD__)
+    request.aio.aio_lio_opcode = LIO_READ;
+    request.aio.aio_fildes = fd;
+    request.aio.aio_buf = reinterpret_cast<volatile void *>(buffer_begin);
+    request.aio.aio_nbytes = region_aligned_size;
+    request.aio.aio_offset = region_aligned_begin;
+#else
     request.aio_lio_opcode = IOCB_CMD_PREAD;
     request.aio_fildes = fd;
     request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
     request.aio_nbytes = region_aligned_size;
     request.aio_offset = region_aligned_begin;
+#endif
 
     /// Send the request.
     try
@@ -178,6 +186,9 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
             /// Moved past the buffer.
             pos = working_buffer.end();
             first_unread_pos_in_file = new_pos_in_file;
+
+            /// If we go back, than it's not eof
+            is_eof = false;
 
             /// We can not use the result of the current asynchronous request.
             skip();
@@ -243,7 +254,7 @@ void ReadBufferAIO::prepare()
     /// Region of the disk from which we want to read data.
     const off_t region_begin = first_unread_pos_in_file;
 
-    if ((requested_byte_count > std::numeric_limits<off_t>::max()) ||
+    if ((requested_byte_count > static_cast<size_t>(std::numeric_limits<off_t>::max())) ||
         (first_unread_pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(requested_byte_count))))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 

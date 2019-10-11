@@ -1,7 +1,9 @@
 #include <queue>
 #include <iomanip>
+#include <sstream>
 
 #include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -16,9 +18,10 @@ namespace ErrorCodes
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    size_t max_block_size_, size_t limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
+    size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_, bool average_block_sizes_)
     : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
-    , source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
+    , average_block_sizes(average_block_sizes_), source_blocks(inputs_.size())
+    , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
     header = children.at(0)->getHeader();
@@ -114,20 +117,41 @@ Block MergingSortedBlockInputStream::readImpl()
 template <typename TSortCursor>
 void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
 {
-    size_t order = current.impl->order;
+    size_t order = current->order;
     size_t size = cursors.size();
 
     if (order >= size || &cursors[order] != current.impl)
         throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
-    source_blocks[order] = new detail::SharedBlock(children[order]->read());
-    if (*source_blocks[order])
+    while (true)
     {
-        cursors[order].reset(*source_blocks[order]);
-        queue.push(TSortCursor(&cursors[order]));
-        source_blocks[order]->all_columns = cursors[order].all_columns;
-        source_blocks[order]->sort_columns = cursors[order].sort_columns;
+        source_blocks[order] = new detail::SharedBlock(children[order]->read());
+
+        if (!*source_blocks[order])
+            break;
+
+        if (source_blocks[order]->rows())
+        {
+            cursors[order].reset(*source_blocks[order]);
+            queue.push(TSortCursor(&cursors[order]));
+            source_blocks[order]->all_columns = cursors[order].all_columns;
+            source_blocks[order]->sort_columns = cursors[order].sort_columns;
+            break;
+        }
     }
+}
+
+
+bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
+{
+    if (!count_average)
+        return sum_rows_count == max_block_size;
+
+    if (sum_rows_count == 0)
+        return false;
+
+    size_t average = sum_blocks_granularity / sum_rows_count;
+    return sum_rows_count >= average;
 }
 
 template
@@ -142,10 +166,11 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 {
     size_t merged_rows = 0;
 
+    MergeStopCondition stop_condition(average_block_sizes, max_block_size);
     /** Increase row counters.
       * Return true if it's time to finish generating the current data block.
       */
-    auto count_row_and_check_limit = [&, this]()
+    auto count_row_and_check_limit = [&, this](size_t current_granularity)
     {
         ++total_merged_rows;
         if (limit && total_merged_rows == limit)
@@ -157,19 +182,15 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         }
 
         ++merged_rows;
-        if (merged_rows == max_block_size)
-        {
-    //        std::cerr << "max_block_size reached\n";
-            return true;
-        }
-
-        return false;
+        stop_condition.addRowWithGranularity(current_granularity);
+        return stop_condition.checkStop();
     };
 
     /// Take rows in required order and put them into `merged_columns`, while the rows are no more than `max_block_size`
     while (!queue.empty())
     {
         TSortCursor current = queue.top();
+        size_t current_block_granularity = current->rows;
         queue.pop();
 
         while (true)
@@ -177,20 +198,20 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             /** And what if the block is totally less or equal than the rest for the current cursor?
               * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
               */
-            if (current.impl->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
+            if (current->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
             {
     //            std::cerr << "current block is totally less or equals\n";
 
                 /// If there are already data in the current block, we first return it. We'll get here again the next time we call the merge function.
                 if (merged_rows != 0)
                 {
-    //                std::cerr << "merged rows is non-zero\n";
+                    //std::cerr << "merged rows is non-zero\n";
                     queue.push(current);
                     return;
                 }
 
-                /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-                size_t source_num = current.impl->order;
+                /// Actually, current->order stores source number (i.e. cursors[current->order] == current)
+                size_t source_num = current->order;
 
                 if (source_num >= cursors.size())
                     throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
@@ -202,6 +223,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
                 merged_rows = merged_columns.at(0)->size();
 
+                /// Limit output
                 if (limit && total_merged_rows + merged_rows > limit)
                 {
                     merged_rows = limit - total_merged_rows;
@@ -215,6 +237,8 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                     finished = true;
                 }
 
+                /// Write order of rows for other columns
+                /// this data will be used in grather stream
                 if (out_row_sources_buf)
                 {
                     RowSourcePart row_source(source_num);
@@ -222,7 +246,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                         out_row_sources_buf->write(row_source.data);
                 }
 
-    //            std::cerr << "fetching next block\n";
+                //std::cerr << "fetching next block\n";
 
                 total_merged_rows += merged_rows;
                 fetchNextBlock(current, queue);
@@ -237,7 +261,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             if (out_row_sources_buf)
             {
                 /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-                RowSourcePart row_source(current.impl->order);
+                RowSourcePart row_source(current->order);
                 out_row_sources_buf->write(row_source.data);
             }
 
@@ -248,7 +272,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
                 if (queue.empty() || !(current.greater(queue.top())))
                 {
-                    if (count_row_and_check_limit())
+                    if (count_row_and_check_limit(current_block_granularity))
                     {
     //                    std::cerr << "pushing back to queue\n";
                         queue.push(current);
@@ -275,7 +299,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             break;
         }
 
-        if (count_row_and_check_limit())
+        if (count_row_and_check_limit(current_block_granularity))
             return;
     }
 
@@ -291,11 +315,18 @@ void MergingSortedBlockInputStream::readSuffixImpl()
 
     const BlockStreamProfileInfo & profile_info = getProfileInfo();
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
-    LOG_DEBUG(log, std::fixed << std::setprecision(2)
+
+    std::stringstream message;
+    message << std::fixed << std::setprecision(2)
         << "Merge sorted " << profile_info.blocks << " blocks, " << profile_info.rows << " rows"
-        << " in " << seconds << " sec., "
+        << " in " << seconds << " sec.";
+
+    if (seconds)
+        message << ", "
         << profile_info.rows / seconds << " rows/sec., "
-        << profile_info.bytes / 1000000.0 / seconds << " MB/sec.");
+        << profile_info.bytes / 1000000.0 / seconds << " MB/sec.";
+
+    LOG_DEBUG(log, message.str());
 }
 
 }

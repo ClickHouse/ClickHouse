@@ -2,10 +2,11 @@
 
 #include <Interpreters/InterserverIOHandler.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/IStorage.h>
+#include <Storages/IStorage_fwd.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 
 
 namespace DB
@@ -64,6 +65,14 @@ public:
     ActionBlocker blocker;
 
 private:
+    MergeTreeData::MutableDataPartPtr downloadPart(
+            const String & part_name,
+            const String & replica_path,
+            bool to_detached,
+            const String & tmp_prefix_,
+            const DiskSpace::ReservationPtr reservation,
+            PooledReadWriteBufferFromHTTP & in);
+
     MergeTreeData & data;
     Logger * log;
 };

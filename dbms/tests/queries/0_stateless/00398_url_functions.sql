@@ -13,6 +13,8 @@ SELECT domain('http://www.example.com?q=4') AS Host;
 SELECT domain('http://127.0.0.1:443/') AS Host;
 SELECT domain('//www.example.com') AS Host;
 SELECT domain('//paul@www.example.com') AS Host;
+SELECT domain('www.example.com') as Host;
+SELECT domain('example.com') as Host;
 SELECT domainWithoutWWW('//paul@www.example.com') AS Host;
 SELECT domainWithoutWWW('http://paul@www.example.com:80/') AS Host;
 
@@ -23,6 +25,8 @@ SELECT topLevelDomain('http://127.0.0.1:443/') AS Domain;
 SELECT topLevelDomain('svn+ssh://example.ru?q=hello%20world') AS Domain;
 SELECT topLevelDomain('svn+ssh://example.ru.?q=hello%20world') AS Domain;
 SELECT topLevelDomain('//www.example.com') AS Domain;
+SELECT topLevelDomain('www.example.com') as Domain;
+SELECT topLevelDomain('example.com') as Domain;
 
 SELECT '====PATH====';
 SELECT decodeURLComponent('%D0%9F');
@@ -59,6 +63,7 @@ SELECT decodeURLComponent(queryStringAndFragment('http://127.0.0.1/?query=hello%
 SELECT decodeURLComponent(queryStringAndFragment('http://127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
 SELECT decodeURLComponent(queryStringAndFragment('http://paul@127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
 SELECT decodeURLComponent(queryStringAndFragment('//paul@127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
+SELECT decodeURLComponent(queryStringAndFragment('//paul@127.0.0.1/#a=b'));
 
 SELECT '====CUT TO FIRST SIGNIFICANT SUBDOMAIN====';
 SELECT cutToFirstSignificantSubdomain('http://www.example.com');
@@ -68,6 +73,8 @@ SELECT cutToFirstSignificantSubdomain('http://www.example.com/a/b/c?a=b');
 SELECT cutToFirstSignificantSubdomain('http://www.example.com/a/b/c?a=b#d=f');
 SELECT cutToFirstSignificantSubdomain('http://paul@www.example.com/a/b/c?a=b#d=f');
 SELECT cutToFirstSignificantSubdomain('//paul@www.example.com/a/b/c?a=b#d=f');
+SELECT cutToFirstSignificantSubdomain('www.example.com');
+SELECT cutToFirstSignificantSubdomain('example.com');
 
 SELECT '====CUT WWW====';
 SELECT cutWWW('http://www.example.com');
@@ -104,4 +111,5 @@ SELECT cutQueryStringAndFragment('http://www.example.com/a/b/c?a=b');
 SELECT cutQueryStringAndFragment('http://www.example.com/a/b/c?a=b#d=f');
 SELECT cutQueryStringAndFragment('http://paul@www.example.com/a/b/c?a=b#d=f');
 SELECT cutQueryStringAndFragment('//paul@www.example.com/a/b/c?a=b#d=f');
+SELECT cutQueryStringAndFragment('//paul@www.example.com/a/b/c#d=f');
 

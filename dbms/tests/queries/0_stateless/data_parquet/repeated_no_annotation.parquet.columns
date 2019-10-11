@@ -1,0 +1,1 @@
+`id` Nullable(Int32), `number` Nullable(Int64), `kind` Nullable(String)

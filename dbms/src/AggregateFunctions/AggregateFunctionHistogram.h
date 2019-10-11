@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -13,6 +14,8 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -266,17 +269,15 @@ public:
     void merge(const AggregateFunctionHistogramData & other, UInt32 max_bins)
     {
         lower_bound = std::min(lower_bound, other.lower_bound);
-        upper_bound = std::max(lower_bound, other.upper_bound);
+        upper_bound = std::max(upper_bound, other.upper_bound);
         for (size_t i = 0; i < other.size; i++)
-        {
             add(other.points[i].mean, other.points[i].weight, max_bins);
-        }
     }
 
     void write(WriteBuffer & buf) const
     {
-        buf.write(reinterpret_cast<const char *>(&lower_bound), sizeof(lower_bound));
-        buf.write(reinterpret_cast<const char *>(&upper_bound), sizeof(upper_bound));
+        writeBinary(lower_bound, buf);
+        writeBinary(upper_bound, buf);
 
         writeVarUInt(size, buf);
         buf.write(reinterpret_cast<const char *>(points), size * sizeof(WeightedValue));
@@ -284,11 +285,10 @@ public:
 
     void read(ReadBuffer & buf, UInt32 max_bins)
     {
-        buf.read(reinterpret_cast<char *>(&lower_bound), sizeof(lower_bound));
-        buf.read(reinterpret_cast<char *>(&upper_bound), sizeof(upper_bound));
+        readBinary(lower_bound, buf);
+        readBinary(upper_bound, buf);
 
         readVarUInt(size, buf);
-
         if (size > max_bins * 2)
             throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
@@ -305,8 +305,9 @@ private:
     const UInt32 max_bins;
 
 public:
-    AggregateFunctionHistogram(UInt32 max_bins)
-        : max_bins(max_bins)
+    AggregateFunctionHistogram(UInt32 max_bins_, const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params)
+        , max_bins(max_bins_)
     {
     }
 
@@ -333,7 +334,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        auto val = static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+        auto val = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
         this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
@@ -356,13 +357,13 @@ public:
     {
         auto & data = this->data(const_cast<AggregateDataPtr>(place));
 
-        auto & to_array = static_cast<ColumnArray &>(to);
+        auto & to_array = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = to_array.getOffsets();
-        auto & to_tuple = static_cast<ColumnTuple &>(to_array.getData());
+        auto & to_tuple = assert_cast<ColumnTuple &>(to_array.getData());
 
-        auto & to_lower = static_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(0));
-        auto & to_upper = static_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(1));
-        auto & to_weights = static_cast<ColumnVector<Data::Weight> &>(to_tuple.getColumn(2));
+        auto & to_lower = assert_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(0));
+        auto & to_upper = assert_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(1));
+        auto & to_weights = assert_cast<ColumnVector<Data::Weight> &>(to_tuple.getColumn(2));
         data.insertResultInto(to_lower, to_upper, to_weights, max_bins);
 
         offsets_to.push_back(to_tuple.size());

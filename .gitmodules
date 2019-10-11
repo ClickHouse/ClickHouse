@@ -36,7 +36,7 @@
 	url = https://github.com/ClickHouse-Extras/llvm
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
-	url = https://github.com/MariaDB/mariadb-connector-c.git
+	url = https://github.com/ClickHouse-Extras/mariadb-connector-c.git
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc.git
@@ -48,10 +48,16 @@
 	url = https://github.com/ClickHouse-Extras/protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
-	url = https://github.com/ClickHouse-Extras/boost-extra.git
+	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/arrow"]
+	path = contrib/arrow
+	url = https://github.com/apache/arrow
+[submodule "contrib/thrift"]
+	path = contrib/thrift
+	url = https://github.com/apache/thrift.git
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
 	url = https://github.com/ClickHouse-Extras/libhdfs3.git
@@ -61,3 +67,42 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
+[submodule "contrib/libcxx"]
+	path = contrib/libcxx
+	url = https://github.com/llvm-mirror/libcxx.git
+[submodule "contrib/libcxxabi"]
+	path = contrib/libcxxabi
+	url = https://github.com/llvm-mirror/libcxxabi.git
+[submodule "contrib/snappy"]
+	path = contrib/snappy
+	url = https://github.com/google/snappy
+[submodule "contrib/cppkafka"]
+	path = contrib/cppkafka
+	url = https://github.com/ClickHouse-Extras/cppkafka.git
+[submodule "contrib/brotli"]
+	path = contrib/brotli
+	url = https://github.com/google/brotli.git
+[submodule "contrib/h3"]
+	path = contrib/h3
+	url = https://github.com/uber/h3
+[submodule "contrib/hyperscan"]
+	path = contrib/hyperscan
+	url = https://github.com/ClickHouse-Extras/hyperscan.git
+[submodule "contrib/libunwind"]
+	path = contrib/libunwind
+	url = https://github.com/ClickHouse-Extras/libunwind.git
+[submodule "contrib/simdjson"]
+	path = contrib/simdjson
+	url = https://github.com/lemire/simdjson.git
+[submodule "contrib/rapidjson"]
+	path = contrib/rapidjson
+	url = https://github.com/Tencent/rapidjson
+[submodule "contrib/fastops"]
+	path = contrib/fastops
+	url = https://github.com/ClickHouse-Extras/fastops
+[submodule "contrib/orc"]
+	path = contrib/orc
+	url = https://github.com/apache/orc
+[submodule "contrib/sparsehash-c11"]
+	path = contrib/sparsehash-c11
+	url = https://github.com/sparsehash/sparsehash-c11.git

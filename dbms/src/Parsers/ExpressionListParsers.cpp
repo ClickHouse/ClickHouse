@@ -1,13 +1,13 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
+#include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -79,7 +79,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
 
-    auto list = std::make_shared<ASTExpressionList>();
+    auto list = std::make_shared<ASTExpressionList>(result_separator);
     node = list;
 
     while (true)
@@ -139,8 +139,8 @@ static bool parseOperator(IParser::Pos & pos, const char * op, Expected & expect
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
-    Pos begin = pos;
 
+    auto current_depth = pos.depth;
     while (1)
     {
         if (first)
@@ -175,16 +175,12 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
-            function->range.first = begin->begin;
-            function->range.second = pos->begin;
             function->name = it[1];
             function->arguments = exp_list;
             function->children.push_back(exp_list);
 
             exp_list->children.push_back(node);
             exp_list->children.push_back(elem);
-            exp_list->range.first = begin->begin;
-            exp_list->range.second = pos->begin;
 
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
@@ -196,10 +192,14 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 ++pos;
             }
 
+            /// Left associative operator chain is parsed as a tree: ((((1 + 1) + 1) + 1) + 1)...
+            /// We must account it's depth - otherwise we may end up with stack overflow later - on destruction of AST.
+            pos.increaseDepth();
             node = function;
         }
     }
 
+    pos.depth = current_depth;
     return true;
 }
 
@@ -219,7 +219,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
         if (!arguments)
         {
             node = makeASTFunction(function_name, node);
-            arguments = static_cast<ASTFunction &>(*node).arguments;
+            arguments = node->as<ASTFunction &>().arguments;
         }
 
         ASTPtr elem;
@@ -234,9 +234,10 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// For the expression (subject BETWEEN left AND right)
+    /// For the expression (subject [NOT] BETWEEN left AND right)
     ///  create an AST the same as for (subject> = left AND subject <= right).
 
+    ParserKeyword s_not("NOT");
     ParserKeyword s_between("BETWEEN");
     ParserKeyword s_and("AND");
 
@@ -244,13 +245,19 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ASTPtr left;
     ASTPtr right;
 
-    Pos begin = pos;
-
     if (!elem_parser.parse(pos, subject, expected))
         return false;
 
+    bool negative = s_not.ignore(pos, expected);
+
     if (!s_between.ignore(pos, expected))
+    {
+        if (negative)
+            --pos;
+
+        /// No operator was parsed, just return element.
         node = subject;
+    }
     else
     {
         if (!elem_parser.parse(pos, left, expected))
@@ -262,46 +269,50 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (!elem_parser.parse(pos, right, expected))
             return false;
 
-        /// AND function
-        auto f_and = std::make_shared<ASTFunction>();
-        auto args_and = std::make_shared<ASTExpressionList>();
+        auto f_combined_expression = std::make_shared<ASTFunction>();
+        auto args_combined_expression = std::make_shared<ASTExpressionList>();
 
-        /// >=
-        auto f_ge = std::make_shared<ASTFunction>();
-        auto args_ge = std::make_shared<ASTExpressionList>();
+        /// [NOT] BETWEEN left AND right
+        auto f_left_expr = std::make_shared<ASTFunction>();
+        auto args_left_expr = std::make_shared<ASTExpressionList>();
 
-        /// <=
-        auto f_le = std::make_shared<ASTFunction>();
-        auto args_le = std::make_shared<ASTExpressionList>();
+        auto f_right_expr = std::make_shared<ASTFunction>();
+        auto args_right_expr = std::make_shared<ASTExpressionList>();
 
-        args_ge->children.emplace_back(subject);
-        args_ge->children.emplace_back(left);
+        args_left_expr->children.emplace_back(subject);
+        args_left_expr->children.emplace_back(left);
 
-        args_le->children.emplace_back(subject);
-        args_le->children.emplace_back(right);
+        args_right_expr->children.emplace_back(subject);
+        args_right_expr->children.emplace_back(right);
 
-        f_ge->range.first = begin->begin;
-        f_ge->range.second = pos->begin;
-        f_ge->name = "greaterOrEquals";
-        f_ge->arguments = args_ge;
-        f_ge->children.emplace_back(f_ge->arguments);
+        if (negative)
+        {
+            /// NOT BETWEEN
+            f_left_expr->name = "less";
+            f_right_expr->name = "greater";
+            f_combined_expression->name = "or";
+        }
+        else
+        {
+            /// BETWEEN
+            f_left_expr->name = "greaterOrEquals";
+            f_right_expr->name = "lessOrEquals";
+            f_combined_expression->name = "and";
+        }
 
-        f_le->range.first = begin->begin;
-        f_le->range.second = pos->begin;
-        f_le->name = "lessOrEquals";
-        f_le->arguments = args_le;
-        f_le->children.emplace_back(f_le->arguments);
+        f_left_expr->arguments = args_left_expr;
+        f_left_expr->children.emplace_back(f_left_expr->arguments);
 
-        args_and->children.emplace_back(f_ge);
-        args_and->children.emplace_back(f_le);
+        f_right_expr->arguments = args_right_expr;
+        f_right_expr->children.emplace_back(f_right_expr->arguments);
 
-        f_and->range.first = begin->begin;
-        f_and->range.second = pos->begin;
-        f_and->name = "and";
-        f_and->arguments = args_and;
-        f_and->children.emplace_back(f_and->arguments);
+        args_combined_expression->children.emplace_back(f_left_expr);
+        args_combined_expression->children.emplace_back(f_right_expr);
 
-        node = f_and;
+        f_combined_expression->arguments = args_combined_expression;
+        f_combined_expression->children.emplace_back(f_combined_expression->arguments);
+
+        node = f_combined_expression;
     }
 
     return true;
@@ -315,8 +326,6 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expect
     ASTPtr elem_cond;
     ASTPtr elem_then;
     ASTPtr elem_else;
-
-    Pos begin = pos;
 
     if (!elem_parser.parse(pos, elem_cond, expected))
         return false;
@@ -340,8 +349,6 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expect
         /// function arguments
         auto exp_list = std::make_shared<ASTExpressionList>();
 
-        function->range.first = begin->begin;
-        function->range.second = pos->begin;
         function->name = "if";
         function->arguments = exp_list;
         function->children.push_back(exp_list);
@@ -349,8 +356,6 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expect
         exp_list->children.push_back(elem_cond);
         exp_list->children.push_back(elem_then);
         exp_list->children.push_back(elem_else);
-        exp_list->range.first = begin->begin;
-        exp_list->range.second = pos->begin;
 
         node = function;
     }
@@ -424,7 +429,6 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// try to find any of the valid operators
-    Pos begin = pos;
     const char ** it;
     for (it = operators; *it; it += 2)
     {
@@ -472,15 +476,11 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
         /// function arguments
         auto exp_list = std::make_shared<ASTExpressionList>();
 
-        function->range.first = begin->begin;
-        function->range.second = pos->begin;
         function->name = it[1];
         function->arguments = exp_list;
         function->children.push_back(exp_list);
 
         exp_list->children.push_back(elem);
-        exp_list->range.first = begin->begin;
-        exp_list->range.second = pos->begin;
 
         node = function;
     }
@@ -528,9 +528,9 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 }
 
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool prefer_alias_to_column_name)
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
     : impl(std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                     allow_alias_without_as_keyword, prefer_alias_to_column_name))
+                                                     allow_alias_without_as_keyword))
 {
 }
 
@@ -538,7 +538,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, prefer_alias_to_column_name),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
@@ -546,8 +546,7 @@ bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return nested_parser.parse(pos, node, expected)
-        && !typeid_cast<ASTExpressionList &>(*node).children.empty();
+    return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
 
 
@@ -596,8 +595,6 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     /// If no INTERVAL keyword, go to nested parser.
     if (!ParserKeyword("INTERVAL").ignore(pos, expected))
         return next_parser.parse(pos, node, expected);
@@ -607,24 +604,12 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
         return false;
 
-    const char * function_name = nullptr;
 
-    if (ParserKeyword("SECOND").ignore(pos, expected))
-        function_name = "toIntervalSecond";
-    else if (ParserKeyword("MINUTE").ignore(pos, expected))
-        function_name = "toIntervalMinute";
-    else if (ParserKeyword("HOUR").ignore(pos, expected))
-        function_name = "toIntervalHour";
-    else if (ParserKeyword("DAY").ignore(pos, expected))
-        function_name = "toIntervalDay";
-    else if (ParserKeyword("WEEK").ignore(pos, expected))
-        function_name = "toIntervalWeek";
-    else if (ParserKeyword("MONTH").ignore(pos, expected))
-        function_name = "toIntervalMonth";
-    else if (ParserKeyword("YEAR").ignore(pos, expected))
-        function_name = "toIntervalYear";
-    else
+    ParserInterval interval_parser;
+    if (!interval_parser.ignore(pos, expected))
         return false;
+
+    const char * function_name = interval_parser.getToIntervalKindFunctionName();
 
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();
@@ -633,19 +618,57 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     auto exp_list = std::make_shared<ASTExpressionList>();
 
     /// the first argument of the function is the previous element, the second is the next one
-    function->range.first = begin->begin;
-    function->range.second = pos->begin;
     function->name = function_name;
     function->arguments = exp_list;
     function->children.push_back(exp_list);
 
     exp_list->children.push_back(expr);
-    exp_list->range.first = begin->begin;
-    exp_list->range.second = pos->begin;
 
     node = function;
     return true;
 }
 
+bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserLiteral literal_parser;
+
+    ASTPtr identifier;
+    ASTPtr value;
+    bool with_brackets = false;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    /// If it's not literal or identifier, than it's possible list of pairs
+    if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    {
+        ParserKeyValuePairsList kv_pairs_list;
+        ParserToken open(TokenType::OpeningRoundBracket);
+        ParserToken close(TokenType::ClosingRoundBracket);
+
+        if (!open.ignore(pos))
+            return false;
+
+        if (!kv_pairs_list.parse(pos, value, expected))
+            return false;
+
+        if (!close.ignore(pos))
+            return false;
+
+        with_brackets = true;
+    }
+
+    auto pair = std::make_shared<ASTPair>(with_brackets);
+    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    pair->second = value;
+    node = pair;
+    return true;
+}
+
+bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList parser(std::make_unique<ParserKeyValuePair>(), std::make_unique<ParserNothing>(), true, 0);
+    return parser.parse(pos, node, expected);
+}
 
 }

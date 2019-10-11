@@ -31,9 +31,9 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits, bool fill_set_elements)
+    Set(const SizeLimits & limits_, bool fill_set_elements_)
         : log(&Logger::get("Set")),
-        limits(limits), fill_set_elements(fill_set_elements)
+        limits(limits_), fill_set_elements(fill_set_elements_)
     {
     }
 
@@ -68,7 +68,10 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements; }
-    const Columns & getSetElements() const { return set_elements; }
+    Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
+
+    void checkColumnsNumber(size_t num_key_columns) const;
+    void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
 
 private:
     size_t keys_size = 0;
@@ -113,7 +116,7 @@ private:
 
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    Columns set_elements;
+    std::vector<IColumn::WrappedPtr> set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -192,4 +195,4 @@ private:
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 };
 
- }
+}
