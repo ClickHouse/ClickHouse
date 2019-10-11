@@ -100,7 +100,6 @@ PoolWithFailover PoolFactory::Get(const Poco::Util::AbstractConfiguration & conf
             impl->pools.insert_or_assign(config_name, pool);
             impl->pools_by_ids.insert_or_assign(entry_name, config_name);
         }
-        auto a2 = *(pool.get());
         return *(pool.get());
     }
 }

@@ -13,7 +13,7 @@ using namespace mysqlxx;
 PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg,
                                    const std::string & config_name, const unsigned default_connections,
                                    const unsigned max_connections, const size_t max_tries)
-    : max_tries(max_tries)
+    : max_tries(max_tries), config_name{config_name_}, shareable{cfg.getBool(config_name_ + ".shareable_connection", false)}
 {
     if (cfg.has(config_name + ".replica"))
     {
@@ -48,7 +48,7 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, const unsign
 {}
 
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-    : max_tries{other.max_tries}, config_name{other.config_name}
+    : max_tries{other.max_tries}, config_name{other.config_name}, shareable{other.shareable}
 {
     if (shareable)
     {
@@ -88,7 +88,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
 
                 try
                 {
-                    Entry entry = pool->tryGet();
+                    Entry entry = shareable ? pool->Get() : pool->tryGet();
 
                     if (!entry.isNull())
                     {
