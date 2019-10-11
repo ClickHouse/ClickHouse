@@ -48,6 +48,8 @@ def remove_control_characters(s):
 
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
 
+    # print(client_options)
+
     params = {
         'client': args.client_with_database,
         'logs_level': server_logs_level,
@@ -57,13 +59,15 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         'stderr': stderr_file,
     }
 
-    if ext == '.sql':
-        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery < {test} > {stdout} 2> {stderr}"
-        command = pattern.format(**params)
-    else:
-        command = "{test} > {stdout} 2> {stderr}".format(**params)
+    pattern = '{test} > {stdout} 2> {stderr}'
 
-    proc = Popen(command, shell=True)
+    if ext == '.sql':
+        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
+
+    command = pattern.format(**params)
+    #print(command)
+
+    proc = Popen(command, shell=True, env=os.environ)
     start_time = datetime.now()
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
@@ -458,7 +462,17 @@ def find_binary(name):
 
 
 def get_additional_client_options(args):
-    return ' '.join('--' + option for option in args.client_option)
+    if args.client_option:
+        return ' '.join('--' + option for option in args.client_option)
+
+    return ''
+
+
+def get_additional_client_options_url(args):
+    if args.client_option:
+        return '&'.join(args.client_option)
+
+    return ''
 
 
 if __name__ == '__main__':
@@ -532,7 +546,22 @@ if __name__ == '__main__':
             args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
 
     if args.client_option:
-        os.environ['CLICKHOUSE_CLIENT_OPT'] += ' ' + get_additional_client_options(args)
+        # Set options for client
+        if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' '
+        else:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] = ''
+
+        os.environ['CLICKHOUSE_CLIENT_OPT'] += get_additional_client_options(args)
+
+        # Set options for curl
+        if 'CLICKHOUSE_URL_PARAMS' in os.environ:
+           os.environ['CLICKHOUSE_URL_PARAMS'] += '&'
+        else:
+           os.environ['CLICKHOUSE_URL_PARAMS'] = ''
+
+        os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+
 
     args.client_with_database = args.client
     if not args.database:
