@@ -5139,7 +5139,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     cleanup_thread.wakeup();
 
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    {
+        lock2.release();
         dest_table_storage->waitForAllReplicasToProcessLogEntry(entry);
+    }
 
     Coordination::Requests ops_dest;
 
@@ -5151,7 +5154,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    {
+        lock1.release();
         waitForAllReplicasToProcessLogEntry(entry_delete);
+    }
 }
 
 void StorageReplicatedMergeTree::getCommitPartOps(
