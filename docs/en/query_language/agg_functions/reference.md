@@ -581,7 +581,7 @@ Function:
 
 - Provides the result deterministically (it doesn't depend on the query processing order).
 
-!! note "Note"
+!!! note "Note"
     Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
@@ -881,7 +881,7 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-!! note "Note"
+!!! note "Note"
     For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#agg_function-quantile).
 
 **Returned value**
