@@ -25,7 +25,6 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
-#include <DataStreams/CheckNonEmptySetBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
@@ -48,7 +47,6 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
-#include <Interpreters/Join.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -714,35 +712,6 @@ InterpreterSelectQuery::analyzeExpressions(
     return res;
 }
 
-
-BlockInputStreamPtr InterpreterSelectQuery::createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const
-{
-    for (const auto & action : expression->getActions())
-    {
-        if (action.type == ExpressionAction::JOIN)
-        {
-            const auto * join = dynamic_cast<Join *>(action.join.get());
-            if (!join)
-                continue;
-            if (isInnerOrRight(join->getKind()))
-            {
-                stream = std::make_shared<CheckNonEmptySetBlockInputStream>(stream, expression, syntax_analyzer_result->need_check_empty_sets);
-                break;
-            }
-        }
-        else if (action.type == ExpressionAction::ADD_COLUMN)
-        {
-            if (syntax_analyzer_result->need_check_empty_sets.count(action.result_name))
-            {
-                stream = std::make_shared<CheckNonEmptySetBlockInputStream>(stream, expression, syntax_analyzer_result->need_check_empty_sets);
-                break;
-            }
-        }
-    }
-    return stream;
-}
-
-
 static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
@@ -998,7 +967,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 });
             else
                 pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
-                    createCheckNonEmptySetIfNeed(pipeline.streams.back(), expressions.prewhere_info->prewhere_actions), expressions.prewhere_info->prewhere_actions,
+                    pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
 
             // To remove additional columns in dry run
@@ -1114,7 +1083,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     header_before_join = pipeline.firstStream()->getHeader();
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
-                        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expressions.before_join), expressions.before_join);
+                        stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
 
                     if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
                     {
@@ -1695,7 +1664,7 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
     });
 }
 
@@ -1711,7 +1680,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression);
+        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
     });
 
     Names key_names;
@@ -2077,7 +2046,7 @@ void InterpreterSelectQuery::executeExpression(Pipeline & pipeline, const Expres
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression);
+        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
     });
 }
 
