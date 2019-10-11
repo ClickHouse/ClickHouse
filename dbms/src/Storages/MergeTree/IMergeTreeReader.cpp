@@ -65,6 +65,32 @@ static bool arrayHasNoElementsRead(const IColumn & column)
     return last_offset != 0;
 }
 
+IMergeTreeReader::MarksPtr IMergeTreeReader::loadMarks(const String & mrk_path, const LoadFunc & load_func)
+{
+    MarksPtr marks;
+    if (mark_cache)
+    {
+        auto key = mark_cache->hash(mrk_path);
+        if (settings.save_marks_in_cache)
+        {
+            marks = mark_cache->getOrSet(key, load_func);
+        }
+        else
+        {
+            marks = mark_cache->get(key);
+            if (!marks)
+                marks = load_func();
+        }
+    }
+    else
+        marks = load_func();
+
+    if (!marks)
+        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
+    
+    return marks;
+}
+
 
 void IMergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults, size_t num_rows)
 {

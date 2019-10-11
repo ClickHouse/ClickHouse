@@ -58,6 +58,13 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
+    String getMarkExtension(bool /* is_adaptive */) const override { return ".mrk3"; }
+
+    bool getMarkSize(bool is_adaptive)
+    {
+        return sizeof(size_t) + columns.size() * sizeof(size_t) * 2;
+    }
+
     void remove() const override;
 
     /// NOTE: Returns zeros if column files are not found in checksums.

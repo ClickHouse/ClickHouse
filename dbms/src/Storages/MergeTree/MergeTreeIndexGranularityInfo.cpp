@@ -7,6 +7,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(const std::string & path_to_part) const
 {
     if (Poco::File(path_to_part).exists())
@@ -22,39 +29,42 @@ std::optional<std::string> MergeTreeIndexGranularityInfo::getMrkExtensionFromFS(
     return {};
 }
 
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    const MergeTreeData & storage)
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeDataPartPtr & part)
 {
-    const auto storage_settings = storage.getSettings();
+    const auto storage_settings = part->storage.getSettings();
     fixed_index_granularity = storage_settings->index_granularity;
     /// Granularity is fixed
-    if (!storage.canUseAdaptiveGranularity())
+    if (!part->storage.canUseAdaptiveGranularity())
         setNonAdaptive();
     else
         setAdaptive(storage_settings->index_granularity_bytes);
+
+    mark_size_in_bytes = part->getMarkSize(is_adaptive);
+    marks_file_extension = part->getMarkExtension(is_adaptive);
 }
 
 
-void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const std::string & path_to_part)
+void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const MergeTreeDataPartPtr & part)
 {
-    auto mrk_ext = getMrkExtensionFromFS(path_to_part);
-    if (mrk_ext && *mrk_ext == getNonAdaptiveMrkExtension())
+    auto mrk_ext = getMrkExtensionFromFS(part->getFullPath());
+    if (mrk_ext && *mrk_ext == ".mrk") /// TODO
+    {
         setNonAdaptive();
+        mark_size_in_bytes = part->getMarkSize(is_adaptive);
+        marks_file_extension = part->getMarkExtension(is_adaptive);
+    }
 }
 
 void MergeTreeIndexGranularityInfo::setAdaptive(size_t index_granularity_bytes_)
 {
     is_adaptive = true;
-    mark_size_in_bytes = getAdaptiveMrkSize();
-    marks_file_extension = getAdaptiveMrkExtension();
     index_granularity_bytes = index_granularity_bytes_;
+    
 }
 
 void MergeTreeIndexGranularityInfo::setNonAdaptive()
 {
     is_adaptive = false;
-    mark_size_in_bytes = getNonAdaptiveMrkSize();
-    marks_file_extension = getNonAdaptiveMrkExtension();
     index_granularity_bytes = 0;
 }
 
