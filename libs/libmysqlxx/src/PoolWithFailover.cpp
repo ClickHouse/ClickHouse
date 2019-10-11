@@ -11,10 +11,11 @@ static bool startsWith(const std::string & s, const char * prefix)
 using namespace mysqlxx;
 
 PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg,
-                                   const std::string & config_name, const unsigned default_connections,
+                                   const std::string & cfg_name, const unsigned default_connections,
                                    const unsigned max_connections, const size_t max_tries)
-    : max_tries(max_tries), config_name{config_name_}, shareable{cfg.getBool(config_name_ + ".shareable_connection", false)}
+    : max_tries(max_tries), config_name{cfg_name}
 {
+    shareable = cfg.getBool(cfg_name + ".shareable_connection", false);
     if (cfg.has(config_name + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
