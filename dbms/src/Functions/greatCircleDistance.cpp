@@ -103,7 +103,7 @@ private:
             lat1Deg < -90 || lat1Deg > 90 ||
             lat2Deg < -90 || lat2Deg > 90)
         {
-            throw Exception("Arguments values out of bounds for function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Arguments values " + std::to_string(lon1Deg) + " " + std::to_string(lat1Deg) + " " + std::to_string(lon2Deg) + " " + std::to_string(lat2Deg) + " " + " out of bounds for function " + getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
         Float64 lon1Rad = degToRad(lon1Deg);
