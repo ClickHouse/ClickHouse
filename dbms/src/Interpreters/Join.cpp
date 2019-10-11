@@ -70,6 +70,7 @@ Join::Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample
     , nullable_right_side(table_join->forceNullableRight())
     , nullable_left_side(table_join->forceNullableLeft())
     , any_take_last_row(any_take_last_row_)
+    , asof_inequality(table_join->getAsofInequality())
     , log(&Logger::get("Join"))
 {
     setSampleBlock(right_sample_block);
@@ -635,7 +636,7 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
                 if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
                 {
-                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), asof_column, i))
+                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), join.getAsofInequality(), asof_column, i))
                     {
                         filter[i] = 1;
                         mapped.setUsed();
