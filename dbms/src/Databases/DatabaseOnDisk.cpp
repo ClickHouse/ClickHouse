@@ -115,8 +115,8 @@ ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * 
         return nullptr;
     }
 
-    ParserCreateQuery parser_table;
-    ASTPtr result = parseQuery(parser_table, definition, "in file " + filepath, 0);
+    ParserCreateQuery parser_create;
+    ASTPtr result = parseQuery(parser_create, definition, "in file " + filepath, 0);
     return result;
 }
 
@@ -165,8 +165,10 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     ASTPtr query_clone = query->clone();
     auto & create = query_clone->as<ASTCreateQuery &>();
 
+    if (!create.is_dictionary)
+        create.attach = true;
+
     /// We remove everything that is not needed for ATTACH from the query.
-    create.attach = true;
     create.database.clear();
     create.as_database.clear();
     create.as_table.clear();
