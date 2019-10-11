@@ -267,7 +267,11 @@ SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
 Q8. The most popular destinations by the number of directly connected cities for various year ranges
 
 ``` sql
-SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
+SELECT DestCityName, uniqExact(OriginCityName) AS u 
+FROM ontime 
+WHERE Year >= 2000 and Year <= 2010 
+GROUP BY DestCityName 
+ORDER BY u DESC LIMIT 10;
 ```
 
 Q9.
