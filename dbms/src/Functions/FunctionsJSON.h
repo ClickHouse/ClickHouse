@@ -297,8 +297,10 @@ template <typename JSONParser, bool support_key_lookup>
 class JSONCheckImpl
 {
 public:
-    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments) {
-        if constexpr (!support_key_lookup) {
+    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if constexpr (!support_key_lookup)
+        {
             if (arguments.size() != 1)
                 throw Exception{"Function " + String(function_name) + " needs exactly one argument",
                                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
