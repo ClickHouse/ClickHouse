@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
+#include <limits>
 
 namespace DB
 {
@@ -66,7 +67,7 @@ inline void readDecimalNumber(T & res, const char * src)
 
 
 template <typename ReturnType>
-ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, Int64 * fractional = nullptr)
 {
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
@@ -360,7 +361,12 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                 ++in.position();
 
                 /// Just ignore fractional part of second.
-                readDigits(digits, sizeof(digits), in);
+                num_digits = readDigits(digits, sizeof(digits), in);
+                if (fractional)
+                {
+                    using FractionalType = typename std::decay<decltype(*fractional)>::type;
+                    readDecimalNumber<std::numeric_limits<FractionalType>::digits10>(*fractional, digits);
+                }
             }
             else if (c == '+' || c == '-')
             {
@@ -533,6 +539,26 @@ void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & 
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     return parseDateTimeBestEffortImpl<bool>(res, in, local_time_zone, utc_time_zone);
+}
+
+void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    DateTime64::NativeType whole;
+    DateTime64::NativeType fractional;
+    parseDateTimeBestEffortImpl<void>(whole, in, local_time_zone, utc_time_zone, &fractional);
+
+    res = decimalFromComponents<DateTime64>(whole, fractional, scale);
+}
+
+bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    DateTime64::NativeType whole;
+    DateTime64::NativeType fractional;
+    const auto result = parseDateTimeBestEffortImpl<bool>(whole, in, local_time_zone, utc_time_zone, &fractional);
+
+    res = decimalFromComponents<DateTime64>(whole, fractional, scale);
+
+    return result;
 }
 
 }

@@ -35,14 +35,15 @@ static inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings 
     }
 }
 
-static inline void readText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & /*utc_time_zone*/)
+static inline void readText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTimeText(x, scale, istr, time_zone);
+            readDateTime64Text(x, scale, istr, time_zone);
             return;
-        default:
+        case FormatSettings::DateTimeInputFormat::BestEffort:
+            parseDateTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
             return;
     }
 }

@@ -630,12 +630,8 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
 }
 
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
-{
-    readDateTimeTextImpl<void>(datetime, buf, date_lut);
-}
-
-inline void readDateTimeText(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+template <typename ReturnType>
+inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     DB::DecimalComponents<DateTime64::NativeType> c;
     readDateTimeTextImpl<void>(c.whole, buf, date_lut);
@@ -645,7 +641,7 @@ inline void readDateTimeText(DateTime64 & datetime64, UInt32 scale, ReadBuffer &
     {
         if (separator != '.')
         {
-            throw Exception("Cannot parse DateTime64 from text.", ErrorCodes::CANNOT_PARSE_DATETIME);
+            return ReturnType(false);
         }
     }
 
@@ -655,11 +651,28 @@ inline void readDateTimeText(DateTime64 & datetime64, UInt32 scale, ReadBuffer &
 
     c.fractional *= common::exp10_i64(scale - fractional_length);
     datetime64 = decimalFromComponents<DateTime64>(c, scale);
+
+    return ReturnType(false);
+}
+
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    readDateTimeTextImpl<void>(datetime, buf, date_lut);
+}
+
+inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
 }
 
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
     return readDateTimeTextImpl<bool>(datetime, buf, date_lut);
+}
+
+inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
