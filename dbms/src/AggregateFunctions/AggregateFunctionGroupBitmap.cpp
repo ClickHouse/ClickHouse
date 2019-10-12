@@ -36,15 +36,13 @@ AggregateFunctionPtr createAggregateFunctionBitmapL2(const std::string & name, c
     assertUnary(name, argument_types);
     DataTypePtr argument_type_ptr = argument_types[0];
     WhichDataType which(*argument_type_ptr);
-    if (which.idx == TypeIndex::AggregateFunction)
-    {
-        const DataTypeAggregateFunction& datatype_aggfunc = dynamic_cast<const DataTypeAggregateFunction&>(*argument_type_ptr);
-        AggregateFunctionPtr aggfunc = datatype_aggfunc.getFunction();
-        argument_type_ptr = aggfunc->getArgumentTypes()[0];
-    }
+    if (which.idx != TypeIndex::AggregateFunction)
+        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+    const DataTypeAggregateFunction& datatype_aggfunc = dynamic_cast<const DataTypeAggregateFunction&>(*argument_type_ptr);
+    AggregateFunctionPtr aggfunc = datatype_aggfunc.getFunction();
+    argument_type_ptr = aggfunc->getArgumentTypes()[0];
     AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionTemplate, AggregateFunctionGroupBitmapData>(*argument_type_ptr, argument_type_ptr));
-
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
