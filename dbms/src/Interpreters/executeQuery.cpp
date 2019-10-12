@@ -1,4 +1,5 @@
 #include <Common/formatReadable.h>
+#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 
 #include <IO/ConcatReadBuffer.h>

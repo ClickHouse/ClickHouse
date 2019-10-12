@@ -3,9 +3,12 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
+
+// TODO include this last because of a broken roaring header. See the comment
+// inside.
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB
 {

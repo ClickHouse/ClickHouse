@@ -4,7 +4,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <Common/PODArray.h>
 #include <DataTypes/IDataType.h>
 #include <boost/noncopyable.hpp>
 #include <IO/UncompressedCache.h>

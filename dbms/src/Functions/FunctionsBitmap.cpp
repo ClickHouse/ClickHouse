@@ -1,4 +1,7 @@
 #include <Functions/FunctionFactory.h>
+
+// TODO include this last because of a broken roaring header. See the comment
+// inside.
 #include <Functions/FunctionsBitmap.h>
 
 
