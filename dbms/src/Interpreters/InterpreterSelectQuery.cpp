@@ -2694,7 +2694,10 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
+    {
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
+        InterpreterSetQuery(query.settings(), context.getQueryContext()).executeForCurrentContext();
+    }
 }
 
 }
