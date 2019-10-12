@@ -4,6 +4,9 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## FQDN(), fullHostName()
+Returns the Fully qualified domain name aka [FQDN](https://en.wikipedia.org/wiki/Fully_qualified_domain_name).
+
 ## basename
 
 Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
