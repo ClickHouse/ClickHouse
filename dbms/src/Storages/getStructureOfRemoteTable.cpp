@@ -49,9 +49,8 @@ ColumnsDescription getStructureOfRemoteTable(
 
             return res;
         }
-        catch (const DB::NetException & e)
+        catch (const DB::NetException &)
         {
-            /// THIS DOES NOT WORK AND IS ALWAYS FALSE???
             if (context.getSettingsRef().skip_unavailable_shards)
             {
                 std::string fail_message = getCurrentExceptionMessage(false);
