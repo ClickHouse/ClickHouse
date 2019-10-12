@@ -163,7 +163,7 @@ public:
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const;
 
-    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && getTotalRowCount() == 0; }
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && has_no_rows_in_maps; }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
@@ -301,6 +301,7 @@ private:
     BlockNullmapList blocks_nullmaps;
 
     MapsVariant maps;
+    bool has_no_rows_in_maps = true;
 
     /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
     Arena pool;
