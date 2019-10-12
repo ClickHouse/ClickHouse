@@ -108,5 +108,7 @@ public:
     bool equals(const IDataType & rhs) const override;
 };
 
+template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
+
 }
 

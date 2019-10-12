@@ -616,7 +616,7 @@ public:
         if (!readTempString())
             return false;
         ReadBufferFromString buf(temp_string);
-        readDateTimeText(date_time, scale, buf);
+        readDateTime64Text(date_time, scale, buf);
         return true;
     }
 

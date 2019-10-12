@@ -498,7 +498,7 @@ struct ConvertThroughParsing
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             local_time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
@@ -523,10 +523,17 @@ struct ConvertThroughParsing
         size_t size = input_rows_count;
         typename ColVecTo::MutablePtr col_to = nullptr;
 
-        if constexpr (IsDataTypeDecimal<ToDataType>)
+        if constexpr (IsDataTypeDecimal<ToDataType> || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             UInt32 scale = additions;
-            ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            {
+                ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
+            }
+            else
+            {
+                ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
+            }
             col_to = ColVecTo::create(size, scale);
         }
         else
@@ -570,13 +577,26 @@ struct ConvertThroughParsing
             {
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
-                    time_t res;
-                    parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                    vec_to[i] = res;
+                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    {
+                        DateTime64 res;
+                        parseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else
+                    {
+                        time_t res;
+                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
                 }
                 else
                 {
-                    if constexpr (IsDataTypeDecimal<ToDataType>)
+                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    {
+                        readDateTimeText(vec_to[i], vec_to.getScale(), read_buffer, local_time_zone);
+                    }
+                    else if constexpr (IsDataTypeDecimal<ToDataType>)
                         ToDataType::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
                         parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
@@ -591,13 +611,28 @@ struct ConvertThroughParsing
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
-                    time_t res;
-                    parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                    vec_to[i] = res;
+                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    {
+                        DateTime64 res;
+                        parsed = tryParseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else
+                    {
+                        time_t res;
+                        parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
                 }
                 else
                 {
-                    if constexpr (IsDataTypeDecimal<ToDataType>)
+                    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                    {
+                        DateTime64 value;
+                        parsed = tryReadDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
+                    }
+                    else if constexpr (IsDataTypeDecimal<ToDataType>)
                         parsed = ToDataType::tryReadText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
                         parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
@@ -746,6 +781,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 /// Declared early because used below.
 struct NameToDate { static constexpr auto name = "toDate"; };
 struct NameToDateTime { static constexpr auto name = "toDateTime"; };
+struct NameToDateTime64 { static constexpr auto name = "toDateTime64"; };
 struct NameToString { static constexpr auto name = "toString"; };
 struct NameToDecimal32 { static constexpr auto name = "toDecimal32"; };
 struct NameToDecimal64 { static constexpr auto name = "toDecimal64"; };
@@ -936,9 +972,18 @@ private:
 
             if constexpr (IsDataTypeDecimal<RightDataType>)
             {
-                if (arguments.size() != 2)
+                if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64>)
+                {
+                    // account for optional timezone argument
+                    if (arguments.size() != 2 && arguments.size() != 3)
+                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DataTypeDateTime64.",
+                            ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+                }
+                else if (arguments.size() != 2)
+                {
                     throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.",
                         ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+                }
 
                 const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
                 UInt32 scale = extractToDecimalScale(scale_column);
@@ -985,7 +1030,8 @@ public:
     static constexpr bool to_decimal =
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
         std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>;
+        std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
+        std::is_same_v<ToDataType, DataTypeDateTime64>;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertFromString>(); }
 
@@ -1409,8 +1455,7 @@ using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumb
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToNumberMonotonicity<UInt16>>;
 using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToNumberMonotonicity<UInt32>>;
-// TODO (vnemkov): enable and test toDateTime64 function
-//using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime, NameToDateTime, UnknownMonotonicity>;
+using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime, NameToDateTime64, UnknownMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToNumberMonotonicity<UInt32>>;
@@ -1433,6 +1478,7 @@ template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32;
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
 template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
@@ -1457,6 +1503,7 @@ struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
 struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 struct NameToDateOrZero { static constexpr auto name = "toDateOrZero"; };
 struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; };
+struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; };
 struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; };
 struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; };
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; };
@@ -1473,6 +1520,7 @@ using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDateTimeOrZero = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToDateTime64OrZero = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal32OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrZero, ConvertFromStringExceptionMode::Zero>;
 using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
@@ -1489,6 +1537,7 @@ struct NameToFloat32OrNull { static constexpr auto name = "toFloat32OrNull"; };
 struct NameToFloat64OrNull { static constexpr auto name = "toFloat64OrNull"; };
 struct NameToDateOrNull { static constexpr auto name = "toDateOrNull"; };
 struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; };
+struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; };
 struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; };
 struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; };
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; };
@@ -1505,6 +1554,7 @@ using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameT
 using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToDateTime64OrNull = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertFromStringExceptionMode::Null>;
 using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
@@ -1512,6 +1562,10 @@ using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Dec
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
 struct NameParseDateTimeBestEffortOrNull { static constexpr auto name = "parseDateTimeBestEffortOrNull"; };
+struct NameParseDateTime64BestEffort { static constexpr auto name = "parseDateTime64BestEffort"; };
+struct NameParseDateTime64BestEffortOrZero { static constexpr auto name = "parseDateTime64BestEffortOrZero"; };
+struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parseDateTime64BestEffortOrNull"; };
+
 
 using FunctionParseDateTimeBestEffort = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
@@ -1520,6 +1574,12 @@ using FunctionParseDateTimeBestEffortOrZero = FunctionConvertFromString<
 using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<
     DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
+using FunctionParseDateTime64BestEffort = FunctionConvertFromString<
+    DataTypeDateTime64, NameParseDateTime64BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime64BestEffortOrZero = FunctionConvertFromString<
+    DataTypeDateTime64, NameParseDateTime64BestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime64BestEffortOrNull = FunctionConvertFromString<
+    DataTypeDateTime64, NameParseDateTime64BestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
 class PreparedFunctionCast : public PreparedFunctionImpl
 {

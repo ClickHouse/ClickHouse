@@ -151,7 +151,7 @@ DateTime64::NativeType stringToDateTime64(const String & s, UInt32 scale)
     ReadBufferFromString in(s);
     DateTime64 datetime64 {0};
 
-    readDateTimeText(datetime64, scale, in);
+    readDateTime64Text(datetime64, scale, in);
     if (!in.eof())
         throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
