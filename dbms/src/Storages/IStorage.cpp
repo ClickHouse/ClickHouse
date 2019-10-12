@@ -3,6 +3,7 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Common/quoteString.h>
 
 #include <Processors/Executors/TreeExecutor.h>
 
