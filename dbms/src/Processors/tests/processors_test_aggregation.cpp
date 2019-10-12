@@ -230,6 +230,7 @@ try
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
                 1, /// max_threads
+                0,
                 0
             );
 
@@ -303,6 +304,7 @@ try
                 false, /// empty_result_for_aggregation_by_empty_set
                 cur_path, /// tmp_path
                 1, /// max_threads
+                0,
                 0
         );
 

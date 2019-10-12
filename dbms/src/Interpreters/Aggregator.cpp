@@ -335,6 +335,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_string;
+        else if (params.short_string_optimization)
+            return AggregatedDataVariants::Type::key_short_string;
         else
             return AggregatedDataVariants::Type::key_string;
     }
@@ -343,6 +345,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     {
         if (has_low_cardinality)
             return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
+        else if (params.short_string_optimization)
+            return AggregatedDataVariants::Type::key_short_fixed_string;
         else
             return AggregatedDataVariants::Type::key_fixed_string;
     }

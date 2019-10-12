@@ -163,6 +163,7 @@ void set(T & x)
   * default verision that takes a generic pointer-like object.
   */
 
+struct VoidKey {};
 struct VoidMapped
 {
     template <typename T>
@@ -170,6 +171,10 @@ struct VoidMapped
     {
         return *this;
     }
+};
+struct VoidHash
+{
+    operator size_t() { return 0; }
 };
 
 extern VoidMapped voidMapped;
@@ -380,6 +385,12 @@ protected:
 
     template <typename, typename, typename, typename, typename, typename, size_t>
     friend class TwoLevelHashTable;
+
+    template <typename>
+    friend class StringHashTable;
+
+    template <typename, typename, size_t>
+    friend class TwoLevelStringHashTable;
 
     using HashValue = size_t;
     using Self = HashTable;
@@ -875,7 +886,7 @@ protected:
     /// If the key is zero, insert it into a special place and return true.
     /// We don't have to persist a zero key, because it's not actually inserted.
     /// That's why we just take a Key by value, an not a key holder.
-    bool ALWAYS_INLINE emplaceIfZero(Key x, LookupResult & it, bool & inserted, size_t hash_value)
+    bool ALWAYS_INLINE emplaceIfZero(const Key & x, LookupResult & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
         if (!Cell::need_zero_value_storage)
@@ -1018,7 +1029,7 @@ public:
             resize();
     }
 
-    LookupResult ALWAYS_INLINE find(Key x)
+    LookupResult ALWAYS_INLINE find(const Key & x)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? this->zeroValue() : nullptr;
@@ -1028,9 +1039,9 @@ public:
         return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
     }
 
-    ConstLookupResult ALWAYS_INLINE find(Key x) const { return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x); }
+    ConstLookupResult ALWAYS_INLINE find(const Key & x) const { return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x); }
 
-    LookupResult ALWAYS_INLINE find(Key x, size_t hash_value)
+    LookupResult ALWAYS_INLINE find(const Key & x, size_t hash_value)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? this->zeroValue() : nullptr;
@@ -1039,7 +1050,7 @@ public:
         return !buf[place_value].isZero(*this) ? &buf[place_value] : nullptr;
     }
 
-    bool ALWAYS_INLINE has(Key x) const
+    bool ALWAYS_INLINE has(const Key & x) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero();
@@ -1050,7 +1061,7 @@ public:
     }
 
 
-    bool ALWAYS_INLINE has(Key x, size_t hash_value) const
+    bool ALWAYS_INLINE has(const Key & x, size_t hash_value) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero();
