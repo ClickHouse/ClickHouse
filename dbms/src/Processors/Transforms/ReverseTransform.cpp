@@ -1,4 +1,5 @@
 #include <Processors/Transforms/ReverseTransform.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
