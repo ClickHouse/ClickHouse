@@ -1,7 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <Poco/Net/DNS.h>
+#include <Common/getFQDNOrHostName.h>
 #include <Core/Field.h>
 
 
@@ -24,11 +24,6 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -42,7 +37,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-            input_rows_count, Poco::Net::DNS::thisHost().name())->convertToFullColumnIfConst();
+            input_rows_count, getFQDNOrHostName())->convertToFullColumnIfConst();
     }
 };
 
