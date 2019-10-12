@@ -2,7 +2,7 @@
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle), locate(haystack, needle)
+## position(haystack, needle), locate(haystack, needle) {#position}
 
 Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
@@ -101,7 +101,7 @@ Result:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>]) {#multiSearchFirstPosition}
 
 The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 
