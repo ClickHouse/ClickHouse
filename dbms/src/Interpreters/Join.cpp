@@ -466,6 +466,9 @@ bool Join::addJoinedBlock(const Block & block)
 
     size_t rows = block.rows();
 
+    if (rows)
+        has_no_rows_in_maps = false;
+
     blocks.push_back(block);
     Block * stored_block = &blocks.back();
 
