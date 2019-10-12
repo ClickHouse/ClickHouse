@@ -3,10 +3,11 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Common/quoteString.h>
+
 
 namespace DB
 {
-
 
 /** RENAME query
   */
