@@ -440,6 +440,11 @@ struct MultiMatchAllIndicesImpl
             offset = haystack_offsets[i];
         }
 #else
+        (void)haystack_data;
+        (void)haystack_offsets;
+        (void)needles;
+        (void)res;
+        (void)offsets;
         throw Exception(
             "multi-search all indices is not implemented when hyperscan is off (is it Intel processor?)",
             ErrorCodes::NOT_IMPLEMENTED);
