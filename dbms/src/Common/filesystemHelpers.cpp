@@ -1,7 +1,7 @@
 #include <Common/filesystemHelpers.h>
-#include <common/config_common.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
+#include <Poco/Version.h>
 
 namespace DB
 {

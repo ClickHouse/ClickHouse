@@ -9,6 +9,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
+#include <Core/Field.h>
 
 
 namespace DB

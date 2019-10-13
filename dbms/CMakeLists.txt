@@ -164,6 +164,7 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
+add_object_library(clickhouse_access src/Access)
 add_object_library(clickhouse_core src/Core)
 add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)
@@ -256,6 +257,7 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
+    ${Poco_XML_LIBRARY}
 )
 
 if(RE2_LIBRARY)
