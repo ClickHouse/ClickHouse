@@ -78,7 +78,7 @@ The same as `multiFuzzyMatchAny`, but returns any index that matches the haystac
 
 ## multiFuzzyMatchAllIndices(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
-The same as `multiFuzzyMatchAny`, but returns the array of all indices that match the haystack within a constant edit distance.
+The same as `multiFuzzyMatchAny`, but returns the array of all indices in any order that match the haystack within a constant edit distance.
 
 !!! note "Note"
     `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.
