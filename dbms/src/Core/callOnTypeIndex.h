@@ -3,7 +3,6 @@
 #include <utility>
 
 #include <Core/Types.h>
-#include <DataTypes/DataTypeDateTime.h>
 
 namespace DB
 {
@@ -151,6 +150,8 @@ class DataTypeDate;
 class DataTypeString;
 class DataTypeFixedString;
 class DataTypeUUID;
+class DataTypeDateTime;
+class DataTypeDateTime64;
 template <typename T> class DataTypeEnum;
 template <typename T> class DataTypeNumber;
 template <typename T> class DataTypeDecimal;

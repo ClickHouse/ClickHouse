@@ -2,6 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 #include <common/DateLUT.h>
 
