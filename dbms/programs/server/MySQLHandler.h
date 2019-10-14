@@ -1,6 +1,5 @@
 #pragma once
 #include <Common/config.h>
-#if USE_SSL
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Poco/Net/SecureStreamSocket.h>
@@ -16,7 +15,11 @@ namespace DB
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key_, RSA & private_key_, bool ssl_enabled, size_t connection_id_);
+    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
+#if USE_SSL
+        RSA & public_key_, RSA & private_key_,
+#endif
+        bool ssl_enabled, size_t connection_id_);
 
     void run() final;
 
@@ -45,8 +48,10 @@ private:
     size_t server_capability_flags = 0;
     size_t client_capability_flags = 0;
 
+#if USE_SSL
     RSA & public_key;
     RSA & private_key;
+#endif
 
     std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
 
@@ -58,4 +63,3 @@ private:
 };
 
 }
-#endif

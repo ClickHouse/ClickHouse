@@ -1,5 +1,4 @@
 #include <Common/config.h>
-#if USE_SSL
 #include "MySQLHandler.h"
 
 #include <limits>
@@ -17,9 +16,12 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Poco/Crypto/CipherFactory.h>
 #include <Poco/Crypto/RSAKey.h>
+#include <Storages/IStorage.h>
+
+#if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SSLManager.h>
-#include <Storages/IStorage.h>
+#endif
 
 
 namespace DB
@@ -28,24 +30,33 @@ namespace DB
 using namespace MySQLProtocol;
 
 
+#if USE_POCO_NETSSL
 using Poco::Net::SecureStreamSocket;
 using Poco::Net::SSLManager;
+#endif
 
 
 namespace ErrorCodes
 {
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int OPENSSL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
-MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, RSA & public_key_, RSA & private_key_, bool ssl_enabled, size_t connection_id_)
+MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
+#if USE_SSL
+    RSA & public_key_, RSA & private_key_,
+#endif
+    bool ssl_enabled, size_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_context(server.context())
     , connection_id(connection_id_)
+#if USE_SSL
     , public_key(public_key_)
     , private_key(private_key_)
+#endif
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
 {
     server_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
@@ -197,6 +208,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
 
     if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
     {
+#if USE_POCO_NETSSL
         read_bytes(packet_size); /// Reading rest SSLRequest.
         SSLRequest ssl_request;
         ReadBufferFromMemory payload(buf, pos);
@@ -212,6 +224,9 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
         packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.mysql.sequence_id);
         packet_sender->max_packet_size = connection_context.mysql.max_packet_size;
         packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+#else
+        throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
     }
     else
     {
@@ -232,7 +247,13 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
     auto user = connection_context.getUser(user_name);
     if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
+    {
+#if USE_SSL
         auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
+#else
+        throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
+#endif
+    }
 
     try {
         std::optional<String> auth_response = auth_plugin_name == auth_plugin->getName() ? std::make_optional<String>(initial_auth_response) : std::nullopt;
@@ -303,4 +324,3 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 }
 
 }
-#endif

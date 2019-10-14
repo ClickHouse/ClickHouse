@@ -1,5 +1,4 @@
 #include "MySQLHandlerFactory.h"
-#if USE_POCO_NETSSL && USE_SSL
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
@@ -24,6 +23,8 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     : server(server_)
     , log(&Logger::get("MySQLHandlerFactory"))
 {
+
+#if USE_POCO_NETSSL
     try
     {
         Poco::Net::SSLManager::instance().defaultServerContext();
@@ -33,7 +34,9 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
         LOG_INFO(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
         ssl_enabled = false;
     }
+#endif
 
+#if USE_SSL
     /// Reading rsa keys for SHA256 authentication plugin.
     try
     {
@@ -44,8 +47,10 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
         LOG_WARNING(log, "Failed to read RSA keys. Error: " << getCurrentExceptionMessage(false));
         generateRSAKeys();
     }
+#endif
 }
 
+#if USE_SSL
 void MySQLHandlerFactory::readRSAKeys()
 {
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
@@ -113,13 +118,17 @@ void MySQLHandlerFactory::generateRSAKeys()
     if (!private_key)
         throw Exception("Failed to copy RSA key. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
 }
+#endif
 
 Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket)
 {
     size_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: " << connection_id << ". Address: " << socket.peerAddress().toString());
-    return new MySQLHandler(server, socket, *public_key, *private_key, ssl_enabled, connection_id);
+    return new MySQLHandler(server, socket,
+#if USE_SSL
+        *public_key, *private_key,
+#endif
+        ssl_enabled, connection_id);
 }
 
 }
-#endif

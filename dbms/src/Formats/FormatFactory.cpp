@@ -313,9 +313,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
-#if USE_SSL
     registerOutputFormatProcessorMySQLWrite(*this);
-#endif
 }
 
 FormatFactory & FormatFactory::instance()
