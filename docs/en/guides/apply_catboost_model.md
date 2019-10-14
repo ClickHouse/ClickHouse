@@ -8,7 +8,7 @@ To apply a CatBoost model in ClickHouse:
 
 1. [Create a Table](#create-table).
 2. [Insert the Data to the Table](#insert-data-to-table).
-3. [Build libcatboostmodel and Configure the Model](#build-libcatboostmodel-and-configure-model) (Optional step).
+3. [Integrate CatBoost into ClickHouse](#integrate-catboost-into-clickhouse) (Optional step).
 4. [Run the Model Inference from SQL](#run-model-inference).
 
 For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
@@ -112,16 +112,24 @@ FROM amazon_train
 +---------+
 ```
 
-## 3. Build libcatboostmodel Configure the Model to Work with the Trained Model {#build-libcatboostmodel-and-configure-model}
+## 3. Integrate CatBoost into ClickHouse {#integrate-catboost-into-clickhouse}
 
 !!! note "Note"
-    **Optional step.** The Docker image contains the library `.data/libcatboostmodel.so` and model configuration file `models/amazon_model.xml`. 
+    **Optional step.** The Docker image contains everything you need to run CatBoost and ClickHouse.
 
-The library `libcatboostmodel.<so|dll|dylib>` is the CatBoost model interface library. To build the library see [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+To integrate CatBoost into ClickHouse:
 
-To configure the model:
+**1.** Build the evaluation library:
 
-**1.** Create a model config file in the `models` folder (for example, `models/config_model.xml`):
+The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dll|dylib>` library. For more information about how to build the library, see [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+
+**2.** Create a new directory anywhere and with any name, for example, `.data` and put the created library in it. The Docker image already contains the library `.data/libcatboostmodel.so`.
+
+**3.** Create a new directory for config model anywhere and with any name, for example, `models`.
+
+**4.** Create a model configuration file with any name, for example, `models/amazon_model.xml`.   
+
+**5.**  Describe the model configuration:
 
 ```xml
 <models>
@@ -138,13 +146,13 @@ To configure the model:
 </models>
 ```
 
-**2.** Add a link to the created file to the ClickHouse configuration `../../etc/clickhouse-server/config.d/models_config.xml`.
+**6.** Add the path to CatBoost and configuration to the ClickHouse configuration:
 
 ```xml
+<!-- File etc/clickhouse-server/config.d/models_config.xml. -->
+<catboost_dynamic_library_path>/home/catboost/.data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
-
-The ClickHouse config file should already have this setting. To check it, run `tail ../../etc/clickhouse-server/config.d/models_config.xml`.
 
 ## 4. Run the Model Inference from SQL {#run-model-inference}
 
