@@ -119,7 +119,7 @@ FROM amazon_train
 
 To integrate CatBoost into ClickHouse:
 
-**1.** Build the evaluation library:
+**1.** Build the evaluation library.
 
 The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dll|dylib>` library. For more information about how to build the library, see [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
