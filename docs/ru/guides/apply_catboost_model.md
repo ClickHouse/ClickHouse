@@ -123,7 +123,7 @@ FROM amazon_train
 
 Наиболее быстрый способ оценить модель CatBoost — это скомпилировать библиотеку `libcatboostmodel.<so|dll|dylib>`. Подробнее о том, как скомпилировать библиотеку, читайте в [документации CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
-**2.** Создайте в любом месте новую директорию с произвольным названием, например `.data` и поместите в нее созданную библиотеку. Docker-образ уже содержит библиотеку `.data/libcatboostmodel.so`.
+**2.** Создайте в любом месте новую директорию с произвольным названием, например `data` и поместите в нее созданную библиотеку. Docker-образ уже содержит библиотеку `data/libcatboostmodel.so`.
 
 **3.** Создайте в любом месте новую директорию для конфигурации модели с произвольным названием, например `models`.
 
@@ -150,7 +150,7 @@ FROM amazon_train
 
 ```xml
 <!-- Файл etc/clickhouse-server/config.d/models_config.xml. -->
-<catboost_dynamic_library_path>/home/catboost/.data/libcatboostmodel.so</catboost_dynamic_library_path>
+<catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 

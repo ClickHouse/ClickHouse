@@ -123,7 +123,7 @@ To integrate CatBoost into ClickHouse:
 
 The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dll|dylib>` library. For more information about how to build the library, see [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
-**2.** Create a new directory anywhere and with any name, for example, `.data` and put the created library in it. The Docker image already contains the library `.data/libcatboostmodel.so`.
+**2.** Create a new directory anywhere and with any name, for example, `data` and put the created library in it. The Docker image already contains the library `data/libcatboostmodel.so`.
 
 **3.** Create a new directory for config model anywhere and with any name, for example, `models`.
 
@@ -150,7 +150,7 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 
 ```xml
 <!-- File etc/clickhouse-server/config.d/models_config.xml. -->
-<catboost_dynamic_library_path>/home/catboost/.data/libcatboostmodel.so</catboost_dynamic_library_path>
+<catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
