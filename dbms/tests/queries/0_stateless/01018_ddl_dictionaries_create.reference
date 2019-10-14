@@ -25,3 +25,6 @@ memory_db	dict2
 0
 =DICTIONARY in Dictionary DB
 =DICTIONARY in Lazy DB
+=DROP DATABASE WITH DICTIONARY
+dict4
+dict4

@@ -151,3 +151,43 @@ LAYOUT(FLAT()); -- {serverError 1}
 
 DROP DATABASE IF EXISTS lazy_db;
 
+
+SELECT '=DROP DATABASE WITH DICTIONARY';
+
+DROP DATABASE IF EXISTS ordinary_db;
+
+CREATE DATABASE ordinary_db ENGINE = Ordinary;
+
+CREATE DICTIONARY ordinary_db.dict4
+(
+  key_column UInt64 DEFAULT 0,
+  second_column UInt8 DEFAULT 1,
+  third_column String DEFAULT 'qqq'
+)
+PRIMARY KEY key_column
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD ''))
+LIFETIME(MIN 1 MAX 10)
+LAYOUT(FLAT());
+
+SHOW DICTIONARIES FROM ordinary_db;
+
+DROP DATABASE IF EXISTS ordinary_db;
+
+CREATE DATABASE ordinary_db ENGINE = Ordinary;
+
+SHOW DICTIONARIES FROM ordinary_db;
+
+CREATE DICTIONARY ordinary_db.dict4
+(
+  key_column UInt64 DEFAULT 0,
+  second_column UInt8 DEFAULT 1,
+  third_column String DEFAULT 'qqq'
+)
+PRIMARY KEY key_column
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD ''))
+LIFETIME(MIN 1 MAX 10)
+LAYOUT(FLAT());
+
+SHOW DICTIONARIES FROM ordinary_db;
+
+DROP DATABASE IF EXISTS ordinary_db;

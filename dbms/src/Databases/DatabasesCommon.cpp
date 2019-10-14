@@ -159,6 +159,7 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     std::lock_guard lock(mutex);
     tables.clear();
+    dictionaries.clear();
 }
 
 DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
