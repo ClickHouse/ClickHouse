@@ -100,7 +100,7 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Load a set of existing tables.
+    /// Load a set of existing objects (tables and dictionaries).
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects(
         Context & context,
