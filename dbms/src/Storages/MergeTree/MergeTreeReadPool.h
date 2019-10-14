@@ -73,7 +73,7 @@ public:
         const bool do_not_steal_tasks_ = false);
 
     using IndicesApplyFunc = std::function<MarkRanges(const MergeTreeData::DataPartPtr & part, const MarkRanges &)>;
-    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names, const IndicesApplyFunc & apply_function);
+    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names, const IndicesApplyFunc & apply_indices);
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
@@ -87,13 +87,6 @@ public:
     Block getHeader() const;
 
 private:
-    std::vector<size_t> fillPerPartInfo(
-        RangesInDataParts & parts, const bool check_columns);
-
-    void fillPerThreadInfo(
-        const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-        RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
-
     std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
     const MergeTreeData & data;
     Names column_names;
@@ -125,7 +118,7 @@ private:
 
         std::vector<PartIndexAndRange> parts_and_ranges;
         std::vector<size_t> sum_marks_in_parts;
-        std::shared_ptr<std::mutex> thread_task_mutex = std::make_shared<std::mutex>();
+        std::shared_ptr<std::mutex> task_mutex = std::make_shared<std::mutex>();
     };
 
     std::vector<ThreadTask> threads_tasks;
@@ -137,6 +130,16 @@ private:
     mutable std::mutex mutex;
 
     Logger * log = &Logger::get("MergeTreeReadPool");
+
+    std::vector<size_t> fillPerPartInfo(RangesInDataParts & parts, const bool check_columns);
+
+    void fillPerThreadInfo(
+        const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+        RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
+
+    MergeTreeReadTaskPtr getTaskImpl(
+        std::vector<ThreadTask::PartIndexAndRange> & parts_and_ranges, std::vector<size_t> & sum_marks_in_parts,
+        const size_t min_marks_to_read, const Names & ordered_names, MergeTreeReadPool::ThreadTask::PartIndexAndRange * usable_thread_task);
 
 };
 

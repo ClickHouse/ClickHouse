@@ -40,142 +40,65 @@ MergeTreeReadPool::MergeTreeReadPool(
 
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(
-    const size_t min_marks_to_read, const size_t thread, const Names & ordered_names, const IndicesApplyFunc & apply_function)
+    const size_t min_marks_to_read, const size_t thread, const Names & ordered_names, const IndicesApplyFunc & apply_indices)
 {
-    const auto & fetch_usable_thread_tasks = [&](size_t & thread_idx, ThreadTask *& thread_tasks)
-    {
-        const std::lock_guard lock{mutex};
-
-        /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
-        if (thread >= backoff_state.current_threads)
-            return false;
-
-        if (remaining_thread_tasks.empty())
-            return false;
-
-        const auto tasks_remaining_for_this_thread = !threads_tasks[thread].sum_marks_in_parts.empty();
-        if (!tasks_remaining_for_this_thread && do_not_steal_tasks)
-            return false;
-
-        /// Steal task if nothing to do and it's not prohibited
-        thread_idx = tasks_remaining_for_this_thread ? thread : *std::begin(remaining_thread_tasks);
-        thread_tasks = &threads_tasks[thread_idx];
-        return true;
-    };
-
-    const auto & fetch_usable_thread_task = [&](ThreadTask * usable_thread_tasks) -> std::tuple<size_t, ThreadTask::PartIndexAndRange *>
-    {
-        auto & thread_task = usable_thread_tasks->parts_and_ranges.back();
-        auto & marks_in_part = usable_thread_tasks->sum_marks_in_parts.back();
-
-        if (!thread_task.is_applied_indices)
-        {
-            thread_task.is_applied_indices = true;
-            thread_task.ranges = apply_function(parts_with_idx[thread_task.part_idx].data_part, thread_task.ranges);
-
-            if (thread_task.ranges.empty())
-            {
-                usable_thread_tasks->parts_and_ranges.pop_back();
-                usable_thread_tasks->sum_marks_in_parts.pop_back();
-                return std::tuple(0, nullptr);
-            }
-            else
-            {
-                marks_in_part = 0;
-                for (size_t index = 0; index < thread_task.ranges.size(); ++index)
-                    marks_in_part+= thread_task.ranges[index].end - thread_task.ranges[index].begin - 1;
-            }
-        }
-
-        return std::tuple(thread_task.part_idx, &thread_task);
-    };
-
-    size_t thread_idx = 0, part_idx = 0;
+    size_t thread_idx = thread;
     ThreadTask * usable_thread_tasks = nullptr;
     ThreadTask::PartIndexAndRange * usable_thread_task = nullptr;
 
-    while (!usable_thread_task && fetch_usable_thread_tasks(thread_idx, usable_thread_tasks))
+    while (true)
     {
-        const std::lock_guard thread_lock{*usable_thread_tasks->thread_task_mutex};
+        {
+            const std::lock_guard lock{mutex};
+
+            /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
+            if (thread >= backoff_state.current_threads || remaining_thread_tasks.empty() || (do_not_steal_tasks && thread != thread_idx))
+                return nullptr;
+
+            usable_thread_tasks = &threads_tasks[thread_idx];
+        }
+
+        const std::lock_guard tasks_lock{*usable_thread_tasks->task_mutex};
 
         while (!usable_thread_tasks->parts_and_ranges.empty() && !usable_thread_task)
-            std::tie(part_idx, usable_thread_task) = fetch_usable_thread_task(usable_thread_tasks);
-
-        const std::lock_guard lock{mutex};
-        if (!usable_thread_task && usable_thread_tasks->parts_and_ranges.empty())
-            remaining_thread_tasks.erase(thread_idx);
-        else
         {
-            auto & part = parts_with_idx[part_idx];
+            usable_thread_task = &usable_thread_tasks->parts_and_ranges.back();
             auto & marks_in_part = usable_thread_tasks->sum_marks_in_parts.back();
 
-            /// Get whole part to read if it is small enough.
-            auto need_marks = std::min(marks_in_part, min_marks_to_read);
-
-            /// Do not leave too little rows in part for next time.
-            if (marks_in_part > need_marks &&
-                marks_in_part - need_marks < min_marks_to_read)
-                need_marks = marks_in_part;
-
-            MarkRanges ranges_to_get_from_part;
-
-            /// Get whole part to read if it is small enough.
-            if (marks_in_part <= need_marks)
+            if (!usable_thread_task->is_applied_indices)
             {
-                const auto marks_to_get_from_range = marks_in_part;
+                usable_thread_task->is_applied_indices = true;
+                usable_thread_task->ranges = apply_indices(parts_with_idx[usable_thread_task->part_idx].data_part, usable_thread_task->ranges);
 
-                /** Ranges are in right-to-left order, because 'reverse' was done in MergeTreeDataSelectExecutor
-                    *     and that order is supported in 'fillPerThreadInfo'.
-                    */
-                ranges_to_get_from_part = usable_thread_task->ranges;
-
-                marks_in_part -= marks_to_get_from_range;
-
-                usable_thread_tasks->parts_and_ranges.pop_back();
-                usable_thread_tasks->sum_marks_in_parts.pop_back();
-
-                if (usable_thread_tasks->sum_marks_in_parts.empty())
-                    remaining_thread_tasks.erase(thread_idx);
+                if (usable_thread_task->ranges.empty())
+                {
+                    usable_thread_task = nullptr;
+                    usable_thread_tasks->parts_and_ranges.pop_back();
+                    usable_thread_tasks->sum_marks_in_parts.pop_back();
+                }
+                else
+                {
+                    marks_in_part = 0;
+                    for (const auto & range : usable_thread_task->ranges)
+                        marks_in_part += range.end - range.begin - 1;
+                }
             }
+        }
+
+        {
+            const std::lock_guard lock{mutex};
+
+            if (usable_thread_task && !usable_thread_tasks->parts_and_ranges.empty())
+                return getTaskImpl(usable_thread_tasks->parts_and_ranges, usable_thread_tasks->sum_marks_in_parts,
+                    min_marks_to_read, ordered_names, usable_thread_task);
             else
             {
-                /// Loop through part ranges.
-                while (need_marks > 0 && !usable_thread_task->ranges.empty())
-                {
-                    auto & range = usable_thread_task->ranges.back();
-
-                    const size_t marks_in_range = range.end - range.begin;
-                    const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-
-                    ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
-                    range.begin += marks_to_get_from_range;
-                    if (range.begin == range.end)
-                    {
-                        std::swap(range, usable_thread_task->ranges.back());
-                        usable_thread_task->ranges.pop_back();
-                    }
-
-                    marks_in_part -= marks_to_get_from_range;
-                    need_marks -= marks_to_get_from_range;
-                }
-
-                /** Change order to right-to-left, for MergeTreeThreadSelectBlockInputStream to get ranges with .pop_back()
-                    *  (order was changed to left-to-right due to .pop_back() above).
-                    */
-                std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
+                /// Steal task if nothing to do and it's not prohibited
+                remaining_thread_tasks.erase(thread_idx);
+                thread_idx = *std::begin(remaining_thread_tasks);
             }
-
-            auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
-                : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
-
-            return std::make_unique<MergeTreeReadTask>(
-                part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
-                per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-                prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
         }
     }
-
-    return nullptr;
 }
 
 MarkRanges MergeTreeReadPool::getRestMarks(const MergeTreeDataPart & part, const MarkRange & from) const
@@ -369,6 +292,76 @@ void MergeTreeReadPool::fillPerThreadInfo(
                 remaining_thread_tasks.insert(i);
         }
     }
+}
+
+MergeTreeReadTaskPtr MergeTreeReadPool::getTaskImpl(
+    std::vector<ThreadTask::PartIndexAndRange> & parts_and_ranges, std::vector<size_t> & sum_marks_in_parts,
+    const size_t min_marks_to_read, const Names & ordered_names, MergeTreeReadPool::ThreadTask::PartIndexAndRange * usable_thread_task)
+{
+    size_t part_idx = usable_thread_task->part_idx;
+    auto & part = parts_with_idx[part_idx];
+    auto & marks_in_part = sum_marks_in_parts.back();
+
+    /// Get whole part to read if it is small enough.
+    auto need_marks = std::min(marks_in_part, min_marks_to_read);
+
+    /// Do not leave too little rows in part for next time.
+    if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_to_read)
+        need_marks = marks_in_part;
+
+    MarkRanges ranges_to_get_from_part;
+
+    /// Get whole part to read if it is small enough.
+    if (marks_in_part <= need_marks)
+    {
+        const auto marks_to_get_from_range = marks_in_part;
+
+        /** Ranges are in right-to-left order, because 'reverse' was done in MergeTreeDataSelectExecutor
+            *     and that order is supported in 'fillPerThreadInfo'.
+            */
+        ranges_to_get_from_part = usable_thread_task->ranges;
+
+        marks_in_part -= marks_to_get_from_range;
+
+        parts_and_ranges.pop_back();
+        sum_marks_in_parts.pop_back();
+    }
+    else
+    {
+        /// Loop through part ranges.
+        while (need_marks > 0 && !usable_thread_task->ranges.empty())
+        {
+            auto & range = usable_thread_task->ranges.back();
+
+            const size_t marks_in_range = range.end - range.begin;
+            const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+            ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+            range.begin += marks_to_get_from_range;
+            if (range.begin == range.end)
+            {
+                std::swap(range, usable_thread_task->ranges.back());
+                usable_thread_task->ranges.pop_back();
+            }
+
+            need_marks -= marks_to_get_from_range;
+            marks_in_part -= marks_to_get_from_range;
+        }
+
+        /** Change order to right-to-left, for MergeTreeThreadSelectBlockInputStream to get ranges with .pop_back()
+            *  (order was changed to left-to-right due to .pop_back() above).
+            */
+        std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
+    }
+
+    auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
+        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
+
+    return std::make_unique<MergeTreeReadTask>(
+        part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
+        per_part_column_name_set[part_idx], per_part_columns[part_idx],
+        per_part_pre_columns[part_idx], prewhere_info && prewhere_info->remove_prewhere_column,
+        per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
 
