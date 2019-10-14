@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_DATE;
     extern const int SYNTAX_ERROR;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int TYPE_MISMATCH;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -291,11 +291,10 @@ ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
     if (value.isNull() && !type.isNullable())
     {
         buf.rollbackToCheckpoint();
-        throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
-                        + ", that is out of range of type " + type.getName()
-                        + ", at: " +
+        throw Exception{"Cannot insert NULL value into a column of type '" + type.getName() + "'"
+                        + " at: " +
                         String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+                        ErrorCodes::TYPE_MISMATCH};
     }
 
     column.insert(value);
