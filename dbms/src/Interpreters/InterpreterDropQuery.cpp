@@ -108,7 +108,6 @@ BlockIO InterpreterDropQuery::executeToTable(
                 database_and_table.first->getMetadataPath()
                 + escapeForFileName(database_and_table.second->getTableName());
 
-            /// NOTE seems like duplication of the code inside removeTable method of database
             const auto prev_metadata_name = metadata_file_without_extension + ".sql";
             const auto drop_metadata_name = metadata_file_without_extension + ".sql.tmp_drop";
 
