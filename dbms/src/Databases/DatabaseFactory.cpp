@@ -53,7 +53,10 @@ DatabasePtr DatabaseFactory::get(
     else if (engine_name == "MySQL")
     {
         const ASTFunction * engine = engine_define->engine;
-        const auto & arguments = engine->arguments->children;
+
+        std::vector<ASTPtr> arguments;
+        if (engine->arguments)
+            arguments = engine->arguments->children;
 
         if (arguments.size() != 4)
             throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
@@ -74,10 +77,13 @@ DatabasePtr DatabaseFactory::get(
     else if (engine_name == "Lazy")
     {
         const ASTFunction * engine = engine_define->engine;
-        const auto & arguments = engine->arguments->children;
+
+        std::vector<ASTPtr> arguments;
+        if (engine->arguments)
+            arguments = engine->arguments->children;
 
         if (arguments.size() != 1)
-            throw Exception("Lazy database require cache_expiration_time_seconds argument.",
+            throw Exception("Lazy database require cache_expiration_time_seconds argument",
                             ErrorCodes::BAD_ARGUMENTS);
 
         const auto cache_expiration_time_seconds = arguments[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
