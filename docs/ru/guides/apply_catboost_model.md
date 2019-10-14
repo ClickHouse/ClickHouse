@@ -1,6 +1,6 @@
 # Применение модели CatBoost в ClickHouse {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) — открытая программная библиотека разработанная компанией [Яндекс](https://yandex.ru/company/) для машинного обучения, использующая схему градиентного бустинга.
+[CatBoost](https://catboost.ai) — открытая программная библиотека разработанная компанией [Яндекс](https://yandex.ru/company/) для машинного обучения, которая использует схему градиентного бустинга.
 
 С помощью этой инструкции вы научитесь применять предобученные модели в ClickHouse: в результате вы запустите вывод модели из SQL.
 
@@ -99,7 +99,7 @@ $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CS
 $ clickhouse client
 ```
 
-**3.** Проверьте, что данные действительно загрузились:
+**3.** Проверьте, что данные успешно загрузились:
 
 ```sql
 :) SELECT count() FROM amazon_train
@@ -119,9 +119,9 @@ FROM amazon_train
 
 Чтобы интегрировать CatBoost в ClickHouse:
 
-**1.** Создайте библиотеку для оценки модели:
+**1.** Создайте библиотеку для оценки модели.
 
-Наиболее быстрый способ оценить модель CatBoost — это скомпилировать библиотеку `libcatboostmodel.<so|dll|dylib>`. Подробнее о том, как создать библиотеку, читайте в [документации CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+Наиболее быстрый способ оценить модель CatBoost — это скомпилировать библиотеку `libcatboostmodel.<so|dll|dylib>`. Подробнее о том, как скомпилировать библиотеку, читайте в [документации CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
 **2.** Создайте в любом месте новую директорию с произвольным названием, например `.data` и поместите в нее созданную библиотеку. Docker-образ уже содержит библиотеку `.data/libcatboostmodel.so`.
 
