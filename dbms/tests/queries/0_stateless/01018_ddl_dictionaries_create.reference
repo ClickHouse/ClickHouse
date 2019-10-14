@@ -28,3 +28,4 @@ memory_db	dict2
 =DROP DATABASE WITH DICTIONARY
 dict4
 dict4
+=Name collision tests

@@ -191,3 +191,46 @@ LAYOUT(FLAT());
 SHOW DICTIONARIES FROM ordinary_db;
 
 DROP DATABASE IF EXISTS ordinary_db;
+
+SELECT '=Name collision tests';
+
+CREATE DATABASE ordinary_db ENGINE = Ordinary;
+
+CREATE DICTIONARY ordinary_db.dict5
+(
+  key_column UInt64 DEFAULT 0,
+  second_column UInt8 DEFAULT 1,
+  third_column String DEFAULT 'qqq'
+)
+PRIMARY KEY key_column
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD ''))
+LIFETIME(MIN 1 MAX 10)
+LAYOUT(FLAT());
+
+CREATE DICTIONARY ordinary_db.dict5
+(
+  key_column UInt64 DEFAULT 0,
+  second_column UInt8 DEFAULT 1,
+  third_column String DEFAULT 'qqq'
+)
+PRIMARY KEY key_column
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD ''))
+LIFETIME(MIN 1 MAX 10)
+LAYOUT(FLAT()); --{serverError 486}
+
+CREATE TABLE ordinary_db.dict5 (k UInt64, v String) Engine = Memory; --{serverError 486}
+
+CREATE TABLE ordinary_db.dict6 (k UInt64, v String) Engine = Memory;
+
+CREATE DICTIONARY ordinary_db.dict6
+(
+  key_column UInt64 DEFAULT 0,
+  second_column UInt8 DEFAULT 1,
+  third_column String DEFAULT 'qqq'
+)
+PRIMARY KEY key_column
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD ''))
+LIFETIME(MIN 1 MAX 10)
+LAYOUT(FLAT()); --{serverError 57}
+
+DROP DATABASE IF EXISTS ordinary_db;
