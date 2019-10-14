@@ -89,4 +89,14 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
         size_t argument_index, bool (* validator_func)(const IDataType &),
         const char * expected_type_description);
 
+struct FunctionArgumentTypeValidator
+{
+    bool (* validator_func)(const IDataType &);
+    const char * expected_type_description;
+};
+
+using FunctionArgumentTypeValidators = std::vector<FunctionArgumentTypeValidator>;
+
+void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithTypeAndName & arguments, const FunctionArgumentTypeValidators & mandatory_args, const FunctionArgumentTypeValidators & optional_args = {});
+
 }

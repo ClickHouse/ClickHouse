@@ -832,16 +832,19 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (to_decimal && arguments.size() != 2)
+        FunctionArgumentTypeValidators mandatory_args = {{[](const auto &) {return true;}, "ANY TYPE"}};
+        FunctionArgumentTypeValidators optional_args;
+
+        if constexpr (to_decimal || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            mandatory_args.push_back(FunctionArgumentTypeValidator{&isNativeInteger, "Integer"}); // scale
         }
-        else if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        else
+        {
+            optional_args.push_back(FunctionArgumentTypeValidator{&isString, "String"}); // timezone
+        }
+
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
@@ -865,45 +868,20 @@ public:
         }
         else
         {
-            UInt8 max_args = 2;
+            UInt8 timezone_arg_position = 1;
             UInt32 scale = DataTypeDateTime64::default_scale;
+
             // DateTime64 requires more arguments: scale and timezone. Since timezone is optional, scale should be first.
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
             {
-                max_args += 1;
-                if (isNativeInteger(*arguments[max_args - 1].type))
-                {
-                    scale = static_cast<UInt32>(arguments[max_args - 1].column->get64(0));
-                }
+                timezone_arg_position += 1;
+                scale = static_cast<UInt32>(arguments[1].column->get64(0));
             }
 
-            /** Optional (could be first or second) argument with time zone is supported:
-              * - for functions toDateTime, toUnixTimestamp, toDate;
-              * - for function toString of DateTime argument.
-              */
-            if (arguments.size() == max_args)
-            {
-                if (!checkAndGetDataType<DataTypeString>(arguments[max_args - 1].type.get()))
-                    throw Exception("Illegal type " + arguments[max_args - 1].type->getName() + " of 2nd argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-                static constexpr bool to_date_or_time = std::is_same_v<Name, NameToDateTime>
-                    || std::is_same_v<Name, NameToDate>
-                    || std::is_same_v<Name, NameToUnixTimestamp>;
-
-                if (!(to_date_or_time
-                    || (std::is_same_v<Name, NameToString> && (WhichDataType(arguments[0].type).isDateTime() || WhichDataType(arguments[0].type).isDateTime64()))))
-                {
-                    throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(arguments.size()) + ", should be " + std::to_string(max_args) + ".",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-                }
-            }
-
-            if (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, max_args - 1, 0));
-            else if (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, max_args - 1, 0));
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0));
             else
                 return std::make_shared<ToDataType>();
         }
