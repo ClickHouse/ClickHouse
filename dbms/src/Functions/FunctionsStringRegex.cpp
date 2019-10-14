@@ -346,7 +346,7 @@ struct MultiMatchAnyImpl
         /// Fallback if do not use hyperscan
         if constexpr (MultiSearchDistance)
             throw Exception(
-                "Edit distance multi-search is not implemented when hyperscan is off (is it Intel processor?)",
+                "Edit distance multi-search is not implemented when hyperscan is off (is it x86 processor?)",
                 ErrorCodes::NOT_IMPLEMENTED);
         PaddedPODArray<UInt8> accum(res.size());
         memset(res.data(), 0, res.size() * sizeof(res.front()));
@@ -446,7 +446,7 @@ struct MultiMatchAllIndicesImpl
         (void)res;
         (void)offsets;
         throw Exception(
-            "multi-search all indices is not implemented when hyperscan is off (is it Intel processor?)",
+            "multi-search all indices is not implemented when hyperscan is off (is it x86 processor?)",
             ErrorCodes::NOT_IMPLEMENTED);
 #endif // USE_HYPERSCAN
     }
