@@ -1,5 +1,6 @@
 #include <iomanip>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

@@ -239,6 +239,13 @@ public:
 
     const Settings & getSettings() const { return settings; }
 
+    /// Check if result block has no rows. True if it's definite, false if we can't say for sure.
+    /// Call it only after subqueries for join were executed.
+    bool resultIsAlwaysEmpty() const;
+
+    /// Check if column is always zero. True if it's definite, false if we can't say for sure.
+    /// Call it only after subqueries for sets were executed.
+    bool checkColumnIsAlwaysFalse(const String & column_name) const;
 
     struct ActionsHash
     {
