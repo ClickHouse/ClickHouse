@@ -8,7 +8,7 @@
 
 1. [Создайте таблицу](#create-table).
 2. [Вставьте данные в таблицу](#insert-data-to-table).
-3. [Создайте библиотеку libcatboostmodel и настройте конфигурацию модели](#build-libcatboostmodel-and-configure-model) (Опциональный шаг).
+3. [Интегрируйте CatBoost в ClickHouse](#integrate-catboost-into-clickhouse) (Опциональный шаг).
 4. [Запустите вывод модели из SQL](#run-model-inference).
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
@@ -112,16 +112,24 @@ FROM amazon_train
 +---------+
 ```
 
-## 3. Создайте библиотеку libcatboostmodel и настройте конфигурацию модели {#build-libcatboostmodel-and-configure-model}
+## 3. Интегрируйте CatBoost в ClickHouse {#integrate-catboost-into-clickhouse}
 
 !!! note "Примечание" 
-    **Опциональный шаг.** Docker-образ уже содержит библиотеку `.data/libcatboostmodel.so` и файл конфигурации модели `models/amazon_model.xml`.
+    **Опциональный шаг.** Docker-образ содержит все необходимое для запуска CatBoost и ClickHouse.   
 
-Библиотека `libcatboostmodel.<so|dll|dylib>` — это библиотека CatBoost, которая содержит интерфейс для применения моделей. Чтобы собрать библиотеку, см. [документацию CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+Чтобы интегрировать CatBoost в ClickHouse:
 
-Чтобы настроить конфигурацию модели:
+**1.** Создайте библиотеку для оценки модели:
 
-**1.** Создайте файл с конфигурацией модели в папке `models` (например, `models/config_model.xml`):
+Наиболее быстрый способ оценить модель CatBoost — это скомпилировать библиотеку `libcatboostmodel.<so|dll|dylib>`. Подробнее о том, как создать библиотеку, читайте в [документации CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+
+**2.** Создайте в любом месте новую директорию с произвольным названием, например `.data` и поместите в нее созданную библиотеку. Docker-образ уже содержит библиотеку `.data/libcatboostmodel.so`.
+
+**3.** Создайте в любом месте новую директорию для конфигурации модели с произвольным названием, например `models`.
+
+**4.** Создайте файл конфигурации модели с произвольным названием, например `models/amazon_model.xml`.
+
+**5.** Опишите конфигурацию модели:
 
 ```xml
 <models>
@@ -138,21 +146,13 @@ FROM amazon_train
 </models>
 ```
 
-**2.** Укажите в конфигурации ClickHouse:
-
-- Путь к `libcatboostmodel.so`:
+**6.** Добавьте в конфигурацию ClickHouse путь к CatBoost и конфигурации:
 
 ```xml
+<!-- Файл etc/clickhouse-server/config.d/models_config.xml. -->
 <catboost_dynamic_library_path>/home/catboost/.data/libcatboostmodel.so</catboost_dynamic_library_path>
-```
-
-- Путь к созданной конфигурации модели:
-
-```xml
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
-
-В конфигурации ClickHouse Docker-контейнера эти пути уже прописаны. Чтобы убедиться в этом, выполните команду `tail ../../etc/clickhouse-server/config.d/models_config.xml`.
 
 ## 4. Запустите вывод модели из SQL {#run-model-inference}
 
