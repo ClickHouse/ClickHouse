@@ -459,9 +459,10 @@ namespace ErrorCodes
     extern const int DICTIONARY_ACCESS_DENIED = 482;
     extern const int TOO_MANY_REDIRECTS = 483;
     extern const int INTERNAL_REDIS_ERROR = 484;
-    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 500;
-    extern const int DICTIONARY_ALREADY_EXISTS = 501;
-    extern const int UNKNOWN_DICTIONARY = 502;
+    extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 485;
+    extern const int DICTIONARY_ALREADY_EXISTS = 486;
+    extern const int UNKNOWN_DICTIONARY = 487;
+    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED = 488;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

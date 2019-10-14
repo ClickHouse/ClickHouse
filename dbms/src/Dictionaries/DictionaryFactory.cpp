@@ -52,6 +52,7 @@ DictionaryPtr DictionaryFactory::create(
 
 DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, const Context & context) const
 {
+    /// Temporary code for testing TODO(alesapin)
     (void)(name);
     (void)(ast);
     (void)(context);

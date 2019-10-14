@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int DICTIONARY_ALREADY_EXISTS;
 }
 
 bool DatabaseWithOwnTablesBase::isTableExist(
@@ -138,7 +139,7 @@ void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name,
 {
     std::lock_guard lock(mutex);
     if (!dictionaries.emplace(dictionary_name, dictionary).second)
-        throw Exception("Dictionary " + name + "." + dictionary_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Dictionary " + name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
