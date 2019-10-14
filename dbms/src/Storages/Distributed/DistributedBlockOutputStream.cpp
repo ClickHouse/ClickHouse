@@ -339,11 +339,22 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
             per_shard_jobs[current_selector[i]].shard_current_block_permuation.push_back(i);
     }
 
-    /// Run jobs in parallel for each block and wait them
-    finished_jobs_count = 0;
-    for (size_t shard_index : ext::range(0, shards_info.size()))
-        for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-            pool->schedule(runWritingJob(job, block));
+    try
+    {
+        /// Run jobs in parallel for each block and wait them
+        finished_jobs_count = 0;
+        for (size_t shard_index : ext::range(0, shards_info.size()))
+            for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+                pool->schedule(runWritingJob(job, block));
+    }
+    catch (...)
+    {
+        /// TreadPool::schedule(...) may rethrow an exception from some failed job.
+        /// In this case we have to wait for all scheduled jobs before unwind stack, because they read block,
+        /// which is located on stack of current thread.
+        pool->wait();
+        throw;
+    }
 
     try
     {
