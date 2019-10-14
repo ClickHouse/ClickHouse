@@ -20,9 +20,7 @@ private:
 #if USE_SSL
     struct RSADeleter
     {
-        void operator()(RSA * ptr) {
-            RSA_free(ptr);
-        }
+        void operator()(RSA * ptr) { RSA_free(ptr); }
     };
     using RSAPtr = std::unique_ptr<RSA, RSADeleter>;
 
