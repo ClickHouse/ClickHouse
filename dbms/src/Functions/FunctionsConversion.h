@@ -594,7 +594,9 @@ struct ConvertThroughParsing
                 {
                     if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                     {
-                        readDateTimeText(vec_to[i], vec_to.getScale(), read_buffer, local_time_zone);
+                        DateTime64 value;
+                        readDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                         ToDataType::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());

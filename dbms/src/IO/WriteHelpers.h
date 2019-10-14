@@ -30,6 +30,7 @@
 #include <Formats/FormatSettings.h>
 
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 
 namespace DB
