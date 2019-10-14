@@ -116,4 +116,45 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
+namespace
+{
+void validateArgumentsImpl(const IFunction & func, const ColumnsWithTypeAndName & arguments, size_t argument_offset, const FunctionArgumentTypeValidators & validators)
+{
+    for (size_t i = 0; i < validators.size(); ++i)
+    {
+        const auto argument_index = i + argument_offset;
+        if (argument_index >= arguments.size())
+        {
+            break;
+        }
+
+        const auto & arg = arguments[i + argument_offset];
+        const auto validator = validators[i];
+        if (validator.validator_func(*arg.type) == false)
+            throw Exception("Illegal type " + arg.type->getName() +
+                            " of " + std::to_string(i) +
+                            " argument of function " + func.getName() +
+                            " expected " + validator.expected_type_description,
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+}
+
+}
+
+void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithTypeAndName & arguments, const FunctionArgumentTypeValidators & mandatory_args, const FunctionArgumentTypeValidators & optional_args)
+{
+    if (arguments.size() < mandatory_args.size())
+        throw Exception("Incorrect number of arguments of function " + func.getName()
+                        + " provided: " + std::to_string(arguments.size())
+                        + " expected: " + std::to_string(mandatory_args.size())
+                        + (optional_args.size() ? " or " + std::to_string(mandatory_args.size() + optional_args.size()) : ""),
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    validateArgumentsImpl(func, arguments, 0, mandatory_args);
+    if (optional_args.size())
+    {
+        validateArgumentsImpl(func, arguments, mandatory_args.size(), optional_args);
+    }
+}
+
 }
