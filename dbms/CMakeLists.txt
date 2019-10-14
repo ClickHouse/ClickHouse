@@ -164,6 +164,7 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
+add_object_library(clickhouse_access src/Access)
 add_object_library(clickhouse_core src/Core)
 add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)

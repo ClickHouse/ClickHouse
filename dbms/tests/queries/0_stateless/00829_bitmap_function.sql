@@ -120,19 +120,13 @@ SELECT groupBitmapMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag
 SELECT arraySort(bitmapToArray(groupBitmapMergeState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 
 SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-SELECT groupBitmapOrMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-SELECT arraySort(bitmapToArray(groupBitmapOrMergeState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 
 SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-SELECT groupBitmapAndMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-SELECT arraySort(bitmapToArray(groupBitmapAndMergeState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 
 SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-SELECT groupBitmapXorMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-SELECT arraySort(bitmapToArray(groupBitmapXorMergeState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 
 DROP TABLE IF EXISTS bitmap_test;
 DROP TABLE IF EXISTS bitmap_state_test;
