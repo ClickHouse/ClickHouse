@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED;
 }
 
 
@@ -60,7 +61,7 @@ std::pair<String, DictionaryPtr> createDictionaryFromAST(
     ast_create_query.database = database_name;
 
     if (!ast_create_query.dictionary_attributes_list)
-        throw Exception("Missing definition of dictionary attributes.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+        throw Exception("Missing definition of dictionary attributes.", ErrorCodes::EMPTY_LIST_OF_ATTRIBUTES_PASSED);
 
     return
     {
