@@ -146,7 +146,7 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 </models>
 ```
 
-**6.** Add the path to CatBoost and configuration to the ClickHouse configuration:
+**6.** Add the path to CatBoost and the model configuration to the ClickHouse configuration:
 
 ```xml
 <!-- File etc/clickhouse-server/config.d/models_config.xml. -->

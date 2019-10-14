@@ -146,7 +146,7 @@ FROM amazon_train
 </models>
 ```
 
-**6.** Добавьте в конфигурацию ClickHouse путь к CatBoost и конфигурации:
+**6.** Добавьте в конфигурацию ClickHouse путь к CatBoost и конфигурации модели:
 
 ```xml
 <!-- Файл etc/clickhouse-server/config.d/models_config.xml. -->
