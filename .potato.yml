@@ -1,0 +1,12 @@
+name: issue-create
+params:
+  triggers:
+    github:pullRequest:labeled:
+      data:
+        queue: CLICKHOUSEDOCS
+        summary: [Potato] Задача для Pull Request {{pullRequest.number}}
+        description: >
+          {{pullRequest.description}}
+
+          Ссылка на Pull Request: {{pullRequest.webUrl}}
+      condition: eventPayload.labels.filter(label => ['need-docs'].includes(label.name)).length
