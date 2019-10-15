@@ -254,7 +254,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_ast->getColumnName());
         const DataTypePtr & index_type = header.getByPosition(position).type;
-        const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type, context);
+        const auto & converted_column = castColumn(ColumnWithTypeAndName{getPrimitiveColumn(column), getPrimitiveType(type), ""}, index_type, context);
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
@@ -309,8 +309,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             if (!array_type)
                 throw Exception("First argument for function has must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            Field converted_field = convertFieldToType(value_field, *array_type->getNestedType(), &*value_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*array_type->getNestedType(), converted_field)));
+            const DataTypePtr actual_type = getPrimitiveType(array_type->getNestedType());
+            Field converted_field = convertFieldToType(value_field, *actual_type.get(), &*value_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
         else
         {
@@ -318,8 +319,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 throw Exception("An array type of bloom_filter supports only has() function.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-            Field converted_field = convertFieldToType(value_field, *index_type, &*value_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*index_type, converted_field)));
+            const DataTypePtr actual_type = getPrimitiveType(index_type);
+            Field converted_field = convertFieldToType(value_field, *actual_type.get(), &*value_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
 
         return true;

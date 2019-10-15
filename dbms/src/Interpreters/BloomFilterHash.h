@@ -10,9 +10,12 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/bit_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <Interpreters/BloomFilter.h>
 
 namespace DB
 {
@@ -35,15 +38,38 @@ struct BloomFilterHash
         WhichDataType which(data_type);
 
         if (which.isUInt() || which.isDateOrDateTime())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(field.safeGet<UInt64>())), 1);
+            if (field.isNull() == false)
+                return ColumnConst::create(ColumnUInt64::create(1, intHash64(field.safeGet<UInt64>())), 1);
+            else
+                return ColumnConst::create(ColumnUInt64::create(1, intHash64(0)), 1);
         else if (which.isInt() || which.isEnum())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()))), 1);
+            if (field.isNull() == false)
+                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()))), 1);
+            else
+                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(0))), 1);
         else if (which.isFloat32() || which.isFloat64())
-            return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()))), 1);
+            if (field.isNull() == false)
+                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()))), 1);
+            else
+                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(0))), 1);
         else if (which.isString() || which.isFixedString())
         {
-            const auto & value = field.safeGet<String>();
-            return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
+            if (field.isNull() == false)
+            {
+                const auto & value = field.safeGet<String>();
+                return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
+            }
+            else
+            {
+                if (which.isString())
+                    return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64("", 0)), 1);
+                else
+                {
+                    const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(data_type);
+                    const char value[fixed_string_type->getN()] = { 0, };
+                    return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(&value[0], fixed_string_type->getN())), 1);
+                }
+            }
         }
         else
             throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
@@ -51,9 +77,6 @@ struct BloomFilterHash
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
     {
-        const IColumn * actual_col = column.get();
-        const IDataType * actual_type = data_type.get();
-
         WhichDataType which(data_type);
         if (which.isArray())
         {
@@ -62,17 +85,17 @@ struct BloomFilterHash
             if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
                 throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
 
-            actual_col = array_col->getDataPtr().get();
-            actual_type = static_cast<const DataTypeArray *>(data_type.get())->getNestedType().get();
-
             const auto & offsets = array_col->getOffsets();
             size_t offset = (pos == 0) ? 0 : offsets[pos - 1];
-            limit = std::max(actual_col->size() - offset, limit);
+            limit = std::max(array_col->getDataPtr().get()->size() - offset, limit);
         }
+
+        const ColumnPtr actual_col = getPrimitiveColumn(column);
+        const DataTypePtr actual_type = getPrimitiveType(data_type);
 
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();
-        getAnyTypeHash<true>(actual_type, actual_col, index_column_vec, pos);
+        getAnyTypeHash<true>(actual_type.get(), actual_col.get(), index_column_vec, pos);
         return index_column;
     }
 
