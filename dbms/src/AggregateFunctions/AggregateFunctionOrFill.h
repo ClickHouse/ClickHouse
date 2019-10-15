@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -141,31 +142,31 @@ public:
         ConstAggregateDataPtr place,
         IColumn & to) const override
     {
-        if constexpr (UseNull)
+        if (place[sod])
         {
-            // -OrNull
-
-            ColumnNullable & col = static_cast<ColumnNullable &>(to);
-
-            if (place[sod])
+            if constexpr (UseNull)
             {
+                // -OrNull
+
                 if (inner_nullable)
-                    nested_function->insertResultInto(place, col);
+                    nested_function->insertResultInto(place, to);
                 else
+                {
+                    ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+
+                    col.getNullMapColumn().insertDefault();
                     nested_function->insertResultInto(place, col.getNestedColumn());
+                }
             }
             else
-                col.insertDefault();
+            {
+                // -OrDefault
+
+                nested_function->insertResultInto(place, to);
+            }
         }
         else
-        {
-            // -OrDefault
-
-            if (place[sod])
-                nested_function->insertResultInto(place, to);
-            else
-                to.insertDefault();
-        }
+            to.insertDefault();
     }
 };
 
