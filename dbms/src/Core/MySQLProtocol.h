@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int OPENSSL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace MySQLProtocol
@@ -1001,8 +1000,6 @@ public:
         if (auth_response == "\1")
         {
             LOG_TRACE(log, "Client requests public key.");
-#if USE_SSL
-
             BIO * mem = BIO_new(BIO_s_mem());
             SCOPE_EXIT(BIO_free(mem));
             if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
@@ -1021,9 +1018,6 @@ public:
             AuthSwitchResponse response;
             packet_sender->receivePacket(response);
             auth_response = response.value;
-#else
-            throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
         }
         else
         {
@@ -1039,7 +1033,6 @@ public:
          */
         if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
         {
-#if USE_SSL
             LOG_TRACE(log, "Received nonempty password");
             auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
 
@@ -1055,9 +1048,6 @@ public:
             {
                 password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
             }
-#else
-            throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
         }
         else if (is_secure_connection)
         {
@@ -1077,10 +1067,8 @@ public:
     }
 
 private:
-#if USE_SSL
     RSA & public_key;
     RSA & private_key;
-#endif
     Logger * log;
     String scramble;
 };
