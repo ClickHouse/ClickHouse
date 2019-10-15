@@ -3,6 +3,7 @@
 #include <memory>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include "getDictionaryConfigurationFromAST.h"
 
 namespace DB
 {
@@ -52,11 +53,8 @@ DictionaryPtr DictionaryFactory::create(
 
 DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, const Context & context) const
 {
-    /// Temporary code for testing TODO(alesapin)
-    (void)(name);
-    (void)(ast);
-    (void)(context);
-    return nullptr;
+    auto configurationFromAST = getDictionaryConfigurationFromAST(ast);
+    return DictionaryFactory::create(name, *configurationFromAST, "dictionary", context);
 }
 
 
