@@ -71,7 +71,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
-    , close_connection{config.getBool(config_prefix + ".close_connection", false)}
+    , close_connection{config.getBool(config_prefix + ".close_connection", false) || config.getBool(config_prefix + ".share_connection", false)}
 {
 }
 
@@ -115,7 +115,7 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
 
 BlockInputStreamPtr MySQLDictionarySource::loadAll()
 {
-    last_modification = getLastModification();
+    last_modification = getLastModification(false);
 
     LOG_TRACE(log, load_all_query);
     return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_all_query, sample_block, max_block_size, close_connection);
@@ -123,7 +123,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
 
 BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
 {
-    last_modification = getLastModification();
+    last_modification = getLastModification(false);
 
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
@@ -160,7 +160,7 @@ bool MySQLDictionarySource::isModified() const
     if (dont_check_update_time)
         return true;
 
-    return getLastModification() > last_modification;
+    return getLastModification(true) > last_modification;
 }
 
 bool MySQLDictionarySource::supportsSelectiveLoad() const
@@ -200,7 +200,7 @@ std::string MySQLDictionarySource::quoteForLike(const std::string s)
     return out.str();
 }
 
-LocalDateTime MySQLDictionarySource::getLastModification() const
+LocalDateTime MySQLDictionarySource::getLastModification(bool allow_connection_closure) const
 {
     LocalDateTime modification_time{std::time(nullptr)};
 
@@ -234,6 +234,10 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
                 ++fetched_rows;
         }
 
+        if (close_connection && allow_connection_closure) {
+            connection.disconnect();
+        }
+
         if (0 == fetched_rows)
             LOG_ERROR(log, "Cannot find table in SHOW TABLE STATUS result.");
 
@@ -244,7 +248,6 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
     {
         tryLogCurrentException("MySQLDictionarySource");
     }
-
     /// we suppose failure to get modification time is not an error, therefore return current time
     return modification_time;
 }
