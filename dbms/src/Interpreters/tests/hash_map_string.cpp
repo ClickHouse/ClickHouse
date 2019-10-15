@@ -131,7 +131,7 @@ struct FastHash64
 };
 
 
-#if __x86_64__
+#if defined(__x86_64__)
 struct CrapWow
 {
     size_t operator() (CompactStringRef x) const
@@ -381,7 +381,7 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-#if __x86_64__
+#if defined(__x86_64__)
     if (!m || m == 3)
     {
         Stopwatch watch;
