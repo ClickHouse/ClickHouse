@@ -15,7 +15,7 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
                                    const unsigned max_connections, const size_t max_tries)
     : max_tries(max_tries), config_name{cfg_name}
 {
-    shareable = cfg.getBool(cfg_name + ".shareable_connection", false);
+    shareable = cfg.getBool(cfg_name + ".share_connection", false);
     if (cfg.has(config_name + ".replica"))
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
@@ -90,7 +90,6 @@ PoolWithFailover::Entry PoolWithFailover::Get()
                 try
                 {
                     Entry entry = shareable ? pool->Get() : pool->tryGet();
-
                     if (!entry.isNull())
                     {
                         /// Move all traversed replicas to the end of queue.

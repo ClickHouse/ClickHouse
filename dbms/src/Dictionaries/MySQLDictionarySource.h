@@ -62,7 +62,7 @@ private:
 
     static std::string quoteForLike(const std::string s);
 
-    LocalDateTime getLastModification() const;
+    LocalDateTime getLastModification(bool allow_connection_closure) const;
 
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;

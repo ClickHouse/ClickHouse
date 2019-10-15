@@ -29,7 +29,8 @@ void Pool::Entry::decrementRefCount()
 {
     if (!data)
         return;
-    --data->ref_count;
+    if (data->ref_count>0)
+        --data->ref_count;
     mysql_thread_end();
 }
 
@@ -44,6 +45,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
     if (parent_config_name_)
     {
         const std::string parent_config_name(parent_config_name_);
+        auto_close = cfg.getBool(parent_config_name + ".share_connection", false);
         db = cfg.getString(config_name + ".db", cfg.getString(parent_config_name + ".db", ""));
         user = cfg.has(config_name + ".user")
             ? cfg.getString(config_name + ".user")
@@ -92,6 +94,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
+        auto_close = cfg.getBool(config_name + ".share_connection", false);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -117,7 +120,6 @@ Pool::~Pool()
 Pool::Entry Pool::Get()
 {
     std::unique_lock<std::mutex> lock(mutex);
-
     initialize();
     for (;;)
     {
@@ -174,8 +176,8 @@ void Pool::Entry::disconnect()
 {
     if (data)
     {
-        decrementRefCount();
         data->conn.disconnect();
+        decrementRefCount();
     }
 }
 

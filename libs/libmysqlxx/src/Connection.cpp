@@ -14,13 +14,11 @@ static inline const char* ifNotEmpty(const char* s)
 
 namespace mysqlxx
 {
-
 LibrarySingleton::LibrarySingleton()
 {
     if (mysql_library_init(0, nullptr, nullptr))
         throw Exception("Cannot initialize MySQL library.");
 }
-
 LibrarySingleton::~LibrarySingleton()
 {
     mysql_library_end();
@@ -132,7 +130,6 @@ void Connection::disconnect()
 {
     if (!is_initialized)
         return;
-
     mysql_close(driver.get());
     memset(driver.get(), 0, sizeof(*driver));
 
