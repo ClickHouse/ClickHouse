@@ -14,13 +14,13 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Poco/Crypto/CipherFactory.h>
-#include <Poco/Crypto/RSAKey.h>
 #include <Storages/IStorage.h>
 
 #if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #include <Poco/Net/SSLManager.h>
+#include <Poco/Crypto/CipherFactory.h>
+#include <Poco/Crypto/RSAKey.h>
 #endif
 
 
