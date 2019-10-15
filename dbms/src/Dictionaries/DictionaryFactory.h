@@ -34,7 +34,6 @@ public:
         const std::string & config_prefix,
         const Context & context) const;
 
-    /// Temporary method for testing TODO(alesapin)
     DictionaryPtr create(const std::string & name,
         const ASTCreateQuery & ast,
         const Context & context) const;

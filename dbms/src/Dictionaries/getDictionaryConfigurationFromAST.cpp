@@ -1,4 +1,5 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
@@ -15,6 +16,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_DICTIONARY_DEFINITION;
@@ -383,7 +385,6 @@ void checkAST(const ASTCreateQuery & query)
 
 DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query)
 {
-
     checkAST(query);
 
     AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());

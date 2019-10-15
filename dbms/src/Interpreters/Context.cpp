@@ -30,6 +30,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1034,6 +1035,8 @@ void Context::addDatabase(const String & database_name, const DatabasePtr & data
 
     assertDatabaseDoesntExist(database_name);
     shared->databases[database_name] = database;
+    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(database, *this);
+    getExternalDictionariesLoader().addConfigRepository(std::move(dictionaries_repository), {});
 }
 
 
