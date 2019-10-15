@@ -19,7 +19,7 @@ String trimDatabaseName(const std::string & loadable_definition_name, const Data
             "Loadable '" + loadable_definition_name + "' is not from database '" + database->getDatabaseName(), ErrorCodes::UNKNOWN_DICTIONARY);
     ///    dbname.loadable_name
     ///--> remove <---
-    return loadable_definition_name.substr(dbname.length());
+    return loadable_definition_name.substr(dbname.length() + 1);
 }
 }
 
@@ -31,7 +31,12 @@ LoadablesConfigurationPtr ExternalLoaderDatabaseConfigRepository::load(const std
 
 bool ExternalLoaderDatabaseConfigRepository::exists(const std::string & loadable_definition_name) const
 {
-    return database->isDictionaryExist(context, trimDatabaseName(loadable_definition_name, database));
+    std::cerr << "IS EXISTS:"
+              << loadable_definition_name << std::endl;
+    std::cerr << "CUTTED:"
+              << trimDatabaseName(loadable_definition_name, database) << std::endl;
+    return database->isDictionaryExist(
+                     context, trimDatabaseName(loadable_definition_name, database));
 }
 
 Poco::Timestamp ExternalLoaderDatabaseConfigRepository::getUpdateTime(const std::string & loadable_definition_name)
@@ -49,6 +54,7 @@ std::set<std::string> ExternalLoaderDatabaseConfigRepository::getAllLoadablesDef
         result.insert(dbname + "." + itr->name());
         itr->next();
     }
+    std::cerr << "RESULTSIZE:" << result.size() << std::endl;
     return result;
 }
 

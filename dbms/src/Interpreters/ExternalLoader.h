@@ -81,7 +81,12 @@ public:
 
     /// Adds a repository which will be used to read configurations from.
     void addConfigRepository(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings);
+        const std::string & repository_name,
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+        const ExternalLoaderConfigSettings & config_settings);
+
+    /// Removes a repository which were used to read configurations.
+    void removeConfigRepository(const std::string & repository_name);
 
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
@@ -140,12 +145,12 @@ public:
     /// Starts reloading of a specified object.
     /// `load_never_loading` specifies what to do if the object has never been loading before.
     /// The function can either skip it (false) or load for the first time (true).
-    void reload(const String & name, bool load_never_loading = false);
+    void reload(const String & name, bool load_never_loading = false) const;
 
     /// Starts reloading of all the objects.
     /// `load_never_loading` specifies what to do with the objects which have never been loading before.
     /// The function can either skip them (false) or load for the first time (true).
-    void reload(bool load_never_loading = false);
+    void reload(bool load_never_loading = false) const;
 
 protected:
     virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;

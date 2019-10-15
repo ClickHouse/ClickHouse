@@ -11,6 +11,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDictionary.h>
@@ -160,9 +162,6 @@ void DatabaseOrdinary::loadStoredObjects(
 
     });
 
-    if (file_names.empty())
-        return;
-
     size_t total_tables = file_names.size() - total_dictionaries;
 
     LOG_INFO(log, "Total " << total_tables << " tables and " << total_dictionaries << " dictionaries.");
@@ -191,6 +190,7 @@ void DatabaseOrdinary::loadStoredObjects(
 
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
+    loadDictionaries(context);
 }
 
 
@@ -215,6 +215,14 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
         thread_pool.schedule([&]() { startupOneTable(table.second); });
 
     thread_pool.wait();
+}
+
+void DatabaseOrdinary::loadDictionaries(Context & context)
+{
+    LOG_INFO(log, "Loading dictionaries.");
+
+    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
+    context.getExternalDictionariesLoader().addConfigRepository(getDatabaseName(), std::move(dictionaries_repository), {});
 }
 
 

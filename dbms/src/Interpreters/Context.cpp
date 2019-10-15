@@ -1035,8 +1035,6 @@ void Context::addDatabase(const String & database_name, const DatabasePtr & data
 
     assertDatabaseDoesntExist(database_name);
     shared->databases[database_name] = database;
-    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(database, *this);
-    getExternalDictionariesLoader().addConfigRepository(std::move(dictionaries_repository), {});
 }
 
 
@@ -1045,6 +1043,7 @@ DatabasePtr Context::detachDatabase(const String & database_name)
     auto lock = getLock();
 
     auto res = getDatabase(database_name);
+    getExternalDictionariesLoader().removeConfigRepository(database_name);
     shared->databases.erase(database_name);
     return res;
 }
