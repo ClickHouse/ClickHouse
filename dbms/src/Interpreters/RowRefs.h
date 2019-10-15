@@ -147,7 +147,7 @@ public:
     const RowRef * upperBound(const TEntry & k, bool ascending)
     {
         sort(ascending);
-        auto it = std::upper_bound(array.cbegin(), array.cend(), k, (ascending ? less<true> : less<false>));
+        auto it = std::upper_bound(array.cbegin(), array.cend(), k, (ascending ? less : greater));
         if (it != array.cend())
             return &(it->row_ref);
         return nullptr;
@@ -156,7 +156,7 @@ public:
     const RowRef * lowerBound(const TEntry & k, bool ascending)
     {
         sort(ascending);
-        auto it = std::lower_bound(array.cbegin(), array.cend(), k, (ascending ? less<true> : less<false>));
+        auto it = std::lower_bound(array.cbegin(), array.cend(), k, (ascending ? less : greater));
         if (it != array.cend())
             return &(it->row_ref);
         return nullptr;
@@ -167,13 +167,14 @@ private:
     Base array;
     mutable std::mutex lock;
 
-    template <bool ascending>
     static bool less(const TEntry & a, const TEntry & b)
     {
-        if constexpr (ascending)
-            return a.asof_value < b.asof_value;
-        else
-            return a.asof_value > b.asof_value;
+        return a.asof_value < b.asof_value;
+    }
+
+    static bool greater(const TEntry & a, const TEntry & b)
+    {
+        return a.asof_value > b.asof_value;
     }
 
     // Double checked locking with SC atomics works in C++
@@ -189,7 +190,7 @@ private:
             if (!sorted.load(std::memory_order_relaxed))
             {
                 if (!array.empty())
-                    std::sort(array.begin(), array.end(), (ascending ? less<true> : less<false>));
+                    std::sort(array.begin(), array.end(), (ascending ? less : greater));
 
                 sorted.store(true, std::memory_order_release);
             }

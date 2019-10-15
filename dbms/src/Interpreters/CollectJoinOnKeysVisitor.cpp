@@ -39,17 +39,13 @@ void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, co
         asof_left_key = left_ast->clone();
         asof_right_key = right_ast->clone();
         analyzed_join.setAsofInequality(inequality);
-        return;
     }
     else if (table_no.first == 2 || table_no.second == 1)
     {
         asof_left_key = right_ast->clone();
         asof_right_key = left_ast->clone();
         analyzed_join.setAsofInequality(ASOF::reverseInequality(inequality));
-        return;
     }
-
-    throw Exception("ASOF JOIN requires keys inequality from different tables", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
