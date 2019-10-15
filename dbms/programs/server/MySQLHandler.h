@@ -1,11 +1,13 @@
 #pragma once
 #include <Common/config.h>
-
 #include <Poco/Net/TCPServerConnection.h>
-#include <Poco/Net/SecureStreamSocket.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Core/MySQLProtocol.h>
 #include "IServer.h"
+
+#if USE_POCO_NETSSL
+#include <Poco/Net/SecureStreamSocket.h>
+#endif
 
 
 namespace DB
@@ -55,7 +57,9 @@ private:
 
     std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
 
+#if USE_POCO_NETSSL
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
+#endif
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 

@@ -1,12 +1,15 @@
 #include "MySQLHandlerFactory.h"
 #include <Common/OpenSSLHelpers.h>
-#include <Poco/Net/SSLManager.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include "IServer.h"
 #include "MySQLHandler.h"
+
+#if USE_POCO_NETSSL
+#include <Poco/Net/SSLManager.h>
+#endif
 
 namespace DB
 {
