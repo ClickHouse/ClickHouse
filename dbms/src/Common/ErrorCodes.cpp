@@ -463,6 +463,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS = 486;
     extern const int UNKNOWN_DICTIONARY = 487;
     extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED = 488;
+    extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
