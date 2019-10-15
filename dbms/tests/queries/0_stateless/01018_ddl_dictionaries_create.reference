@@ -18,9 +18,7 @@ memory_db	dict2
 ==DETACH DICTIONARY
 0
 ==ATTACH DICTIONARY
-dict2
-1
-memory_db	dict2
+0
 ==DROP DICTIONARY
 0
 =DICTIONARY in Dictionary DB

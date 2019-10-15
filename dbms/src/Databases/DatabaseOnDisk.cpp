@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
@@ -308,6 +309,10 @@ void DatabaseOnDisk::createDictionary(
         Poco::File(dictionary_metadata_tmp_path).remove();
         throw;
     }
+
+    const auto & config = context.getConfigRef();
+    context.getExternalDictionariesLoader().reload(
+        database.getDatabaseName() + "." + dictionary_name, config.getBool("dictionaries_lazy_load", true));
 }
 
 

@@ -15,7 +15,7 @@ ExternalModelsLoader::ExternalModelsLoader(
     : ExternalLoader("external model", &Logger::get("ExternalModelsLoader"))
     , context(context_)
 {
-    addConfigRepository(std::move(config_repository), {"model", "name"});
+    addConfigRepository("_XMLConfigRepository", std::move(config_repository), {"model", "name"});
     enablePeriodicUpdates(true);
 }
 

@@ -40,11 +40,18 @@ public:
     }
     ~LoadablesConfigReader() = default;
 
-    void addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository, const ExternalLoaderConfigSettings & settings)
+    void addConfigRepository(const String & name, std::unique_ptr<IExternalLoaderConfigRepository> repository, const ExternalLoaderConfigSettings & settings)
     {
         std::lock_guard lock{mutex};
-        repositories.emplace_back(std::move(repository), std::move(settings));
+        repositories.emplace(name, std::make_pair(std::move(repository), settings));
     }
+
+    void removeConfigRepository(const String & name)
+    {
+        std::lock_guard lock{mutex};
+        repositories.erase(name);
+    }
+
 
     using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, ObjectConfig>>;
 
@@ -100,22 +107,22 @@ private:
             loadable_info.in_use = false;
         }
 
-        for (const auto & [repository, settings] : repositories)
+        for (const auto & [name, repo_with_settings] : repositories)
         {
-            const auto names = repository->getAllLoadablesDefinitionNames();
+            const auto names = repo_with_settings.first->getAllLoadablesDefinitionNames();
             for (const auto & name : names)
             {
                 auto it =  loadables_infos.find(name);
                 if (it !=  loadables_infos.end())
                 {
                     LoadablesInfos & loadable_info = it->second;
-                    if (readLoadablesInfo(*repository, name, settings, loadable_info))
+                    if (readLoadablesInfo(*repo_with_settings.first, name, repo_with_settings.second, loadable_info))
                         changed = true;
                 }
                 else
                 {
                     LoadablesInfos loadable_info;
-                    if (readLoadablesInfo(*repository, name, settings, loadable_info))
+                    if (readLoadablesInfo(*repo_with_settings.first, name, repo_with_settings.second, loadable_info))
                     {
                         loadables_infos.emplace(name, std::move(loadable_info));
                         changed = true;
@@ -147,7 +154,7 @@ private:
         {
             if (path.empty() || !repository.exists(path))
             {
-                LOG_WARNING(log, "config file '" + path + "' does not exist");
+                LOG_WARNING(log, "Config file '" + path + "' does not exist");
                 return false;
             }
 
@@ -203,7 +210,9 @@ private:
     Logger * log;
 
     std::mutex mutex;
-    std::vector<std::pair<std::unique_ptr<IExternalLoaderConfigRepository>, ExternalLoaderConfigSettings>> repositories;
+    using RepositoryPtr = std::unique_ptr<IExternalLoaderConfigRepository>;
+    using RepositoryWithSettings = std::pair<RepositoryPtr, ExternalLoaderConfigSettings>;
+    std::unordered_map<String, RepositoryWithSettings> repositories;
     ObjectConfigsPtr configs;
     std::unordered_map<String /* config path */, LoadablesInfos>  loadables_infos;
 };
@@ -956,9 +965,17 @@ ExternalLoader::ExternalLoader(const String & type_name_, Logger * log)
 ExternalLoader::~ExternalLoader() = default;
 
 void ExternalLoader::addConfigRepository(
-    std::unique_ptr<IExternalLoaderConfigRepository> config_repository, const ExternalLoaderConfigSettings & config_settings)
+    const std::string & repository_name,
+    std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+    const ExternalLoaderConfigSettings & config_settings)
 {
-    config_files_reader->addConfigRepository(std::move(config_repository), config_settings);
+    config_files_reader->addConfigRepository(repository_name, std::move(config_repository), config_settings);
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+}
+
+void ExternalLoader::removeConfigRepository(const std::string & repository_name)
+{
+    config_files_reader->removeConfigRepository(repository_name);
     loading_dispatcher->setConfiguration(config_files_reader->read());
 }
 
@@ -1040,13 +1057,13 @@ void ExternalLoader::load(Loadables & loaded_objects, Duration timeout) const
     return loading_dispatcher->load(loaded_objects, timeout);
 }
 
-void ExternalLoader::reload(const String & name, bool load_never_loading)
+void ExternalLoader::reload(const String & name, bool load_never_loading) const
 {
     loading_dispatcher->setConfiguration(config_files_reader->read());
     loading_dispatcher->reload(name, load_never_loading);
 }
 
-void ExternalLoader::reload(bool load_never_loading)
+void ExternalLoader::reload(bool load_never_loading) const
 {
     loading_dispatcher->setConfiguration(config_files_reader->read());
     loading_dispatcher->reload(load_never_loading);

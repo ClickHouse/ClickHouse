@@ -359,6 +359,7 @@ void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, cons
 
 void checkAST(const ASTCreateQuery & query)
 {
+    std::cerr << queryToString(query) << std::endl;
     if (!query.is_dictionary || query.dictionary == nullptr)
         throw Exception("Cannot convert dictionary to configuration from non-dictionary AST.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 

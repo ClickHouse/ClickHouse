@@ -161,6 +161,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     try
     {
+        std::cerr << "ADDING DB NAME:" << database_name << std::endl;
         context.addDatabase(database_name, database);
 
         if (need_write_metadata)
@@ -719,6 +720,13 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
         else
             throw Exception(
                 "Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+    }
+
+    if (create.attach)
+    {
+        auto query = context.getCreateDictionaryQuery(database_name, dictionary_name);
+        create = query->as<ASTCreateQuery &>();
+        create.attach = true;
     }
 
     auto res = DictionaryFactory::instance().create(dictionary_name, create, context.getGlobalContext());

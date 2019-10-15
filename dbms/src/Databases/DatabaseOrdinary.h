@@ -92,6 +92,7 @@ private:
     Poco::Logger * log;
 
     void startupTables(ThreadPool & thread_pool);
+    void loadDictionaries(Context & context);
 };
 
 }
