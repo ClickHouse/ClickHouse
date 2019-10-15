@@ -445,7 +445,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
 }
 
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
-                           const NameSet & source_columns_set)
+                           const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
     if (ASTPtr array_join_expression_list = select_query->array_join_expression_list())
     {
@@ -471,12 +471,12 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
             else /// This is a nested table.
             {
                 bool found = false;
-                for (const auto & column_name : source_columns_set)
+                for (const auto & column : source_columns)
                 {
-                    auto splitted = Nested::splitName(column_name);
+                    auto splitted = Nested::splitName(column.name);
                     if (splitted.first == source_name && !splitted.second.empty())
                     {
-                        result.array_join_result_to_source[Nested::concatenateName(result_name, splitted.second)] = column_name;
+                        result.array_join_result_to_source[Nested::concatenateName(result_name, splitted.second)] = column.name;
                         found = true;
                         break;
                     }
@@ -831,8 +831,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
             else
             {
                 columns_list.reserve(result.source_columns.size());
-                for (const auto & type_name : result.source_columns)
-                    columns_list.emplace_back(type_name.name);
+                for (const auto & column : result.source_columns)
+                    columns_list.emplace_back(column.name);
             }
 
             for (auto & column : result.analyzed_join->getQualifiedColumnsSet())
@@ -891,7 +891,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         optimizeUsing(select_query);
 
         /// array_join_alias_to_name, array_join_result_to_source.
-        getArrayJoinedColumns(query, result, select_query, source_columns_set);
+        getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
