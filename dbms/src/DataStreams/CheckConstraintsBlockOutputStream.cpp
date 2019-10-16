@@ -2,7 +2,9 @@
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <Parsers/formatAST.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <Common/FieldVisitors.h>
 
 

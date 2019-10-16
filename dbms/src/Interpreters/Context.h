@@ -43,11 +43,10 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class IRuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
-class ExternalDictionaries;
-class ExternalModels;
+class ExternalDictionariesLoader;
+class ExternalModelsLoader;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class BackgroundSchedulePool;
@@ -174,7 +173,6 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
     Context(const Context &);
@@ -321,11 +319,11 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes);
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
-    const ExternalDictionaries & getExternalDictionaries() const;
-    const ExternalModels & getExternalModels() const;
+    const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
+    const ExternalModelsLoader & getExternalModelsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
-    ExternalDictionaries & getExternalDictionaries();
-    ExternalModels & getExternalModels();
+    ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalModelsLoader & getExternalModelsLoader();
     void tryCreateEmbeddedDictionaries() const;
 
     /// I/O formats.
@@ -537,6 +535,7 @@ public:
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
     void setQueryParameter(const String & name, const String & value);
+    void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;

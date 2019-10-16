@@ -891,7 +891,7 @@ private:
     {
         const auto type = static_cast<const EnumType *>(type_untyped);
 
-        const Field x = nearestFieldType(type->getValue(column_string->getValue<String>()));
+        const Field x = castToNearestFieldType(type->getValue(column_string->getValue<String>()));
         const auto enum_col = type->createColumnConst(input_rows_count, x);
 
         executeNumLeftType<typename EnumType::FieldType>(block, result,

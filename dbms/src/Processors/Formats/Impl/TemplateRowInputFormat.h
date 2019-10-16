@@ -16,7 +16,8 @@ class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
     using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
     TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                           const FormatSettings & settings_, bool ignore_spaces_);
+                           const FormatSettings & settings_, bool ignore_spaces_,
+                           ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_);
 
     String getName() const override { return "TemplateRowInputFormat"; }
 
@@ -49,10 +50,10 @@ private:
     PeekableReadBuffer buf;
     DataTypes data_types;
 
-    FormatSettings settings;
+    const FormatSettings settings;
+    const bool ignore_spaces;
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
-    const bool ignore_spaces;
 
     size_t format_data_idx;
     bool end_of_stream = false;

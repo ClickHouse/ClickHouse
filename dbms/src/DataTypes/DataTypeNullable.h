@@ -45,8 +45,8 @@ public:
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override { nested_data_type->serializeBinary(field, ostr); }
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override { nested_data_type->deserializeBinary(field, istr); }
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -77,7 +77,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override { return Null(); }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 

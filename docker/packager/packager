@@ -107,7 +107,10 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     result = []
     cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
-    cc = compiler
+    if compiler.endswith("-darwin"):
+        cc = compiler[:-len("-darwin")]
+    else:
+        cc = compiler
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
     if package_type == "deb":
         result.append("DEB_CC={}".format(cc))
@@ -119,11 +122,11 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         cmake_flags.append('-DCMAKE_CXX_COMPILER=`which {}`'.format(cxx))
 
     if "darwin" in compiler:
-        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar") \
-                   .append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib") \
-                   .append("-DCMAKE_SYSTEM_NAME=Darwin") \
-                   .append("-DSDK_PATH=/cctools/MacOSX10.14.sdk") \
-                   .append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
+        cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
+        cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
+        cmake_flags.append("-DCMAKE_SYSTEM_NAME=Darwin")
+        cmake_flags.append("-DSDK_PATH=/cctools/MacOSX10.14.sdk")
+        cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
