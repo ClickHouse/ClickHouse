@@ -212,14 +212,44 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     {
         UInt32 have_date = type_ids.count(TypeIndex::Date);
         UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
+        UInt32 have_datetime64 = type_ids.count(TypeIndex::DateTime64);
 
         if (have_date || have_datetime)
         {
-            bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime);
+            bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
                 throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeDateTime>();
+            if (have_datetime64 == 0)
+            {
+                return std::make_shared<DataTypeDateTime>();
+            }
+
+            // When DateTime64 involved, make sure that supertype has whole-part precision
+            // big enough to hold max whole-value of any type from `types`.
+            // That would sacrifice scale when comparing DateTime64 of different scales.
+
+            UInt32 max_datetime64_precision = 0;
+            for (const auto & t : types)
+            {
+                if (auto dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
+                {
+                    const auto precision = dt64->getPrecision();
+                    max_datetime64_precision = std::max(precision, max_datetime64_precision);
+                }
+            }
+
+            const UInt32 least_decimal_precision = have_datetime ? leastDecimalPrecisionFor(TypeIndex::UInt32) : have_date ? leastDecimalPrecisionFor(TypeIndex::UInt16) : 0;
+            max_datetime64_precision = std::max(least_decimal_precision, max_datetime64_precision);
+
+            const UInt32 scale = DataTypeDateTime64::maxPrecision() - max_datetime64_precision;
+            if (max_datetime64_precision == 0)
+            {
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless convertion to DateTime64",
+                                ErrorCodes::NO_COMMON_TYPE);
+            }
+
+            return std::make_shared<DataTypeDateTime64>(scale);
         }
     }
 
