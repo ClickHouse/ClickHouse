@@ -768,8 +768,8 @@ Gets data from [Join](../../operations/table_engines/join.md) tables using the s
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
 
-## modelEvaluate(model_name, ...)
-Evaluate model.
+## modelEvaluate(model_name, ...) {#function-modelevaluate}
+Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
 ## throwIf(x\[, custom_message\])
