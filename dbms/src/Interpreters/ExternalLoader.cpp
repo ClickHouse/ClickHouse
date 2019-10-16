@@ -191,7 +191,7 @@ private:
                     continue;
                 }
 
-                configs_from_file.emplace_back(name, ObjectConfig{external_name, file_contents, key});
+                configs_from_file.emplace_back(external_name, ObjectConfig{name, file_contents, key});
             }
 
             loadable_info.configs = std::move(configs_from_file);
