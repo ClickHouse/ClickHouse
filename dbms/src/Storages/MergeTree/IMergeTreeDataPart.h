@@ -74,7 +74,7 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
     ///   (either by locking columns_lock, or by locking table structure).
-    virtual ColumnSize getColumnSize(const String & name, const IDataType & type) const = 0;
+    ColumnSize getColumnSize(const String & name, const IDataType & type);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -83,10 +83,6 @@ public:
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     virtual String getColumnNameWithMinumumCompressedSize() const = 0;
-
-    virtual String getMarkExtension(bool /* is_adaptive */) const { return ""; }
-
-    virtual size_t getMarkSize(bool /* is_adaptive */) const { return 0; }
 
     // virtual void detach() = 0;
 
@@ -110,7 +106,7 @@ public:
     enum class Type
     {
         WIDE,
-        STRIPED,
+        COMPACT,
         IN_MEMORY,
     };
 
@@ -124,7 +120,7 @@ public:
         {
             case Type::WIDE:
                 return "Wide";
-            case Type::STRIPED:
+            case Type::COMPACT:
                 return "Striped";
             case Type::IN_MEMORY:
                 return "InMemory";
@@ -141,16 +137,20 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk = {},
         const std::optional<String> & relative_path = {});
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk = {},
         const std::optional<String> & relative_path = {});
 
     void assertOnDisk() const;
+
+    ColumnSize getColumnSize(const String & column_name, const IDataType & type) const;
 
     ColumnSize getTotalColumnsSize() const;
 
@@ -174,6 +174,7 @@ public:
 
     String name;
     MergeTreePartInfo info;
+    MergeTreeIndexGranularityInfo index_granularity_info;
 
     DiskSpace::DiskPtr disk;
 
@@ -316,8 +317,6 @@ public:
         *  unblocking, block it for writing.
         */
     mutable std::mutex alter_mutex;
-
-    MergeTreeIndexGranularityInfo index_granularity_info;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

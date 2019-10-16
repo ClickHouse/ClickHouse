@@ -35,11 +35,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , columns_list(columns_list_)
 {
     init();
+    const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
-    {
-        const auto columns = storage.getColumns();
         addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
-    }
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -71,11 +69,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
+    const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
-    {
-        const auto columns = storage.getColumns();
         addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
-    }
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -234,6 +230,7 @@ void MergedBlockOutputStream::init()
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
+    std::cerr << "(MergedBlockOutputStream::writeImpl) block.rows(): " << block.rows() << "\n";
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)
@@ -248,44 +245,41 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     WrittenOffsetColumns offset_columns;
 
+    Block primary_key_block;
+    Block skip_indexes_block;
+
     auto primary_key_column_names = storage.primary_key_columns;
+
     std::set<String> skip_indexes_column_names_set;
     for (const auto & index : storage.skip_indices)
         std::copy(index->columns.cbegin(), index->columns.cend(),
                 std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
-    /// Here we will add the columns related to the Primary Key, then write the index.
-    std::vector<ColumnWithTypeAndName> primary_key_columns(primary_key_column_names.size());
-    std::map<String, size_t> primary_key_column_name_to_position;
-
     for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
     {
         const auto & name = primary_key_column_names[i];
-
-        if (!primary_key_column_name_to_position.emplace(name, i).second)
-            throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
-
-        primary_key_columns[i] = block.getByName(name);
+        primary_key_block.insert(i, block.getByName(name));
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
-            primary_key_columns[i].column = primary_key_columns[i].column->permute(*permutation, 0);
+        {
+            auto & column = primary_key_block.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
-
-    /// The same for skip indexes columns
-    std::vector<ColumnWithTypeAndName> skip_indexes_columns(skip_indexes_column_names.size());
-    std::map<String, size_t> skip_indexes_column_name_to_position;
 
     for (size_t i = 0, size = skip_indexes_column_names.size(); i < size; ++i)
     {
         const auto & name = skip_indexes_column_names[i];
-        skip_indexes_column_name_to_position.emplace(name, i);
-        skip_indexes_columns[i] = block.getByName(name);
+        skip_indexes_block.insert(i, block.getByName(name));
 
         /// Reorder index columns in advance.
         if (permutation)
-            skip_indexes_columns[i].column = skip_indexes_columns[i].column->permute(*permutation, 0);
+        {
+            auto & column = skip_indexes_block.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
 
     if (index_columns.empty())
@@ -294,8 +288,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         last_index_row.resize(primary_key_column_names.size());
         for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
         {
-            index_columns[i] = primary_key_columns[i].column->cloneEmpty();
-            last_index_row[i] = primary_key_columns[i].cloneEmpty();
+            last_index_row[i] = primary_key_block.getByPosition(i).cloneEmpty();
+            index_columns[i] = last_index_row[i].column->cloneEmpty();
         }
     }
 
@@ -313,6 +307,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
+    writer->write(block, primary_key_block, skip_indexes_block, current_mark, index_offset);
+
     size_t new_index_offset = 0;
     /// Now write the data.
     auto it = columns_list.begin();
@@ -322,9 +318,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
         if (permutation)
         {
-            auto primary_column_it = primary_key_column_name_to_position.find(it->name);
-            auto skip_index_column_it = skip_indexes_column_name_to_position.find(it->name);
-            if (primary_key_column_name_to_position.end() != primary_column_it)
+            if (primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_columns[primary_column_it->second].column;
                 std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i], current_mark);
@@ -346,6 +340,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i], current_mark);
         }
     }
+
+    std::cerr << "(MergedBlockOutputStream::writeImpl) new_index_offset: " << new_index_offset << "\n";
 
     rows_count += rows;
 

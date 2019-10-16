@@ -34,18 +34,20 @@ public:
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-   MergeTreeDataPartCompact(
+    MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskSpace::DiskPtr & disk,
-        const std::optional<String> & relative_path = {});
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const DiskSpace::DiskPtr & disk_,
+        const std::optional<String> & relative_path_ = {});
 
-    MergeTreeDataPartCompact(
+    MergeTreeDataPartCompact( 
         MergeTreeData & storage_,
         const String & name_,
-        const DiskSpace::DiskPtr & disk,
-        const std::optional<String> & relative_path = {});
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const DiskSpace::DiskPtr & disk_,
+        const std::optional<String> & relative_path_ = {});
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
@@ -58,19 +60,8 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
-    String getMarkExtension(bool /* is_adaptive */) const override { return ".mrk3"; }
-
-    bool getMarkSize(bool is_adaptive)
-    {
-        return sizeof(size_t) + columns.size() * sizeof(size_t) * 2;
-    }
-
     void remove() const override;
 
-    /// NOTE: Returns zeros if column files are not found in checksums.
-    /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
-    ///   (either by locking columns_lock, or by locking table structure).
-    ColumnSize getColumnSize(const String & name, const IDataType & type) const override;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -80,7 +71,7 @@ public:
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const override;
 
-    virtual Type getType() const override { return Type::WIDE; }
+    virtual Type getType() const override { return Type::COMPACT; }
 
     ~MergeTreeDataPartCompact() override;
 

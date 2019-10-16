@@ -38,12 +38,14 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk,
         const std::optional<String> & relative_path = {});
 
     MergeTreeDataPartWide(
         MergeTreeData & storage_,
         const String & name_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk,
         const std::optional<String> & relative_path = {});
 
@@ -62,19 +64,6 @@ public:
 
     bool supportsVerticalMerge() const override { return true; }
 
-    String getMarkExtension(bool is_adaptive) const override { return is_adaptive ? ".mrk2" : ".mrk"; }
-
-    size_t getMarkSize(bool is_adaptive) const override
-    {
-        size_t nums = is_adaptive ? 3 : 2; 
-        return sizeof(size_t) * nums;
-    }
-
-    /// NOTE: Returns zeros if column files are not found in checksums.
-    /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
-    ///   (either by locking columns_lock, or by locking table structure).
-    ColumnSize getColumnSize(const String & name, const IDataType & type) const override;
-
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency) override;
@@ -83,7 +72,7 @@ public:
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const override;
 
-    virtual Type getType() const override { return Type::WIDE; }
+    Type getType() const override { return Type::WIDE; }
 
     ~MergeTreeDataPartWide() override;
 

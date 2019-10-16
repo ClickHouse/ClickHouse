@@ -288,6 +288,13 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
         }
     }, serialize_settings.path);
 
+    std::cerr << "(IMergedBlockOutputStream::writeColumn) name: " << name << "\n";
+    std::cerr << "(IMergedBlockOutputStream::writeColumn) from_mark: " << from_mark << "\n";
+    std::cerr << "(IMergedBlockOutputStream::writeColumn) current_column_mark: " << current_column_mark << "\n";
+    std::cerr << "(IMergedBlockOutputStream::writeColumn) current_row: " << current_row << "\n";
+    std::cerr << "(IMergedBlockOutputStream::writeColumn) total_rows: " << total_rows;
+    std::cerr << "(IMergedBlockOutputStream::writeColumn) blocks_are_granules_size: " << blocks_are_granules_size << "\n";    
+
     return std::make_pair(current_column_mark, current_row - total_rows);
 }
 
