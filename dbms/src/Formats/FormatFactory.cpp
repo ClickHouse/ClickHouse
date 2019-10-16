@@ -53,7 +53,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
-    format_settings.tsv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
+    format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
 
     return format_settings;
 }

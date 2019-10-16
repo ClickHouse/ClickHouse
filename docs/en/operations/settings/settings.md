@@ -239,6 +239,12 @@ Possible values:
 
 Default value: 1.
 
+## input_format_tsv_empty_as_default {#settings-input_format_tsv_empty_as_default}
+
+When enabled, replace empty input fields in TSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Disabled by default.
+
 ## input_format_null_as_default {#settings-input_format_null_as_default}
 
 Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for text input formats).
