@@ -448,9 +448,9 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                 /* Combine statements like (x >= a) and (x <= b) into x in range [a, b] */
                 if (rpn.size() >= 3 && rpn.back().function == RPNElement::FUNCTION_AND)
                 {
-                    auto to_modify = rpn.size() - 3;
-                    auto rhs = rpn[to_modify + 1];
-                    auto lhs = rpn[to_modify];
+                    const size_t to_modify = rpn.size() - 3;
+                    const auto rhs = rpn[to_modify + 1];
+                    const auto lhs = rpn[to_modify];
                     if (
                             lhs.function == RPNElement::FUNCTION_IN_RANGE &&
                             rhs.function == RPNElement::FUNCTION_IN_RANGE &&
