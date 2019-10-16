@@ -63,7 +63,7 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void detachDictionary(const String &) override
+    void detachDictionary(const String &, const Context &) override
     {
         throw Exception("MySQL database engine does not support detach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -89,7 +89,7 @@ public:
         throw Exception("MySQL database engine does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void attachDictionary(const String &) override
+    void attachDictionary(const String &, const Context &, bool) override
     {
         throw Exception("MySQL database engine does not support attach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }

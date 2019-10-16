@@ -35,11 +35,11 @@ void DatabaseMemory::createTable(
 
 
 void DatabaseMemory::createDictionary(
-    const Context & /*context*/,
+    const Context & context,
     const String & dictionary_name,
     const ASTPtr & /*query*/)
 {
-    attachDictionary(dictionary_name);
+    attachDictionary(dictionary_name, context, true);
 }
 
 
@@ -52,10 +52,10 @@ void DatabaseMemory::removeTable(
 
 
 void DatabaseMemory::removeDictionary(
-    const Context &,
+    const Context & context,
     const String & dictionary_name)
 {
-    detachDictionary(dictionary_name);
+    detachDictionary(dictionary_name, context);
 }
 
 
