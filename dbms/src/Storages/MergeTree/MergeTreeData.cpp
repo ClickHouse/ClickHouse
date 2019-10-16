@@ -604,12 +604,32 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 
     if (new_ttl_table_ast)
     {
-        auto new_ttl_table_entry = create_ttl_entry(new_ttl_table_ast);
+        ASTPtr new_delete_ttl_table_ast;
+        for (auto ttl_element_ptr : new_ttl_table_ast->children)
+        {
+            ASTTTLElement & ttl_element = static_cast<ASTTTLElement &>(*ttl_element_ptr);
+            if (ttl_element.destination_type == ASTTTLElement::DELETE)
+            {
+                if (new_delete_ttl_table_ast)
+                {
+                    throw Exception("Too many DELETE ttls.", ErrorCodes::BAD_TTL_EXPRESSION);
+                }
+                new_delete_ttl_table_ast = ttl_element.children[0];
+            }
+            else
+            {
+                // FIXME: Read MOVE ttls.
+            }
+        }
+
+        auto new_ttl_table_entry = create_ttl_entry(new_delete_ttl_table_ast);
         if (!only_check)
         {
-            ttl_table_ast = new_ttl_table_ast;
+            ttl_table_ast = new_delete_ttl_table_ast;
             ttl_table_entry = new_ttl_table_entry;
         }
+
+        // FIXME: Apply MOVE ttls.
     }
 }
 
