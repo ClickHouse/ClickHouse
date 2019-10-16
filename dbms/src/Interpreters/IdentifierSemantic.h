@@ -35,7 +35,8 @@ struct IdentifierSemantic
     static bool canBeAlias(const ASTIdentifier & identifier);
     static void setMembership(ASTIdentifier & identifier, size_t table_no);
     static size_t getMembership(const ASTIdentifier & identifier);
-    static bool trySetMembership(ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables, size_t & best_table_pos);
+    static bool chooseTable(const ASTIdentifier &, const std::vector<DatabaseAndTableWithAlias> & tables, size_t & best_table_pos);
+    static bool chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNames> & tables, size_t & best_table_pos);
 
 private:
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
