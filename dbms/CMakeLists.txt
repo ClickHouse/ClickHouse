@@ -164,6 +164,7 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
+add_object_library(clickhouse_access src/Access)
 add_object_library(clickhouse_core src/Core)
 add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)
@@ -256,6 +257,7 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
+    ${Poco_XML_LIBRARY}
 )
 
 if(RE2_LIBRARY)
@@ -269,6 +271,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
     ${CITYHASH_LIBRARIES}
         PRIVATE
+    ${Poco_XML_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARIES}
         PUBLIC
@@ -329,7 +332,7 @@ dbms_target_include_directories(SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
-if (NOT USE_INTERNAL_LZ4_LIBRARY)
+if (NOT USE_INTERNAL_LZ4_LIBRARY AND LZ4_INCLUDE_DIR)
     dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
 

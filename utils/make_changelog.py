@@ -239,7 +239,7 @@ def process_pull_requests(pull_requests, users, repo):
                     long_descr_pos = i
 
         cat = ''
-        if cat_pos:
+        if cat_pos is not None:
             # TODO: Sometimes have more than one
             cat = lines[cat_pos + 1]
         cat = cat.strip().lstrip('-').strip()

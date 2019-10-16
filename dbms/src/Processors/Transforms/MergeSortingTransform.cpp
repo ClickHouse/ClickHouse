@@ -1,14 +1,12 @@
+#include <Poco/Version.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Transforms/MergingSortedTransform.h>
-
 #include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <common/config_common.h>
-
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 

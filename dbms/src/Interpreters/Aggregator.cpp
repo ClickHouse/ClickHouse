@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <thread>
 #include <future>
+#include <Poco/Version.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>

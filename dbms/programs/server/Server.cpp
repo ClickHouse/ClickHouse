@@ -813,7 +813,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("mysql_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::ServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(Poco::Timespan());

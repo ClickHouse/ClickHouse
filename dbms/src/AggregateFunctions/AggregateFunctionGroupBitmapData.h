@@ -1,13 +1,17 @@
 #pragma once
 
 #include <algorithm>
-#include <roaring/roaring.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/noncopyable.hpp>
-#include <roaring/roaring.hh>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
+
+// Include this header last, because it is an auto-generated dump of questionable
+// garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
+// TODO: find out what it is. On github, they have proper inteface headers like
+// this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
+#include <roaring/roaring.h>
 
 namespace DB
 {
@@ -704,6 +708,7 @@ private:
 template <typename T>
 struct AggregateFunctionGroupBitmapData
 {
+    bool doneFirst = false;
     RoaringBitmapWithSmallSet<T, 32> rbs;
     static const char * name() { return "groupBitmap"; }
 };
