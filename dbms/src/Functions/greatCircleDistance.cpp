@@ -10,9 +10,6 @@
 #include <math.h>
 #include <array>
 
-#define DEGREES_IN_RADIANS (M_PI / 180.0)
-#define EARTH_RADIUS_IN_METERS 6372797.560856
-
 
 namespace DB
 {
@@ -23,8 +20,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
 }
-
-static inline Float64 degToRad(Float64 angle) { return angle * DEGREES_IN_RADIANS; }
 
 static const double PI = 3.14159265358979323846;
 static const double TO_RAD = PI / 180.0;
@@ -217,14 +212,6 @@ private:
                   GeodistFastCos(lat1Deg * TO_RADF) * GeodistFastCos(lat2Deg * TO_RADF) *
                   fsqr(GeodistFastSin(dlon * TO_RADF2));
         return (float) (D * GeodistFastAsinSqrt(a));
-
-//        Float64 lon1Rad = degToRad(lon1Deg);
-//        Float64 lat1Rad = degToRad(lat1Deg);
-//        Float64 lon2Rad = degToRad(lon2Deg);
-//        Float64 lat2Rad = degToRad(lat2Deg);
-//        Float64 u = sin((lat2Rad - lat1Rad) / 2);
-//        Float64 v = sin((lon2Rad - lon1Rad) / 2);
-//        return 2.0 * EARTH_RADIUS_IN_METERS * asin(sqrt(u * u + cos(lat1Rad) * cos(lat2Rad) * v * v));
     }
 
 
