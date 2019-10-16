@@ -2488,12 +2488,12 @@ void MergeTreeData::throwInsertIfNeeded() const
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/)
 {
-    auto committed_parts_range = getDataPartsStateRange(state);
+    auto current_state_parts_range = getDataPartsStateRange(state);
 
     /// The part can be covered only by the previous or the next one in data_parts.
     auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{state, part_info});
 
-    if (it != committed_parts_range.end())
+    if (it != current_state_parts_range.end())
     {
         if ((*it)->info == part_info)
             return *it;
@@ -2501,7 +2501,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
             return *it;
     }
 
-    if (it != committed_parts_range.begin())
+    if (it != current_state_parts_range.begin())
     {
         --it;
         if ((*it)->info.contains(part_info))
