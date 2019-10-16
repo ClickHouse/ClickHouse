@@ -202,7 +202,7 @@ std::string MySQLDictionarySource::quoteForLike(const std::string s)
     return out.str();
 }
 
-LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & connection, bool allow_connection_closure ) const
+LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & connection, bool allow_connection_closure) const
 {
     LocalDateTime modification_time{std::time(nullptr)};
 
@@ -235,7 +235,8 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
                 ++fetched_rows;
         }
 
-        if (close_connection && allow_connection_closure) {
+        if (close_connection && allow_connection_closure)
+        {
             connection.disconnect();
         }
 
