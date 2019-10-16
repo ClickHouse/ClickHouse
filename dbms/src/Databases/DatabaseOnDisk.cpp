@@ -255,7 +255,6 @@ void DatabaseOnDisk::createDictionary(
     IDatabase & database,
     const Context & context,
     const String & dictionary_name,
-    const DictionaryPtr & dictionary,
     const ASTPtr & query)
 {
     const auto & settings = context.getSettingsRef();
@@ -297,8 +296,7 @@ void DatabaseOnDisk::createDictionary(
 
     try
     {
-        /// Add a table to the map of known tables.
-        database.attachDictionary(dictionary_name, dictionary);
+        database.attachDictionary(dictionary_name);
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -353,7 +351,7 @@ void DatabaseOnDisk::removeDictionary(
     const String & dictionary_name,
     Poco::Logger * log)
 {
-    DictionaryPtr res = database.detachDictionary(dictionary_name);
+    database.detachDictionary(dictionary_name);
 
     String dictionary_metadata_path = database.getObjectMetadataPath(dictionary_name);
 
@@ -372,7 +370,7 @@ void DatabaseOnDisk::removeDictionary(
         {
             LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
         }
-        database.attachDictionary(dictionary_name, res);
+        database.attachDictionary(dictionary_name);
         throw;
     }
 }
@@ -417,9 +415,9 @@ ASTPtr DatabaseOnDisk::getCreateDictionaryQueryImpl(
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
-        bool has_table = database.tryGetDictionary(context, dictionary_name) != nullptr;
+        bool has_dictionary = database.isDictionaryExist(context, dictionary_name);
 
-        auto msg = has_table ? "There is no CREATE DICTIONARY query for table " : "There is no metadata file for dictionary ";
+        auto msg = has_dictionary ? "There is no CREATE DICTIONARY query for table " : "There is no metadata file for dictionary ";
 
         throw Exception(msg + backQuote(dictionary_name), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
     }

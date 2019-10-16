@@ -75,7 +75,6 @@ void DatabaseLazy::createTable(
 void DatabaseLazy::createDictionary(
     const Context & /*context*/,
     const String & /*dictionary_name*/,
-    const DictionaryPtr & /*dict_ptr*/,
     const ASTPtr & /*query*/)
 {
     throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
@@ -114,10 +113,6 @@ bool DatabaseLazy::isDictionaryExist(const Context & /*context*/, const String &
     return false;
 }
 
-DictionaryPtr DatabaseLazy::tryGetDictionary(const Context & /*context*/, const String & /*dictionary_name*/) const
-{
-    return nullptr;
-}
 
 DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
     const Context & /*context*/,
@@ -127,13 +122,12 @@ DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
 }
 
 void DatabaseLazy::attachDictionary(
-    const String & /*dictionary_name*/,
-    const DictionaryPtr & /*table*/)
+    const String & /*dictionary_name*/)
 {
     throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
-DictionaryPtr DatabaseLazy::detachDictionary(const String & /*dictionary_name*/)
+void DatabaseLazy::detachDictionary(const String & /*dictionary_name*/)
 {
     throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
 }

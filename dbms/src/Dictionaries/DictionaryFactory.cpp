@@ -35,7 +35,7 @@ DictionaryPtr DictionaryFactory::create(
 
     const DictionaryStructure dict_struct{config, config_prefix + ".structure"};
 
-    auto source_ptr = DictionarySourceFactory::instance().create(name, config, config_prefix + ".source", dict_struct, context);
+    DictionarySourcePtr source_ptr = DictionarySourceFactory::instance().create(name, config, config_prefix + ".source", dict_struct, context);
 
     const auto & layout_type = keys.front();
 
@@ -43,8 +43,8 @@ DictionaryPtr DictionaryFactory::create(
         const auto found = registered_layouts.find(layout_type);
         if (found != registered_layouts.end())
         {
-            const auto & create_layout = found->second;
-            return create_layout(name, dict_struct, config, config_prefix, std::move(source_ptr));
+            const auto & layout_creator = found->second;
+            return layout_creator(name, dict_struct, config, config_prefix, std::move(source_ptr));
         }
     }
 

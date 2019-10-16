@@ -1,5 +1,6 @@
 #include <map>
 #include <set>
+#include <Common/StackTrace.h>
 #include <optional>
 #include <memory>
 #include <Poco/Mutex.h>

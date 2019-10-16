@@ -35,7 +35,6 @@ public:
     void createDictionary(
         const Context & context,
         const String & dictionary_name,
-        const DictionaryPtr & dict_ptr,
         const ASTPtr & query) override;
 
     void removeTable(
@@ -102,8 +101,6 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    DictionaryPtr tryGetDictionary(const Context & context, const String & dictionary_name) const override;
-
     bool empty(const Context & context) const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
@@ -114,9 +111,9 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void attachDictionary(const String & dictionary_name, const DictionaryPtr & table) override;
+    void attachDictionary(const String & dictionary_name) override;
 
-    DictionaryPtr detachDictionary(const String & dictionary_name) override;
+    void detachDictionary(const String & dictionary_name) override;
 
     void shutdown() override;
 

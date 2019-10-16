@@ -55,21 +55,16 @@ namespace
 {
 
 
-std::pair<String, DictionaryPtr> createDictionaryFromAST(
+String createDictionaryFromAST(
     ASTCreateQuery ast_create_query,
-    const String & database_name,
-    const Context & context)
+    const String & database_name)
 {
     ast_create_query.database = database_name;
 
     if (!ast_create_query.dictionary_attributes_list)
         throw Exception("Missing definition of dictionary attributes.", ErrorCodes::EMPTY_LIST_OF_ATTRIBUTES_PASSED);
 
-    return
-    {
-        ast_create_query.table,
-        DictionaryFactory::instance().create(ast_create_query.table, ast_create_query, context)
-    };
+    return ast_create_query.table;
 }
 
 void loadObject(
@@ -83,10 +78,8 @@ try
 {
     if (query.is_dictionary)
     {
-        String dictionary_name;
-        DictionaryPtr dictionary;
-        std::tie(dictionary_name, dictionary) = createDictionaryFromAST(query, database_name, context);
-        database.attachDictionary(dictionary_name, dictionary);
+        String dictionary_name = createDictionaryFromAST(query, database_name);
+        database.attachDictionary(dictionary_name);
     }
     else
     {
@@ -222,7 +215,8 @@ void DatabaseOrdinary::loadDictionaries(Context & context)
     LOG_INFO(log, "Loading dictionaries.");
 
     auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
-    context.getExternalDictionariesLoader().addConfigRepository(getDatabaseName(), std::move(dictionaries_repository), {});
+    context.getExternalDictionariesLoader().addConfigRepository(
+        getDatabaseName(), std::move(dictionaries_repository), {"dictionary", "name"});
 }
 
 
@@ -238,10 +232,9 @@ void DatabaseOrdinary::createTable(
 void DatabaseOrdinary::createDictionary(
     const Context & context,
     const String & dictionary_name,
-    const DictionaryPtr & dictionary,
     const ASTPtr & query)
 {
-    DatabaseOnDisk::createDictionary(*this, context, dictionary_name, dictionary, query);
+    DatabaseOnDisk::createDictionary(*this, context, dictionary_name, query);
 }
 
 void DatabaseOrdinary::removeTable(

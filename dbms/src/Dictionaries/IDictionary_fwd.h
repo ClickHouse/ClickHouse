@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 
-#include <map>
+#include <set>
 #include <memory>
 
 namespace DB
@@ -10,6 +10,5 @@ namespace DB
 
 struct IDictionaryBase;
 using DictionaryPtr = std::shared_ptr<IDictionaryBase>;
-using Dictionaries = std::map<String, DictionaryPtr>;
 
 }
