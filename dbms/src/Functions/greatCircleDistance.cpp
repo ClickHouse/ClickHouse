@@ -42,9 +42,14 @@ static float g_GeoCos[GEODIST_TABLE_COS + 1];        ///< cos(x) table
 static float g_GeoAsin[GEODIST_TABLE_ASIN + 1];    ///< asin(sqrt(x)) table
 static float g_GeoFlatK[GEODIST_TABLE_K + 1][2];    ///< GeodistAdaptive() flat ellipsoid method k1,k2 coeffs table
 
-inline double sqr ( double v ) { return v*v;}
-inline float fsqr ( float v ) { return v*v; }
-
+inline double sqr(double v)
+{
+    return v*v;
+}
+inline float fsqr(float v)
+{
+    return v*v;
+}
 
 void GeodistInit()
 {
