@@ -19,6 +19,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDecimal.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -949,7 +950,8 @@ public:
         if (!which.isStringOrFixedString() &&
             !which.isDateOrDateTime() &&
             !which.isUInt() &&
-            !which.isFloat())
+            !which.isFloat() &&
+            !which.isDecimal())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1060,6 +1062,48 @@ public:
             return false;
         }
     }
+
+    template <typename T>
+    bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res)
+    {
+        const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
+
+        static constexpr size_t DECIMAL_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
+
+        if (col_dec)
+        {
+            auto col_str = ColumnString::create();
+            ColumnString::Chars & out_vec = col_str->getChars();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+            const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
+
+            size_t size = in_vec.size();
+            out_offsets.resize(size);
+            out_vec.resize(size * DECIMAL_HEX_LENGTH);
+
+            size_t pos = 0;
+            char * out = reinterpret_cast<char *>(&out_vec[0]);
+            for (size_t i = 0; i < size; ++i)
+            {
+                const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
+                executeOneString(in_pos, in_pos + sizeof(T), out);
+
+                pos += DECIMAL_HEX_LENGTH;
+                out_offsets[i] = pos;
+            }
+
+            col_res = std::move(col_str);
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+
+
 
     void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
     {
@@ -1177,7 +1221,10 @@ public:
             tryExecuteString(column, res_column) ||
             tryExecuteFixedString(column, res_column) ||
             tryExecuteFloat<Float32>(column, res_column) ||
-            tryExecuteFloat<Float64>(column, res_column))
+            tryExecuteFloat<Float64>(column, res_column) ||
+            tryExecuteDecimal<Decimal32>(column, res_column) ||
+            tryExecuteDecimal<Decimal64>(column, res_column) ||
+            tryExecuteDecimal<Decimal128>(column, res_column))
             return;
 
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
