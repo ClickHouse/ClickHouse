@@ -56,9 +56,9 @@ CREATE DICTIONARY database_for_dict.dict1
   fourth_column Float64 DEFAULT 42.0
 )
 PRIMARY KEY key_column, third_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
-LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 50));
+LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1));
 
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', tuple(toUInt64(11), '121'));
 SELECT dictGetFloat64('database_for_dict.dict1', 'fourth_column', tuple(toUInt64(14), '196'));
@@ -72,4 +72,3 @@ ATTACH DICTIONARY database_for_dict.dict1;
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', tuple(toUInt64(11), '121'));
 
 DROP DATABASE IF EXISTS database_for_dict;
-
