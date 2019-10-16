@@ -15,7 +15,7 @@
         - [pg2ch](https://github.com/mkabilov/pg2ch)
     - [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         - [ClickHouseMightrator](https://github.com/zlzforever/ClickHouseMigrator)
-- Очереди ообщений
+- Очереди сообщений
     - [Kafka](https://kafka.apache.org)
         - [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/kshvakov/clickhouse/))
 - Хранилища объектов
