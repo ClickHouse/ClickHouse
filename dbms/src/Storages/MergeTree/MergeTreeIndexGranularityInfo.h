@@ -31,9 +31,10 @@ public:
     /// Approximate bytes size of one granule
     size_t index_granularity_bytes;
 
-    MergeTreeIndexGranularityInfo(const MergeTreeDataPartPtr & part);
+    MergeTreeIndexGranularityInfo(const MergeTreeData & storage,
+    const String & mark_file_extension_, UInt8 mark_size_in_bytes_);
 
-    void changeGranularityIfRequired(const MergeTreeDataPartPtr & part);
+    void changeGranularityIfRequired(const String & path);
 
     String getMarksFilePath(const String & path_prefix) const
     {

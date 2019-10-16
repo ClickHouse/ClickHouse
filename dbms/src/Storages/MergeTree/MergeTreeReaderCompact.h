@@ -33,6 +33,8 @@ public:
         return sizeof(MarkInCompressedFile) * columns_num;
     }
 
+    bool initialized() { return data != nullptr; }
+
 private:
     MarksPtr data;
     size_t columns_num;
@@ -58,10 +60,18 @@ public:
 
 private:
     ReadBuffer * data_buffer;
+    std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+    std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 
     MarksInCompressedFileCompact marks;
 
     void loadMarks();
+    void seekToStart();
+    void seekToMark(size_t row, size_t col);
+    const MarkInCompressedFile & getMark(size_t row, size_t col);
+
+    void readData(const String & name, const IDataType & type, IColumn & column,
+        size_t from_mark, size_t column_position, size_t rows_to_read);
 
     static auto constexpr NAME_OF_FILE_WITH_DATA = "data";
 

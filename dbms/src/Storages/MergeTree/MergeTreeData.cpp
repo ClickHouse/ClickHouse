@@ -283,11 +283,15 @@ void MergeTreeData::setProperties(
 
     Names new_primary_key_columns;
     Names new_sorting_key_columns;
+    NameSet sorting_key_columns_set;
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
         String sorting_key_column = new_sorting_key_expr_list->children[i]->getColumnName();
         new_sorting_key_columns.push_back(sorting_key_column);
+
+        if (!sorting_key_columns_set.emplace(sorting_key_column).second)
+            throw Exception("Sorting key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
         if (i < primary_key_size)
         {

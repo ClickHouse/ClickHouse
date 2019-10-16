@@ -54,9 +54,10 @@ static ReadBufferFromFile openForReading(const String & path)
 MergeTreeDataPartWide::MergeTreeDataPartWide( 
        MergeTreeData & storage_,
         const String & name_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, index_granularity_info_, disk_, relative_path_)
 {
 }
 
@@ -64,9 +65,10 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
-    : IMergeTreeDataPart(storage_, name_, info_, disk_, relative_path_)
+    : IMergeTreeDataPart(storage_, name_, info_, index_granularity_info_, disk_, relative_path_)
 {
 }
 
@@ -115,11 +117,6 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     return size;
 }
 
-ColumnSize MergeTreeDataPartWide::getColumnSize(const String & column_name, const IDataType & type) const
-{
-    return getColumnSizeImpl(column_name, type, nullptr);
-}
-
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
   * If no checksums are present returns the name of the first physically existing column.
   */
@@ -134,7 +131,7 @@ String MergeTreeDataPartWide::getColumnNameWithMinumumCompressedSize() const
         if (!hasColumnFiles(column.name, *column.type))
             continue;
 
-        const auto size = getColumnSize(column.name, *column.type).data_compressed;
+        const auto size = getColumnSizeImpl(column.name, *column.type, nullptr).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -315,7 +312,7 @@ void MergeTreeDataPartWide::loadColumnsChecksumsIndexes(bool require_columns_che
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     String full_path = getFullPath();
-    index_granularity_info.changeGranularityIfRequired(shared_from_this());
+    index_granularity_info.changeGranularityIfRequired(full_path);
 
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -327,7 +324,6 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 
     size_t marks_file_size = Poco::File(marks_file_path).getSize();
 
-    /// old version of marks with static index granularity
     if (!index_granularity_info.is_adaptive)
     {
         size_t marks_count = marks_file_size / index_granularity_info.mark_size_in_bytes;
@@ -467,7 +463,7 @@ void MergeTreeDataPartWide::loadRowsCount()
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
-            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
+            size_t column_size = getColumnSizeImpl(column.name, *column.type, nullptr).data_uncompressed;
             if (!column_size)
                 continue;
 

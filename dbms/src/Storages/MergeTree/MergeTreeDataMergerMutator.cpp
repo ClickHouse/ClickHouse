@@ -1170,6 +1170,10 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
     if (need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
 
+    for (const auto & part : parts)
+        if (!part->supportsVerticalMerge())
+            return MergeAlgorithm::Horizontal;
+
     bool is_supported_storage =
         data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
         data.merging_params.mode == MergeTreeData::MergingParams::Collapsing ||

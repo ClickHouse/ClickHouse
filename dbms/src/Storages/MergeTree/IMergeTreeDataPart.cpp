@@ -137,27 +137,33 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 IMergeTreeDataPart::IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : storage(storage_)
     , name(name_)
     , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
+    , index_granularity_info(index_granularity_info_)
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
-    , index_granularity_info(shared_from_this()) {}
+{
+}
 
 IMergeTreeDataPart::IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
         const DiskSpace::DiskPtr & disk_,
         const std::optional<String> & relative_path_)
     : storage(storage_)
     , name(name_)
     , info(info_)
+    , index_granularity_info(index_granularity_info_)
     , disk(disk_)
     , relative_path(relative_path_.value_or(name_))
-    , index_granularity_info(shared_from_this()) {}
+{
+}
 
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
