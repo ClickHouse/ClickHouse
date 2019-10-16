@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -117,6 +118,33 @@ void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+
+void DataTypeNullable::serializeBinary(const Field & field, WriteBuffer & ostr) const
+{
+    if (field.isNull())
+    {
+        writeBinary(true, ostr);
+    }
+    else
+    {
+        writeBinary(false, ostr);
+        nested_data_type->serializeBinary(field, ostr);
+    }
+}
+
+void DataTypeNullable::deserializeBinary(Field & field, ReadBuffer & istr) const
+{
+    bool is_null = false;
+    readBinary(is_null, istr);
+    if (!is_null)
+    {
+        nested_data_type->deserializeBinary(field, istr);
+    }
+    else
+    {
+        field = Null();
+    }
+}
 
 void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
@@ -460,6 +488,10 @@ MutableColumnPtr DataTypeNullable::createColumn() const
     return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
 }
 
+Field DataTypeNullable::getDefault() const
+{
+    return Null();
+}
 
 size_t DataTypeNullable::getSizeOfValueInMemory() const
 {

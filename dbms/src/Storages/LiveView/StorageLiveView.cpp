@@ -499,8 +499,7 @@ BlockInputStreams StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    /// add user to the blocks_ptr
-    std::shared_ptr<BlocksPtr> stream_blocks_ptr = blocks_ptr;
+    std::shared_ptr<BlocksBlockInputStream> stream;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -508,8 +507,9 @@ BlockInputStreams StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
+        stream = std::make_shared<BlocksBlockInputStream>(blocks_ptr, getHeader());
     }
-    return { std::make_shared<BlocksBlockInputStream>(stream_blocks_ptr, getHeader()) };
+    return { stream };
 }
 
 BlockInputStreams StorageLiveView::watch(

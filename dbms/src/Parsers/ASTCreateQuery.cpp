@@ -1,8 +1,9 @@
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -187,6 +188,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->select, select->clone());
     if (tables)
         res->set(res->tables, tables->clone());
+    if (dictionary)
+        res->set(res->dictionary, dictionary->clone());
 
     cloneOutputOptions(*res);
 
@@ -212,6 +215,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         return;
     }
 
+    if (!is_dictionary)
     {
         std::string what = "TABLE";
         if (is_view)
@@ -232,6 +236,14 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
             formatOnCluster(settings);
     }
+    else
+    {
+        /// Always CREATE and always DICTIONARY
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE DICTIONARY " << (if_not_exists ? "IF NOT EXISTS " : "")
+                      << (settings.hilite ? hilite_none : "") << (!database.empty() ? backQuoteIfNeed(database) + "." : "")
+                      << backQuoteIfNeed(table);
+    }
+
     if (as_table_function)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
@@ -260,13 +272,23 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.one_line ? ")" : "\n)");
     }
 
+    if (dictionary_attributes_list)
+    {
+        settings.ostr << (settings.one_line ? " (" : "\n(");
+        FormatStateStacked frame_nested = frame;
+        ++frame_nested.indent;
+        dictionary_attributes_list->formatImpl(settings, state, frame_nested);
+        settings.ostr << (settings.one_line ? ")" : "\n)");
+    }
+
     if (storage)
         storage->formatImpl(settings, state, frame);
 
+    if (dictionary)
+        dictionary->formatImpl(settings, state, frame);
+
     if (is_populate)
-    {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
-    }
 
     if (select)
     {
@@ -282,4 +304,3 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 }
 
 }
-

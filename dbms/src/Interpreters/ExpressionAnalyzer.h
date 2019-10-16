@@ -189,6 +189,8 @@ public:
     /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
+    /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
+    void appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);

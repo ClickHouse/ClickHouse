@@ -1,4 +1,4 @@
-option (ENABLE_ORC "Enable ORC" 1)
+option (ENABLE_ORC "Enable ORC" ${ENABLE_LIBRARIES})
 
 if(ENABLE_ORC)
 option (USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled" ${NOT_UNBUNDLED})

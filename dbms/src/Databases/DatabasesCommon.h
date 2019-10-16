@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 #include <Databases/IDatabase.h>
@@ -65,7 +66,7 @@ public:
         return it->first;
     }
 
-    StoragePtr & table() const override
+    const StoragePtr & table() const override
     {
         return it->second;
     }
