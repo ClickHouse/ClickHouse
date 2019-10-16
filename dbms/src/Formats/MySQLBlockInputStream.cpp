@@ -99,7 +99,6 @@ Block MySQLBlockInputStream::readImpl()
            entry.disconnect();
         return {};
     }
-
     MutableColumns columns(description.sample_block.columns());
     for (const auto i : ext::range(0, columns.size()))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();

@@ -115,19 +115,21 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
 
 BlockInputStreamPtr MySQLDictionarySource::loadAll()
 {
-    last_modification = getLastModification(false);
+    auto connection = pool.Get();
+    last_modification = getLastModification(connection, false);
 
     LOG_TRACE(log, load_all_query);
-    return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_all_query, sample_block, max_block_size, close_connection);
+    return std::make_shared<MySQLBlockInputStream>(connection, load_all_query, sample_block, max_block_size, close_connection);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
 {
-    last_modification = getLastModification(false);
+    auto connection = pool.Get();
+    last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
-    return std::make_shared<MySQLBlockInputStream>(pool.Get(), load_update_query, sample_block, max_block_size, close_connection);
+    return std::make_shared<MySQLBlockInputStream>(connection, load_update_query, sample_block, max_block_size, close_connection);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -159,8 +161,8 @@ bool MySQLDictionarySource::isModified() const
 
     if (dont_check_update_time)
         return true;
-
-    return getLastModification(true) > last_modification;
+    auto connection = pool.Get();
+    return getLastModification(connection, true) > last_modification;
 }
 
 bool MySQLDictionarySource::supportsSelectiveLoad() const
@@ -200,7 +202,7 @@ std::string MySQLDictionarySource::quoteForLike(const std::string s)
     return out.str();
 }
 
-LocalDateTime MySQLDictionarySource::getLastModification(bool allow_connection_closure) const
+LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & connection, bool allow_connection_closure ) const
 {
     LocalDateTime modification_time{std::time(nullptr)};
 
@@ -209,7 +211,6 @@ LocalDateTime MySQLDictionarySource::getLastModification(bool allow_connection_c
 
     try
     {
-        auto connection = pool.Get();
         auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(table));
 
         LOG_TRACE(log, query.str());

@@ -29,9 +29,9 @@ void Pool::Entry::decrementRefCount()
 {
     if (!data)
         return;
+    mysql_thread_end();
     if (data->ref_count>0)
         --data->ref_count;
-    mysql_thread_end();
 }
 
 
