@@ -5,6 +5,37 @@
 namespace DB
 {
 
+namespace
+{
+
+const DatabaseAndTableWithAlias & extractTable(const DatabaseAndTableWithAlias & table)
+{
+    return table;
+}
+
+const DatabaseAndTableWithAlias & extractTable(const TableWithColumnNames & table)
+{
+    return table.first;
+}
+
+template <typename T>
+bool tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables, size_t & best_table_pos)
+{
+    best_table_pos = 0;
+    size_t best_match = 0;
+    for (size_t i = 0; i < tables.size(); ++i)
+        if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, extractTable(tables[i])))
+            if (match > best_match)
+            {
+                best_match = match;
+                best_table_pos = i;
+            }
+
+    return best_match;
+}
+
+}
+
 std::optional<String> IdentifierSemantic::getColumnName(const ASTIdentifier & node)
 {
     if (!node.semantic->special)
@@ -57,26 +88,16 @@ size_t IdentifierSemantic::getMembership(const ASTIdentifier & identifier)
     return identifier.semantic->membership;
 }
 
-bool IdentifierSemantic::trySetMembership(ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
-                                          size_t & best_table_pos)
+bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<DatabaseAndTableWithAlias> & tables,
+                                     size_t & best_table_pos)
 {
-    best_table_pos = 0;
-    size_t best_match = 0;
-    for (size_t i = 0; i < tables.size(); ++i)
-        if (size_t match = canReferColumnToTable(identifier, tables[i].first))
-            if (match > best_match)
-            {
-                best_match = match;
-                best_table_pos = i;
-            }
+    return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, best_table_pos);
+}
 
-    if (best_match)
-    {
-        setMembership(identifier, best_table_pos + 1);
-        return true;
-    }
-
-    return false;
+bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
+                                     size_t & best_table_pos)
+{
+    return tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos);
 }
 
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)

@@ -163,7 +163,13 @@ struct ColumnAliasesMatcher
                 auto it = rev_aliases.find(long_name);
                 if (it == rev_aliases.end())
                 {
-                    bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
+                    bool last_table = false;
+                    {
+                        size_t best_table_pos = 0;
+                        if (IdentifierSemantic::chooseTable(*identifier, tables, best_table_pos))
+                            last_table = (best_table_pos + 1 == tables.size());
+                    }
+
                     if (!last_table)
                     {
                         String alias = hide_prefix + long_name;
