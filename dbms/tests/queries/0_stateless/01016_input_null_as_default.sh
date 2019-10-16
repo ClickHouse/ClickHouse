@@ -44,4 +44,12 @@ echo 'NULL, '\''1'\'', null, '\''2019-07-22'\'', [10, 20, 30], NuLl
 2, null, 123, null, [], ('\''test'\'', 2.71828)
 3, null, null, null, null, null' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --format_custom_escaping_rule=Quoted --format_custom_field_delimiter=', ' --query="INSERT INTO null_as_default FORMAT CustomSeparated";
 $CLICKHOUSE_CLIENT --query="SELECT * FROM null_as_default ORDER BY i";
+$CLICKHOUSE_CLIENT --query="TRUNCATE TABLE null_as_default";
+
+echo 'Values'
+echo '(NULL, '\''1'\'', (null), '\''2019-07-22'\'', ([10, 20, 30]), (NuLl)),
+(1, '\''world'\'', (3), '\''2019-07-23'\'', (NULL), (('\''tuple'\'', 3.14))),
+(2, null, (123), null, ([]), (('\''test'\'', 2.71828))),
+(3, null, (null), null, (null), (null))' | $CLICKHOUSE_CLIENT --input_format_null_as_default=1 --input_format_values_deduce_templates_of_expressions=1 --query="INSERT INTO null_as_default VALUES";
+$CLICKHOUSE_CLIENT --query="SELECT * FROM null_as_default ORDER BY i";
 $CLICKHOUSE_CLIENT --query="DROP TABLE null_as_default";
