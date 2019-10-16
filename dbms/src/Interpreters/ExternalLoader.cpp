@@ -112,8 +112,8 @@ private:
             const auto names = repo_with_settings.first->getAllLoadablesDefinitionNames();
             for (const auto & name : names)
             {
-                auto it =  loadables_infos.find(name);
-                if (it !=  loadables_infos.end())
+                auto it = loadables_infos.find(name);
+                if (it != loadables_infos.end())
                 {
                     LoadablesInfos & loadable_info = it->second;
                     if (readLoadablesInfo(*repo_with_settings.first, name, repo_with_settings.second, loadable_info))
@@ -131,14 +131,14 @@ private:
             }
         }
 
-        std::vector<String> deleted_files;
+        std::vector<String> deleted_names;
         for (auto & [path, loadable_info] : loadables_infos)
             if (!loadable_info.in_use)
-                deleted_files.emplace_back(path);
-        if (!deleted_files.empty())
+                deleted_names.emplace_back(path);
+        if (!deleted_names.empty())
         {
-            for (const String & deleted_file : deleted_files)
-                loadables_infos.erase(deleted_file);
+            for (const String & deleted_name : deleted_names)
+                loadables_infos.erase(deleted_name);
             changed = true;
         }
         return changed;

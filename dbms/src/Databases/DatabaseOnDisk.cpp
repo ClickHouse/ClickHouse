@@ -296,21 +296,22 @@ void DatabaseOnDisk::createDictionary(
 
     try
     {
-        database.attachDictionary(dictionary_name);
+        /// Do not load it now
+        database.attachDictionary(dictionary_name, context, false);
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
         Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
+
+        /// Load dictionary
+        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
+        context.getExternalDictionariesLoader().reload(database.getDatabaseName() + "." + dictionary_name, !lazy_load);
     }
     catch (...)
     {
         Poco::File(dictionary_metadata_tmp_path).remove();
         throw;
     }
-
-    const auto & config = context.getConfigRef();
-    context.getExternalDictionariesLoader().reload(
-        database.getDatabaseName() + "." + dictionary_name, config.getBool("dictionaries_lazy_load", true));
 }
 
 
@@ -347,11 +348,11 @@ void DatabaseOnDisk::removeTable(
 
 void DatabaseOnDisk::removeDictionary(
     IDatabase & database,
-    const Context & /*context*/,
+    const Context & context,
     const String & dictionary_name,
     Poco::Logger * log)
 {
-    database.detachDictionary(dictionary_name);
+    database.detachDictionary(dictionary_name, context);
 
     String dictionary_metadata_path = database.getObjectMetadataPath(dictionary_name);
 
@@ -370,7 +371,7 @@ void DatabaseOnDisk::removeDictionary(
         {
             LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
         }
-        database.attachDictionary(dictionary_name);
+        database.attachDictionary(dictionary_name, context);
         throw;
     }
 }
@@ -482,13 +483,9 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())
-    {
         return meta_file.getLastModified().epochTime();
-    }
     else
-    {
         return static_cast<time_t>(0);
-    }
 }
 
 void DatabaseOnDisk::iterateMetadataFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function)

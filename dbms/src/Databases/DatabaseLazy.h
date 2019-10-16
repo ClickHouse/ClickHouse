@@ -111,9 +111,9 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void attachDictionary(const String & dictionary_name) override;
+    void attachDictionary(const String & dictionary_name, const Context & context, bool load) override;
 
-    void detachDictionary(const String & dictionary_name) override;
+    void detachDictionary(const String & dictionary_name, const Context & context) override;
 
     void shutdown() override;
 

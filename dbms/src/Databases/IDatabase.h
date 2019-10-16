@@ -159,13 +159,13 @@ public:
     virtual void attachTable(const String & name, const StoragePtr & table) = 0;
 
     /// Add dictionary to the database, but do not add it to the metadata. The database may not support this method.
-    virtual void attachDictionary(const String & name) = 0;
+    virtual void attachDictionary(const String & name, const Context & context, bool load=true) = 0;
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(const String & name) = 0;
 
     /// Forget about the dictionary without deleting it, and return it. The database may not support this method.
-    virtual void detachDictionary(const String & name) = 0;
+    virtual void detachDictionary(const String & name, const Context & context) = 0;
 
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(

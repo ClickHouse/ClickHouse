@@ -27,9 +27,9 @@ DROP DICTIONARY IF EXISTS ordinary_db.dict1;
 
 CREATE DICTIONARY ordinary_db.dict1
 (
-    key_column UInt64 DEFAULT 0,
-    second_column UInt8 DEFAULT 1,
-    third_column String DEFAULT 'qqq'
+  key_column UInt64 DEFAULT 0,
+  second_column UInt8 DEFAULT 1,
+  third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
@@ -138,9 +138,9 @@ SELECT '=DICTIONARY in Dictionary DB';
 
 CREATE DICTIONARY dictionary_db.dict2
 (
-    key_column UInt64 DEFAULT 0 INJECTIVE,
-    second_column UInt8 DEFAULT 1 EXPRESSION rand() % 222,
-    third_column String DEFAULT 'qqq'
+  key_column UInt64 DEFAULT 0 INJECTIVE,
+  second_column UInt8 DEFAULT 1 EXPRESSION rand() % 222,
+  third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column, second_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))

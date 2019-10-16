@@ -79,7 +79,7 @@ try
     if (query.is_dictionary)
     {
         String dictionary_name = createDictionaryFromAST(query, database_name);
-        database.attachDictionary(dictionary_name);
+        database.attachDictionary(dictionary_name, context, false);
     }
     else
     {
@@ -125,6 +125,7 @@ void DatabaseOrdinary::loadStoredObjects(
     Context & context,
     bool has_force_restore_data_flag)
 {
+
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
@@ -183,7 +184,10 @@ void DatabaseOrdinary::loadStoredObjects(
 
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
-    loadDictionaries(context);
+    /// Add database as repository
+    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
+    context.getExternalDictionariesLoader().addConfigRepository(
+        getDatabaseName(), std::move(dictionaries_repository), {"dictionary", "name"});
 }
 
 
@@ -209,16 +213,6 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 
     thread_pool.wait();
 }
-
-void DatabaseOrdinary::loadDictionaries(Context & context)
-{
-    LOG_INFO(log, "Loading dictionaries.");
-
-    auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
-    context.getExternalDictionariesLoader().addConfigRepository(
-        getDatabaseName(), std::move(dictionaries_repository), {"dictionary", "name"});
-}
-
 
 void DatabaseOrdinary::createTable(
     const Context & context,

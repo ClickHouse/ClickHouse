@@ -1,5 +1,7 @@
 #include <Databases/DatabasesCommon.h>
 
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -102,13 +104,17 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
     return res;
 }
 
-void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name)
+void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name, const Context & context)
 {
-    std::lock_guard lock(mutex);
-    auto it = dictionaries.find(dictionary_name);
-    if (it == dictionaries.end())
-        throw Exception("Dictionary " + name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-    dictionaries.erase(it);
+    {
+        std::lock_guard lock(mutex);
+        auto it = dictionaries.find(dictionary_name);
+        if (it == dictionaries.end())
+            throw Exception("Dictionary " + name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        dictionaries.erase(it);
+    }
+
+    context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name, true);
 
 }
 
@@ -120,11 +126,19 @@ void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const Sto
 }
 
 
-void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name)
+void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name, const Context & context, bool load)
 {
-    std::lock_guard lock(mutex);
-    if (!dictionaries.emplace(dictionary_name).second)
-        throw Exception("Dictionary " + name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+    {
+        std::lock_guard lock(mutex);
+        if (!dictionaries.emplace(dictionary_name).second)
+            throw Exception("Dictionary " + name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+    }
+
+    if (load)
+    {
+        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
+        context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name, !lazy_load);
+    }
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

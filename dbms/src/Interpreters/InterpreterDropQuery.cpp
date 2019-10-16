@@ -179,7 +179,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     if (kind == ASTDropQuery::Kind::Detach)
     {
         /// Drop dictionary from memory, don't touch data and metadata
-        database->detachDictionary(dictionary_name);
+        database->detachDictionary(dictionary_name, context);
     }
     else if (kind == ASTDropQuery::Kind::Truncate)
     {

@@ -729,7 +729,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     }
 
     if (create.attach)
-        database->attachDictionary(dictionary_name);
+        database->attachDictionary(dictionary_name, context);
     else
         database->createDictionary(context, dictionary_name, query_ptr);
 
