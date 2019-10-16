@@ -141,7 +141,7 @@ void DatabaseOrdinary::loadTables(
 
     for (const auto & file_name : file_names)
     {
-        pool.schedule([&]() { loadOneTable(file_name); });
+        pool.scheduleOrThrowOnError([&]() { loadOneTable(file_name); });
     }
 
     pool.wait();
@@ -174,12 +174,11 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
         }
     };
 
+    SCOPE_EXIT({ thread_pool.wait(); });
     for (const auto & table : tables)
     {
-        thread_pool.schedule([&]() { startupOneTable(table.second); });
+        thread_pool.scheduleOrThrowOnError([&]() { startupOneTable(table.second); });
     }
-
-    thread_pool.wait();
 }
 
 

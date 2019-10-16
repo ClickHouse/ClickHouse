@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <Common/CurrentThread.h>
+#include <ext/scope_guard.h>
 
 
 namespace CurrentMetrics
@@ -167,13 +168,14 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
     }
     else
     {
+        SCOPE_EXIT({ reading_pool->wait(); });
         size_t num_children = children.size();
         for (size_t i = 0; i < num_children; ++i)
         {
             auto & child = children[i];
 
             auto thread_group = CurrentThread::getGroup();
-            reading_pool->schedule([&child, thread_group]
+            reading_pool->scheduleOrThrowOnError([&child, thread_group]
             {
                 setThreadName("MergeAggReadThr");
                 if (thread_group)
@@ -182,8 +184,6 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
                 child->readPrefix();
             });
         }
-
-        reading_pool->wait();
     }
 
     if (merging_threads > 1)
@@ -194,7 +194,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
           */
 
         for (size_t i = 0; i < merging_threads; ++i)
-            pool.schedule([this, thread_group = CurrentThread::getGroup()] () { mergeThread(thread_group); });
+            pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup()]() { mergeThread(thread_group); });
     }
 }
 
@@ -475,12 +475,13 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
     }
     else
     {
+        SCOPE_EXIT({ reading_pool->wait(); });
         for (auto & input : inputs)
         {
             if (need_that_input(input))
             {
                 auto thread_group = CurrentThread::getGroup();
-                reading_pool->schedule([&input, &read_from_input, thread_group]
+                reading_pool->scheduleOrThrowOnError([&input, &read_from_input, thread_group]
                 {
                     setThreadName("MergeAggReadThr");
                     if (thread_group)
@@ -490,8 +491,6 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
                 });
             }
         }
-
-        reading_pool->wait();
     }
 
     while (true)
