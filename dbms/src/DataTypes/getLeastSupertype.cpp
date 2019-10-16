@@ -243,12 +243,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             max_datetime64_precision = std::max(least_decimal_precision, max_datetime64_precision);
 
             const UInt32 scale = DataTypeDateTime64::maxPrecision() - max_datetime64_precision;
-            if (max_datetime64_precision == 0)
-            {
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless convertion to DateTime64",
-                                ErrorCodes::NO_COMMON_TYPE);
-            }
-
             return std::make_shared<DataTypeDateTime64>(scale);
         }
     }

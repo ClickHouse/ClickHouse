@@ -129,9 +129,10 @@ INSTANTIATE_TEST_CASE_P(data_type,
             {"Date DateTime", "DateTime"},
             {"Date DateTime64(3)", "DateTime64(3)"},
             {"DateTime DateTime64(3)", "DateTime64(3)"},
-//            {"DateTime64(9) DateTime64(3)", "DateTime64(9)"},
-//            {"DateTime DateTime64(12)", nullptr},
-//            {"Date DateTime64(15)", nullptr},
+            {"DateTime DateTime64(0)", "DateTime64(0)"},
+            {"DateTime64(9) DateTime64(3)", "DateTime64(3)"},
+            {"DateTime DateTime64(12)", "DateTime64(8)"},
+            {"Date DateTime64(15)", "DateTime64(13)"},
 
             {"String FixedString(32) FixedString(8)", "String"},
 
