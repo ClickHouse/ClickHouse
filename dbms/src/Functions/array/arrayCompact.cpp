@@ -6,7 +6,7 @@
 
 namespace DB
 {
-
+/// arrayCompact(['a', 'a', 'b', 'b', 'a']) = ['a', 'b', 'a'] - compact arrays
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
@@ -68,7 +68,7 @@ namespace DB
                     }
                     res_offsets[i] = res_pos;
                 }
-                for(size_t i = 0; i < column_data->size() - res_pos; ++i)
+                for (size_t i = 0; i < column_data->size() - res_pos; ++i)
                 {
                     res_values.pop_back();
                 }
@@ -92,7 +92,7 @@ namespace DB
                     res_values[res_pos] = data[pos];
                     for (++pos, ++res_pos; pos < offsets[i]; ++pos)
                     {
-                        if(data[pos] != data[pos - 1])
+                        if (data[pos] != data[pos - 1])
                         {
                             res_values[res_pos++] = data[pos];
                         }
@@ -100,7 +100,7 @@ namespace DB
                 }
                 res_offsets[i] = res_pos;
             }
-            for(size_t i = 0; i < data.size() - res_pos; ++i)
+            for (size_t i = 0; i < data.size() - res_pos; ++i)
             {
                 res_values.pop_back();
             }
