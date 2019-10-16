@@ -214,7 +214,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
         UInt32 have_datetime64 = type_ids.count(TypeIndex::DateTime64);
 
-        if (have_date || have_datetime)
+        if (have_date || have_datetime || have_datetime64)
         {
             bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
