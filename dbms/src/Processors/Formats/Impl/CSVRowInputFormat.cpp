@@ -24,6 +24,12 @@ CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, co
     , with_names(with_names_)
     , format_settings(format_settings_)
 {
+
+    const String bad_delimiters = " \t\"'.UL";
+    if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
+        throw Exception(String("CSV format may not work correctly with delimiter '") + format_settings.csv.delimiter +
+                        "'. Try use CustomSeparated format instead.", ErrorCodes::BAD_ARGUMENTS);
+
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
 
@@ -258,9 +264,6 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
 bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
     const char delimiter = format_settings.csv.delimiter;
-    const String bad_delimiters = " \t\"'.UL";
-    if (bad_delimiters.find(delimiter) != String::npos)
-        out << "CSV format may not work correctly with delimiter '" << delimiter << "'\n";
 
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {

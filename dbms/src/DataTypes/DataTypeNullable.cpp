@@ -434,7 +434,7 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextCSV<void>(column, istr, settings, nested_data_type);
+    deserializeTextJSON<void>(column, istr, settings, nested_data_type);
 }
 
 template<typename ReturnType>
