@@ -180,6 +180,8 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, input_format_null_as_default, false, "For CSV format initialize null fields with default values if data type of this field is not nullable") \
     \
     M(SettingBool, input_format_values_interpret_expressions, true, "For Values format: if field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.") \
+    M(SettingBool, input_format_values_deduce_templates_of_expressions, false, "For Values format: if field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows.") \
+    M(SettingBool, input_format_values_accurate_types_of_literals, true, "For Values format: when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.") \
     \
     M(SettingBool, output_format_json_quote_64bit_integers, true, "Controls quoting of 64-bit integers in JSON output format.") \
     \
@@ -219,9 +221,20 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingInt64, distributed_ddl_task_timeout, 180, "Timeout for DDL query responses from all hosts in cluster. If a ddl request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.") \
     M(SettingMilliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.") \
     M(SettingMilliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from/to streaming storages.") \
+    \
     M(SettingString, format_schema, "", "Schema identifier (used by schema-based formats)") \
-    M(SettingString, format_schema_rows, "", "Row format string for Template format") \
-    M(SettingString, format_schema_rows_between_delimiter, "\n", "Delimiter between rows for Template format") \
+    M(SettingString, format_template_resultset, "", "Path to file which contains format string for result set (for Template format)") \
+    M(SettingString, format_template_row, "", "Path to file which contains format string for rows (for Template format)") \
+    M(SettingString, format_template_rows_between_delimiter, "\n", "Delimiter between rows (for Template format)") \
+    \
+    M(SettingString, format_custom_escaping_rule, "Escaped", "Field escaping rule (for CustomSeparated format)") \
+    M(SettingString, format_custom_field_delimiter, "\t", "Delimiter between fields (for CustomSeparated format)") \
+    M(SettingString, format_custom_row_before_delimiter, "", "Delimiter before field of the first column (for CustomSeparated format)") \
+    M(SettingString, format_custom_row_after_delimiter, "\n", "Delimiter after field of the last column (for CustomSeparated format)") \
+    M(SettingString, format_custom_row_between_delimiter, "", "Delimiter between rows (for CustomSeparated format)") \
+    M(SettingString, format_custom_result_before_delimiter, "", "Prefix before result set (for CustomSeparated format)") \
+    M(SettingString, format_custom_result_after_delimiter, "", "Suffix after result set (for CustomSeparated format)") \
+    \
     M(SettingBool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.") \
     M(SettingSeconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, "HTTP connection timeout.") \
     M(SettingSeconds, http_send_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP send timeout") \
@@ -292,8 +305,10 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingOverflowMode, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingBool, join_any_take_last_row, false, "When disabled (default) ANY JOIN will take the first found row for a key. When enabled, it will take the last row seen if there are multiple rows for the same key.") \
     M(SettingBool, partial_merge_join, false, "Use partial merge join instead of hash join for LEFT and INNER JOINs.") \
-    M(SettingBool, partial_merge_join_optimizations, false, "Enable optimisations in partial merge join") \
-    M(SettingUInt64, partial_merge_join_rows_in_right_blocks, 10000, "Split right-hand joining data in blocks of specified size.") \
+    M(SettingBool, partial_merge_join_optimizations, false, "Enable optimizations in partial merge join") \
+    M(SettingUInt64, default_max_bytes_in_join, 100000000, "Maximum size of right-side table if limit's required but max_bytes_in_join is not set.") \
+    M(SettingUInt64, partial_merge_join_rows_in_right_blocks, 10000, "Split right-hand joining data in blocks of specified size. It's a portion of data indexed by min-max values and possibly unloaded on disk.") \
+    M(SettingUInt64, partial_merge_join_rows_in_left_blocks, 10000, "Group left-hand joining data in bigger blocks. Setting it to a bigger value increase JOIN performance and memory usage.") \
     \
     M(SettingUInt64, max_rows_to_transfer, 0, "Maximum size (in rows) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
     M(SettingUInt64, max_bytes_to_transfer, 0, "Maximum size (in uncompressed bytes) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
@@ -330,7 +345,6 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingBool, prefer_localhost_replica, 1, "1 - always send query to local replica, if it exists. 0 - choose replica to send query between local and remote ones according to load_balancing") \
     M(SettingUInt64, max_fetch_partition_retries_count, 5, "Amount of retries while fetching partition from another host.") \
-    M(SettingBool, asterisk_left_columns_only, 0, "If it is set to true, the asterisk only return left of join query.") \
     M(SettingUInt64, http_max_multipart_form_data_size, 1024 * 1024 * 1024, "Limit on size of multipart/form-data content. This setting cannot be parsed from URL parameters and should be set in user profile. Note that content is parsed and external tables are created in memory before start of query execution. And this is the only limit that has effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).") \
     M(SettingBool, calculate_text_stack_trace, 1, "Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when huge amount of wrong queries are executed. In normal cases you should not disable this option.") \
     M(SettingBool, allow_ddl, true, "If it is set to true, then a user is allowed to executed DDL queries.") \

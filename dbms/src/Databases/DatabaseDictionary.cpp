@@ -1,6 +1,6 @@
 #include <Databases/DatabaseDictionary.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Storages/StorageDictionary.h>
 #include <common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
@@ -38,12 +38,12 @@ Tables DatabaseDictionary::listTables(const Context & context, const FilterByNam
     if (filter_by_name)
     {
         /// If `filter_by_name` is set, we iterate through all dictionaries with such names. That's why we need to load all of them.
-        loadables = context.getExternalDictionaries().loadAndGet(filter_by_name);
+        loadables = context.getExternalDictionariesLoader().loadAndGet(filter_by_name);
     }
     else
     {
         /// If `filter_by_name` isn't set, we iterate through only already loaded dictionaries. We don't try to load all dictionaries in this case.
-        loadables = context.getExternalDictionaries().getCurrentlyLoadedObjects();
+        loadables = context.getExternalDictionariesLoader().getCurrentlyLoadedObjects();
     }
 
     for (const auto & loadable : loadables)
@@ -61,14 +61,14 @@ bool DatabaseDictionary::isTableExist(
     const Context & context,
     const String & table_name) const
 {
-    return context.getExternalDictionaries().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
+    return context.getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
 }
 
 StoragePtr DatabaseDictionary::tryGetTable(
     const Context & context,
     const String & table_name) const
 {
-    auto dict_ptr = context.getExternalDictionaries().tryGetDictionary(table_name);
+    auto dict_ptr = context.getExternalDictionariesLoader().tryGetDictionary(table_name);
     if (dict_ptr)
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
@@ -86,7 +86,7 @@ DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context, con
 
 bool DatabaseDictionary::empty(const Context & context) const
 {
-    return !context.getExternalDictionaries().hasCurrentlyLoadedObjects();
+    return !context.getExternalDictionariesLoader().hasCurrentlyLoadedObjects();
 }
 
 StoragePtr DatabaseDictionary::detachTable(const String & /*table_name*/)
@@ -129,7 +129,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
     {
         WriteBufferFromString buffer(query);
 
-        const auto & dictionaries = context.getExternalDictionaries();
+        const auto & dictionaries = context.getExternalDictionariesLoader();
         auto dictionary = throw_on_error ? dictionaries.getDictionary(table_name)
                                          : dictionaries.tryGetDictionary(table_name);
 

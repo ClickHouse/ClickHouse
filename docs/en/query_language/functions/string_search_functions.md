@@ -64,6 +64,10 @@ The same as `match`, but returns 0 if none of the regular expressions are matche
 
 The same as `multiMatchAny`, but returns any index that matches the haystack.
 
+## multiMatchAllIndices(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `multiMatchAny`, but returns the array of all indicies that match the haystack in any order.
+
 ## multiFuzzyMatchAny(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function is also in an experimental mode and can be extremely slow. For more information see [hyperscan documentation](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
@@ -71,6 +75,10 @@ The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack w
 ## multiFuzzyMatchAnyIndex(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
 
 The same as `multiFuzzyMatchAny`, but returns any index that matches the haystack within a constant edit distance.
+
+## multiFuzzyMatchAllIndices(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `multiFuzzyMatchAny`, but returns the array of all indices in any order that match the haystack within a constant edit distance.
 
 !!! note "Note"
     `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.

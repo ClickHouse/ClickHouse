@@ -268,14 +268,12 @@ struct MultiMatchAnyImpl
     static_assert(static_cast<int>(FindAny) + static_cast<int>(FindAnyIndex) == 1);
     using ResultType = Type;
     static constexpr bool is_using_hyperscan = true;
-
-    static void vector_constant(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
-        const std::vector<StringRef> & needles,
-        PaddedPODArray<Type> & res)
+    /// Variable for understanding, if we used offsets for the output, most
+    /// likely to determine whether the function returns ColumnVector of ColumnArray.
+    static constexpr bool is_column_array = false;
+    static auto ReturnType()
     {
-        vector_constant(haystack_data, haystack_offsets, needles, res, std::nullopt);
+        return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
     static void vector_constant(
@@ -283,10 +281,22 @@ struct MultiMatchAnyImpl
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
         PaddedPODArray<Type> & res,
+        PaddedPODArray<UInt64> & offsets)
+    {
+        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+    }
+
+    static void vector_constant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const std::vector<StringRef> & needles,
+        PaddedPODArray<Type> & res,
+        [[maybe_unused]] PaddedPODArray<UInt64> & offsets,
         [[maybe_unused]] std::optional<UInt32> edit_distance)
     {
         (void)FindAny;
         (void)FindAnyIndex;
+        res.resize(haystack_offsets.size());
 #if USE_HYPERSCAN
         const auto & hyperscan_regex = MultiRegexps::get<FindAnyIndex, MultiSearchDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
@@ -307,15 +317,18 @@ struct MultiMatchAnyImpl
                 *reinterpret_cast<Type *>(context) = id;
             else if constexpr (FindAny)
                 *reinterpret_cast<Type *>(context) = 1;
-            return 0;
+            /// Once we hit the callback, there is no need to search for others.
+            return 1;
         };
         const size_t haystack_offsets_size = haystack_offsets.size();
         UInt64 offset = 0;
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
             UInt64 length = haystack_offsets[i] - offset - 1;
+            /// Hyperscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
+            /// Zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
                 hyperscan_regex->getDB(),
@@ -325,7 +338,7 @@ struct MultiMatchAnyImpl
                 smart_scratch.get(),
                 on_match,
                 &res[i]);
-            if (err != HS_SUCCESS)
+            if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
                 throw Exception("Failed to scan with hyperscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
             offset = haystack_offsets[i];
         }
@@ -333,7 +346,7 @@ struct MultiMatchAnyImpl
         /// Fallback if do not use hyperscan
         if constexpr (MultiSearchDistance)
             throw Exception(
-                "Edit distance multi-search is not implemented when hyperscan is off (is it Intel processor?)",
+                "Edit distance multi-search is not implemented when hyperscan is off (is it x86 processor?)",
                 ErrorCodes::NOT_IMPLEMENTED);
         PaddedPODArray<UInt8> accum(res.size());
         memset(res.data(), 0, res.size() * sizeof(res.front()));
@@ -349,6 +362,92 @@ struct MultiMatchAnyImpl
                     res[i] = j + 1;
             }
         }
+#endif // USE_HYPERSCAN
+    }
+};
+
+template <typename Type, bool MultiSearchDistance>
+struct MultiMatchAllIndicesImpl
+{
+    using ResultType = Type;
+    static constexpr bool is_using_hyperscan = true;
+    /// Variable for understanding, if we used offsets for the output, most
+    /// likely to determine whether the function returns ColumnVector of ColumnArray.
+    static constexpr bool is_column_array = true;
+    static auto ReturnType()
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    }
+
+    static void vector_constant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const std::vector<StringRef> & needles,
+        PaddedPODArray<Type> & res,
+        PaddedPODArray<UInt64> & offsets)
+    {
+        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+    }
+
+    static void vector_constant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const std::vector<StringRef> & needles,
+        PaddedPODArray<Type> & res,
+        PaddedPODArray<UInt64> & offsets,
+        [[maybe_unused]] std::optional<UInt32> edit_distance)
+    {
+        offsets.resize(haystack_offsets.size());
+#if USE_HYPERSCAN
+        const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, MultiSearchDistance>(needles, edit_distance);
+        hs_scratch_t * scratch = nullptr;
+        hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
+
+        if (err != HS_SUCCESS)
+            throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+        MultiRegexps::ScratchPtr smart_scratch(scratch);
+
+        auto on_match = [](unsigned int id,
+                           unsigned long long /* from */,
+                           unsigned long long /* to */,
+                           unsigned int /* flags */,
+                           void * context) -> int
+        {
+            static_cast<PaddedPODArray<Type>*>(context)->push_back(id);
+            return 0;
+        };
+        const size_t haystack_offsets_size = haystack_offsets.size();
+        UInt64 offset = 0;
+        for (size_t i = 0; i < haystack_offsets_size; ++i)
+        {
+            UInt64 length = haystack_offsets[i] - offset - 1;
+            /// Hyperscan restriction.
+            if (length > std::numeric_limits<UInt32>::max())
+                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
+            /// Scan, check, update the offsets array and the offset of haystack.
+            err = hs_scan(
+                hyperscan_regex->getDB(),
+                reinterpret_cast<const char *>(haystack_data.data()) + offset,
+                length,
+                0,
+                smart_scratch.get(),
+                on_match,
+                &res);
+            if (err != HS_SUCCESS)
+                throw Exception("Failed to scan with hyperscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
+            offsets[i] = res.size();
+            offset = haystack_offsets[i];
+        }
+#else
+        (void)haystack_data;
+        (void)haystack_offsets;
+        (void)needles;
+        (void)res;
+        (void)offsets;
+        throw Exception(
+            "multi-search all indices is not implemented when hyperscan is off (is it x86 processor?)",
+            ErrorCodes::NOT_IMPLEMENTED);
 #endif // USE_HYPERSCAN
     }
 };
@@ -866,6 +965,10 @@ struct NameMultiMatchAnyIndex
 {
     static constexpr auto name = "multiMatchAnyIndex";
 };
+struct NameMultiMatchAllIndices
+{
+    static constexpr auto name = "multiMatchAllIndices";
+};
 struct NameMultiFuzzyMatchAny
 {
     static constexpr auto name = "multiFuzzyMatchAny";
@@ -873,6 +976,10 @@ struct NameMultiFuzzyMatchAny
 struct NameMultiFuzzyMatchAnyIndex
 {
     static constexpr auto name = "multiFuzzyMatchAnyIndex";
+};
+struct NameMultiFuzzyMatchAllIndices
+{
+    static constexpr auto name = "multiFuzzyMatchAllIndices";
 };
 struct NameExtract
 {
@@ -908,6 +1015,11 @@ using FunctionMultiMatchAnyIndex = FunctionsMultiStringSearch<
     NameMultiMatchAnyIndex,
     std::numeric_limits<UInt32>::max()>;
 
+using FunctionMultiMatchAllIndices = FunctionsMultiStringSearch<
+    MultiMatchAllIndicesImpl<UInt64, false>,
+    NameMultiMatchAllIndices,
+    std::numeric_limits<UInt32>::max()>;
+
 using FunctionMultiFuzzyMatchAny = FunctionsMultiStringFuzzySearch<
     MultiMatchAnyImpl<UInt8, true, false, true>,
     NameMultiFuzzyMatchAny,
@@ -916,6 +1028,11 @@ using FunctionMultiFuzzyMatchAny = FunctionsMultiStringFuzzySearch<
 using FunctionMultiFuzzyMatchAnyIndex = FunctionsMultiStringFuzzySearch<
     MultiMatchAnyImpl<UInt64, false, true, true>,
     NameMultiFuzzyMatchAnyIndex,
+    std::numeric_limits<UInt32>::max()>;
+
+using FunctionMultiFuzzyMatchAllIndices = FunctionsMultiStringFuzzySearch<
+    MultiMatchAllIndicesImpl<UInt64, true>,
+    NameMultiFuzzyMatchAllIndices,
     std::numeric_limits<UInt32>::max()>;
 
 using FunctionLike = FunctionsStringSearch<MatchImpl<true>, NameLike>;
@@ -940,8 +1057,10 @@ void registerFunctionsStringRegex(FunctionFactory & factory)
 
     factory.registerFunction<FunctionMultiMatchAny>();
     factory.registerFunction<FunctionMultiMatchAnyIndex>();
+    factory.registerFunction<FunctionMultiMatchAllIndices>();
     factory.registerFunction<FunctionMultiFuzzyMatchAny>();
     factory.registerFunction<FunctionMultiFuzzyMatchAnyIndex>();
+    factory.registerFunction<FunctionMultiFuzzyMatchAllIndices>();
     factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
 }
 }

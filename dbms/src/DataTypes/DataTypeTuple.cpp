@@ -1,5 +1,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
