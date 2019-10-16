@@ -37,10 +37,9 @@ void DatabaseMemory::createTable(
 void DatabaseMemory::createDictionary(
     const Context & /*context*/,
     const String & dictionary_name,
-    const DictionaryPtr & dictionary,
     const ASTPtr & /*query*/)
 {
-    attachDictionary(dictionary_name, dictionary);
+    attachDictionary(dictionary_name);
 }
 
 

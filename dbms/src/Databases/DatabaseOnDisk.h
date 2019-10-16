@@ -51,7 +51,6 @@ public:
         IDatabase & database,
         const Context & context,
         const String & dictionary_name,
-        const DictionaryPtr & dictionary,
         const ASTPtr & query);
 
     static void removeTable(

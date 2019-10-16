@@ -29,17 +29,15 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    DictionaryPtr tryGetDictionary(const Context & context, const String & dictionary_name) const override;
-
     bool empty(const Context & context) const override;
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
 
-    void attachDictionary(const String & name, const DictionaryPtr & dictionary) override;
+    void attachDictionary(const String & name) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
-    DictionaryPtr detachDictionary(const String & name) override;
+    void detachDictionary(const String & name) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 

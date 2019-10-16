@@ -55,16 +55,6 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     return it->second;
 }
 
-DictionaryPtr DatabaseWithOwnTablesBase::tryGetDictionary(const Context & /*context*/, const String & dictionary_name) const
-{
-    std::lock_guard dict_lock{mutex};
-    auto it = dictionaries.find(dictionary_name);
-    if (it == dictionaries.end())
-        return {};
-
-    return it->second;
-}
-
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
@@ -85,9 +75,9 @@ DatabaseDictionariesIteratorPtr DatabaseWithOwnTablesBase::getDictionariesIterat
         return std::make_unique<DatabaseDictionariesSnapshotIterator>(dictionaries);
 
     Dictionaries filtered_dictionaries;
-    for (const auto & [dictionary_name, dictionary] : dictionaries)
+    for (const auto & dictionary_name : dictionaries)
         if (filter_by_dictionary_name(dictionary_name))
-            filtered_dictionaries.emplace(dictionary_name, dictionary);
+            filtered_dictionaries.emplace(dictionary_name);
     return std::make_unique<DatabaseDictionariesSnapshotIterator>(std::move(filtered_dictionaries));
 }
 
@@ -112,19 +102,14 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
     return res;
 }
 
-DictionaryPtr DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name)
+void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name)
 {
-    DictionaryPtr res;
-    {
-        std::lock_guard lock(mutex);
-        auto it = dictionaries.find(dictionary_name);
-        if (it == dictionaries.end())
-            throw Exception("Dictionary " + name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-        res = it->second;
-        dictionaries.erase(it);
-    }
+    std::lock_guard lock(mutex);
+    auto it = dictionaries.find(dictionary_name);
+    if (it == dictionaries.end())
+        throw Exception("Dictionary " + name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    dictionaries.erase(it);
 
-    return res;
 }
 
 void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
@@ -135,10 +120,10 @@ void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const Sto
 }
 
 
-void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name, const DictionaryPtr & dictionary)
+void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name)
 {
     std::lock_guard lock(mutex);
-    if (!dictionaries.emplace(dictionary_name, dictionary).second)
+    if (!dictionaries.emplace(dictionary_name).second)
         throw Exception("Dictionary " + name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 }
 

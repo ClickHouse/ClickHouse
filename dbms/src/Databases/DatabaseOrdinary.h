@@ -31,7 +31,6 @@ public:
     void createDictionary(
         const Context & context,
         const String & dictionary_name,
-        const DictionaryPtr & dict_ptr,
         const ASTPtr & query) override;
 
     void removeTable(

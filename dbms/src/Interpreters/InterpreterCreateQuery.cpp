@@ -161,7 +161,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     try
     {
-        std::cerr << "ADDING DB NAME:" << database_name << std::endl;
         context.addDatabase(database_name, database);
 
         if (need_write_metadata)
@@ -729,11 +728,10 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
         create.attach = true;
     }
 
-    auto res = DictionaryFactory::instance().create(dictionary_name, create, context.getGlobalContext());
     if (create.attach)
-        database->attachDictionary(dictionary_name, res);
+        database->attachDictionary(dictionary_name);
     else
-        database->createDictionary(context, dictionary_name, res, query_ptr);
+        database->createDictionary(context, dictionary_name, query_ptr);
 
     return {};
 }

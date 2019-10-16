@@ -73,13 +73,6 @@ bool DatabaseDictionary::isDictionaryExist(
     return false;
 }
 
-DictionaryPtr DatabaseDictionary::tryGetDictionary(
-    const Context & /*context*/,
-    const String & /*dictionary_name*/) const
-{
-    return nullptr;
-}
-
 
 DatabaseDictionariesIteratorPtr DatabaseDictionary::getDictionariesIterator(
     const Context & /*context*/,
@@ -92,7 +85,6 @@ DatabaseDictionariesIteratorPtr DatabaseDictionary::getDictionariesIterator(
 void DatabaseDictionary::createDictionary(
     const Context & /*context*/,
     const String & /*dictionary_name*/,
-    const DictionaryPtr & /*dict_ptr*/,
     const ASTPtr & /*query*/)
 {
     throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
@@ -106,13 +98,12 @@ void DatabaseDictionary::removeDictionary(
 }
 
 void DatabaseDictionary::attachDictionary(
-    const String & /*dictionary_name*/,
-    const DictionaryPtr & /*table*/)
+    const String & /*dictionary_name*/)
 {
     throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
-DictionaryPtr DatabaseDictionary::detachDictionary(
+void DatabaseDictionary::detachDictionary(
     const String & /*dictionary_name*/)
 {
     throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);

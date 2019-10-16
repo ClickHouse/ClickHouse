@@ -44,8 +44,6 @@ public:
 
     StoragePtr tryGetTable(const Context & context, const String & name) const override;
 
-    DictionaryPtr tryGetDictionary(const Context &, const String &) const override { return {}; }
-
     ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const override;
 
     ASTPtr getCreateDictionaryQuery(const Context &, const String &) const override
@@ -65,7 +63,7 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    DictionaryPtr detachDictionary(const String &) override
+    void detachDictionary(const String &) override
     {
         throw Exception("MySQL database engine does not support detach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -91,7 +89,7 @@ public:
         throw Exception("MySQL database engine does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void attachDictionary(const String &, const DictionaryPtr &) override
+    void attachDictionary(const String &) override
     {
         throw Exception("MySQL database engine does not support attach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -101,7 +99,7 @@ public:
         throw Exception("MySQL database engine does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void createDictionary(const Context &, const String &, const DictionaryPtr &, const ASTPtr &) override
+    void createDictionary(const Context &, const String &, const ASTPtr &) override
     {
         throw Exception("MySQL database engine does not support create dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }

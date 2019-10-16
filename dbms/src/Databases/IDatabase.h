@@ -20,6 +20,7 @@ struct ConstraintsDescription;
 class ColumnsDescription;
 struct IndicesDescription;
 struct TableStructureWriteLockHolder;
+using Dictionaries = std::set<String>;
 
 namespace ErrorCodes
 {
@@ -76,9 +77,7 @@ public:
 
     bool isValid() const { return !dictionaries.empty() && it != dictionaries.end(); }
 
-    const String & name() const { return it->first; }
-
-    DictionaryPtr & dictionary() const { return it->second; }
+    const String & name() const { return *it; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
@@ -121,11 +120,6 @@ public:
         const Context & context,
         const String & name) const = 0;
 
-    /// Get the dictionary for work. Return nullptr if there is no table.
-    virtual DictionaryPtr tryGetDictionary(
-        const Context & context,
-        const String & name) const = 0;
-
     using FilterByNameFunction = std::function<bool(const String &)>;
 
     /// Get an iterator that allows you to pass through all the tables.
@@ -149,7 +143,6 @@ public:
     virtual void createDictionary(
         const Context & context,
         const String & dictionary_name,
-        const DictionaryPtr & dict_ptr,
         const ASTPtr & query) = 0;
 
     /// Delete the table from the database. Delete the metadata.
@@ -166,13 +159,13 @@ public:
     virtual void attachTable(const String & name, const StoragePtr & table) = 0;
 
     /// Add dictionary to the database, but do not add it to the metadata. The database may not support this method.
-    virtual void attachDictionary(const String & name, const DictionaryPtr & dictionary) = 0;
+    virtual void attachDictionary(const String & name) = 0;
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(const String & name) = 0;
 
     /// Forget about the dictionary without deleting it, and return it. The database may not support this method.
-    virtual DictionaryPtr detachDictionary(const String & name) = 0;
+    virtual void detachDictionary(const String & name) = 0;
 
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(

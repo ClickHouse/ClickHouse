@@ -31,10 +31,6 @@ LoadablesConfigurationPtr ExternalLoaderDatabaseConfigRepository::load(const std
 
 bool ExternalLoaderDatabaseConfigRepository::exists(const std::string & loadable_definition_name) const
 {
-    std::cerr << "IS EXISTS:"
-              << loadable_definition_name << std::endl;
-    std::cerr << "CUTTED:"
-              << trimDatabaseName(loadable_definition_name, database) << std::endl;
     return database->isDictionaryExist(
                      context, trimDatabaseName(loadable_definition_name, database));
 }
@@ -54,7 +50,6 @@ std::set<std::string> ExternalLoaderDatabaseConfigRepository::getAllLoadablesDef
         result.insert(dbname + "." + itr->name());
         itr->next();
     }
-    std::cerr << "RESULTSIZE:" << result.size() << std::endl;
     return result;
 }
 
