@@ -1,6 +1,5 @@
 namespace DB
 {
-
 namespace ErrorCodes
 {
     /** Previously, these constants were located in one enum.
@@ -468,6 +467,7 @@ namespace ErrorCodes
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
+    extern const int TOO_SMALL_STRING_SIZE = 2003;
 }
 
 }

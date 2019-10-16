@@ -48,18 +48,18 @@ struct ExactStringImpl
         ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
     }
 
-    static ALWAYS_INLINE inline void loweringString(UInt8 * s, size_t size) {}
-
-
     static ALWAYS_INLINE size_t readASCIICodePoints(UInt8 * code_points, const char *& pos, const char * end)
     {
         constexpr size_t padding_offset = default_padding - N + 1;
         memcpy(code_points, code_points + padding_offset, roundUpToPowerOfTwoOrZero(N - 1) * sizeof(UInt8));
 
-        memcpy(code_points + (N - 1), pos, padding_offset * sizeof(UInt8));
+        size_t cpy_size = (pos + padding_offset > end) ? end - pos : padding_offset;
+
+        memcpy(code_points + (N - 1), pos, cpy_size * sizeof(UInt8));
 
         if constexpr (CaseInsensitive)
         {
+            unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
         }
         pos += padding_offset;
         if (pos > end)
@@ -395,7 +395,7 @@ struct SimhashImpl
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const char * one_data = reinterpret_cast<const char *>(&data[offsets[i - 1]]);
-            const size_t data_size = offsets[i] - offsets[i - 1];
+            const size_t data_size = offsets[i] - offsets[i - 1] - 1;
             if (data_size <= max_string_size)
             {
                 if constexpr (Ngram)
@@ -441,8 +441,10 @@ struct MinhashImpl
             iter = 0;
         } while (start < end && (found = read_code_points(cp, start, end)));
         std::sort(hash_values, hash_values + num);
-        UInt64 res1 = Hash::hashSum(hash_values, K);
-        UInt64 res2 = Hash::hashSum(hash_values + num - K, K);
+        // detemine the hashes we take to sum
+        size_t true_K = (K < num) ? K : num - 1;
+        UInt64 res1 = Hash::hashSum(hash_values, true_K);
+        UInt64 res2 = Hash::hashSum(hash_values + num - true_K, true_K);
         return std::make_tuple(res1, res2);
     }
 
@@ -487,8 +489,10 @@ struct MinhashImpl
         }
 
         std::sort(hash_values, hash_values + num);
-        UInt64 res1 = Hash::hashSum(hash_values, K);
-        UInt64 res2 = Hash::hashSum(hash_values + num - K, K);
+        // detemine the hashes we take to sum
+        size_t true_K = (K < num) ? K : num - 1;
+        UInt64 res1 = Hash::hashSum(hash_values, true_K);
+        UInt64 res2 = Hash::hashSum(hash_values + num - true_K, true_K);
         return std::make_tuple(res1, res2);
     }
 
@@ -527,7 +531,7 @@ struct MinhashImpl
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const char * one_data = reinterpret_cast<const char *>(&data[offsets[i - 1]]);
-            const size_t data_size = offsets[i] - offsets[i - 1];
+            const size_t data_size = offsets[i] - offsets[i - 1] - 1;
             if (data_size <= max_string_size)
             {
                 if constexpr (Ngram)
