@@ -3,7 +3,6 @@
 #include <Common/CurrentMetrics.h>
 #include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <Common/CurrentThread.h>
-#include <ext/scope_guard.h>
 
 
 namespace CurrentMetrics
@@ -168,22 +167,30 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
     }
     else
     {
-        SCOPE_EXIT({ reading_pool->wait(); });
         size_t num_children = children.size();
-        for (size_t i = 0; i < num_children; ++i)
+        try
         {
-            auto & child = children[i];
-
-            auto thread_group = CurrentThread::getGroup();
-            reading_pool->scheduleOrThrowOnError([&child, thread_group]
+            for (size_t i = 0; i < num_children; ++i)
             {
-                setThreadName("MergeAggReadThr");
-                if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
-                CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
-                child->readPrefix();
-            });
+                auto & child = children[i];
+
+                auto thread_group = CurrentThread::getGroup();
+                reading_pool->scheduleOrThrowOnError([&child, thread_group]
+                {
+                    setThreadName("MergeAggReadThr");
+                    if (thread_group)
+                        CurrentThread::attachToIfDetached(thread_group);
+                    CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
+                    child->readPrefix();
+                });
+            }
         }
+        catch (...)
+        {
+            reading_pool->wait();
+            throw;
+        }
+        reading_pool->wait();
     }
 
     if (merging_threads > 1)
@@ -475,22 +482,30 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
     }
     else
     {
-        SCOPE_EXIT({ reading_pool->wait(); });
-        for (auto & input : inputs)
+        try
         {
-            if (need_that_input(input))
+            for (auto & input : inputs)
             {
-                auto thread_group = CurrentThread::getGroup();
-                reading_pool->scheduleOrThrowOnError([&input, &read_from_input, thread_group]
+                if (need_that_input(input))
                 {
-                    setThreadName("MergeAggReadThr");
-                    if (thread_group)
-                        CurrentThread::attachToIfDetached(thread_group);
-                    CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
-                    read_from_input(input);
-                });
+                    auto thread_group = CurrentThread::getGroup();
+                    reading_pool->scheduleOrThrowOnError([&input, &read_from_input, thread_group]
+                    {
+                        setThreadName("MergeAggReadThr");
+                        if (thread_group)
+                            CurrentThread::attachToIfDetached(thread_group);
+                        CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
+                        read_from_input(input);
+                    });
+                }
             }
         }
+        catch (...)
+        {
+            reading_pool->wait();
+            throw;
+        }
+        reading_pool->wait();
     }
 
     while (true)

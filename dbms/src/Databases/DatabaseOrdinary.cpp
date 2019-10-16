@@ -174,11 +174,17 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
         }
     };
 
-    SCOPE_EXIT({ thread_pool.wait(); });
-    for (const auto & table : tables)
+    try
     {
-        thread_pool.scheduleOrThrowOnError([&]() { startupOneTable(table.second); });
+        for (const auto & table : tables)
+            thread_pool.scheduleOrThrowOnError([&]() { startupOneTable(table.second); });
     }
+    catch (...)
+    {
+        thread_pool.wait();
+        throw;
+    }
+    thread_pool.wait();
 }
 
 
