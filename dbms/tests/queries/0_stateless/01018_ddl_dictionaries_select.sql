@@ -71,4 +71,17 @@ ATTACH DICTIONARY database_for_dict.dict1;
 
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', tuple(toUInt64(11), '121'));
 
+CREATE DICTIONARY database_for_dict.dict2
+(
+  key_column UInt64 DEFAULT 0,
+  some_column String EXPRESSION toString(fourth_column),
+  fourth_column Float64 DEFAULT 42.0
+)
+PRIMARY KEY key_column
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
+LIFETIME(MIN 1 MAX 10)
+LAYOUT(HASHED());
+
+SELECT dictGetString('database_for_dict.dict2', 'some_column', toUInt64(12));
+
 DROP DATABASE IF EXISTS database_for_dict;
