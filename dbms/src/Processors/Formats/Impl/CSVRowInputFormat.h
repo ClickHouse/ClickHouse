@@ -61,7 +61,12 @@ private:
         return *pos != '\n' && *pos != '\r' && *pos != format_settings.csv.delimiter;
     }
 
-    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
+    /// For setting input_format_null_as_default
+    DataTypes nullable_types;
+    MutableColumns nullable_columns;
+    OptionalIndexes column_idx_to_nullable_column_idx;
+
+    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx);
 };
 
 }

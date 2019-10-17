@@ -29,7 +29,7 @@ public:
     void syncAfterError() override;
 
 private:
-    bool deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column);
+    void deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format);
     void skipField(ColumnFormat col_format);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
@@ -50,15 +50,13 @@ private:
     PeekableReadBuffer buf;
     DataTypes data_types;
 
-    FormatSettings settings;
+    const FormatSettings settings;
     const bool ignore_spaces;
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
 
     size_t format_data_idx;
     bool end_of_stream = false;
-    std::vector<size_t> always_default_columns;
-    char default_csv_delimiter;
 };
 
 }

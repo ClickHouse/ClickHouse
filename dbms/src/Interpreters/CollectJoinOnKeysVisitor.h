@@ -12,11 +12,6 @@ namespace DB
 class ASTIdentifier;
 class AnalyzedJoin;
 
-namespace ASOF
-{
-    enum class Inequality;
-}
-
 class CollectJoinOnKeysMatcher
 {
 public:
@@ -34,8 +29,7 @@ public:
         bool has_some{false};
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no);
-        void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no,
-                             const ASOF::Inequality & asof_inequality);
+        void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no);
         void asofToJoinKeys();
     };
 

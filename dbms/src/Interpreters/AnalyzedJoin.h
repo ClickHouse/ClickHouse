@@ -5,7 +5,6 @@
 #include <Core/SettingsCommon.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/asof.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
 
@@ -39,7 +38,6 @@ class AnalyzedJoin
     friend class SyntaxAnalyzer;
 
     const SizeLimits size_limits;
-    const size_t default_max_bytes;
     const bool join_use_nulls;
     const bool partial_merge_join = false;
     const bool partial_merge_join_optimizations = false;
@@ -50,7 +48,6 @@ class AnalyzedJoin
     ASTs key_asts_left;
     ASTs key_asts_right;
     ASTTableJoin table_join;
-    ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
@@ -62,16 +59,13 @@ class AnalyzedJoin
     /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
-    String tmp_path;
-
 public:
-    AnalyzedJoin(const Settings &, const String & tmp_path);
+    AnalyzedJoin(const Settings &);
 
     /// for StorageJoin
     AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
                  const Names & key_names_right_)
         : size_limits(limits)
-        , default_max_bytes(0)
         , join_use_nulls(use_nulls)
         , key_names_right(key_names_right_)
     {
@@ -82,11 +76,9 @@ public:
     ASTTableJoin::Kind kind() const { return table_join.kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     const SizeLimits & sizeLimits() const { return size_limits; }
-    const String & getTemporaryPath() const { return tmp_path; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
-    size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
@@ -107,9 +99,6 @@ public:
 
     void addJoinedColumn(const NameAndTypePair & joined_column);
     void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
-
-    void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
-    ASOF::Inequality getAsofInequality() { return asof_inequality; }
 
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only

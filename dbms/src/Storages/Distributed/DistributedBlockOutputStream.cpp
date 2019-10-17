@@ -339,19 +339,11 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
             per_shard_jobs[current_selector[i]].shard_current_block_permuation.push_back(i);
     }
 
-    try
-    {
-        /// Run jobs in parallel for each block and wait them
-        finished_jobs_count = 0;
-        for (size_t shard_index : ext::range(0, shards_info.size()))
-            for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block));
-    }
-    catch (...)
-    {
-        pool->wait();
-        throw;
-    }
+    /// Run jobs in parallel for each block and wait them
+    finished_jobs_count = 0;
+    for (size_t shard_index : ext::range(0, shards_info.size()))
+        for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+            pool->schedule(runWritingJob(job, block));
 
     try
     {
@@ -381,27 +373,17 @@ void DistributedBlockOutputStream::writeSuffix()
     if (insert_sync && pool)
     {
         finished_jobs_count = 0;
-        try
-        {
-            for (auto & shard_jobs : per_shard_jobs)
+        for (auto & shard_jobs : per_shard_jobs)
+            for (JobReplica & job : shard_jobs.replicas_jobs)
             {
-                for (JobReplica & job : shard_jobs.replicas_jobs)
+                if (job.stream)
                 {
-                    if (job.stream)
+                    pool->schedule([&job] ()
                     {
-                        pool->scheduleOrThrowOnError([&job]()
-                        {
-                            job.stream->writeSuffix();
-                        });
-                    }
+                        job.stream->writeSuffix();
+                    });
                 }
             }
-        }
-        catch (...)
-        {
-            pool->wait();
-            throw;
-        }
 
         try
         {

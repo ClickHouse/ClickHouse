@@ -216,7 +216,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
         };
 
         if (thread_pool)
-            thread_pool->scheduleOrThrowOnError(job);
+            thread_pool->schedule(job);
         else
             job();
     }

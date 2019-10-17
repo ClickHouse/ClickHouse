@@ -36,7 +36,7 @@ void AsynchronousBlockInputStream::next()
 {
     ready.reset();
 
-    pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup()]()
+    pool.schedule([this, thread_group = CurrentThread::getGroup()] ()
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 

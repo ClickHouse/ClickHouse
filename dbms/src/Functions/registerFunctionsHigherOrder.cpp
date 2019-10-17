@@ -11,7 +11,6 @@ void registerFunctionArrayAll(FunctionFactory &);
 void registerFunctionArraySum(FunctionFactory &);
 void registerFunctionArrayFirst(FunctionFactory &);
 void registerFunctionArrayFirstIndex(FunctionFactory &);
-void registerFunctionArraySplit(FunctionFactory &);
 void registerFunctionsArraySort(FunctionFactory &);
 void registerFunctionArrayReverseSort(FunctionFactory &);
 void registerFunctionArrayCumSum(FunctionFactory &);
@@ -28,7 +27,6 @@ void registerFunctionsHigherOrder(FunctionFactory & factory)
     registerFunctionArraySum(factory);
     registerFunctionArrayFirst(factory);
     registerFunctionArrayFirstIndex(factory);
-    registerFunctionArraySplit(factory);
     registerFunctionsArraySort(factory);
     registerFunctionArrayCumSum(factory);
     registerFunctionArrayCumSumNonNegative(factory);

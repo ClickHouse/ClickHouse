@@ -4,7 +4,6 @@
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -24,8 +23,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
                                                ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_)
     : RowInputFormatWithDiagnosticInfo(header_, buf, params_), buf(in_), data_types(header_.getDataTypes()),
       settings(settings_), ignore_spaces(ignore_spaces_),
-      format(std::move(format_)), row_format(std::move(row_format_)),
-      default_csv_delimiter(settings.csv.delimiter)
+      format(std::move(format_)), row_format(std::move(row_format_))
 {
     /// Validate format string for result set
     bool has_data = false;
@@ -70,10 +68,6 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
             column_in_format[col_idx] = true;
         }
     }
-
-    for (size_t i = 0; i < header_.columns(); ++i)
-        if (!column_in_format[i])
-            always_default_columns.push_back(i);
 }
 
 void TemplateRowInputFormat::readPrefix()
@@ -172,7 +166,8 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
         if (row_format.format_idx_to_column_idx[i])
         {
             size_t col_idx = *row_format.format_idx_to_column_idx[i];
-            extra.read_columns[col_idx] = deserializeField(data_types[col_idx], *columns[col_idx], i);
+            deserializeField(*data_types[col_idx], *columns[col_idx], row_format.formats[i]);
+            extra.read_columns[col_idx] = true;
         }
         else
             skipField(row_format.formats[i]);
@@ -182,47 +177,30 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     skipSpaces();
     assertString(row_format.delimiters.back(), buf);
 
-    for (const auto & idx : always_default_columns)
-        data_types[idx]->insertDefaultInto(*columns[idx]);
+    for (size_t i = 0; i < columns.size(); ++i)
+        if (!extra.read_columns[i])
+            data_types[i]->insertDefaultInto(*columns[i]);
 
     return true;
 }
 
-bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
+void TemplateRowInputFormat::deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format)
 {
-    ColumnFormat col_format = row_format.formats[file_column];
-    bool read = true;
-    bool parse_as_nullable = settings.null_as_default && !type->isNullable();
     try
     {
         switch (col_format)
         {
             case ColumnFormat::Escaped:
-                if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextEscaped(column, buf, settings, type);
-                else
-                    type->deserializeAsTextEscaped(column, buf, settings);
+                type.deserializeAsTextEscaped(column, buf, settings);
                 break;
             case ColumnFormat::Quoted:
-                if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextQuoted(column, buf, settings, type);
-                else
-                    type->deserializeAsTextQuoted(column, buf, settings);
+                type.deserializeAsTextQuoted(column, buf, settings);
                 break;
             case ColumnFormat::Csv:
-                /// Will read unquoted string until settings.csv.delimiter
-                settings.csv.delimiter = row_format.delimiters[file_column + 1].empty() ? default_csv_delimiter :
-                                                                                          row_format.delimiters[file_column + 1].front();
-                if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextCSV(column, buf, settings, type);
-                else
-                    type->deserializeAsTextCSV(column, buf, settings);
+                type.deserializeAsTextCSV(column, buf, settings);
                 break;
             case ColumnFormat::Json:
-                if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeTextJSON(column, buf, settings, type);
-                else
-                    type->deserializeAsTextJSON(column, buf, settings);
+                type.deserializeAsTextJSON(column, buf, settings);
                 break;
             default:
                 __builtin_unreachable();
@@ -234,7 +212,6 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type, IColumn 
             throwUnexpectedEof();
         throw;
     }
-    return read;
 }
 
 void TemplateRowInputFormat::skipField(TemplateRowInputFormat::ColumnFormat col_format)
@@ -414,7 +391,7 @@ void TemplateRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColu
 {
     prev_pos = buf.position();
     if (row_format.format_idx_to_column_idx[file_column])
-        deserializeField(type, column, file_column);
+        deserializeField(*type, column, row_format.formats[file_column]);
     else
         skipField(row_format.formats[file_column]);
     curr_pos = buf.position();

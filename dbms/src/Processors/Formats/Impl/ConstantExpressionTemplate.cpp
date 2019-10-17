@@ -151,7 +151,7 @@ private:
         {
             info.special_parser.is_array = true;
             info.type = applyVisitor(FieldToDataType(), info.literal->value);
-            auto nested_type = assert_cast<const DataTypeArray &>(*info.type).getNestedType();
+            auto nested_type = dynamic_cast<const DataTypeArray &>(*info.type).getNestedType();
 
             /// It can be Array(Nullable(nested_type))
             bool array_of_nullable = false;
@@ -212,9 +212,9 @@ private:
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
 ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, const Context & context)
+                                                                 ASTPtr & expression, const IDataType & result_type, const Context & context)
 {
-    null_as_default = null_as_default_;
+
 
     std::sort(replaced_literals.begin(), replaced_literals.end(), [](const LiteralInfo & a, const LiteralInfo & b)
     {
@@ -252,17 +252,16 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
         ++prev_end;
     }
 
-    addNodesToCastResult(result_type, expression, null_as_default);
+    addNodesToCastResult(result_type, expression);
+    result_column_name = expression->getColumnName();
 
     auto syntax_result = SyntaxAnalyzer(context).analyze(expression, literals.getNamesAndTypesList());
-    result_column_name = expression->getColumnName();
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
 }
 
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
                                                                       const LiteralsInfo & replaced_literals,
                                                                       const DataTypePtr & result_column_type,
-                                                                      bool null_as_default,
                                                                       const String & salt)
 {
     /// TODO distinguish expressions with the same AST and different tokens (e.g. "CAST(expr, 'Type')" and "CAST(expr AS Type)")
@@ -273,7 +272,6 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
 
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());
-    hash_state.update(null_as_default);
 
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
@@ -290,7 +288,6 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
 
 ConstantExpressionTemplate::TemplateStructurePtr
 ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & result_column_type,
-                                                           bool null_as_default,
                                                            TokenIterator expression_begin,
                                                            TokenIterator expression_end,
                                                            const ASTPtr & expression_,
@@ -301,18 +298,17 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     TemplateStructurePtr res;
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context);
-    visitor.visit(expression, result_column_type->isNullable() || null_as_default);
+    visitor.visit(expression, result_column_type->isNullable());
     ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(expression);
 
-    size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
+    size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, salt);
     auto iter = cache.find(template_hash);
     if (iter == cache.end())
     {
         if (max_size <= cache.size())
             cache.clear();
-        res = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end,
-                                                  expression, *result_column_type, null_as_default, context);
+        res = std::make_shared<TemplateStructure>(visitor.replaced_literals, expression_begin, expression_end, expression, *result_column_type, context);
         cache.insert({template_hash, res});
         if (found_in_cache)
             *found_in_cache = false;
@@ -420,7 +416,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
 
         const Field & array = ast->as<ASTLiteral &>().value;
         auto array_type = applyVisitor(FieldToDataType(), array);
-        auto nested_type = assert_cast<const DataTypeArray &>(*array_type).getNestedType();
+        auto nested_type = dynamic_cast<const DataTypeArray &>(*array_type).getNestedType();
         if (type_info.is_nullable)
             if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
                 nested_type = nullable->getNestedType();
@@ -492,7 +488,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     }
 }
 
-ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, size_t offset)
+ColumnPtr ConstantExpressionTemplate::evaluateAll()
 {
     Block evaluated = structure->literals.cloneWithColumns(std::move(columns));
     columns = structure->literals.cloneEmptyColumns();
@@ -510,40 +506,23 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
                         ErrorCodes::LOGICAL_ERROR);
 
     rows_count = 0;
-    ColumnPtr res = evaluated.getByName(structure->result_column_name).column->convertToFullColumnIfConst();
-    if (!structure->null_as_default)
-        return res;
-
-    /// Extract column with evaluated expression and mask for NULLs
-    auto & tuple = assert_cast<const ColumnTuple &>(*res);
-    if (tuple.tupleSize() != 2)
-        throw Exception("Invalid tuple size, it'a a bug", ErrorCodes::LOGICAL_ERROR);
-    auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
-
-    for (size_t i = 0; i < is_null.size(); ++i)
-        if (is_null.getUInt(i))
-            nulls.setBit(column_idx, offset + i);
-
-    return tuple.getColumnPtr(0);
+    return evaluated.getByName(structure->result_column_name).column->convertToFullColumnIfConst();
 }
 
-void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default)
+void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr)
 {
-    /// Replace "expr" with "CAST(expr, 'TypeName')"
-    /// or with "(CAST(assumeNotNull(expr as _expression), 'TypeName'), isNull(_expression))" if null_as_default is true
-    if (null_as_default)
-    {
-        expr->setAlias("_expression");
-        expr = makeASTFunction("assumeNotNull", std::move(expr));
-    }
+    auto result_type = std::make_shared<ASTLiteral>(result_column_type.getName());
 
-    expr = makeASTFunction("CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+    auto arguments = std::make_shared<ASTExpressionList>();
+    arguments->children.push_back(std::move(expr));
+    arguments->children.push_back(std::move(result_type));
 
-    if (null_as_default)
-    {
-        auto is_null = makeASTFunction("isNull", std::make_shared<ASTIdentifier>("_expression"));
-        expr = makeASTFunction("tuple", std::move(expr), std::move(is_null));
-    }
+    auto cast = std::make_shared<ASTFunction>();
+    cast->name = "CAST";
+    cast->arguments = std::move(arguments);
+    cast->children.push_back(cast->arguments);
+
+    expr = std::move(cast);
 }
 
 }
