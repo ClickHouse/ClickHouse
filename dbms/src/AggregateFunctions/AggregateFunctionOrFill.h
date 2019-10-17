@@ -26,7 +26,7 @@ class AggregateFunctionOrFill final : public IAggregateFunctionHelper<AggregateF
 private:
     AggregateFunctionPtr nested_function;
 
-    size_t sod;
+    size_t size_of_data;
     DataTypePtr inner_type;
     bool inner_nullable;
 
@@ -34,7 +34,7 @@ public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionOrFill>{arguments, params}
         , nested_function{nested_function_}
-        , sod {nested_function->sizeOfData()}
+        , size_of_data {nested_function->sizeOfData()}
         , inner_type {nested_function->getReturnType()}
         , inner_nullable {inner_type->isNullable()}
     {
@@ -71,7 +71,7 @@ public:
 
     size_t sizeOfData() const override
     {
-        return sod + sizeof(bool);
+        return size_of_data + sizeof(char);
     }
 
     size_t alignOfData() const override
@@ -83,7 +83,7 @@ public:
     {
         nested_function->create(place);
 
-        place[sod] = 0;
+        place[size_of_data] = 0;
     }
 
     void destroy(AggregateDataPtr place) const noexcept override
@@ -99,7 +99,7 @@ public:
     {
         nested_function->add(place, columns, row_num, arena);
 
-        place[sod] = 1;
+        place[size_of_data] = 1;
     }
 
     void merge(
@@ -148,7 +148,7 @@ public:
         ConstAggregateDataPtr place,
         IColumn & to) const override
     {
-        if (place[sod])
+        if (place[size_of_data])
         {
             if constexpr (UseNull)
             {
