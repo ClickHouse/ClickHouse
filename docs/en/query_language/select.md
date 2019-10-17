@@ -991,7 +991,7 @@ SELECT COLUMNS('a') FROM col_names
 └────┴────┘
 ```
 
-You can use multiple `COLUMNS` expressions in a query and apply functions.
+You can use multiple `COLUMNS` expressions in a query and apply functions to them.
 
 For example:
 
