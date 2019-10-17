@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 #include <common/JSON.h>
 
@@ -17,7 +18,13 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
 
     table_ttl.update(other_infos.table_ttl);
     updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
+
+    for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
+    {
+        moves_ttl[expression].update(ttl_info);
+    }
 }
+
 
 void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 {
@@ -48,7 +55,20 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 
         updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
+    if (json.has("moves"))
+    {
+        JSON moves = json["moves"];
+        for (auto move : moves)
+        {
+            MergeTreeDataPartTTLInfo ttl_info;
+            ttl_info.min = move["min"].getUInt();
+            ttl_info.max = move["max"].getUInt();
+            String expression = move["expression"].getString();
+            moves_ttl.emplace(expression, ttl_info);
+        }
+    }
 }
+
 
 void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
 {
@@ -62,9 +82,9 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             if (it != columns_ttl.begin())
                 writeString(",", out);
 
-            writeString("{\"name\":\"", out);
-            writeString(it->first, out);
-            writeString("\",\"min\":", out);
+            writeString("{\"name\":", out);
+            writeString(doubleQuoteString(it->first), out);
+            writeString(",\"min\":", out);
             writeIntText(it->second.min, out);
             writeString(",\"max\":", out);
             writeIntText(it->second.max, out);
@@ -81,6 +101,26 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeString(",\"max\":", out);
         writeIntText(table_ttl.max, out);
         writeString("}", out);
+    }
+    if (!moves_ttl.empty())
+    {
+        if (!columns_ttl.empty() || table_ttl.min)
+            writeString(",", out);
+        writeString("\"moves\":[", out);
+        for (auto it = moves_ttl.begin(); it != moves_ttl.end(); ++it)
+        {
+            if (it != moves_ttl.begin())
+                writeString(",", out);
+
+            writeString("{\"expression\":", out);
+            writeString(doubleQuoteString(it->first), out);
+            writeString(",\"min\":", out);
+            writeIntText(it->second.min, out);
+            writeString(",\"max\":", out);
+            writeIntText(it->second.max, out);
+            writeString("}", out);
+        }
+        writeString("]", out);
     }
     writeString("}", out);
 }

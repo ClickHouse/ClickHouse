@@ -75,12 +75,10 @@ void buildScatterSelector(
 }
 
 /// Computes ttls and updates ttl infos
-void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTLInfos & ttl_infos, Block & block, const String & column_name)
+void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTLInfos & ttl_infos, DB::MergeTreeDataPartTTLInfo & ttl_info, Block & block)
 {
     if (!block.has(ttl_entry.result_column))
         ttl_entry.expression->execute(block);
-
-    auto & ttl_info = (column_name.empty() ? ttl_infos.table_ttl : ttl_infos.columns_ttl[column_name]);
 
     const auto & current = block.getByName(ttl_entry.result_column);
 
@@ -251,7 +249,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
-    /// Sort.
+    /// Sort
     IColumn::Permutation * perm_ptr = nullptr;
     IColumn::Permutation perm;
     if (!sort_description.empty())
@@ -266,10 +264,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     }
 
     if (data.hasTableTTL())
-        updateTTL(data.ttl_table_entry, new_data_part->ttl_infos, block, "");
+        updateTTL(data.ttl_table_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block);
 
     for (const auto & [name, ttl_entry] : data.ttl_entries_by_name)
-        updateTTL(ttl_entry, new_data_part->ttl_infos, block, name);
+        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block);
+
+    for (const auto & [expression, ttl_entry] : data.move_ttl_entries_by_name)
+        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.moves_ttl[expression], block);
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
