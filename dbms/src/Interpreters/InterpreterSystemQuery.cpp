@@ -327,7 +327,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
-        pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();
 }
 

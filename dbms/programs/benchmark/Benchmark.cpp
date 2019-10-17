@@ -274,15 +274,24 @@ private:
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
-        for (size_t i = 0; i < concurrency; ++i)
+        try
         {
-            EntryPtrs connection_entries;
-            connection_entries.reserve(connections.size());
+            for (size_t i = 0; i < concurrency; ++i)
+            {
+                EntryPtrs connection_entries;
+                connection_entries.reserve(connections.size());
 
-            for (const auto & connection : connections)
-                connection_entries.emplace_back(std::make_shared<Entry>(connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
+                for (const auto & connection : connections)
+                    connection_entries.emplace_back(std::make_shared<Entry>(
+                            connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
-            pool.schedule(std::bind(&Benchmark::thread, this, connection_entries));
+                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
+            }
+        }
+        catch (...)
+        {
+            pool.wait();
+            throw;
         }
 
         InterruptListener interrupt_listener;
