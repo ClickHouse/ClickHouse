@@ -110,21 +110,21 @@ private:
         for (const auto & [name, repo_with_settings] : repositories)
         {
             const auto names = repo_with_settings.first->getAllLoadablesDefinitionNames();
-            for (const auto & name : names)
+            for (const auto & loadable_name : names)
             {
-                auto it = loadables_infos.find(name);
+                auto it = loadables_infos.find(loadable_name);
                 if (it != loadables_infos.end())
                 {
                     LoadablesInfos & loadable_info = it->second;
-                    if (readLoadablesInfo(*repo_with_settings.first, name, repo_with_settings.second, loadable_info))
+                    if (readLoadablesInfo(*repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
                         changed = true;
                 }
                 else
                 {
                     LoadablesInfos loadable_info;
-                    if (readLoadablesInfo(*repo_with_settings.first, name, repo_with_settings.second, loadable_info))
+                    if (readLoadablesInfo(*repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
                     {
-                        loadables_infos.emplace(name, std::move(loadable_info));
+                        loadables_infos.emplace(loadable_name, std::move(loadable_info));
                         changed = true;
                     }
                 }
