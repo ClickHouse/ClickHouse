@@ -1004,7 +1004,7 @@ SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 └────┴────┴────┴────────────────┘
 ```
 
-Be careful when using functions because the `COLUMN` expression returns a variable number of columns, and, if a function doesn't support this number of arguments, ClickHouse throws an exception.
+Be careful when using functions because the `COLUMNS` expression returns a variable number of columns, and, if a function doesn't support this number of arguments, ClickHouse throws an exception.
 
 For example:
 
