@@ -465,7 +465,7 @@ ALTER TABLE example_table
 
 ### Конфигурация {#table_engine-mergetree-multiple-volumes_configure}
 
-Диски, тома и политики хранения задаются в корне конфигурации (внутри тега `<yandex>`) в основном файле `config.xml` или в отдельном файле в директории `config.d`. Правила составления данной секции конфигурации имеет следующую структуру:
+Диски, тома и политики хранения задаются внутри тега `<storage_configuration>` в основном файле `config.xml` или в отдельном файле в директории `config.d`. Правила составления данной секции конфигурации имеет следующую структуру:
 
 ```xml
 <disks>
@@ -514,9 +514,9 @@ ALTER TABLE example_table
             </hot>
             <cold>
                 <disk>disk1</disk>
-            </cold>
-            <move_factor>0.2</move_factor>
+            </cold>            
         </volumes>
+        <move_factor>0.2</move_factor>
     </moving_from_ssd_to_hdd>
 </policies>
 ```
