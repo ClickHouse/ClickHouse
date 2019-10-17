@@ -207,6 +207,7 @@ Ok.
 
 - [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 - [CSV](../../interfaces/formats.md#csv)
+- [TabSeparated](../../interfaces/formats.md#tabseparated)
 
 !!! note "Примечание"
     Когда опция включена, сервер отправляет клиенту расширенные метаданные. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
@@ -220,7 +221,7 @@ Ok.
 
 ## input_format_null_as_default {#settings-input_format_null_as_default}
 
-Включает или отключает использование значений по умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для формата CSV).
+Включает или отключает использование значений по умолчанию в случаях, когда во входных данных содержится `NULL`, но тип соответствующего столбца не `Nullable(T)` (для текстовых форматов).
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
