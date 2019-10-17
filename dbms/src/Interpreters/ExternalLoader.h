@@ -72,6 +72,7 @@ public:
         TimePoint loading_start_time;
         Duration loading_duration;
         std::exception_ptr exception;
+        std::string repository_name;
     };
 
     using LoadResults = std::vector<std::pair<String, LoadResult>>;
@@ -137,6 +138,7 @@ public:
 
     /// Tries to finish loading of the objects for which the specified function returns true.
     void load(const FilterByNameFunction & filter_by_name, Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) const;
+    void load(const FilterByNameFunction & filter_by_name, LoadResults & load_results, Duration timeout = NO_TIMEOUT) const;
     Loadables loadAndGet(const FilterByNameFunction & filter_by_name, Duration timeout = NO_TIMEOUT) const { Loadables loaded_objects; load(filter_by_name, loaded_objects, timeout); return loaded_objects; }
 
     /// Tries to finish loading of all the objects during the timeout.

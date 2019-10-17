@@ -10,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 DatabaseMemory::DatabaseMemory(String name_)
@@ -34,12 +35,17 @@ void DatabaseMemory::createTable(
 }
 
 
+void DatabaseMemory::attachDictionary(const String & /*name*/, const Context & /*context*/, bool /*load*/)
+{
+    throw Exception("There is no ATTACH DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
 void DatabaseMemory::createDictionary(
-    const Context & context,
-    const String & dictionary_name,
+    const Context & /*context*/,
+    const String & /*dictionary_name*/,
     const ASTPtr & /*query*/)
 {
-    attachDictionary(dictionary_name, context, true);
+    throw Exception("There is no CREATE DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 
@@ -51,11 +57,17 @@ void DatabaseMemory::removeTable(
 }
 
 
-void DatabaseMemory::removeDictionary(
-    const Context & context,
-    const String & dictionary_name)
+void DatabaseMemory::detachDictionary(const String & /*name*/, const Context & /*context*/)
 {
-    detachDictionary(dictionary_name, context);
+    throw Exception("There is no DETACH DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
+}
+
+
+void DatabaseMemory::removeDictionary(
+    const Context & /*context*/,
+    const String & /*dictionary_name*/)
+{
+    throw Exception("There is no DROP DICTIONARY query for DatabaseMemory", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 

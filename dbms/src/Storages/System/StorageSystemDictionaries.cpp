@@ -19,44 +19,6 @@
 namespace DB
 {
 
-namespace
-{
-
-NameSet getFilteredDatabases(const ASTPtr & query, const Context & context)
-{
-    MutableColumnPtr column = ColumnString::create();
-    for (const auto & db : context.getDatabases())
-        column->insert(db.first);
-
-    Block block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database")};
-    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-    NameSet result;
-    for (size_t i = 0; i < block.rows(); ++i)
-        result.insert(block.getByPosition(0).column->getDataAt(i).toString());
-    return result;
-}
-
-
-NameSet getFilteredDictionaries(const ASTPtr & query, const Context & context, const DatabasePtr & database)
-{
-    MutableColumnPtr column = ColumnString::create();
-    auto dicts_it = database->getDictionariesIterator(context);
-    while (dicts_it->isValid())
-    {
-        column->insert(dicts_it->name());
-        dicts_it->next();
-    }
-
-    Block block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "dictionary")};
-    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-    NameSet result;
-    for (size_t i = 0; i < block.rows(); ++i)
-        result.insert(block.getByPosition(0).column->getDataAt(i).toString());
-    return result;
-}
-
-}
-
 NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 {
     return {
@@ -81,15 +43,19 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     };
 }
 
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & [dict_name, load_result] : external_dictionaries.getCurrentLoadResults())
     {
         size_t i = 0;
 
-        res_columns[i++]->insert("");
-        res_columns[i++]->insert(dict_name);
+        res_columns[i++]->insert(load_result.repository_name);
+        if (!load_result.repository_name.empty())
+            res_columns[i++]->insert(dict_name.substr(load_result.repository_name.length() + 1));
+        else
+            res_columns[i++]->insert(dict_name);
+
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.origin);
 
@@ -127,27 +93,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
             res_columns[i++]->insert(getExceptionMessage(last_exception, false));
         else
             res_columns[i++]->insertDefault();
-    }
-
-    /// Temporary code for testing TODO(alesapin)
-    NameSet databases = getFilteredDatabases(query_info.query, context);
-    for (auto database : databases)
-    {
-        DatabasePtr database_ptr = context.getDatabase(database);
-        auto dictionaries_set = getFilteredDictionaries(query_info.query, context, database_ptr);
-        auto filter = [&dictionaries_set](const String & dict_name) { return dictionaries_set.count(dict_name); };
-        auto dictionaries_it = database_ptr->getDictionariesIterator(context, filter);
-        while (dictionaries_it->isValid())
-        {
-            size_t i = 0;
-            res_columns[i++]->insert(database);
-            res_columns[i++]->insert(dictionaries_it->name());
-            for (size_t j = 0; j < getNamesAndTypes().size() - 2; ++j)
-                res_columns[i++]->insertDefault();
-
-            dictionaries_it->next();
-        }
-
     }
 }
 

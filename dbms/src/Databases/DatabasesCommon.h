@@ -43,6 +43,8 @@ public:
 
     DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) override;
 
+    DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) override;
+
     void shutdown() override;
 
     virtual ~DatabaseWithOwnTablesBase() override;

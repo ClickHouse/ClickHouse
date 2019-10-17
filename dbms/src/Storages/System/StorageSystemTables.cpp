@@ -193,7 +193,7 @@ protected:
             }
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context);
+                tables_it = database->getTablesWithDictionaryTablesIterator(context);
 
             const bool need_lock_structure = needLockStructure(database, header);
 

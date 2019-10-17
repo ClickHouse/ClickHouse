@@ -38,6 +38,11 @@ public:
         const String & dictionary_name,
         const ASTPtr & query) override;
 
+    void attachDictionary(
+        const String & name,
+        const Context & context,
+        bool load) override;
+
     void removeTable(
         const Context & context,
         const String & table_name) override;
@@ -45,6 +50,10 @@ public:
     void removeDictionary(
         const Context & context,
         const String & dictionary_name) override;
+
+    void detachDictionary(
+        const String & name,
+        const Context & context) override;
 
     time_t getObjectMetadataModificationTime(const Context & context, const String & table_name) override;
 

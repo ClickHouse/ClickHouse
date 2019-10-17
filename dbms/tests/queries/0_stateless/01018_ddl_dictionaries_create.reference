@@ -12,14 +12,6 @@ ordinary_db	dict1
 ==DROP DICTIONARY
 0
 =DICTIONARY in Memory DB
-dict2
-1
-memory_db	dict2
-==DETACH DICTIONARY
-0
-==ATTACH DICTIONARY
-0
-==DROP DICTIONARY
 0
 =DICTIONARY in Dictionary DB
 =DICTIONARY in Lazy DB
