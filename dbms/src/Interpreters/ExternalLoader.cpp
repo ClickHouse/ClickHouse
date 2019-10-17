@@ -26,6 +26,7 @@ struct ExternalLoader::ObjectConfig
     String config_path;
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
     String key_in_config;
+    String repository_name;
 };
 
 
@@ -107,7 +108,7 @@ private:
             loadable_info.in_use = false;
         }
 
-        for (const auto & [name, repo_with_settings] : repositories)
+        for (const auto & [repo_name, repo_with_settings] : repositories)
         {
             const auto names = repo_with_settings.first->getAllLoadablesDefinitionNames();
             for (const auto & loadable_name : names)
@@ -116,13 +117,13 @@ private:
                 if (it != loadables_infos.end())
                 {
                     LoadablesInfos & loadable_info = it->second;
-                    if (readLoadablesInfo(*repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
+                    if (readLoadablesInfo(repo_name, *repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
                         changed = true;
                 }
                 else
                 {
                     LoadablesInfos loadable_info;
-                    if (readLoadablesInfo(*repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
+                    if (readLoadablesInfo(repo_name, *repo_with_settings.first, loadable_name, repo_with_settings.second, loadable_info))
                     {
                         loadables_infos.emplace(loadable_name, std::move(loadable_info));
                         changed = true;
@@ -145,6 +146,7 @@ private:
     }
 
     bool readLoadablesInfo(
+        const String & repo_name,
         IExternalLoaderConfigRepository & repository,
         const String & name,
         const ExternalLoaderConfigSettings & settings,
@@ -191,7 +193,7 @@ private:
                     continue;
                 }
 
-                configs_from_file.emplace_back(external_name, ObjectConfig{name, file_contents, key});
+                configs_from_file.emplace_back(external_name, ObjectConfig{name, file_contents, key, repo_name});
             }
 
             loadable_info.configs = std::move(configs_from_file);
@@ -441,8 +443,17 @@ public:
         loaded_objects = collectLoadedObjects(filter_by_name);
     }
 
+    /// Tries to finish loading of the objects for which the specified function returns true.
+    void load(const FilterByNameFunction & filter_by_name, LoadResults & loaded_results, Duration timeout = NO_TIMEOUT)
+    {
+        std::unique_lock lock{mutex};
+        loadImpl(filter_by_name, timeout, lock);
+        loaded_results = collectLoadResults(filter_by_name);
+    }
+
     /// Tries to finish loading of all the objects during the timeout.
     void load(Loadables & loaded_objects, Duration timeout = NO_TIMEOUT) { load(allNames, loaded_objects, timeout); }
+    void load(LoadResults & loaded_results, Duration timeout = NO_TIMEOUT) { load(allNames, loaded_results, timeout); }
 
     /// Starts reloading a specified object.
     void reload(const String & name, bool load_never_loading = false)
@@ -581,6 +592,7 @@ private:
             result.loading_start_time = loading_start_time;
             result.loading_duration = loadingDuration();
             result.origin = config.config_path;
+            result.repository_name = config.repository_name;
             return result;
         }
 
@@ -627,8 +639,10 @@ private:
         LoadResults load_results;
         load_results.reserve(infos.size());
         for (const auto & [name, info] : infos)
+        {
             if (filter_by_name(name))
                 load_results.emplace_back(name, info.loadResult());
+        }
         return load_results;
     }
 
@@ -1051,6 +1065,16 @@ void ExternalLoader::load(const FilterByNameFunction & filter_by_name, Loadables
     else
         loading_dispatcher->load(loaded_objects, timeout);
 }
+
+
+void ExternalLoader::load(const FilterByNameFunction & filter_by_name, LoadResults & loaded_objects, Duration timeout) const
+{
+    if (filter_by_name)
+        loading_dispatcher->load(filter_by_name, loaded_objects, timeout);
+    else
+        loading_dispatcher->load(loaded_objects, timeout);
+}
+
 
 void ExternalLoader::load(Loadables & loaded_objects, Duration timeout) const
 {

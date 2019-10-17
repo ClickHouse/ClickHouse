@@ -129,6 +129,12 @@ public:
     /// Get an iterator to pass through all the dictionaries.
     virtual DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) = 0;
 
+    /// Get an iterator to pass through all the tables and dictionary tables.
+    virtual DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name = {})
+    {
+        return getTablesIterator(context, filter_by_name);
+    }
+
     /// Is the database empty.
     virtual bool empty(const Context & context) const = 0;
 

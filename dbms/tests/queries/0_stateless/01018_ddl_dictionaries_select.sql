@@ -31,8 +31,11 @@ LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(11));
+SELECT second_column FROM database_for_dict.dict1 WHERE key_column = 11;
 SELECT dictGetString('database_for_dict.dict1', 'third_column', toUInt64(12));
+SELECT third_column FROM database_for_dict.dict1 WHERE key_column = 12;
 SELECT dictGetFloat64('database_for_dict.dict1', 'fourth_column', toUInt64(14));
+SELECT fourth_column FROM database_for_dict.dict1 WHERE key_column = 14;
 
 select count(distinct(dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(number)))) from numbers(100);
 
@@ -83,5 +86,9 @@ LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
 SELECT dictGetString('database_for_dict.dict2', 'some_column', toUInt64(12));
+
+SELECT name, engine FROM system.tables WHERE database = 'database_for_dict' ORDER BY name;
+
+SELECT database, name, type FROM system.dictionaries WHERE database = 'database_for_dict' ORDER BY name;
 
 DROP DATABASE IF EXISTS database_for_dict;

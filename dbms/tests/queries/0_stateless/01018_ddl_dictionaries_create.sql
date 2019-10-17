@@ -89,7 +89,7 @@ CREATE DICTIONARY memory_db.dict2
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 10)
-LAYOUT(FLAT());
+LAYOUT(FLAT()); -- {serverError 1}
 
 SHOW CREATE DICTIONARY memory_db.dict2; -- {serverError 485}
 
@@ -98,37 +98,6 @@ SHOW DICTIONARIES FROM memory_db LIKE 'dict2';
 EXISTS DICTIONARY memory_db.dict2;
 
 SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict2';
-
-SELECT '==DETACH DICTIONARY';
-DETACH DICTIONARY memory_db.dict2;
-
-SHOW DICTIONARIES FROM memory_db LIKE 'dict2';
-
-EXISTS DICTIONARY memory_db.dict2;
-
-SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict2';
-
-SELECT '==ATTACH DICTIONARY';
-
-ATTACH DICTIONARY memory_db.dict2; --{serverError 485}
-
-SHOW DICTIONARIES FROM memory_db LIKE 'dict2';
-
-EXISTS DICTIONARY memory_db.dict2;
-
-SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict2';
-
-SELECT '==DROP DICTIONARY';
-
-DROP DICTIONARY IF EXISTS memory_db.dict2;
-
-SHOW DICTIONARIES FROM memory_db LIKE 'dict2';
-
-EXISTS DICTIONARY memory_db.dict2;
-
-SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict2';
-
-DROP DATABASE IF EXISTS memory_db;
 
 DROP DATABASE IF EXISTS dictionary_db;
 

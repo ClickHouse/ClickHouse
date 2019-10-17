@@ -11,7 +11,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(
     : ExternalLoader("external dictionary", &Logger::get("ExternalDictionariesLoader"))
     , context(context_)
 {
-    addConfigRepository("_XMLConfigRepository", std::move(config_repository), {"dictionary", "name"});
+    addConfigRepository("", std::move(config_repository), {"dictionary", "name"});
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }

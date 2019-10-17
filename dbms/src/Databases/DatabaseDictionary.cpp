@@ -35,25 +35,29 @@ void DatabaseDictionary::loadStoredObjects(Context &, bool)
 Tables DatabaseDictionary::listTables(const Context & context, const FilterByNameFunction & filter_by_name)
 {
     Tables tables;
-    ExternalLoader::Loadables loadables;
+    ExternalLoader::LoadResults load_results;
     if (filter_by_name)
     {
         /// If `filter_by_name` is set, we iterate through all dictionaries with such names. That's why we need to load all of them.
-        loadables = context.getExternalDictionariesLoader().loadAndGet(filter_by_name);
+        context.getExternalDictionariesLoader().load(filter_by_name, load_results);
     }
     else
     {
         /// If `filter_by_name` isn't set, we iterate through only already loaded dictionaries. We don't try to load all dictionaries in this case.
-        loadables = context.getExternalDictionariesLoader().getCurrentlyLoadedObjects();
+        load_results = context.getExternalDictionariesLoader().getCurrentLoadResults();
     }
 
-    for (const auto & loadable : loadables)
+    for (const auto & [object_name, info]: load_results)
     {
-        auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(loadable);
-        auto dict_name = dict_ptr->getName();
-        const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
-        auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        tables[dict_name] = StorageDictionary::create(getDatabaseName(), dict_name, ColumnsDescription{columns}, context, true, dict_name);
+        /// Load tables only from XML dictionaries, don't touch other
+        if (info.object != nullptr && info.repository_name.empty())
+        {
+            auto dict_ptr = std::static_pointer_cast<const IDictionaryBase>(info.object);
+            auto dict_name = dict_ptr->getName();
+            const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
+            auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
+            tables[dict_name] = StorageDictionary::create(getDatabaseName(), dict_name, ColumnsDescription{columns}, context, true, dict_name);
+        }
     }
     return tables;
 }
