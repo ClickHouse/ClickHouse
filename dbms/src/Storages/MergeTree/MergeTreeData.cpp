@@ -802,7 +802,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (size_t i = 0; i < part_names_with_disks.size(); ++i)
     {
-        pool.schedule([&, i]
+        pool.scheduleOrThrowOnError([&, i]
         {
             const auto & part_name = part_names_with_disks[i].first;
             const auto part_disk_ptr = part_names_with_disks[i].second;
@@ -1155,7 +1155,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.schedule([&]
+            pool.scheduleOrThrowOnError([&]
             {
                 LOG_DEBUG(log, "Removing part from filesystem " << part->name);
                 part->remove();
