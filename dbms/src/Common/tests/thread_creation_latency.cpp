@@ -66,7 +66,7 @@ int main(int argc, char ** argv)
     test(n, "Create and destroy ThreadPool each iteration", []
     {
         ThreadPool tp(1);
-        tp.schedule(f);
+        tp.scheduleOrThrowOnError(f);
         tp.wait();
     });
 
@@ -90,7 +90,7 @@ int main(int argc, char ** argv)
 
         test(n, "Schedule job for Threadpool each iteration", [&tp]
         {
-            tp.schedule(f);
+            tp.scheduleOrThrowOnError(f);
             tp.wait();
         });
     }
@@ -100,7 +100,7 @@ int main(int argc, char ** argv)
 
         test(n, "Schedule job for Threadpool with 128 threads each iteration", [&tp]
         {
-            tp.schedule(f);
+            tp.scheduleOrThrowOnError(f);
             tp.wait();
         });
     }

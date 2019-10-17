@@ -175,7 +175,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads_count; ++i)
-        pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, buffers_count, count));
+        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, buffers_count, count));
     pool.wait();
 
     watch.stop();

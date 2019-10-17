@@ -770,7 +770,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (const String & file_name : part_file_names)
     {
-        pool.schedule([&]
+        pool.scheduleOrThrowOnError([&]
         {
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(file_name, &part_info, format_version))
@@ -1116,7 +1116,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.schedule([&]
+            pool.scheduleOrThrowOnError([&]
             {
                 LOG_DEBUG(log, "Removing part from filesystem " << part->name);
                 part->remove();
