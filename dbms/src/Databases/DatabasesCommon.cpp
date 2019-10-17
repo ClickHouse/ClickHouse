@@ -100,7 +100,9 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesWithDictionaryTabl
     while (dictionaries_it && dictionaries_it->isValid())
     {
         auto table_name = dictionaries_it->name();
-        result.emplace(table_name, getDictionaryStorage(context, table_name, getDatabaseName()));
+        auto table_ptr = getDictionaryStorage(context, table_name, getDatabaseName());
+        if (table_ptr)
+            result.emplace(table_name, table_ptr);
         dictionaries_it->next();
     }
 
