@@ -36,6 +36,13 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    {
+        ColumnNumbers args;
+        for (size_t i = 0; i + 1 < number_of_arguments; ++i)
+            args.push_back(i);
+        return args;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

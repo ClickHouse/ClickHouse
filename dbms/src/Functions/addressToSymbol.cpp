@@ -1,4 +1,4 @@
-#ifdef __ELF__
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
 #include <Columns/ColumnString.h>

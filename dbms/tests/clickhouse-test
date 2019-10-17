@@ -45,13 +45,29 @@ def remove_control_characters(s):
     s = re.sub(r"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
     return s
 
-def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file):
-    if ext == '.sql':
-        command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client_with_database, server_logs_level, case_file, stdout_file, stderr_file)
-    else:
-        command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
 
-    proc = Popen(command, shell = True)
+def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
+
+    # print(client_options)
+
+    params = {
+        'client': args.client_with_database,
+        'logs_level': server_logs_level,
+        'options': client_options,
+        'test': case_file,
+        'stdout': stdout_file,
+        'stderr': stderr_file,
+    }
+
+    pattern = '{test} > {stdout} 2> {stderr}'
+
+    if ext == '.sql':
+        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
+
+    command = pattern.format(**params)
+    #print(command)
+
+    proc = Popen(command, shell=True, env=os.environ)
     start_time = datetime.now()
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
@@ -67,8 +83,10 @@ def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr
 
     return proc, stdout, stderr
 
+
 def need_retry(stderr):
     return any(msg in stderr for msg in MESSAGES_TO_RETRY)
+
 
 def get_processlist(client_cmd):
     try:
@@ -76,12 +94,14 @@ def get_processlist(client_cmd):
     except:
         return "" #  server seems dead
 
+
 def get_stacktraces(server_pid):
     cmd = "gdb -q -ex 'set pagination off' -ex 'backtrace' -ex 'thread apply all backtrace' -ex 'detach' -ex 'quit' --pid {} 2>/dev/null".format(server_pid)
     try:
         return subprocess.check_output(cmd, shell=True)
     except Exception as ex:
         return "Error occured while receiving stack traces {}".format(str(ex))
+
 
 def get_server_pid(server_tcp_port):
     cmd = "lsof -i tcp:{port} | grep '*:{port}'".format(port=server_tcp_port)
@@ -95,17 +115,19 @@ def get_server_pid(server_tcp_port):
     except Exception as ex:
         return None
 
+
 def colored(text, args, color=None, on_color=None, attrs=None):
        if termcolor and (sys.stdout.isatty() or args.force_color):
            return termcolor.colored(text, color, on_color, attrs)
        else:
            return text
 
+
 SERVER_DIED = False
 exit_code = 0
 
 
-#def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
+# def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
     all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
     global exit_code
@@ -124,6 +146,8 @@ def run_tests_array(all_tests_with_params):
     failures_total = 0
     failures = 0
     failures_chain = 0
+
+    client_options = get_additional_client_options(args)
 
     if len(all_tests):
         print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
@@ -170,7 +194,7 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
-                    proc, stdout, stderr = run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file)
+                    proc, stdout, stderr = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                     if proc.returncode is None:
                         try:
                             proc.kill()
@@ -183,7 +207,7 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
-                            proc, stdout, stderr = run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file)
+                            proc, stdout, stderr = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
                             if counter > 6:
@@ -214,7 +238,7 @@ def run_tests_array(all_tests_with_params):
                             result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
 
                             if result_is_different:
-                                diff = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()[0]
+                                diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                 failures += 1
                                 print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
                             else:
@@ -245,7 +269,9 @@ def run_tests_array(all_tests_with_params):
     else:
         print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
 
+
 server_logs_level = "warning"
+
 
 def main(args):
     global SERVER_DIED
@@ -318,6 +344,7 @@ def main(args):
        except ValueError:
            return 99997
 
+    total_tests_run = 0
     for suite in sorted(os.listdir(base_dir), key=sute_key_func):
         if SERVER_DIED:
             break
@@ -364,7 +391,9 @@ def main(args):
 
             all_tests = os.listdir(suite_dir)
             all_tests = filter(lambda case: is_test_from_dir(suite_dir, case), all_tests)
-            all_tests = sorted(filter(lambda case: re.search(args.test, case) if args.test else True, all_tests), key=key_func)
+            if args.test:
+                all_tests = [t for t in all_tests if any([re.search(r, t) for r in args.test])]
+            all_tests.sort(key=key_func)
 
             run_n, run_total = args.parallel.split('/')
             run_n = float(run_n)
@@ -394,6 +423,8 @@ def main(args):
             else:
                 run_tests_array(all_tests_array[int(run_n)-1])
 
+            total_tests_run += tests_n
+
     if args.hung_check:
         processlist = get_processlist(args.client_with_database)
         if processlist:
@@ -406,6 +437,10 @@ def main(args):
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
+
+    if total_tests_run == 0:
+        print("No tests were run.")
+        sys.exit(1)
 
     sys.exit(exit_code)
 
@@ -426,6 +461,20 @@ def find_binary(name):
     return False
 
 
+def get_additional_client_options(args):
+    if args.client_option:
+        return ' '.join('--' + option for option in args.client_option)
+
+    return ''
+
+
+def get_additional_client_options_url(args):
+    if args.client_option:
+        return '&'.join(args.client_option)
+
+    return ''
+
+
 if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
@@ -437,7 +486,7 @@ if __name__ == '__main__':
     parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help='Preprocessed server config')
     parser.add_argument('-o', '--output', help='Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type=int, default=600, help='Timeout for each test case in seconds')
-    parser.add_argument('test', nargs='?', help='Optional test case name regex')
+    parser.add_argument('test', nargs='*', help='Optional test case name regex')
     parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
     parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
@@ -447,6 +496,7 @@ if __name__ == '__main__':
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
+    parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
@@ -458,6 +508,7 @@ if __name__ == '__main__':
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
+    group.add_argument('--client-option', nargs='+', help='Specify additional client argument')
 
     args = parser.parse_args()
 
@@ -494,6 +545,24 @@ if __name__ == '__main__':
         if os.getenv("CLICKHOUSE_DATABASE"):
             args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
 
+    if args.client_option:
+        # Set options for client
+        if 'CLICKHOUSE_CLIENT_OPT' in os.environ:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] += ' '
+        else:
+           os.environ['CLICKHOUSE_CLIENT_OPT'] = ''
+
+        os.environ['CLICKHOUSE_CLIENT_OPT'] += get_additional_client_options(args)
+
+        # Set options for curl
+        if 'CLICKHOUSE_URL_PARAMS' in os.environ:
+           os.environ['CLICKHOUSE_URL_PARAMS'] += '&'
+        else:
+           os.environ['CLICKHOUSE_URL_PARAMS'] = ''
+
+        os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
+
+
     args.client_with_database = args.client
     if not args.database:
         def random_str(length=6):
@@ -511,6 +580,6 @@ if __name__ == '__main__':
             args.extract_from_config = args.binary + ' extract-from-config'
 
     if args.jobs is None:
-        args.jobs=multiprocessing.cpu_count()
+        args.jobs = multiprocessing.cpu_count()
 
     main(args)

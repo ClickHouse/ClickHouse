@@ -4,8 +4,6 @@
 #include <memory>
 #include <functional>
 
-#include <Poco/TemporaryFile.h>
-
 #include <common/logger_useful.h>
 
 #include <common/StringRef.h>
@@ -18,6 +16,7 @@
 #include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
+#include <Common/filesystemHelpers.h>
 
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>

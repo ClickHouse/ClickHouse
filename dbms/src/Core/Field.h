@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <vector>
 #include <algorithm>
 #include <type_traits>
@@ -25,6 +26,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+template <typename T>
+struct NearestFieldTypeImpl;
+
+template <typename T>
+using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 
 class Field;
 using Array = std::vector<Field>;
@@ -449,9 +456,16 @@ private:
     template <typename T>
     void createConcrete(T && x)
     {
-        using JustT = std::decay_t<T>;
-        new (&storage) JustT(std::forward<T>(x));
-        which = TypeToEnum<JustT>::value;
+        using UnqualifiedType = std::decay_t<T>;
+        which = TypeToEnum<UnqualifiedType>::value;
+
+        // In both Field and PODArray, small types may be stored as wider types,
+        // e.g. char is stored as UInt64. Field can return this extended value
+        // with get<StorageType>(). To avoid uninitialized results from get(),
+        // we must initialize the entire wide stored type, and not just the
+        // nominal type.
+        using StorageType = NearestFieldType<UnqualifiedType>;
+        new (&storage) StorageType(std::forward<T>(x));
     }
 
     /// Assuming same types.
@@ -459,6 +473,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
+        assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
@@ -623,7 +638,6 @@ template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; 
 template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
 
 
-template <typename T> struct NearestFieldTypeImpl;
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
@@ -667,10 +681,7 @@ template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
 template <typename T>
-using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
-
-template <typename T>
-decltype(auto) nearestFieldType(T && x)
+decltype(auto) castToNearestFieldType(T && x)
 {
     using U = NearestFieldType<std::decay_t<T>>;
     if constexpr (std::is_same_v<std::decay_t<T>, U>)
@@ -689,7 +700,7 @@ decltype(auto) nearestFieldType(T && x)
 template <typename T>
 Field::Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *>)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
@@ -697,7 +708,7 @@ template <typename T>
 std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
 Field::operator= (T && rhs)
 {
-    auto && val = nearestFieldType(std::forward<T>(rhs));
+    auto && val = castToNearestFieldType(std::forward<T>(rhs));
     using U = decltype(val);
     if (which != TypeToEnum<std::decay_t<U>>::value)
     {

@@ -1,5 +1,7 @@
 #include <common/DateLUT.h>
 
+#include <Core/Field.h>
+
 #include <DataTypes/DataTypeDate.h>
 
 #include <Functions/IFunction.h>
@@ -9,37 +11,80 @@
 namespace DB
 {
 
-class FunctionYesterday : public IFunction
+class PreparedFunctionYesterday : public PreparedFunctionImpl
 {
 public:
-    static constexpr auto name = "yesterday";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionYesterday>(); }
+    explicit PreparedFunctionYesterday(time_t time_) : day_value(time_) {}
 
-    String getName() const override
+    String getName() const override { return "yesterday"; }
+
+protected:
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        return name;
+        block.getByPosition(result).column = DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
+private:
+    DayNum day_value;
+};
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+class FunctionBaseYesterday : public IFunctionBase
+{
+public:
+    explicit FunctionBaseYesterday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
+
+    String getName() const override { return "yesterday"; }
+
+    const DataTypes & getArgumentTypes() const override
     {
-        return std::make_shared<DataTypeDate>();
+        static const DataTypes argument_types;
+        return argument_types;
+    }
+
+    const DataTypePtr & getReturnType() const override
+    {
+        return return_type;
+    }
+
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    {
+        return std::make_shared<PreparedFunctionYesterday>(day_value);
     }
 
     bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+private:
+    DayNum day_value;
+    DataTypePtr return_type;
+};
+
+class FunctionBuilderYesterday : public FunctionBuilderImpl
+{
+public:
+    static constexpr auto name = "yesterday";
+
+    String getName() const override { return name; }
+
+    bool isDeterministic() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderYesterday>(); }
+
+protected:
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
+
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        block.getByPosition(result).column = DataTypeDate().createColumnConst(
-            input_rows_count,
-            DateLUT::instance().toDayNum(time(nullptr)) - 1);
+        auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
+        return std::make_shared<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
     }
 };
 
 void registerFunctionYesterday(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionYesterday>();
+    factory.registerFunction<FunctionBuilderYesterday>();
 }
 
 }
