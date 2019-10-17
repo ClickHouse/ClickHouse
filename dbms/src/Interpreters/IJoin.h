@@ -30,6 +30,7 @@ public:
     virtual void joinTotals(Block & block) const = 0;
 
     virtual size_t getTotalRowCount() const = 0;
+    virtual bool alwaysReturnsEmptySet() const { return false; }
 
     virtual BlockInputStreamPtr createStreamWithNonJoinedRows(const Block &, UInt64) const { return {}; }
 };
