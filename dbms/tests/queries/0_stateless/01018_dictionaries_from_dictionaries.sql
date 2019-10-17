@@ -65,7 +65,6 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict2' DB 'da
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
-
 SELECT count(*) FROM database_for_dict.dict3;
 
 INSERT INTO database_for_dict.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(200, 100);
@@ -90,6 +89,9 @@ LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
 SELECT count(*) FROM database_for_dict.dict4; -- {serverError 60}
+
+SELECT name from system.tables WHERE database = 'database_for_dict' ORDER BY name;
+SELECT name from system.dictionaries WHERE database = 'database_for_dict' ORDER BY name;
 
 DROP DATABASE IF EXISTS database_for_dict;
 
