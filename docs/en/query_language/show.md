@@ -61,7 +61,7 @@ SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
 
-The same result as the `SHOW TABLES` query returns, you can get by the following way:
+You can get the same results as the `SHOW TABLES` query in the following way:
 
 ```sql
 SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]

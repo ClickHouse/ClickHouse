@@ -60,7 +60,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 База данных по умолчанию.
 
-Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/misc.md#show-databases).
+Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/show.md#show-databases).
 
 **Пример**
 
