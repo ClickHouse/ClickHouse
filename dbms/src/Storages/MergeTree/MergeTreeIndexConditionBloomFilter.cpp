@@ -254,7 +254,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_ast->getColumnName());
         const DataTypePtr & index_type = header.getByPosition(position).type;
-        const auto & converted_column = castColumn(ColumnWithTypeAndName{getPrimitiveColumn(column), getPrimitiveType(type), ""}, index_type, context);
+        const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type, context);
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
