@@ -4,10 +4,7 @@
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 
-namespace cppkafka
-{
-    class Consumer;
-}
+#include <cppkafka/cppkafka.h>
 
 namespace Poco
 {
@@ -63,7 +60,5 @@ private:
 
     bool nextImpl() override;
 };
-
-using ConsumerBufferPtr = std::shared_ptr<ReadBufferFromKafkaConsumer>;
 
 }

@@ -2,8 +2,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
-#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
+#include <Storages/Kafka/Buffer_fwd.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
@@ -11,6 +10,12 @@
 #include <mutex>
 #include <atomic>
 
+namespace cppkafka
+{
+
+class Configuration;
+
+}
 
 namespace DB
 {

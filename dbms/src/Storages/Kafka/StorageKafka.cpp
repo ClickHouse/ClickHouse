@@ -17,6 +17,7 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
