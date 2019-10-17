@@ -27,12 +27,8 @@ struct AggregateFunctionAvgData
     template <typename ResultT>
     ResultT NO_SANITIZE_UNDEFINED result() const
     {
-        if constexpr (std::is_floating_point_v<ResultT>)
-            if constexpr (std::numeric_limits<ResultT>::is_iec559)
-                return static_cast<ResultT>(sum) / count; /// allow division by zero
-
-        if (!count)
-            throw Exception("AggregateFunctionAvg with zero values", ErrorCodes::LOGICAL_ERROR);
+        if (count == 0)
+            return 0;
         return static_cast<ResultT>(sum) / count;
     }
 };
