@@ -14,6 +14,12 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
+/**
+  * -OrDefault and -OrNull combinators for aggregate functions.
+  * If there are no input values, return NULL or a default value, accordingly.
+  * Use a single additional byte of data after the nested function data:
+  * 0 means there was no input, 1 means there was some.
+  */
 template <bool UseNull>
 class AggregateFunctionOrFill final : public IAggregateFunctionHelper<AggregateFunctionOrFill<UseNull>>
 {
