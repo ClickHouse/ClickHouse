@@ -67,7 +67,7 @@ public:
 
         // Generate new result.
         auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, ObjectConfig>>();
-        for (const auto & [path, loadable_info] :  loadables_infos)
+        for (const auto & [path, loadable_info] : loadables_infos)
         {
             for (const auto & [name, config] : loadable_info.configs)
             {
@@ -148,19 +148,19 @@ private:
     bool readLoadablesInfo(
         const String & repo_name,
         IExternalLoaderConfigRepository & repository,
-        const String & name,
+        const String & object_name,
         const ExternalLoaderConfigSettings & settings,
         LoadablesInfos & loadable_info) const
     {
         try
         {
-            if (name.empty() || !repository.exists(name))
+            if (object_name.empty() || !repository.exists(object_name))
             {
-                LOG_WARNING(log, "Config file '" + name + "' does not exist");
+                LOG_WARNING(log, "Config file '" + object_name + "' does not exist");
                 return false;
             }
 
-            auto update_time_from_repository = repository.getUpdateTime(name);
+            auto update_time_from_repository = repository.getUpdateTime(object_name);
 
             /// Actually it can't be less, but for sure we check less or equal
             if (update_time_from_repository <= loadable_info.last_update_time)
@@ -169,31 +169,31 @@ private:
                 return false;
             }
 
-            auto file_contents = repository.load(name);
+            auto file_contents = repository.load(object_name);
 
             /// get all objects' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
             file_contents->keys(keys);
 
-            /// for each object defined in xml config
+            /// for each object defined in repositories
             std::vector<std::pair<String, ObjectConfig>> configs_from_file;
             for (const auto & key : keys)
             {
                 if (!startsWith(key, settings.external_config))
                 {
                     if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
-                        LOG_WARNING(log, name << ": file contains unknown node '" << key << "', expected '" << settings.external_config << "'");
+                        LOG_WARNING(log, object_name << ": file contains unknown node '" << key << "', expected '" << settings.external_config << "'");
                     continue;
                 }
 
                 String external_name = file_contents->getString(key + "." + settings.external_name);
                 if (external_name.empty())
                 {
-                    LOG_WARNING(log, name << ": node '" << key << "' defines " << type_name << " with an empty name. It's not allowed");
+                    LOG_WARNING(log, object_name << ": node '" << key << "' defines " << type_name << " with an empty name. It's not allowed");
                     continue;
                 }
 
-                configs_from_file.emplace_back(external_name, ObjectConfig{name, file_contents, key, repo_name});
+                configs_from_file.emplace_back(external_name, ObjectConfig{object_name, file_contents, key, repo_name});
             }
 
             loadable_info.configs = std::move(configs_from_file);
@@ -203,7 +203,7 @@ private:
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to load config for dictionary '" + name + "'");
+            tryLogCurrentException(log, "Failed to load config for dictionary '" + object_name + "'");
             return false;
         }
     }

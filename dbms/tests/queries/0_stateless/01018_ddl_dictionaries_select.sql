@@ -37,7 +37,7 @@ SELECT third_column FROM database_for_dict.dict1 WHERE key_column = 12;
 SELECT dictGetFloat64('database_for_dict.dict1', 'fourth_column', toUInt64(14));
 SELECT fourth_column FROM database_for_dict.dict1 WHERE key_column = 14;
 
-select count(distinct(dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(number)))) from numbers(100);
+SELECT count(distinct(dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(number)))) from numbers(100);
 
 DETACH DICTIONARY database_for_dict.dict1;
 

@@ -778,7 +778,7 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
         return;
 
     if (readonly)
-        throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+        throw Exception("Cannot create table or dictionary in readonly mode", ErrorCodes::READONLY);
 
     throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
