@@ -3,9 +3,12 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnAggregateFunction.h>
+
+// TODO include this last because of a broken roaring header. See the comment
+// inside.
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
 namespace DB
 {
@@ -71,7 +74,7 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Data & data_lhs = this->data(place);
-        const Data & data_rhs = this->data(static_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num]);
+        const Data & data_rhs = this->data(assert_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num]);
         if (!data_lhs.doneFirst)
         {
             data_lhs.doneFirst = true;
@@ -110,7 +113,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
