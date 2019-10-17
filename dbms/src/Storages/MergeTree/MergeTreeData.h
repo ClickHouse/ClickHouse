@@ -726,6 +726,8 @@ public:
 
     TTLEntry ttl_table_entry;
 
+    TTLEntriesByName move_ttl_entries_by_name;
+
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 

@@ -612,13 +612,21 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
             {
                 if (new_delete_ttl_table_ast)
                 {
-                    throw Exception("Too many DELETE ttls.", ErrorCodes::BAD_TTL_EXPRESSION);
+                    throw Exception("Too many DELETE ttls", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
                 new_delete_ttl_table_ast = ttl_element.children[0];
             }
             else
             {
-                // FIXME: Read MOVE ttls.
+                auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
+                if (!only_check)
+                {
+                    std::ostringstream expression_text_stream;
+                    IAST::FormatSettings settings(expression_text_stream, true);
+                    ttl_element.children[0]->format(settings);
+                    move_ttl_entries_by_name.emplace(expression_text_stream.str(), new_ttl_entry);
+                    /// FIXME: Save TTLElement type and destination somehow.
+                }
             }
         }
 
@@ -628,9 +636,9 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
             ttl_table_ast = new_delete_ttl_table_ast;
             ttl_table_entry = new_ttl_table_entry;
         }
-
-        // FIXME: Apply MOVE ttls.
     }
+
+    // FIXME: In case of ALTER one need to clean up previous values to actually set expression but not merge them.
 }
 
 
