@@ -111,7 +111,8 @@ void buildLayoutConfiguration(
 void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTDictionaryRange * range)
 {
     // appends <key><name>value</name></key> to root
-    auto appendElem = [&doc, &root](const std::string & key, const std::string & value) {
+    auto appendElem = [&doc, &root](const std::string & key, const std::string & value)
+    {
         AutoPtr<Element> element(doc->createElement(key));
         AutoPtr<Element> name(doc->createElement("name"));
         AutoPtr<Text> text(doc->createTextNode(value));
@@ -268,6 +269,9 @@ void buildPrimaryKeyConfiguration(
                     break;
                 }
             }
+            if (!found)
+                throw Exception(
+                    "Primary key field '" + key_name + "' not found among attributes.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
         }
     }
 }
