@@ -17,6 +17,16 @@ struct IdentifierSemanticImpl
 /// Static calss to manipulate IdentifierSemanticImpl via ASTIdentifier
 struct IdentifierSemantic
 {
+    enum class ColumnMatch
+    {
+        NoMatch,
+        ColumnName,       /// table has column with same name
+        TableName,        /// column qualified with table name
+        DatabaseAndTable, /// column qualified with database and table name
+        TableAlias,       /// column qualified with table alias
+        Ambiguous,
+    };
+
     /// @returns name for column identifiers
     static std::optional<String> getColumnName(const ASTIdentifier & node);
     static std::optional<String> getColumnName(const ASTPtr & ast);
@@ -26,7 +36,7 @@ struct IdentifierSemantic
     static std::optional<String> getTableName(const ASTPtr & ast);
     static std::pair<String, String> extractDatabaseAndTable(const ASTIdentifier & identifier);
 
-    static size_t canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
+    static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static String columnNormalName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static String columnLongName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static void setColumnNormalName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
@@ -35,13 +45,20 @@ struct IdentifierSemantic
     static bool canBeAlias(const ASTIdentifier & identifier);
     static void setMembership(ASTIdentifier & identifier, size_t table_no);
     static size_t getMembership(const ASTIdentifier & identifier);
-    static bool chooseTable(const ASTIdentifier &, const std::vector<DatabaseAndTableWithAlias> & tables, size_t & best_table_pos);
-    static bool chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNames> & tables, size_t & best_table_pos);
+    static bool chooseTable(const ASTIdentifier &, const std::vector<DatabaseAndTableWithAlias> & tables, size_t & best_table_pos,
+                            bool ambiguous = false);
+    static bool chooseTable(const ASTIdentifier &, const std::vector<TableWithColumnNames> & tables, size_t & best_table_pos,
+                            bool ambiguous = false);
 
 private:
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table);
     static void setColumnShortName(ASTIdentifier & identifier, size_t match);
 };
+
+inline UInt32 value(IdentifierSemantic::ColumnMatch match)
+{
+    return static_cast<UInt32>(match);
+}
 
 }

@@ -1,9 +1,9 @@
 SET enable_debug_queries = 1;
 
 set allow_experimental_cross_to_join_conversion = 0;
-select * from system.one cross join system.one;
+select * from system.one l cross join system.one r;
 set allow_experimental_cross_to_join_conversion = 1;
-select * from system.one cross join system.one;
+select * from system.one l cross join system.one r;
 
 DROP TABLE IF EXISTS t1_00826;
 DROP TABLE IF EXISTS t2_00826;

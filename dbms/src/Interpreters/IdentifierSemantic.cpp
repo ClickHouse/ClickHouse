@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int AMBIGUOUS_COLUMN_NAME;
+}
+
 namespace
 {
 
@@ -19,18 +24,37 @@ const DatabaseAndTableWithAlias & extractTable(const TableWithColumnNames & tabl
 }
 
 template <typename T>
-bool tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables, size_t & best_table_pos)
+IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables,
+                                               size_t & best_table_pos, bool allow_ambiguous)
 {
+    using ColumnMatch = IdentifierSemantic::ColumnMatch;
+
     best_table_pos = 0;
-    size_t best_match = 0;
+    auto best_match = ColumnMatch::NoMatch;
+    size_t same_match = 0;
+
     for (size_t i = 0; i < tables.size(); ++i)
-        if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, extractTable(tables[i])))
-            if (match > best_match)
+    {
+        auto match = IdentifierSemantic::canReferColumnToTable(identifier, extractTable(tables[i]));
+        if (value(match))
+        {
+            if (value(match) > value(best_match))
             {
                 best_match = match;
                 best_table_pos = i;
+                same_match = 0;
             }
+            else if (match == best_match)
+                ++same_match;
+        }
+    }
 
+    if (value(best_match) && same_match)
+    {
+        if (!allow_ambiguous)
+            throw Exception("Ambiguous column '" + identifier.name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+        return ColumnMatch::Ambiguous;
+    }
     return best_match;
 }
 
@@ -89,15 +113,15 @@ size_t IdentifierSemantic::getMembership(const ASTIdentifier & identifier)
 }
 
 bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<DatabaseAndTableWithAlias> & tables,
-                                     size_t & best_table_pos)
+                                     size_t & best_table_pos, bool ambiguous)
 {
-    return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, best_table_pos);
+    return value(tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, best_table_pos, ambiguous));
 }
 
 bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
-                                     size_t & best_table_pos)
+                                     size_t & best_table_pos, bool ambiguous)
 {
-    return tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos);
+    return value(tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos, ambiguous));
 }
 
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
@@ -127,18 +151,22 @@ bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier
     return false;
 }
 
-size_t IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
+IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
+                                                                          const DatabaseAndTableWithAlias & db_and_table)
 {
     /// database.table.column
     if (doesIdentifierBelongTo(identifier, db_and_table.database, db_and_table.table))
-        return 2;
+        return ColumnMatch::DatabaseAndTable;
 
-    /// table.column or alias.column.
-    if (doesIdentifierBelongTo(identifier, db_and_table.table) ||
-        doesIdentifierBelongTo(identifier, db_and_table.alias))
-        return 1;
+    /// alias.column
+    if (doesIdentifierBelongTo(identifier, db_and_table.alias))
+        return ColumnMatch::TableAlias;
 
-    return 0;
+    /// table.column
+    if (doesIdentifierBelongTo(identifier, db_and_table.table))
+        return ColumnMatch::TableName;
+
+    return ColumnMatch::NoMatch;
 }
 
 /// Checks that ast is ASTIdentifier and remove num_qualifiers_to_strip components from left.
@@ -162,10 +190,23 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, size_t t
 
 void IdentifierSemantic::setColumnNormalName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
-    size_t match = IdentifierSemantic::canReferColumnToTable(identifier, db_and_table);
+    auto match = IdentifierSemantic::canReferColumnToTable(identifier, db_and_table);
+    size_t to_strip = 0;
+    switch (match)
+    {
+        case ColumnMatch::TableName:
+        case ColumnMatch::TableAlias:
+            to_strip = 1;
+            break;
+        case ColumnMatch::DatabaseAndTable:
+            to_strip = 2;
+            break;
+        default:
+            break;
+    }
 
-    setColumnShortName(identifier, match);
-    if (match)
+    setColumnShortName(identifier, to_strip);
+    if (value(match))
         identifier.semantic->can_be_alias = false;
 
     if (identifier.semantic->need_long_name)

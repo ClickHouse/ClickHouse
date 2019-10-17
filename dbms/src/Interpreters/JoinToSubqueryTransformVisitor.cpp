@@ -226,7 +226,7 @@ struct ColumnAliasesMatcher
         String long_name;
         for (auto & table : data.tables)
         {
-            if (IdentifierSemantic::canReferColumnToTable(node, table))
+            if (value(IdentifierSemantic::canReferColumnToTable(node, table)))
             {
                 if (!long_name.empty())
                     throw Exception("Cannot refer column '" + node.name + "' to one table", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
