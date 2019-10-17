@@ -74,7 +74,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
     Должно зависеть от столбца `Date` или `DateTime` и возвращать столбец `Date` или `DateTime`. Пример:`TTL date + INTERVAL 1 DAY`
 
-    Дополнительные сведения смотрите в разделе [TTL для столбцов и таблиц](mergetree.md)
+    Дополнительные сведения смотрите в разделе [TTL для столбцов и таблиц](#table_engine-mergetree-ttl)
 
 - `SETTINGS` — дополнительные параметры, регулирующие поведение `MergeTree`:
 
