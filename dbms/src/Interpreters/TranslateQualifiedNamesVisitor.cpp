@@ -62,7 +62,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
     if (IdentifierSemantic::getColumnName(identifier))
     {
         size_t best_table_pos = 0;
-        if (IdentifierSemantic::chooseTable(identifier, data.tables, best_table_pos))
+        bool allow_ambiguous = data.join_using_columns.count(identifier.shortName());
+        if (IdentifierSemantic::chooseTable(identifier, data.tables, best_table_pos, allow_ambiguous))
             IdentifierSemantic::setMembership(identifier, best_table_pos + 1);
 
         /// In case if column from the joined table are in source columns, change it's name to qualified.
