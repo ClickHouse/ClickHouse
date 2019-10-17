@@ -52,6 +52,11 @@ struct MergeTreeDataPartTTLInfos
         if (time_max && (!part_max_ttl || time_max > part_max_ttl))
             part_max_ttl = time_max;
     }
+
+    bool empty()
+    {
+        return !part_min_ttl && moves_ttl.empty();
+    }
 };
 
 }
