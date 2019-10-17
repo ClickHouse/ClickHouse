@@ -73,7 +73,7 @@ public:
     }
     /// No users thread mutex, predicate and wake up condition
     void startNoUsersThread(const UInt64 & timeout);
-    std::mutex no_users_thread_mutex;
+    std::mutex no_users_thread_wakeup_mutex;
     bool no_users_thread_wakeup = false;
     std::condition_variable no_users_thread_condition;
     /// Get blocks hash
@@ -170,6 +170,7 @@ private:
     /// Background thread for temporary tables
     /// which drops this table if there are no users
     static void noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout);
+    std::mutex no_users_thread_mutex;
     std::thread no_users_thread;
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> start_no_users_thread_called = false;
