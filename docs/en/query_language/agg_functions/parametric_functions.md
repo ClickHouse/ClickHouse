@@ -89,7 +89,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 - `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
 
-- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function only takes the events described under these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
 
 
 **Returned values**
@@ -108,7 +108,7 @@ Type: `UInt8`.
 
 - `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
 
-- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
+- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
 
 **Examples**
 
@@ -178,7 +178,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 - `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
 
-- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function only takes the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
 
 
 **Returned values**
