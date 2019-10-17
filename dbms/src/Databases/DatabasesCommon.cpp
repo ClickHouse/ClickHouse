@@ -37,7 +37,8 @@ namespace
 StoragePtr getDictionaryStorage(const Context & context, const String & table_name, const String & db_name)
 {
     auto dict_name = db_name + "." + table_name;
-    auto dict_ptr = context.getExternalDictionariesLoader().tryGetDictionary(dict_name);
+    const auto & external_loader = context.getExternalDictionariesLoader();
+    auto dict_ptr = external_loader.tryGetDictionary(dict_name);
     if (dict_ptr)
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
@@ -69,39 +70,41 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     const Context & context,
     const String & table_name) const
 {
-    std::lock_guard lock(mutex);
-    auto it = tables.find(table_name);
-    if (it == tables.end())
     {
-        if (dictionaries.count(table_name))
-            return getDictionaryStorage(context, table_name, getDatabaseName());
-        return {};
+        std::lock_guard lock(mutex);
+        auto it = tables.find(table_name);
+        if (it != tables.end())
+            return it->second;
     }
-    return it->second;
+
+    if (isDictionaryExist(context, table_name))
+        /// We don't need lock database here, because database doesn't store dictionary itself
+        /// just metadata
+        return getDictionaryStorage(context, table_name, getDatabaseName());
+
+    return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name)
 {
-    std::lock_guard lock(mutex);
-    Tables tables_copy = tables;
-    if (!filter_by_table_name)
+    auto tables_it = getTablesIterator(context, filter_by_name);
+    auto dictionaries_it = getDictionariesIterator(context, filter_by_name);
+
+    Tables result;
+    while (tables_it && tables_it->isValid())
     {
-        for (const String & dictionary_name : dictionaries)
-            if (auto dictionary_storage = getDictionaryStorage(context, dictionary_name, getDatabaseName()); dictionary_storage)
-                tables_copy.emplace(dictionary_name, dictionary_storage);
-        return std::make_unique<DatabaseTablesSnapshotIterator>(tables_copy);
+        result.emplace(tables_it->name(), tables_it->table());
+        tables_it->next();
     }
 
-    Tables filtered_tables;
-    for (const auto & [table_name, storage] : tables)
-        if (filter_by_table_name(table_name))
-            filtered_tables.emplace(table_name, storage);
-    for (const String & dictionary_name : dictionaries)
-        if (filter_by_table_name(dictionary_name))
-            if (auto dictionary_storage = getDictionaryStorage(context, dictionary_name, getDatabaseName()); dictionary_storage)
-                tables_copy.emplace(dictionary_name, dictionary_storage);
+    while (dictionaries_it && dictionaries_it->isValid())
+    {
+        auto table_name = dictionaries_it->name();
+        result.emplace(table_name, getDictionaryStorage(context, table_name, getDatabaseName()));
+        dictionaries_it->next();
+    }
 
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(result);
 }
 
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)

@@ -184,10 +184,11 @@ void DatabaseOrdinary::loadStoredObjects(
 
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
+
     /// Add database as repository
     auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
-    context.getExternalDictionariesLoader().addConfigRepository(
-        getDatabaseName(), std::move(dictionaries_repository), {"dictionary", "name"});
+    auto & external_loader = context.getExternalDictionariesLoader();
+    external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
 }
 
 

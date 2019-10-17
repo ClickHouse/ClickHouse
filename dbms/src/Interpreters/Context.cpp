@@ -1041,10 +1041,10 @@ void Context::addDatabase(const String & database_name, const DatabasePtr & data
 DatabasePtr Context::detachDatabase(const String & database_name)
 {
     auto lock = getLock();
-
     auto res = getDatabase(database_name);
     getExternalDictionariesLoader().removeConfigRepository(database_name);
     shared->databases.erase(database_name);
+
     return res;
 }
 
@@ -1342,13 +1342,20 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
+    {
+        std::lock_guard lock(shared->external_models_mutex);
+        if (shared->external_models_loader)
+            return *shared->external_models_loader;
+    }
+
+    const auto & config = getConfigRef();
     std::lock_guard lock(shared->external_models_mutex);
     if (!shared->external_models_loader)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(getConfigRef(), "models_config");
+        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config, "models_config");
         shared->external_models_loader.emplace(std::move(config_repository), *this->global_context);
     }
     return *shared->external_models_loader;

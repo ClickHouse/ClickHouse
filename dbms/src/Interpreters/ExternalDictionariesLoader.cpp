@@ -11,7 +11,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(
     : ExternalLoader("external dictionary", &Logger::get("ExternalDictionariesLoader"))
     , context(context_)
 {
-    addConfigRepository("", std::move(config_repository), {"dictionary", "name"});
+    addConfigRepository("", std::move(config_repository));
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }
@@ -23,4 +23,9 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     return DictionaryFactory::instance().create(name, config, key_in_config, context);
 }
 
+void ExternalDictionariesLoader::addConfigRepository(
+    const std::string & repository_name, std::unique_ptr<IExternalLoaderConfigRepository> config_repository)
+{
+    ExternalLoader::addConfigRepository(repository_name, std::move(config_repository), {"dictionary", "name"});
+}
 }
