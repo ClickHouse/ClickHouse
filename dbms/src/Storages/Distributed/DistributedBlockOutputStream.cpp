@@ -81,12 +81,25 @@ void DistributedBlockOutputStream::writePrefix()
 
 void DistributedBlockOutputStream::write(const Block & block)
 {
-    if (insert_sync)
-        writeSync(block);
-    else
-        writeAsync(block);
-}
+    Block ordinary_block{ block };
 
+    /* They are added by the AddingDefaultBlockOutputStream, and we will get
+     * different number of columns eventually */
+    for (const auto & col : storage.getColumns().getMaterialized())
+        if (ordinary_block.has(col.name))
+        {
+            ordinary_block.erase(col.name);
+            LOG_DEBUG(log, storage.getTableName()
+                << ": column " + col.name + " will be removed, "
+                << "because it is MATERIALIZED");
+        }
+
+
+    if (insert_sync)
+        writeSync(ordinary_block);
+    else
+        writeAsync(ordinary_block);
+}
 
 void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
