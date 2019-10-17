@@ -770,6 +770,10 @@ private:
         if (!new_object && !new_exception)
             throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
 
+        /// Lock the mutex again to store the changes.
+        if (async)
+            lock.lock();
+
         /// Calculate a new update time.
         TimePoint next_update_time;
         try
@@ -778,6 +782,7 @@ private:
                 ++error_count;
             else
                 error_count = 0;
+
             next_update_time = calculateNextUpdateTime(new_object, error_count);
         }
         catch (...)
@@ -786,9 +791,6 @@ private:
             next_update_time = TimePoint::max();
         }
 
-        /// Lock the mutex again to store the changes.
-        if (async)
-            lock.lock();
         info = getInfo(name);
 
         /// And again we should check if this is still the same loading as we were doing.
