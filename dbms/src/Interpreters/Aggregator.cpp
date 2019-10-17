@@ -1160,7 +1160,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, CurrentThread::getGroup()));
 
             if (thread_pool)
-                thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+                thread_pool->scheduleOrThrowOnError([bucket, &tasks] { tasks[bucket](); });
             else
                 tasks[bucket]();
         }
@@ -1616,7 +1616,7 @@ private:
         if (max_scheduled_bucket_num >= NUM_BUCKETS)
             return;
 
-        parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
+        parallel_merge_data->pool.scheduleOrThrowOnError(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
             max_scheduled_bucket_num, CurrentThread::getGroup()));
     }
 
@@ -1970,7 +1970,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             auto task = std::bind(merge_bucket, bucket, aggregates_pool, CurrentThread::getGroup());
 
             if (thread_pool)
-                thread_pool->schedule(task);
+                thread_pool->scheduleOrThrowOnError(task);
             else
                 task();
         }
