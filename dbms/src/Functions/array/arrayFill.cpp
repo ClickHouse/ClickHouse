@@ -45,7 +45,8 @@ struct ArrayFillImpl
 
                 for (; end <= array_end; ++end)
                 {
-                    if (end == array_end || fill[end + 1] != fill[begin]) {
+                    if (end == array_end || fill[end + 1] != fill[begin])
+                    {
                         if (fill[begin])
                         {
                             if constexpr (Reverse)
