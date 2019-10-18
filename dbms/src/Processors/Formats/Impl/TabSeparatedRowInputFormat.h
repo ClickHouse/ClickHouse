@@ -41,6 +41,8 @@ private:
     std::vector<UInt8> read_columns;
     std::vector<size_t> columns_to_fill_with_default_values;
 
+    bool readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column);
+
     void addInputColumn(const String & column_name);
     void setupAllColumnsByTableSchema();
     void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);

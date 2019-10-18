@@ -55,7 +55,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
 ```
 
-Создаёт таблицу с такой же структурой и данными, как результат соотвествующей табличной функцией.
+Создаёт таблицу с такой же структурой и данными, как результат соответствующей табличной функцией.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
