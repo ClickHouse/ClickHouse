@@ -9,7 +9,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-DICTIONARY_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml']
+CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml', 'configs/remote_servers.xml']
 
 cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
 instance = cluster.add_instance('instance', main_configs=DICTIONARY_FILES, with_mysql = True)
@@ -86,7 +86,7 @@ def prepare_mysql_table(table_name):
     query(create_clickhouse_dictionary_table_template.format(table_name + n), 'dict' + n)
 
 def get_mysql_conn():
-    conn = pymysql.connect(user='root', password='clickhouse', host='mysql1', port=3308)
+    conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
     return conn
 
 def create_mysql_table(conn, table_name):
