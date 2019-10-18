@@ -509,7 +509,7 @@ FROM (
 ## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
 
 Аналогично timeSeriesGroupRateSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
-Также ряды должны быть отсотированы по возрастанию timestamp.
+Также ряды должны быть отсортированы по возрастанию timestamp.
 
 Для пример из описания timeSeriesGroupRateSum результат будет следующим:
 
@@ -1083,7 +1083,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 
 ### Использование {#agg_functions-stochasticlinearregression-usage}
 
-`stochasticLinearRegression` используется на двух этапах: постоение модели и предсказание новых данных. Чтобы постоить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
+`stochasticLinearRegression` используется на двух этапах: построение модели и предсказание новых данных. Чтобы построить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
 Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
 
 <a name="stochasticlinearregression-usage-fitting"></a>

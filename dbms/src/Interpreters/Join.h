@@ -168,6 +168,7 @@ public:
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
     AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
     /// Different types of keys for maps.
@@ -308,6 +309,7 @@ private:
 
     Type type = Type::EMPTY;
     std::optional<AsofRowRefs::Type> asof_type;
+    ASOF::Inequality asof_inequality;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
