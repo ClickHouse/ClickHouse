@@ -13,12 +13,12 @@ SELECT dummy FROM one l JOIN one r ON l.dummy = dummy; -- { serverError 352 }
 SELECT dummy FROM one l JOIN one r ON one.dummy = r.dummy; -- { serverError 352 }
 SELECT dummy FROM one l JOIN one r ON l.dummy = one.dummy; -- { serverError 352 }
 
--- SELECT * from one
--- JOIN one A ON one.dummy = A.dummy
--- JOIN one B ON one.dummy = B.dummy
--- FORMAT PrettyCompact;
--- 
--- SELECT * from one
--- JOIN one A ON dummy = A.dummy
--- JOIN one B ON dummy = B.dummy
--- FORMAT PrettyCompact;
+SELECT * from one
+JOIN one A ON one.dummy = A.dummy
+JOIN one B ON one.dummy = B.dummy
+FORMAT PrettyCompact;
+
+SELECT * from one A
+JOIN system.one one ON A.dummy = one.dummy
+JOIN system.one two ON A.dummy = two.dummy
+FORMAT PrettyCompact;

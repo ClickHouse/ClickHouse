@@ -224,17 +224,15 @@ struct ColumnAliasesMatcher
 
         bool last_table = false;
         String long_name;
-        for (auto & table : data.tables)
+
+        size_t table_pos = 0;
+        if (IdentifierSemantic::chooseTable(node, data.tables, table_pos))
         {
-            if (value(IdentifierSemantic::canReferColumnToTable(node, table)))
-            {
-                if (!long_name.empty())
-                    throw Exception("Cannot refer column '" + node.name + "' to one table", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-                IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
-                long_name = node.name;
-                if (&table == &data.tables.back())
-                    last_table = true;
-            }
+            auto & table = data.tables[table_pos];
+            IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
+            long_name = node.name;
+            if (&table == &data.tables.back())
+                last_table = true;
         }
 
         if (long_name.empty())
