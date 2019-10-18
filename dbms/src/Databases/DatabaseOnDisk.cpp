@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
@@ -298,14 +299,15 @@ void DatabaseOnDisk::createDictionary(
     {
         /// Do not load it now
         database.attachDictionary(dictionary_name, context, false);
+        /// Load dictionary
+        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
+        String dict_name = database.getDatabaseName() + "." + dictionary_name;
+        context.getExternalDictionariesLoader().reloadSingleDictionary(dict_name, database.getDatabaseName(), query->as<const ASTCreateQuery &>(), !lazy_load, !lazy_load);
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
         Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
 
-        /// Load dictionary
-        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
-        context.getExternalDictionariesLoader().reload(database.getDatabaseName() + "." + dictionary_name, !lazy_load);
     }
     catch (...)
     {
