@@ -92,22 +92,18 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
     return {};
 }
 
-void IdentifierSemantic::setNeedLongName(ASTIdentifier & identifier, bool value)
-{
-    identifier.semantic->need_long_name = value;
-}
-
 bool IdentifierSemantic::canBeAlias(const ASTIdentifier & identifier)
 {
     return identifier.semantic->can_be_alias;
 }
 
-void IdentifierSemantic::setMembership(ASTIdentifier & identifier, size_t table_no)
+void IdentifierSemantic::setMembership(ASTIdentifier & identifier, size_t table_pos)
 {
-    identifier.semantic->membership = table_no;
+    identifier.semantic->membership = table_pos;
+    identifier.semantic->can_be_alias = false;
 }
 
-size_t IdentifierSemantic::getMembership(const ASTIdentifier & identifier)
+std::optional<size_t> IdentifierSemantic::getMembership(const ASTIdentifier & identifier)
 {
     return identifier.semantic->membership;
 }
@@ -156,7 +152,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 {
     /// database.table.column
     if (doesIdentifierBelongTo(identifier, db_and_table.database, db_and_table.table))
-        return ColumnMatch::DatabaseAndTable;
+        return ColumnMatch::DbAndTable;
 
     /// alias.column
     if (doesIdentifierBelongTo(identifier, db_and_table.alias))
@@ -164,15 +160,36 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 
     /// table.column
     if (doesIdentifierBelongTo(identifier, db_and_table.table))
-        return ColumnMatch::TableName;
+    {
+        if (!db_and_table.alias.empty())
+            return ColumnMatch::AliasedTableName;
+        else
+            return ColumnMatch::TableName;
+    }
 
     return ColumnMatch::NoMatch;
 }
 
-/// Checks that ast is ASTIdentifier and remove num_qualifiers_to_strip components from left.
-/// Example: 'database.table.name' -> (num_qualifiers_to_strip = 2) -> 'name'.
-void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, size_t to_strip)
+/// Strip qualificators from left side of column name.
+/// Example: 'database.table.name' -> 'name'.
+void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
+    auto match = IdentifierSemantic::canReferColumnToTable(identifier, db_and_table);
+    size_t to_strip = 0;
+    switch (match)
+    {
+        case ColumnMatch::TableName:
+        case ColumnMatch::AliasedTableName:
+        case ColumnMatch::TableAlias:
+            to_strip = 1;
+            break;
+        case ColumnMatch::DbAndTable:
+            to_strip = 2;
+            break;
+        default:
+            break;
+    }
+
     if (!to_strip)
         return;
 
@@ -188,31 +205,6 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, size_t t
     identifier.name.swap(new_name);
 }
 
-void IdentifierSemantic::setColumnNormalName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
-{
-    auto match = IdentifierSemantic::canReferColumnToTable(identifier, db_and_table);
-    size_t to_strip = 0;
-    switch (match)
-    {
-        case ColumnMatch::TableName:
-        case ColumnMatch::TableAlias:
-            to_strip = 1;
-            break;
-        case ColumnMatch::DatabaseAndTable:
-            to_strip = 2;
-            break;
-        default:
-            break;
-    }
-
-    setColumnShortName(identifier, to_strip);
-    if (value(match))
-        identifier.semantic->can_be_alias = false;
-
-    if (identifier.semantic->need_long_name)
-        setColumnLongName(identifier, db_and_table);
-}
-
 void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
     String prefix = db_and_table.getQualifiedNamePrefix();
@@ -223,18 +215,6 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
         prefix.resize(prefix.size() - 1); /// crop dot
         identifier.name_parts = {prefix, short_name};
     }
-}
-
-String IdentifierSemantic::columnNormalName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
-{
-    ASTPtr copy = identifier.clone();
-    setColumnNormalName(copy->as<ASTIdentifier &>(), db_and_table);
-    return copy->getAliasOrColumnName();
-}
-
-String IdentifierSemantic::columnLongName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
-{
-    return db_and_table.getQualifiedNamePrefix() + identifier.shortName();
 }
 
 }

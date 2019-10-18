@@ -565,9 +565,14 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     }
 }
 
-void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
+void replaceJoinedTable(const ASTTablesInSelectQueryElement * join)
 {
     if (!join || !join->table_expression)
+        return;
+
+    /// TODO: Push down for CROSS JOIN is not OK [disabled]
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+    if (table_join.kind == ASTTableJoin::Kind::Cross)
         return;
 
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();

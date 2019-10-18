@@ -61,16 +61,20 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
 {
     if (IdentifierSemantic::getColumnName(identifier))
     {
-        size_t best_table_pos = 0;
-        bool allow_ambiguous = data.join_using_columns.count(identifier.shortName());
-        if (IdentifierSemantic::chooseTable(identifier, data.tables, best_table_pos, allow_ambiguous))
-            IdentifierSemantic::setMembership(identifier, best_table_pos + 1);
+        String short_name = identifier.shortName();
+        size_t table_pos = 0;
+        bool allow_ambiguous = data.join_using_columns.count(short_name);
+        if (IdentifierSemantic::chooseTable(identifier, data.tables, table_pos, allow_ambiguous))
+        {
+            IdentifierSemantic::setMembership(identifier, table_pos);
 
-        /// In case if column from the joined table are in source columns, change it's name to qualified.
-        if (best_table_pos && data.hasColumn(identifier.shortName()))
-            IdentifierSemantic::setNeedLongName(identifier, true);
-        if (data.hasTable())
-            IdentifierSemantic::setColumnNormalName(identifier, data.tables[best_table_pos].first);
+            /// In case if column from the joined table are in source columns, change it's name to qualified.
+            auto & table = data.tables[table_pos].first;
+            if (table_pos && data.hasColumn(short_name))
+                IdentifierSemantic::setColumnLongName(identifier, table);
+            else
+                IdentifierSemantic::setColumnShortName(identifier, table);
+        }
     }
 }
 
@@ -126,8 +130,10 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
         Visitor(data).visit(select.refHaving());
 }
 
-static void addIdentifier(ASTs & nodes, const String & table_name, const String & column_name, AsteriskSemantic::RevertedAliasesPtr aliases)
+static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table, const String & column_name,
+                          AsteriskSemantic::RevertedAliasesPtr aliases)
 {
+    String table_name = table.getQualifiedNamePrefix(false);
     auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
 
     bool added = false;
@@ -189,8 +195,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     if (first_table || !data.join_using_columns.count(column_name))
                     {
-                        String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk));
+                        addIdentifier(node.children, table, column_name, AsteriskSemantic::getAliases(*asterisk));
                     }
                 }
 
@@ -206,8 +211,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     if (asterisk_pattern->isColumnMatching(column_name) && (first_table || !data.join_using_columns.count(column_name)))
                     {
-                        String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk_pattern));
+                        addIdentifier(node.children, table, column_name, AsteriskSemantic::getAliases(*asterisk_pattern));
                     }
                 }
 
@@ -224,8 +228,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     for (const auto & column_name : table_columns)
                     {
-                        String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*qualified_asterisk));
+                        addIdentifier(node.children, table, column_name, AsteriskSemantic::getAliases(*qualified_asterisk));
                     }
                     break;
                 }
@@ -261,11 +264,14 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
 
 void RestoreQualifiedNamesData::visit(ASTIdentifier & identifier, ASTPtr & ast)
 {
-    if (IdentifierSemantic::getColumnName(identifier) &&
-        IdentifierSemantic::getMembership(identifier))
+    if (IdentifierSemantic::getColumnName(identifier))
     {
-        ast = identifier.clone();
-        ast->as<ASTIdentifier>()->restoreCompoundName();
+        auto opt_match = IdentifierSemantic::getMembership(identifier);
+        if (opt_match && *opt_match)
+        {
+            ast = identifier.clone();
+            ast->as<ASTIdentifier>()->restoreCompoundName();
+        }
     }
 }
 
