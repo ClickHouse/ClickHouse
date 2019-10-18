@@ -99,25 +99,6 @@ EXISTS DICTIONARY memory_db.dict2;
 
 SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict2';
 
-DROP DATABASE IF EXISTS dictionary_db;
-
-CREATE DATABASE dictionary_db ENGINE = Dictionary;
-
-SELECT '=DICTIONARY in Dictionary DB';
-
-CREATE DICTIONARY dictionary_db.dict2
-(
-  key_column UInt64 DEFAULT 0 INJECTIVE,
-  second_column UInt8 DEFAULT 1 EXPRESSION rand() % 222,
-  third_column String DEFAULT 'qqq'
-)
-PRIMARY KEY key_column, second_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
-LAYOUT(COMPLEX_KEY_HASHED()); -- {serverError 1}
-
-DROP DATABASE IF EXISTS dictionary_db;
-
 SELECT '=DICTIONARY in Lazy DB';
 
 DROP DATABASE IF EXISTS lazy_db;
