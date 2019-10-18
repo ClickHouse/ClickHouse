@@ -8,14 +8,17 @@ USE system;
 
 SELECT dummy FROM one AS A JOIN one ON A.dummy = one.dummy;
 SELECT dummy FROM one JOIN one AS A ON A.dummy = one.dummy;
--- SELECT dummy FROM one l JOIN one r ON l.dummy = r.dummy; -- should be an error
+SELECT dummy FROM one l JOIN one r ON dummy = r.dummy; -- { serverError 352 }
+SELECT dummy FROM one l JOIN one r ON l.dummy = dummy; -- { serverError 352 }
+SELECT dummy FROM one l JOIN one r ON one.dummy = r.dummy; -- { serverError 352 }
+SELECT dummy FROM one l JOIN one r ON l.dummy = one.dummy; -- { serverError 352 }
 
--- SELECT * from system.one
--- JOIN system.one one ON one.dummy = system.one.dummy
--- JOIN system.one two ON one.dummy = two.dummy
+-- SELECT * from one
+-- JOIN one A ON one.dummy = A.dummy
+-- JOIN one B ON one.dummy = B.dummy
 -- FORMAT PrettyCompact;
-
--- SELECT * from system.one one
--- JOIN system.one ON one.dummy = system.one.dummy
--- JOIN system.one two ON one.dummy = two.dummy
+-- 
+-- SELECT * from one
+-- JOIN one A ON dummy = A.dummy
+-- JOIN one B ON dummy = B.dummy
 -- FORMAT PrettyCompact;
