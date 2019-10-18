@@ -22,9 +22,6 @@ namespace ErrorCodes
 }
 
 static const double PI = 3.14159265358979323846;
-static const double TO_RAD = PI / 180.0;
-static const double TO_RAD2 = PI / 360.0;
-static const double TO_DEG = 180.0 / PI;
 static const float TO_RADF = static_cast<float>(PI / 180.0);
 static const float TO_RADF2 = static_cast<float>(PI / 360.0);
 static const float TO_DEGF = static_cast<float>(180.0 / PI);
