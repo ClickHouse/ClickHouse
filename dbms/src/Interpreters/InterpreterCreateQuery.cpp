@@ -773,6 +773,14 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 
         throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
+    String object = "table";
+
+    if (create.is_dictionary)
+    {
+        if (readonly)
+            throw Exception("Cannot create dictionary in readonly mode", ErrorCodes::READONLY);
+        object = "dictionary";
+    }
 
     if (create.temporary && readonly >= 2)
         return;
@@ -780,6 +788,7 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
     if (readonly)
         throw Exception("Cannot create table or dictionary in readonly mode", ErrorCodes::READONLY);
 
-    throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+    throw Exception("Cannot create " + object + ". DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
+
 }
