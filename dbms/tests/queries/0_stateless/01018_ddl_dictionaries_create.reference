@@ -13,7 +13,6 @@ ordinary_db	dict1
 0
 =DICTIONARY in Memory DB
 0
-=DICTIONARY in Dictionary DB
 =DICTIONARY in Lazy DB
 =DROP DATABASE WITH DICTIONARY
 dict4
