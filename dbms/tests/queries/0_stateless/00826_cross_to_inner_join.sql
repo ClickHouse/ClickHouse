@@ -1,4 +1,5 @@
 SET enable_debug_queries = 1;
+SET enable_optimize_predicate_expression = 0;
 
 set allow_experimental_cross_to_join_conversion = 0;
 select * from system.one l cross join system.one r;
