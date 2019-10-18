@@ -12,7 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_FILES = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml', 'configs/remote_servers.xml']
 
 cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-instance = cluster.add_instance('instance', main_configs=DICTIONARY_FILES, with_mysql = True)
+instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql = True)
 
 create_table_mysql_template = """
     CREATE TABLE `test`.`{}` (
