@@ -66,8 +66,8 @@ struct BloomFilterHash
                 else
                 {
                     const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(data_type);
-                    const char value[fixed_string_type->getN()] = { 0, };
-                    return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(&value[0], fixed_string_type->getN())), 1);
+                    const std::vector<char> value(fixed_string_type->getN(), 0);
+                    return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
                 }
             }
         }
