@@ -2235,12 +2235,20 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
-    const Settings & settings = context.getSettingsRef();
-
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        unifyStreams(pipeline, pipeline.firstStream()->getHeader(), false);
+        unifyStreams(pipeline, pipeline.firstStream()->getHeader());
+        executeMergeSorted(pipeline, order_descr, limit);
+    }
+}
+
+
+void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
+{
+    if (pipeline.hasMoreThanOneStream())
+    {
+        const Settings & settings = context.getSettingsRef();
 
         /** MergingSortedBlockInputStream reads the sources sequentially.
           * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
@@ -2250,8 +2258,8 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
             stream = std::make_shared<AsynchronousBlockInputStream>(stream);
         });
 
-        /// Merge the sorted sources into one sorted source.
-        pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(pipeline.streams, order_descr, settings.max_block_size, limit);
+        pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
+            pipeline.streams, sort_description, settings.max_block_size, limit);
         pipeline.streams.resize(1);
     }
 }
@@ -2262,15 +2270,20 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
     SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
-    const Settings & settings = context.getSettingsRef();
+    executeMergeSorted(pipeline, order_descr, limit);
+}
 
+void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
+{
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
+        const Settings & settings = context.getSettingsRef();
+
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),
             pipeline.getNumStreams(),
-            order_descr,
+            sort_description,
             settings.max_block_size, limit);
 
         pipeline.addPipe({ std::move(transform) });
@@ -2633,13 +2646,29 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
-    executeUnion(pipeline, {}, false);
+    /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
+    if (query_info.sorting_info)
+    {
+        if (pipeline.stream_with_non_joined_data)
+            throw Exception("Using read in order optimization, but has stream with non-joined data in pipeline", ErrorCodes::LOGICAL_ERROR);
+        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+    }
+    else
+        executeUnion(pipeline, {});
+
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets, context);
 }
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
+    if (query_info.sorting_info)
+    {
+        if (pipeline.hasDelayedStream())
+            throw Exception("Using read in order optimization, but has delayed stream in pipeline", ErrorCodes::LOGICAL_ERROR);
+        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+    }
+
     const Settings & settings = context.getSettingsRef();
 
     auto creating_sets = std::make_shared<CreatingSetsTransform>(
