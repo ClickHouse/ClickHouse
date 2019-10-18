@@ -457,7 +457,6 @@ private:
     void createConcrete(T && x)
     {
         using UnqualifiedType = std::decay_t<T>;
-        which = TypeToEnum<UnqualifiedType>::value;
 
         // In both Field and PODArray, small types may be stored as wider types,
         // e.g. char is stored as UInt64. Field can return this extended value
@@ -466,6 +465,7 @@ private:
         // nominal type.
         using StorageType = NearestFieldType<UnqualifiedType>;
         new (&storage) StorageType(std::forward<T>(x));
+        which = TypeToEnum<UnqualifiedType>::value;
     }
 
     /// Assuming same types.

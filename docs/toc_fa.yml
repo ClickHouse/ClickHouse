@@ -64,6 +64,7 @@ nav:
 - 'Database Engines':
     - 'Introduction': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
+    - 'Lazy': 'database_engines/lazy.md'
 
 - 'Table Engines':
   - 'Introduction': 'operations/table_engines/index.md'

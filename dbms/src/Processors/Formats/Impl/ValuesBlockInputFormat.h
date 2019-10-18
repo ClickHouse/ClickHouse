@@ -33,6 +33,8 @@ public:
 
     String getName() const override { return "ValuesBlockInputFormat"; }
 
+    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+
 private:
     enum class ParserType
     {
@@ -45,11 +47,11 @@ private:
 
     Chunk generate() override;
 
-    void readRow(MutableColumns & columns);
+    void readRow(MutableColumns & columns, size_t row_num);
 
-    void tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
-    ALWAYS_INLINE inline void tryReadValue(IColumn & column, size_t column_idx);
-    void parseExpression(IColumn & column, size_t column_idx);
+    bool tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
+    ALWAYS_INLINE inline bool tryReadValue(IColumn & column, size_t column_idx);
+    bool parseExpression(IColumn & column, size_t column_idx);
 
     ALWAYS_INLINE inline void assertDelimiterAfterValue(size_t column_idx);
     ALWAYS_INLINE inline bool checkDelimiterAfterValue(size_t column_idx);
@@ -81,6 +83,8 @@ private:
     ConstantExpressionTemplate::Cache templates_cache;
 
     DataTypes types;
+
+    BlockMissingValues block_missing_values;
 };
 
 }
