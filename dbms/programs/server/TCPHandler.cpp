@@ -565,7 +565,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
         auto executor = pipeline.execute();
         std::atomic_bool exception = false;
 
-        pool.schedule([&]()
+        pool.scheduleOrThrowOnError([&]()
         {
             /// ThreadStatus thread_status;
 
