@@ -92,7 +92,12 @@ bool BloomFilter::findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed
 const DataTypePtr getPrimitiveType(const DataTypePtr data_type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
-        return getPrimitiveType(array_type->getNestedType());
+    {
+        if (!typeid_cast<const DataTypeArray *>(array_type->getNestedType().get()))
+            return getPrimitiveType(array_type->getNestedType());
+        else
+            throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+    }
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))
         return getPrimitiveType(nullable_type->getNestedType());
