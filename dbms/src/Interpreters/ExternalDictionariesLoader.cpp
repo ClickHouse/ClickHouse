@@ -1,17 +1,16 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 namespace DB
 {
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
-ExternalDictionariesLoader::ExternalDictionariesLoader(
-    ExternalLoaderConfigRepositoryPtr config_repository, Context & context_)
+ExternalDictionariesLoader::ExternalDictionariesLoader(Context & context_)
     : ExternalLoader("external dictionary", &Logger::get("ExternalDictionariesLoader"))
     , context(context_)
 {
-    addConfigRepository("", std::move(config_repository));
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
 }
@@ -27,5 +26,20 @@ void ExternalDictionariesLoader::addConfigRepository(
     const std::string & repository_name, std::unique_ptr<IExternalLoaderConfigRepository> config_repository)
 {
     ExternalLoader::addConfigRepository(repository_name, std::move(config_repository), {"dictionary", "name"});
+}
+
+
+void ExternalDictionariesLoader::reloadSingleDictionary(
+    const String & name,
+    const String & repo_name,
+    const ASTCreateQuery & query,
+    bool load_never_loading, bool sync) const
+{
+    return ExternalLoader::reloadWithConfig(
+        name, /// names are equal
+        name,
+        repo_name,
+        getDictionaryConfigurationFromAST(query),
+        "dictionary", load_never_loading, sync);
 }
 }

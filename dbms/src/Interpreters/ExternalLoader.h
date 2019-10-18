@@ -147,7 +147,9 @@ public:
     /// Starts reloading of a specified object.
     /// `load_never_loading` specifies what to do if the object has never been loading before.
     /// The function can either skip it (false) or load for the first time (true).
-    void reload(const String & name, bool load_never_loading = false) const;
+    /// Also function can load dictionary synchronously
+    void reload(const String & name, bool load_never_loading = false, bool sync = false) const;
+
 
     /// Starts reloading of all the objects.
     /// `load_never_loading` specifies what to do with the objects which have never been loading before.
@@ -156,6 +158,16 @@ public:
 
 protected:
     virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const = 0;
+
+    /// Reload object with already parsed configuration
+    void reloadWithConfig(
+        const String & name, /// name of dictionary
+        const String & external_name, /// name of source (example xml-file, may contain more than dictionary)
+        const String & repo_name, /// name of repository (database name, or all xml files)
+        const Poco::AutoPtr<Poco::Util::AbstractConfiguration> & config,
+        const String & key_in_config, /// key where we can start search of loadables (<dictionary>, <model>, etc)
+        bool load_never_loading = false,
+        bool sync = false) const;
 
 private:
     struct ObjectConfig;
