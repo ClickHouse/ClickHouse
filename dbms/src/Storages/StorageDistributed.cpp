@@ -323,11 +323,13 @@ BlockInputStreams StorageDistributed::read(
     Block header =
         InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
 
+    const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
+
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
-            header, processed_stage, remote_table_function_ptr, context.getExternalTables())
+            header, processed_stage, remote_table_function_ptr, scalars, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
+            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, context.getExternalTables());
 
     if (settings.optimize_skip_unused_shards)
     {
