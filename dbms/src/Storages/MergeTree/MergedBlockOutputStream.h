@@ -14,14 +14,14 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedBlockOutputStream(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         const String & part_path_,
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size_ = false);
 
     MergedBlockOutputStream(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         const String & part_path_,
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,

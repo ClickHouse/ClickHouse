@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -34,7 +35,7 @@ public:
 
         /// compressed -> compressed_buf -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
-        HashingWriteBuffer plain_hashing;
+        HashingWriteBuffer plain_hashi  ng;
         CompressedWriteBuffer compressed_buf;
         HashingWriteBuffer compressed;
 
@@ -49,47 +50,41 @@ public:
         void addToChecksums(MergeTreeData::DataPart::Checksums & checksums);
     };
 
+    using ColumnStreamPtr = std::unique_ptr<ColumnStream>;
+
+    IMergeTreeDataPartWriter(
+        const String & part_path,
+        const MergeTreeData & storage,
+        const NamesAndTypesList & columns_list,
+        const IColumn::Permutation * permutation,
+        const String & marks_file_extension,
+        const CompressionCodecPtr & default_codec,
+        size_t max_compress_block_size,
+        size_t aio_threshold);
+
     virtual size_t write(
-        const Block & block, size_t from_mark, size_t offset,
+        const Block & block, size_t from_mark, size_t offset, const MergeTreeIndexGranularity & index_granularity,
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
 
-    virtual std::pair<size_t, size_t> writeColumn(
-        const String & name,
-        const IDataType & type,
-        const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
-        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-        size_t from_mark) = 0;
-
-    //  /// Write single granule of one column (rows between 2 marks)
-    // virtual size_t writeSingleGranule(
-    //     const String & name,
-    //     const IDataType & type,
-    //     const IColumn & column,
-    //     WrittenOffsetColumns & offset_columns,
-    //     bool skip_offsets,
-    //     IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-    //     IDataType::SerializeBinaryBulkSettings & serialize_settings,
-    //     size_t from_row,
-    //     size_t number_of_rows,
-    //     bool write_marks) = 0;
-
-    // /// Write mark for column
-    // virtual void writeSingleMark(
-    //     const String & name,
-    //     const IDataType & type,
-    //     WrittenOffsetColumns & offset_columns,
-    //     bool skip_offsets,
-    //     size_t number_of_rows,
-    //     DB::IDataType::SubstreamPath & path) = 0;
 protected:
-    void start();
+    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
+    using SerializationStates = std::vector<SerializationState>;
 
-    const NamesAndTypesList & columns_list;
-    IColumn::Permutation * permutation;
-    bool started = false;
+    String part_path;
+    NamesAndTypesList columns_list;
+    const IColumn::Permutation * permutation;
+    const String marks_file_extension;
+
+    const MergeTreeData & storage;
+
+    CompressionCodecPtr default_codec;
+
+    size_t min_compress_block_size;
+    size_t max_compress_block_size;
+    size_t aio_threshold;
 };
+
+using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
 }

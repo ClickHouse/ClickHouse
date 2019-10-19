@@ -105,7 +105,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 {
     /// Finish columns serialization.
     {
-        auto & settings = storage.global_context.getSettingsRef();
+        const auto & settings = storage.global_context.getSettingsRef();
         IDataType::SerializeBinaryBulkSettings serialize_settings;
         serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
         serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
@@ -242,8 +242,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (compute_granularity)
         fillIndexGranularity(block);
 
-    /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
-    WrittenOffsetColumns offset_columns;
+    Block primary_key_block;
+    Block skip_indexes_block;
 
     Block primary_key_block;
     Block skip_indexes_block;
@@ -293,12 +293,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
-    if (serialization_states.empty())
-    {
-        serialization_states.reserve(columns_list.size());
-        WrittenOffsetColumns tmp_offset_columns;
-        IDataType::SerializeBinaryBulkSettings settings;
+    size_t new_index_offset = writer->write(block, primary_key_block, skip_indexes_block, current_mark, index_offset);
 
+<<<<<<< HEAD
         for (const auto & col : columns_list)
         {
             settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
@@ -340,6 +337,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i], current_mark);
         }
     }
+=======
+>>>>>>> 03dc18db16... tmp
 
     std::cerr << "(MergedBlockOutputStream::writeImpl) new_index_offset: " << new_index_offset << "\n";
 
