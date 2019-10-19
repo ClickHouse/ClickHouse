@@ -79,9 +79,8 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
             }
             else if (auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(*col.column))
             {
-                const DataTypePtr & low_cardinality_type = static_cast<const DataTypeLowCardinality &>(*col.type).getDictionaryType();
                 const auto & low_cardinality_col = low_cardinality->convertToFullColumnIfLowCardinality();
-                res.insert({low_cardinality_col, low_cardinality_type, col.name});
+                res.insert({low_cardinality_col, nested_type, col.name});
             }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
