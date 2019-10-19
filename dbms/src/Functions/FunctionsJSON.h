@@ -293,25 +293,11 @@ struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKey
 struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 
 
-template <typename JSONParser, bool support_key_lookup>
-class JSONCheckImpl
+template <typename JSONParser>
+class JSONHasImpl
 {
 public:
-    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
-    {
-        if constexpr (!support_key_lookup)
-        {
-            if (arguments.size() != 1)
-                throw Exception{"Function " + String(function_name) + " needs exactly one argument",
-                                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-        }
-        else
-        {
-            UNUSED(function_name);
-            UNUSED(arguments);
-        }
-        return std::make_shared<DataTypeUInt8>();
-    }
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator &)
@@ -325,10 +311,28 @@ public:
     static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
+
 template <typename JSONParser>
-using JSONHasImpl = JSONCheckImpl<JSONParser, true>;
-template <typename JSONParser>
-using isValidJSONImpl = JSONCheckImpl<JSONParser, false>;
+class IsValidJSONImpl
+{
+    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.size() != 1)
+            throw Exception{"Function " + String(function_name) + " needs exactly one argument",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    static bool addValueToColumn(IColumn & dest, const Iterator &)
+    {
+        JSONHasImpl<JSONParser>::addValueToColumn(dest);
+    }
+
+    static constexpr size_t num_extra_arguments = 0;
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
+};
+
 
 template <typename JSONParser>
 class JSONLengthImpl
