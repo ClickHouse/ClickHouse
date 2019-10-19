@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/IFunction.h>
+#include <Core/AccurateComparison.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
@@ -8,7 +9,6 @@
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
