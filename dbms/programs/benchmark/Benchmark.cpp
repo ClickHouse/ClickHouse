@@ -365,7 +365,7 @@ private:
         Stopwatch watch;
         RemoteBlockInputStream stream(
             *(*connection_entries[connection_index]),
-            query, {}, global_context, &settings, nullptr, Tables(), query_processing_stage);
+            query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
