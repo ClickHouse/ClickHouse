@@ -4,7 +4,7 @@ namespace DB
 {
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    MergeTreeData & storage_, const Block & header_, const String & part_path_, bool sync_,
+    const MergeTreeData & storage_, const Block & header_, const String & part_path_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     WrittenOffsetColumns & already_written_offset_columns_,

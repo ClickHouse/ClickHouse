@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <IO/createWriteBufferFromFileBase.h>
-
+#include <Storages/MergeTree/MergeTreeReaderSettings.h>
 namespace DB
 {
 
@@ -17,25 +17,19 @@ namespace
 
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    MergeTreeData & storage_,
-    const String & part_path_,
-    size_t min_compress_block_size_,
-    size_t max_compress_block_size_,
+    const MergeTreeDataPartPtr & data_part,
     CompressionCodecPtr codec_,
-    size_t aio_threshold_,
+    const WriterSettings & writer_settings_,
     bool blocks_are_granules_size_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     const MergeTreeIndexGranularity & index_granularity_,
-    const MergeTreeIndexGranularityInfo * index_granularity_info_)
-    : storage(storage_)
-    , part_path(part_path_)
-    , min_compress_block_size(min_compress_block_size_)
-    , max_compress_block_size(max_compress_block_size_)
-    , aio_threshold(aio_threshold_)
-    , can_use_adaptive_granularity(index_granularity_info_ ? index_granularity_info_->is_adaptive : storage.canUseAdaptiveGranularity())
-    , marks_file_extension(can_use_adaptive_granularity ? getAdaptiveMrkExtension() : getNonAdaptiveMrkExtension())
+    bool can_use_adaptive_granularity_)
+    : storage(data_part->storage)
+    , part_path(data_part->getFullPath())
+    , writer_settings(writer_settings_)
+    , can_use_adaptive_granularity(can_use_adaptive_granularity_)
     , blocks_are_granules_size(blocks_are_granules_size_)
-    , index_granularity(index_granularity_)
+    , index_granularity(data_part->index_granularity)
     , compute_granularity(index_granularity.empty())
     , codec(std::move(codec_))
     , skip_indices(indices_to_recalc)
@@ -43,41 +37,9 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 {
     if (blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
+    
+    writer = data_part->getWriter(columns_list, permutation, default_codec, writer_settings);
 }
-
-void IMergedBlockOutputStream::addStreams(
-    const String & path,
-    const String & name,
-    const IDataType & type,
-    const CompressionCodecPtr & effective_codec,
-    size_t estimated_size,
-    bool skip_offsets)
-{
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
-    {
-        if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
-            return;
-
-        String stream_name = IDataType::getFileNameForStream(name, substream_path);
-
-        /// Shared offsets for Nested type.
-        if (column_streams.count(stream_name))
-            return;
-
-        column_streams[stream_name] = std::make_unique<ColumnStream>(
-            stream_name,
-            path + stream_name, DATA_FILE_EXTENSION,
-            path + stream_name, marks_file_extension,
-            effective_codec,
-            max_compress_block_size,
-            estimated_size,
-            aio_threshold);
-    };
-
-    IDataType::SubstreamPath stream_path;
-    type.enumerateStreams(callback, stream_path);
-}
-
 
 IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
         const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets)
@@ -148,39 +110,6 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
         index_offset,
         index_granularity,
         can_use_adaptive_granularity);
-}
-
-void IMergedBlockOutputStream::writeSingleMark(
-    const String & name,
-    const IDataType & type,
-    WrittenOffsetColumns & offset_columns,
-    bool skip_offsets,
-    size_t number_of_rows,
-    DB::IDataType::SubstreamPath & path)
-{
-     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-     {
-         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-         if (is_offsets && skip_offsets)
-             return;
-
-         String stream_name = IDataType::getFileNameForStream(name, substream_path);
-
-         /// Don't write offsets more than one time for Nested type.
-         if (is_offsets && offset_columns.count(stream_name))
-             return;
-
-         ColumnStream & stream = *column_streams[stream_name];
-
-         /// There could already be enough data to compress into the new block.
-         if (stream.compressed.offset() >= min_compress_block_size)
-             stream.compressed.next();
-
-         writeIntBinary(stream.plain_hashing.count(), stream.marks);
-         writeIntBinary(stream.compressed.offset(), stream.marks);
-         if (can_use_adaptive_granularity)
-             writeIntBinary(number_of_rows, stream.marks);
-     }, path);
 }
 
 size_t IMergedBlockOutputStream::writeSingleGranule(
@@ -420,51 +349,5 @@ void IMergedBlockOutputStream::finishSkipIndicesSerialization(
 }
 
 /// Implementation of IMergedBlockOutputStream::ColumnStream.
-
-IMergedBlockOutputStream::ColumnStream::ColumnStream(
-    const String & escaped_column_name_,
-    const String & data_path_,
-    const std::string & data_file_extension_,
-    const std::string & marks_path_,
-    const std::string & marks_file_extension_,
-    const CompressionCodecPtr & compression_codec_,
-    size_t max_compress_block_size_,
-    size_t estimated_size_,
-    size_t aio_threshold_) :
-    escaped_column_name(escaped_column_name_),
-    data_file_extension{data_file_extension_},
-    marks_file_extension{marks_file_extension_},
-    plain_file(createWriteBufferFromFileBase(data_path_ + data_file_extension, estimated_size_, aio_threshold_, max_compress_block_size_)),
-    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec_), compressed(compressed_buf),
-    marks_file(marks_path_ + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
-{
-}
-
-void IMergedBlockOutputStream::ColumnStream::finalize()
-{
-    compressed.next();
-    plain_file->next();
-    marks.next();
-}
-
-void IMergedBlockOutputStream::ColumnStream::sync()
-{
-    plain_file->sync();
-    marks_file.sync();
-}
-
-void IMergedBlockOutputStream::ColumnStream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
-{
-    String name = escaped_column_name;
-
-    checksums.files[name + data_file_extension].is_compressed = true;
-    checksums.files[name + data_file_extension].uncompressed_size = compressed.count();
-    checksums.files[name + data_file_extension].uncompressed_hash = compressed.getHash();
-    checksums.files[name + data_file_extension].file_size = plain_hashing.count();
-    checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
-
-    checksums.files[name + marks_file_extension].file_size = marks.count();
-    checksums.files[name + marks_file_extension].file_hash = marks.getHash();
-}
 
 }

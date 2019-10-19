@@ -9,5 +9,16 @@ namespace DB
         size_t max_read_buffer_size = 0;
         bool save_marks_in_cache = false;
     };
+<<<<<<< HEAD
+=======
+    
+    struct WriterSettings
+    {
+        size_t min_compress_block_size;
+        size_t max_compress_block_size;
+        size_t aio_threshold;
+        String marks_file_extension;
+    };
+>>>>>>> 03dc18db16... tmp
 }
 
