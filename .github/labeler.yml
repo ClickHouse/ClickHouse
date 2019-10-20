@@ -1,0 +1,23 @@
+# Build changes
+pr-build:
+  - "**/CMakeLists.txt"
+
+# Documentation PRs
+documentation:
+  - "**/*.md"
+  - "docs/**/*"
+pr-documentation:
+  - "**/*.md"
+  - "docs/**/*"
+
+# Component labels
+comp-mutations:
+  - "**/*Mutation*"
+comp-matview:
+  - "**/*MaterializedView*"
+comp-skipidx:
+  - "**/*Indices*"
+comp-kafka:
+  - "dbms/src/Storages/Kafka/**/*"
+  - "dbms/tests/integration/test_storage_kafka/**/*"
+  - "utils/kafka/**/*"
