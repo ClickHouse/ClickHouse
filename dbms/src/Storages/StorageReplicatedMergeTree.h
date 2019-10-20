@@ -27,6 +27,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB

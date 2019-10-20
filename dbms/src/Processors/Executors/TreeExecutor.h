@@ -1,6 +1,6 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
-#include <Processors/IProcessor.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -18,7 +18,10 @@ public:
     ///  * processors form a tree
     ///  * all processors are attainable from root
     ///  * there is no other connected processors
-    explicit TreeExecutor(Processors processors_) : processors(std::move(processors_)) { init(); }
+    explicit TreeExecutor(Pipe pipe) : output_port(pipe.getPort()), processors(std::move(pipe).detachProcessors())
+    {
+        init();
+    }
 
     String getName() const override { return root->getName(); }
     Block getHeader() const override { return root->getOutputs().front().getHeader(); }
@@ -35,9 +38,10 @@ protected:
     Block readImpl() override;
 
 private:
+    OutputPort & output_port;
     Processors processors;
     IProcessor * root = nullptr;
-    std::unique_ptr<InputPort> port;
+    std::unique_ptr<InputPort> input_port;
 
     /// Remember sources that support progress.
     std::vector<ISourceWithProgress *> sources_with_progress;
