@@ -632,34 +632,23 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     if (use_sampling)
     {
         for (auto & pipe : res)
-        {
-            auto & output = pipe.back()->getOutputs().front();
-            pipe.emplace_back(std::make_shared<FilterTransform>(output.getHeader(), filter_expression, filter_function->getColumnName(), false));
-            connect(output, pipe.back()->getInputs().front());
-        }
+            pipe.addSimpleTransform(std::make_shared<FilterTransform>(
+                    pipe.getHeader(), filter_expression, filter_function->getColumnName(), false));
     }
 
     /// By the way, if a distributed query or query to a Merge table is made, then the `_sample_factor` column can have different values.
     if (sample_factor_column_queried)
     {
         for (auto & pipe : res)
-        {
-            auto & output = pipe.back()->getOutputs().front();
-            pipe.emplace_back(std::make_shared<AddingConstColumnTransform<Float64>>(
-                    output.getHeader(), std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor"));
-            connect(output, pipe.back()->getInputs().front());
-        }
+            pipe.addSimpleTransform(std::make_shared<AddingConstColumnTransform<Float64>>(
+                    pipe.getHeader(), std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor"));
     }
 
     if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
     {
         for (auto & pipe : res)
-        {
-            auto & output = pipe.back()->getOutputs().front();
-            pipe.emplace_back(std::make_shared<ExpressionTransform>(
-                    output.getHeader(), query_info.prewhere_info->remove_columns_actions));
-            connect(output, pipe.back()->getInputs().front());
-        }
+            pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(
+                    pipe.getHeader(), query_info.prewhere_info->remove_columns_actions));
     }
 
     return res;
@@ -760,7 +749,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 source->addTotalRowsApprox(total_rows);
             }
 
-            res.push_back({std::move(source)});
+            res.emplace_back(std::move(source));
         }
     }
     else if (sum_marks > 0)
@@ -833,7 +822,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                     use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
                     settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query);
 
-                res.push_back({std::move(source_processor)});
+                res.emplace_back(std::move(source_processor));
             }
         }
 
@@ -892,10 +881,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     if (sum_marks > max_marks_to_use_cache)
         use_uncompressed_cache = false;
 
-    Pipes pipes;
+    Pipes res;
 
     if (sum_marks == 0)
-        return pipes;
+        return res;
 
     /// Let's split ranges to avoid reading much data.
     auto split_ranges = [rows_granularity = data_settings->index_granularity, max_block_size](const auto & ranges, int direction)
@@ -949,8 +938,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     {
         size_t need_marks = min_marks_per_stream;
 
-        std::vector<OutputPort *> streams_per_thread;
-        Processors pipe;
+        Pipes pipes;
 
         /// Loop over parts.
         /// We will iteratively take part or some subrange of a part from the back
@@ -1012,58 +1000,44 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
             if (sorting_info->direction == 1)
             {
-                pipe.push_back({std::make_shared<MergeTreeSelectProcessor>(
+                pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
-                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query)});
+                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query));
             }
             else
             {
-                pipe.push_back({std::make_shared<MergeTreeReverseSelectProcessor>(
+                pipes.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
-                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query)});
+                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query));
 
-                auto & output = pipe.back()->getOutputs().front();
-                auto reverse_processor = std::make_shared<ReverseTransform>(output.getHeader());
-                connect(output, reverse_processor->getInputs().front());
-                pipe.emplace_back(std::move(reverse_processor));
+                pipes.back().addSimpleTransform(std::make_shared<ReverseTransform>(pipes.back().getHeader()));
             }
-
-            streams_per_thread.emplace_back(&pipe.back()->getOutputs().front());
         }
 
-        if (streams_per_thread.size() > 1)
+        if (pipes.size() > 1)
         {
             SortDescription sort_description;
             for (size_t j = 0; j < query_info.sorting_info->prefix_order_descr.size(); ++j)
                 sort_description.emplace_back(data.sorting_key_columns[j],
                     sorting_info->direction, 1);
 
-            for (auto & stream : streams_per_thread)
-            {
-                pipe.emplace_back(std::make_shared<ExpressionTransform>(stream->getHeader(), sorting_key_prefix_expr));
-                connect(*stream, pipe.back()->getInputs().front());
-                stream = &pipe.back()->getOutputs().front();
-            }
+            for (auto & pipe : pipes)
+                pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
 
-            pipe.push_back(std::make_shared<MergingSortedTransform>(
-                streams_per_thread.back()->getHeader(), streams_per_thread.size(), sort_description, max_block_size));
+            auto merging_sorted = std::make_shared<MergingSortedTransform>(
+                pipes.back().getHeader(), pipes.size(), sort_description, max_block_size);
 
-            auto it = streams_per_thread.begin();
-            for (auto & input : pipe.back()->getInputs())
-            {
-                connect(**it, input);
-                ++it;
-            }
+            res.emplace_back(std::move(pipes), std::move(merging_sorted));
         }
-
-        pipes.push_back(std::move(pipe));
+        else
+            res.emplace_back(std::move(pipes.front()));
     }
 
-    return pipes;
+    return res;
 }
 
 
@@ -1102,7 +1076,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         use_uncompressed_cache = false;
 
     Pipes pipes;
-    std::vector<OutputPort *> to_merge;
 
     /// NOTE `merge_tree_uniform_read_distribution` is not used for FINAL
 
@@ -1116,13 +1089,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 
-        auto & output = source_processor->getPort();
-        auto expression_transform = std::make_shared<ExpressionTransform>(output.getHeader(), data.sorting_key_expr);
-        connect(output, expression_transform->getInputPort());
-
-        to_merge.emplace_back(&expression_transform->getOutputPort());
-
-        Processors pipe { std::move(source_processor), std::move(expression_transform) };
+        Pipe pipe(std::move(source_processor));
+        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_expr));
         pipes.emplace_back(std::move(pipe));
     }
 
@@ -1131,31 +1099,34 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
-    Block header = to_merge.at(0)->getHeader();
+    Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
     auto streams_to_merge = [&]()
     {
-        size_t num_streams = to_merge.size();
+        size_t num_streams = pipes.size();
 
         BlockInputStreams streams;
         streams.reserve(num_streams);
 
         for (size_t i = 0; i < num_streams; ++i)
-            streams.emplace_back(std::make_shared<TreeExecutor>(pipes[i]));
+            streams.emplace_back(std::make_shared<TreeExecutor>(std::move(pipes[i])));
 
         pipes.clear();
         return streams;
     };
 
-    ProcessorPtr merged_processor;
     BlockInputStreamPtr merged;
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
-            merged_processor = std::make_shared<MergingSortedTransform>(header, to_merge.size(), sort_description, max_block_size);
+        {
+            auto merged_processor =
+                    std::make_shared<MergingSortedTransform>(header, pipes.size(), sort_description, max_block_size);
+            pipes.emplace_back(std::move(pipes), std::move(merged_processor));
             break;
+        }
 
         case MergeTreeData::MergingParams::Collapsing:
             merged = std::make_shared<CollapsingFinalBlockInputStream>(
@@ -1186,23 +1157,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     }
 
     if (merged)
-        return {{std::make_shared<SourceFromInputStream>(merged)}};
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(merged));
 
-    auto it = to_merge.begin();
-    for (auto & input : merged_processor->getInputs())
-    {
-        connect(**it, input);
-        ++it;
-    }
-
-    Processors result;
-    result.reserve(2 * pipes.size() + 1);
-    for (auto & pipe : pipes)
-        for (auto & processor : pipe)
-            result.emplace_back(std::move(processor));
-
-    result.emplace_back(merged_processor);
-    return {result};
+    return pipes;
 }
 
 

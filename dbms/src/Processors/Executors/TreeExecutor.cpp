@@ -79,13 +79,13 @@ void TreeExecutor::init()
     if (processors.empty())
         throw Exception("No processors were passed to TreeExecutor.", ErrorCodes::LOGICAL_ERROR);
 
-    root = processors.back().get();
+    root = &output_port.getProcessor();
 
     validateTree(processors, root, sources_with_progress);
 
-    port = std::make_unique<InputPort>(getHeader(), root);
-    connect(root->getOutputs().front(), *port);
-    port->setNeeded();
+    input_port = std::make_unique<InputPort>(getHeader(), root);
+    connect(output_port, *input_port);
+    input_port->setNeeded();
 }
 
 void TreeExecutor::execute()
@@ -170,11 +170,11 @@ Block TreeExecutor::readImpl()
 {
     while (true)
     {
-        if (port->isFinished())
+        if (input_port->isFinished())
             return {};
 
-        if (port->hasData())
-            return getHeader().cloneWithColumns(port->pull().detachColumns());
+        if (input_port->hasData())
+            return getHeader().cloneWithColumns(input_port->pull().detachColumns());
 
         execute();
     }

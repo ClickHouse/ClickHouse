@@ -45,7 +45,9 @@ class PartitionCommands;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
-using Pipes = std::vector<Processors>;
+
+class Pipe;
+using Pipes = std::vector<Pipe>;
 
 struct ColumnSize
 {
