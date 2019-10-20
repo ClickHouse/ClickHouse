@@ -24,7 +24,6 @@ namespace ErrorCodes
 static const double PI = 3.14159265358979323846;
 static const float TO_RADF = static_cast<float>(PI / 180.0);
 static const float TO_RADF2 = static_cast<float>(PI / 360.0);
-static const float TO_DEGF = static_cast<float>(180.0 / PI);
 
 const int GEODIST_TABLE_COS = 1024; // maxerr 0.00063%
 const int GEODIST_TABLE_ASIN = 512;
