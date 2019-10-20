@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -48,7 +48,7 @@ protected:
     void calculateAndSerializeSkipIndices(const ColumnsWithTypeAndName & skip_indexes_columns, size_t rows);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 protected:
-    MergeTreeData & storage;
+    const MergeTreeData & storage;
 
     SerializationStates serialization_states;
     String part_path;

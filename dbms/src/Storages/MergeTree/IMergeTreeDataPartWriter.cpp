@@ -4,6 +4,7 @@ namespace DB
 {
     IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
         const String & part_path_,
+        const MergeTreeData & storage_,
         const NamesAndTypesList & columns_list_,
         const IColumn::Permutation * permutation_,
         const String & marks_file_extension_,
@@ -11,6 +12,7 @@ namespace DB
         size_t max_compress_block_size_,
         size_t aio_threshold_)
     : part_path(part_path_)
+    , storage(storage_)
     , columns_list(columns_list_)
     , permutation(permutation_)
     , marks_file_extension(marks_file_extension_)
