@@ -1,10 +1,6 @@
 name: "Pull Request Labeler"
 on:
-  pull_request:
-    branches: 
-      - master
-  issues:
-    types: [opened]
+  pull_request
 
 jobs:
   by-filename:
@@ -13,11 +9,3 @@ jobs:
     - uses: actions/labeler@v2
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
-  new-feature:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: Naturalclar/issue-action@v1.0.0
-        with:
-          keywords: '["New Feature"]'
-          labels: '["pr-feature"]'
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
