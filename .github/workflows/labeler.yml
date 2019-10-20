@@ -6,6 +6,6 @@ jobs:
   by-filename:
     runs-on: ubuntu-latest
     steps:
-    - uses: ClickHouse/labeler@master
+    - uses: "ClickHouse/labeler@master"
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
