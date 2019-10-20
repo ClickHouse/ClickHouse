@@ -1,5 +1,7 @@
 # Documentation PRs
 documentation:
   - "**/*.md"
+  - "docs/**/*"
 pr-documentation:
   - "**/*.md"
+  - "docs/**/*"
