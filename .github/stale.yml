@@ -5,19 +5,19 @@ daysUntilStale: 45
 
 # Number of days of inactivity before an Issue or Pull Request with the stale label is closed.
 # Set to false to disable. If disabled, issues still need to be closed manually, but will remain marked as stale.
-daysUntilClose: 14
+daysUntilClose: 30
 
 # Only issues or pull requests with all of these labels are check if stale. Defaults to `[]` (disabled)
-onlyLabels:
-  - st-need-info
-  - st-need-repro
-  - st-declined
-  - st-fixed
-  - st-unverified
-  - st-discussion
+onlyLabels: []
 
 # Issues or Pull Requests with these labels will never be considered stale. Set to `[]` to disable
 exemptLabels:
+  - bug
+  - feature
+  - memory
+  - performance
+  - prio-crit
+  - prio-major
   - st-accepted
   - st-in-progress
   - st-waiting-for-fix
