@@ -1,6 +1,7 @@
-# This is the configuration file with settings for Potato. Potato is an internal Yandex technology.
-# Potato allows us to automate routine actions and sync internal [Yandex.Tracker](https://yandex.com/tracker/) and Github.
-# Now for all PRs where documentation is needed, just put a label 'pr-feature' and we will plan PR to documentation sprints.
+# This is the configuration file with settings for Potato.
+# Potato is an internal Yandex technology that allows us to sync internal [Yandex.Tracker](https://yandex.com/tracker/) and GitHub.
+
+# For all PRs where documentation is needed, just add a 'pr-feature' label and we will include it into documentation sprints.
 
 # The project name.
 name: clickhouse
@@ -16,7 +17,7 @@ handlers:
               # The Yandex.Tracker queue to create the issue in. Each issue in Tracker belongs to one of the project queues.
           	queue: CLICKHOUSEDOCS
               # The issue title.
-          	summary: '[Potato] Задача для Pull Request {{pullRequest.number}}'
+          	summary: '[Potato] Pull Request #{{pullRequest.number}}'
               # The issue description.
           	description: >
                 {{pullRequest.description}}
