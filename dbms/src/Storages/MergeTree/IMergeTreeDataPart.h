@@ -15,7 +15,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/KeyCondition.h>
-// #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 // #include <Storages/MergeTree/MergeTreeWriter.h>
 // #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Columns/IColumn.h>
@@ -47,6 +48,7 @@ public:
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
     using ValueSizeMap = std::map<std::string, double>;
 
     // virtual BlockInputStreamPtr readAll() = 0;
@@ -62,7 +64,23 @@ public:
         const ReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{}) const = 0;
-    
+
+        const String & part_path_,
+        const MergeTreeData & storage_,
+        const NamesAndTypesList & columns_list_,
+        const IColumn::Permutation * permutation_,
+        const String & marks_file_extension_,
+        const CompressionCodecPtr & default_codec_,
+        size_t max_compress_block_size_,
+        size_t aio_threshold_
+
+    virtual MergeTreeWriterPtr getWriter(
+        const NamesAndTypesList & columns_list,
+        const IColumn::Permutation * permutation,
+        const CompressionCodecPtr & default_codec_,
+        const WriterSettings & writer_settings,
+    )
+     
     // virtual MergeTreeWriterPtr getWriter() const = 0;
 
     virtual bool isStoredOnDisk() const = 0;

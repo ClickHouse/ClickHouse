@@ -35,7 +35,7 @@ public:
 
         /// compressed -> compressed_buf -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
-        HashingWriteBuffer plain_hashi  ng;
+        HashingWriteBuffer plain_hashing;
         CompressedWriteBuffer compressed_buf;
         HashingWriteBuffer compressed;
 
@@ -72,11 +72,11 @@ protected:
     using SerializationStates = std::vector<SerializationState>;
 
     String part_path;
+    const MergeTreeData & storage;
     NamesAndTypesList columns_list;
     const IColumn::Permutation * permutation;
     const String marks_file_extension;
 
-    const MergeTreeData & storage;
 
     CompressionCodecPtr default_codec;
 
