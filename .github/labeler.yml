@@ -15,8 +15,6 @@ comp-mutations:
   - "**/*Mutation*"
 comp-matview:
   - "**/*MaterializedView*"
-comp-matview:
-  - "**/*MaterializedView*"
 comp-skipidx:
   - "**/*Indices*"
 comp-kafka:
