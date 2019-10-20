@@ -466,7 +466,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 ### General
 
-Tables of the MergeTree family are able to store their data on multiple block devices, which may be useful when, for instance, the data of a certain table are implicitly split into "hot" and "cold". The most recent data are regularly requested but require only a small amount of space. On the contrary, the fat-tailed historical data are requested rarely. If several disks are available, the "hot" data may be located on fast disks (NVMe SSDs or even in memory), while the "cold" data - on relatively slow ones (HDD).
+Tables of the MergeTree family are able to store their data on multiple block devices, which may be useful when, for instance, the data of a certain table are implicitly split into "hot" and "cold". The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the "hot" data may be located on fast disks (NVMe SSDs or even in memory), while the "cold" data - on relatively slow ones (HDD).
 
 Part is the minimum movable unit for MergeTree tables. The data belonging to one part are stored on one disk. Parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](../../query_language/alter.md#alter_move-partition) queries. 
 
@@ -568,7 +568,7 @@ The `default` storage policy implies using only one volume, which consists of on
 
 ### Details
 
-In the case of MergeTree tables, data are getting to disk in different ways:
+In the case of MergeTree tables, data is getting to disk in different ways:
 
 * as a result of an insert (`INSERT` query).
 * during background merges and [mutations](../../query_language/alter.md#alter-mutations).
@@ -583,7 +583,7 @@ In all these cases except for mutations and partition freezing, a part is stored
 Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones. 
 
 In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
-Data are never transferred from the last one and on the first one. One may use system tables [system.part_log](../system_tables.md#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](../system_tables.md#system_tables-parts) (fields `path` and `disk`) to monitor background moves . Also, the detailed information can be found in server logs.
+Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](../system_tables.md#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](../system_tables.md#system_tables-parts) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
 
 User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART|PARTITION ... TO VOLUME|DISK ...](../../query_language/alter.md#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
 
