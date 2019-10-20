@@ -1,0 +1,5 @@
+# Documentation PRs
+documentation:
+  - **/*.md
+pr-documentation:
+  - **/*.md
