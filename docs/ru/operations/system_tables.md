@@ -242,6 +242,8 @@ SELECT * FROM system.events LIMIT 5
 - `value` ([Int64](../data_types/int_uint.md)) — значение метрики.
 - `description` ([String](../data_types/string.md)) — описание метрики.
 
+Список поддержанных метрик смотрите в файле [dbms/src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Common/CurrentMetrics.cpp).
+
 **Пример**
 
 ```sql
