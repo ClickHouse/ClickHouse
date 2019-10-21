@@ -266,8 +266,7 @@ void RestoreQualifiedNamesData::visit(ASTIdentifier & identifier, ASTPtr & ast)
 {
     if (IdentifierSemantic::getColumnName(identifier))
     {
-        auto opt_match = IdentifierSemantic::getMembership(identifier);
-        if (opt_match && *opt_match)
+        if (IdentifierSemantic::getMembership(identifier))
         {
             ast = identifier.clone();
             ast->as<ASTIdentifier>()->restoreCompoundName();
