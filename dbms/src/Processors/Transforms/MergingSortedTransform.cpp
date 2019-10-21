@@ -132,7 +132,7 @@ IProcessor::Status MergingSortedTransform::prepare()
             }
 
             auto chunk = input.pull();
-            if (chunk.hasNoRows())
+            if (!chunk.hasRows())
             {
                 all_inputs_has_data = false;
                 continue;
