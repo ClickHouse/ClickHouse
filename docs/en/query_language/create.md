@@ -55,7 +55,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
 Creates a table with the structure and data returned by a [table function](table_functions/index.md).

@@ -25,7 +25,6 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
-#include <DataStreams/CheckNonEmptySetBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
@@ -48,7 +47,6 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/AnalyzedJoin.h>
-#include <Interpreters/Join.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -714,35 +712,6 @@ InterpreterSelectQuery::analyzeExpressions(
     return res;
 }
 
-
-BlockInputStreamPtr InterpreterSelectQuery::createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const
-{
-    for (const auto & action : expression->getActions())
-    {
-        if (action.type == ExpressionAction::JOIN)
-        {
-            const auto * join = dynamic_cast<Join *>(action.join.get());
-            if (!join)
-                continue;
-            if (isInnerOrRight(join->getKind()))
-            {
-                stream = std::make_shared<CheckNonEmptySetBlockInputStream>(stream, expression, syntax_analyzer_result->need_check_empty_sets);
-                break;
-            }
-        }
-        else if (action.type == ExpressionAction::ADD_COLUMN)
-        {
-            if (syntax_analyzer_result->need_check_empty_sets.count(action.result_name))
-            {
-                stream = std::make_shared<CheckNonEmptySetBlockInputStream>(stream, expression, syntax_analyzer_result->need_check_empty_sets);
-                break;
-            }
-        }
-    }
-    return stream;
-}
-
-
 static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
@@ -998,7 +967,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 });
             else
                 pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
-                    createCheckNonEmptySetIfNeed(pipeline.streams.back(), expressions.prewhere_info->prewhere_actions), expressions.prewhere_info->prewhere_actions,
+                    pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
 
             // To remove additional columns in dry run
@@ -1114,7 +1083,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     header_before_join = pipeline.firstStream()->getHeader();
                     /// Applies to all sources except stream_with_non_joined_data.
                     for (auto & stream : pipeline.streams)
-                        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expressions.before_join), expressions.before_join);
+                        stream = std::make_shared<ExpressionBlockInputStream>(stream, expressions.before_join);
 
                     if (isMergeJoin(expressions.before_join->getTableJoinAlgo()) && settings.partial_merge_join_optimizations)
                     {
@@ -1695,7 +1664,7 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
     });
 }
 
@@ -1711,7 +1680,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression);
+        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
     });
 
     Names key_names;
@@ -2077,7 +2046,7 @@ void InterpreterSelectQuery::executeExpression(Pipeline & pipeline, const Expres
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(createCheckNonEmptySetIfNeed(stream, expression), expression);
+        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
     });
 }
 
@@ -2114,19 +2083,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SortingInfoPtr so
             });
         }
 
-        if (pipeline.hasMoreThanOneStream())
-        {
-            pipeline.transform([&](auto & stream)
-            {
-                stream = std::make_shared<AsynchronousBlockInputStream>(stream);
-            });
-
-            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-            pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
-                pipeline.streams, sorting_info->prefix_order_descr,
-                settings.max_block_size, limit_for_merging);
-            pipeline.streams.resize(1);
-        }
+        UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
+        executeMergeSorted(pipeline, sorting_info->prefix_order_descr, limit_for_merging);
 
         if (need_finish_sorting)
         {
@@ -2248,12 +2206,20 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
-    const Settings & settings = context.getSettingsRef();
-
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
         unifyStreams(pipeline, pipeline.firstStream()->getHeader());
+        executeMergeSorted(pipeline, order_descr, limit);
+    }
+}
+
+
+void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
+{
+    if (pipeline.hasMoreThanOneStream())
+    {
+        const Settings & settings = context.getSettingsRef();
 
         /** MergingSortedBlockInputStream reads the sources sequentially.
           * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
@@ -2263,8 +2229,8 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
             stream = std::make_shared<AsynchronousBlockInputStream>(stream);
         });
 
-        /// Merge the sorted sources into one sorted source.
-        pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(pipeline.streams, order_descr, settings.max_block_size, limit);
+        pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(
+            pipeline.streams, sort_description, settings.max_block_size, limit);
         pipeline.streams.resize(1);
     }
 }
@@ -2275,15 +2241,20 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
     SortDescription order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
-    const Settings & settings = context.getSettingsRef();
+    executeMergeSorted(pipeline, order_descr, limit);
+}
 
+void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
+{
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
+        const Settings & settings = context.getSettingsRef();
+
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),
             pipeline.getNumStreams(),
-            order_descr,
+            sort_description,
             settings.max_block_size, limit);
 
         pipeline.addPipe({ std::move(transform) });
@@ -2646,13 +2617,29 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
-    executeUnion(pipeline, {});
+    /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
+    if (query_info.sorting_info)
+    {
+        if (pipeline.stream_with_non_joined_data)
+            throw Exception("Using read in order optimization, but has stream with non-joined data in pipeline", ErrorCodes::LOGICAL_ERROR);
+        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+    }
+    else
+        executeUnion(pipeline, {});
+
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets, context);
 }
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
+    if (query_info.sorting_info)
+    {
+        if (pipeline.hasDelayedStream())
+            throw Exception("Using read in order optimization, but has delayed stream in pipeline", ErrorCodes::LOGICAL_ERROR);
+        executeMergeSorted(pipeline, query_info.sorting_info->prefix_order_descr, 0);
+    }
+
     const Settings & settings = context.getSettingsRef();
 
     auto creating_sets = std::make_shared<CreatingSetsTransform>(

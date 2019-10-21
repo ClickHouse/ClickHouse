@@ -15,6 +15,7 @@
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
+#include <Common/TypePromotion.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -70,7 +71,7 @@ struct ColumnSize
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>
 {
 public:
     IStorage() = default;

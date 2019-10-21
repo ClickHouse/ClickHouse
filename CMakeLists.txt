@@ -118,16 +118,16 @@ endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
+if (ARCH_AMD64)
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
+endif ()
 
-    if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-        option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-    endif ()
+if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
+    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+endif ()
 
-    if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
-        message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
-    endif ()
+if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
+    message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
 endif ()
 
 # Make sure the final executable has symbols exported

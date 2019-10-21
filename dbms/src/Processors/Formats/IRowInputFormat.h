@@ -77,7 +77,6 @@ protected:
 
 private:
     Params params;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     size_t total_rows = 0;
     size_t num_errors = 0;

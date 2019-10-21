@@ -1,3 +1,6 @@
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
+    set (ARCH_AMD64 1)
+endif ()
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
     set (ARCH_AARCH64 1)
 endif ()
