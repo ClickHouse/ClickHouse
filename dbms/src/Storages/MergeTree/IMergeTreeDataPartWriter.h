@@ -47,10 +47,11 @@ public:
 
         void sync();
 
-        void addToChecksums(MergeTreeData::DataPart::Checksums & checksums);
+        void addToChecksums(IMergeTreeDataPart::Checksums & checksums);
     };
 
     using ColumnStreamPtr = std::unique_ptr<ColumnStream>;
+    using ColumnStreams = std::map<String, ColumnStreamPtr>;
 
     IMergeTreeDataPartWriter(
         const String & part_path,

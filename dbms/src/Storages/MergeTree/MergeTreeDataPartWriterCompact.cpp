@@ -3,33 +3,13 @@
 namespace DB
 {
 
-size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(
-    const ColumnWithTypeAndName & column,
-    WrittenOffsetColumns & offset_columns,
-    bool skip_offsets,
-    IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-    IDataType::SerializeBinaryBulkSettings & serialize_settings,
-    size_t from_row,
-    size_t number_of_rows)
-{
-}
-
-
-size_t MergeTreeDataPartWriterCompact::write(const Block & block, size_t from_mark, size_t offset,
+size_t MergeTreeDataPartWriterCompact::write(const Block & block, size_t from_mark, size_t index_offset,
+    const MergeTreeIndexGranularity & index_granularity,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {
-    if (!started)
-        start();
-
     size_t total_rows = block.rows();  
     size_t current_mark = from_mark;
     size_t current_row = 0;
-
-
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
-    serialize_settings.position_independent_encoding = false;
-    serialize_settings.low_cardinality_max_dictionary_size = 0;
 
     ColumnsWithTypeAndName columns_to_write(columns_list.size());
     auto it = columns_list.begin();
@@ -55,25 +35,31 @@ size_t MergeTreeDataPartWriterCompact::write(const Block & block, size_t from_ma
     {
         bool write_marks = true;
         size_t rows_to_write;
-        if (current_row == 0 && offset != 0)
+        if (current_row == 0 && index_offset != 0)
         {
-            rows_to_write = offset;
+            rows_to_write = index_offset;
             write_marks = false;
         }
         else
         {
-            rows_to_write = index_granularity->getMarkRows(current_mark);
-        } 
-
-        for (size_t i = 0; i < columns_to_write.size(); ++i)
-        {
-            current_row = writeColumnSingleGranule(columns_to_write[i], offset_columns, skip_offsets, serialization_states[i], serialize_settings, current_row, rows_to_write);
+            rows_to_write = index_granularity.getMarkRows(current_mark);
         }
 
         if (write_marks)
         {
-            writeMark();
+            writeIntBinary(rows_to_write, stream->marks);
+            for (size_t i = 0; i < columns_to_write.size(); ++i)
+            {
+                writeIntBinary(stream->plain_hashing.count(), stream->marks);
+                writeIntBinary(stream->compressed.offset(), stream->marks);
+                current_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
+            }
             ++current_mark;
+        }
+        else
+        {
+            for (size_t i = 0; i < columns_to_write.size(); ++i)
+                current_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
         }
     }
 
@@ -81,36 +67,20 @@ size_t MergeTreeDataPartWriterCompact::write(const Block & block, size_t from_ma
     return 0;
 }
 
-size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column,
-        WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
-        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-        IDataType::SerializeBinaryBulkSettings & serialize_settings,
-        size_t from_row,
-        size_t number_of_rows)
+size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows)
 {
-    column.type->serializeBinaryBulkStatePrefix(serialize_settings, serialization_state);
-    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, serialization_state);
-    column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_state);
-}
+    IDataType::SerializeBinaryBulkStatePtr state;
+    IDataType::SerializeBinaryBulkSettings serialize_settings;
 
-void MergeTreeDataPartWriterWide::start()
-{
-    if (started)
-        return;
+    serialize_settings.getter = [&stream](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->compressed; };
+    serialize_settings.position_independent_encoding = false;
+    serialize_settings.low_cardinality_max_dictionary_size = 0;
 
-    started = true;
+    column.type->serializeBinaryBulkStatePrefix(serialize_settings, state);
+    column.type->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
+    column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
 
-    serialization_states.reserve(columns_list.size());
-    WrittenOffsetColumns tmp_offset_columns;
-    IDataType::SerializeBinaryBulkSettings settings;
-
-    for (const auto & col : columns_list)
-    {
-        settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
-        serialization_states.emplace_back(nullptr);
-        col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
-    }
+    return from_row + number_of_rows;
 }
 
 }
