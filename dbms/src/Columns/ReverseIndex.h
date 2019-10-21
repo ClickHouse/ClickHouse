@@ -151,6 +151,7 @@ namespace
     public:
         using Base::Base;
         using iterator = typename Base::iterator;
+        using LookupResult = typename Base::LookupResult;
         State & getState() { return *this; }
 
 
@@ -168,7 +169,7 @@ namespace
         }
 
         template <typename ObjectToCompareWith>
-        void ALWAYS_INLINE reverseIndexEmplaceNonZero(const Key & key, iterator & it,
+        void ALWAYS_INLINE reverseIndexEmplaceNonZero(const Key & key, LookupResult & it,
             bool & inserted, size_t hash_value, const ObjectToCompareWith & object)
         {
             size_t place_value = reverseIndexFindCell(object, hash_value,
@@ -184,10 +185,14 @@ namespace
         void ALWAYS_INLINE reverseIndexEmplace(Key key, iterator & it, bool & inserted,
             size_t hash_value, const ObjectToCompareWith& object)
         {
-            if (!this->emplaceIfZero(key, it, inserted, hash_value))
+            LookupResult impl_it = nullptr;
+
+            if (!this->emplaceIfZero(key, impl_it, inserted, hash_value))
             {
-                reverseIndexEmplaceNonZero(key, it, inserted, hash_value, object);
+                reverseIndexEmplaceNonZero(key, impl_it, inserted, hash_value, object);
             }
+            assert(impl_it != nullptr);
+            it = iterator(this, impl_it);
         }
 
         template <typename ObjectToCompareWith>

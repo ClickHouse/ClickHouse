@@ -268,6 +268,10 @@ MutableColumnPtr DataTypeFixedString::createColumn() const
     return ColumnFixedString::create(n);
 }
 
+Field DataTypeFixedString::getDefault() const
+{
+    return String();
+}
 
 bool DataTypeFixedString::equals(const IDataType & rhs) const
 {

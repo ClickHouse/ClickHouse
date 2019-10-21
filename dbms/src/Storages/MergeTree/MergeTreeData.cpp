@@ -126,7 +126,7 @@ MergeTreeData::MergeTreeData(
     , log_name(database_name + "." + table_name)
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))
-    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy_name))
+    , storage_policy(context_.getStoragePolicy(getSettings()->storage_policy))
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
@@ -802,7 +802,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (size_t i = 0; i < part_names_with_disks.size(); ++i)
     {
-        pool.schedule([&, i]
+        pool.scheduleOrThrowOnError([&, i]
         {
             const auto & part_name = part_names_with_disks[i].first;
             const auto part_disk_ptr = part_names_with_disks[i].second;
@@ -1155,7 +1155,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.schedule([&]
+            pool.scheduleOrThrowOnError([&]
             {
                 LOG_DEBUG(log, "Removing part from filesystem " << part->name);
                 part->remove();
@@ -2488,12 +2488,12 @@ void MergeTreeData::throwInsertIfNeeded() const
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/)
 {
-    auto committed_parts_range = getDataPartsStateRange(state);
+    auto current_state_parts_range = getDataPartsStateRange(state);
 
     /// The part can be covered only by the previous or the next one in data_parts.
     auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{state, part_info});
 
-    if (it != committed_parts_range.end())
+    if (it != current_state_parts_range.end())
     {
         if ((*it)->info == part_info)
             return *it;
@@ -2501,7 +2501,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
             return *it;
     }
 
-    if (it != committed_parts_range.begin())
+    if (it != current_state_parts_range.begin())
     {
         --it;
         if ((*it)->info.contains(part_info))
@@ -2967,6 +2967,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
         validateDetachedPartName(part_id);
         renamed_parts.addPart(part_id, "attaching_" + part_id);
+        if (MergeTreePartInfo::tryParsePartName(part_id, nullptr, format_version))
+            name_to_disk[part_id] = getDiskForPart(part_id, source_dir);
     }
     else
     {
@@ -3357,7 +3359,7 @@ try
 
     part_log_elem.event_time = time(nullptr);
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-    part_log_elem.duration_ms = elapsed_ns / 10000000;
+    part_log_elem.duration_ms = elapsed_ns / 1000000;
 
     part_log_elem.database_name = database_name;
     part_log_elem.table_name = table_name;

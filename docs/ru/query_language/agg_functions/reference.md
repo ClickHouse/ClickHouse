@@ -81,7 +81,7 @@ SELECT count(DISTINCT num) FROM t
 
 Выбирает часто встречающееся значение с помощью алгоритма "[heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf)". Если существует значение, которое встречается чаще, чем в половине случаев, в каждом потоке выполнения запроса, то возвращается данное значение. В общем случае, результат недетерминирован.
 
-```
+```sql
 anyHeavy(column)
 ```
 
@@ -98,7 +98,7 @@ SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
 
-```
+```text
 ┌───res─┐
 │ 19690 │
 └───────┘
@@ -113,7 +113,7 @@ FROM ontime
 
 Применяет побитовое `И` для последовательности чисел.
 
-```
+```sql
 groupBitAnd(expr)
 ```
 
@@ -129,7 +129,7 @@ groupBitAnd(expr)
 
 Тестовые данные:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -139,7 +139,7 @@ binary     decimal
 
 Запрос:
 
-```
+```sql
 SELECT groupBitAnd(num) FROM t
 ```
 
@@ -147,7 +147,7 @@ SELECT groupBitAnd(num) FROM t
 
 Результат:
 
-```
+```text
 binary     decimal
 00000100 = 4
 ```
@@ -156,7 +156,7 @@ binary     decimal
 
 Применяет побитовое `ИЛИ` для последовательности чисел.
 
-```
+```sql
 groupBitOr(expr)
 ```
 
@@ -172,7 +172,7 @@ groupBitOr(expr)
 
 Тестовые данные:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -182,7 +182,7 @@ binary     decimal
 
 Запрос:
 
-```
+```sql
 SELECT groupBitOr(num) FROM t
 ```
 
@@ -190,7 +190,7 @@ SELECT groupBitOr(num) FROM t
 
 Результат:
 
-```
+```text
 binary     decimal
 01111101 = 125
 ```
@@ -199,7 +199,7 @@ binary     decimal
 
 Применяет побитовое `ИСКЛЮЧАЮЩЕЕ ИЛИ` для последовательности чисел.
 
-```
+```sql
 groupBitXor(expr)
 ```
 
@@ -215,7 +215,7 @@ groupBitXor(expr)
 
 Тестовые данные:
 
-```
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -225,7 +225,7 @@ binary     decimal
 
 Запрос:
 
-```
+```sql
 SELECT groupBitXor(num) FROM t
 ```
 
@@ -233,7 +233,7 @@ SELECT groupBitXor(num) FROM t
 
 Результат:
 
-```
+```text
 binary     decimal
 01101000 = 104
 ```
@@ -242,7 +242,7 @@ binary     decimal
 
 Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../functions/bitmap_functions.md).
 
-```
+```sql
 groupBitmap(expr)
 ```
 
@@ -258,7 +258,7 @@ groupBitmap(expr)
 
 Тестовые данные:
 
-```
+```text
 UserID
 1
 1
@@ -268,13 +268,13 @@ UserID
 
 Запрос:
 
-```
+```sql
 SELECT groupBitmap(UserID) as num FROM t
 ```
 
 Результат:
 
-```
+```text
 num
 3
 ```
@@ -293,15 +293,17 @@ num
 
 **Пример:**
 
-```
+```text
 ┌─user─────┬─salary─┐
 │ director │   5000 │
 │ manager  │   3000 │
 │ worker   │   1000 │
 └──────────┴────────┘
-
+```
+```sql
 SELECT argMin(user, salary) FROM salary
-
+```
+```text
 ┌─argMin(user, salary)─┐
 │ worker               │
 └──────────────────────┘
@@ -353,7 +355,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```
+```text
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -364,7 +366,7 @@ GROUP BY timeslot
 
 Вычисляет [коэффициент асимметрии](https://ru.wikipedia.org/wiki/Коэффициент_асимметрии) для последовательности.
 
-```
+```sql
 skewPop(expr)
 ```
 
@@ -388,7 +390,7 @@ SELECT skewPop(value) FROM series_with_value_column
 
 Он представляет собой несмещенную оценку асимметрии случайной величины, если переданные значения образуют ее выборку.
 
-```
+```sql
 skewSamp(expr)
 ```
 
@@ -410,7 +412,7 @@ SELECT skewSamp(value) FROM series_with_value_column
 
 Вычисляет [коэффициент эксцесса](https://ru.wikipedia.org/wiki/Коэффициент_эксцесса) последовательности.
 
-```
+```sql
 kurtPop(expr)
 ```
 
@@ -434,7 +436,7 @@ SELECT kurtPop(value) FROM series_with_value_column
 
 Он представляет собой несмещенную оценку эксцесса случайной величины, если переданные значения образуют ее выборку.
 
-```
+```sql
 kurtSamp(expr)
 ```
 
@@ -467,7 +469,7 @@ SELECT kurtSamp(value) FROM series_with_value_column
 
 Пример:
 
-```
+```text
 ┌─uid─┬─timestamp─┬─value─┐
 │ 1   │     2     │   0.2 │
 │ 1   │     7     │   0.7 │
@@ -482,7 +484,7 @@ SELECT kurtSamp(value) FROM series_with_value_column
 └─────┴───────────┴───────┘
 ```
 
-```
+```sql
 CREATE TABLE time_series(
     uid       UInt64,
     timestamp Int64,
@@ -500,18 +502,18 @@ FROM (
 
 И результат будет:
 
-```
+```text
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
 ## timeSeriesGroupRateSum(uid, ts, val) {#agg_function-timeseriesgroupratesum}
 
 Аналогично timeSeriesGroupRateSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
-Также ряды должны быть отсотированы по возрастанию timestamp.
+Также ряды должны быть отсортированы по возрастанию timestamp.
 
 Для пример из описания timeSeriesGroupRateSum результат будет следующим:
 
-```
+```text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
@@ -525,7 +527,7 @@ FROM (
 
 Приближённо вычисляет количество различных значений аргумента.
 
-```
+```sql
 uniq(x[, ...])
 ```
 
@@ -554,6 +556,7 @@ uniq(x[, ...])
 **Смотрите также**
 
 - [uniqCombined](#agg_function-uniqcombined)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
@@ -561,7 +564,7 @@ uniq(x[, ...])
 
 Приближённо вычисляет количество различных значений аргумента.
 
-```
+```sql
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
@@ -581,13 +584,16 @@ uniqCombined(HLL_precision)(x[, ...])
 
 Функция:
 
-- Вычисляет хэш для всех параметров агрегации, а затем использует его в вычислениях.
+- Вычисляет хэш (64-битный для `String` и 32-битный для всех остальных типов) для всех параметров агрегации, а затем использует его в вычислениях.
 
 - Используется комбинация трёх алгоритмов: массив, хэш-таблица и HyperLogLog с таблицей коррекции погрешности.
 
     Для небольшого количества различных значений используется массив. Если размер набора больше, используется хэш-таблица. При дальнейшем увеличении количества значений, используется структура HyperLogLog, имеющая фиксированный размер в памяти.
 
 - Результат детерминирован (не зависит от порядка выполнения запроса).
+
+!!! note "Note"
+    Так как используется 32-битный хэш для не-`String` типов, результат будет иметь очень очень большую ошибку для количества разичных элементов существенно больше `UINT_MAX` (ошибка быстро растёт начиная с нескольких десятков миллиардов различных значений), таким образом в этом случае нужно использовать [uniqCombined64](#agg_function-uniqcombined64)
 
 По сравнению с функцией [uniq](#agg_function-uniq), `uniqCombined`:
 
@@ -598,14 +604,19 @@ uniqCombined(HLL_precision)(x[, ...])
 **Смотрите также**
 
 - [uniq](#agg_function-uniq)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
+
+## uniqCombined64 {#agg_function-uniqcombined64}
+
+Использует 64-битный хэш для всех типов, в отличие от [uniqCombined](#agg_function-uniqcombined).
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
 Вычисляет приблизительное число различных значений аргументов, используя алгоритм [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-```
+```sql
 uniqHLL12(x[, ...])
 ```
 
@@ -641,7 +652,7 @@ uniqHLL12(x[, ...])
 
 Вычисляет точное количество различных значений аргументов.
 
-```
+```sql
 uniqExact(x[, ...])
 ```
 
@@ -659,7 +670,7 @@ uniqExact(x[, ...])
 - [uniqCombined](#agg_function-uniqcombined)
 - [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max_size)(x)
+## groupArray(x), groupArray(max_size)(x) {#agg_function-grouparray}
 
 Составляет массив из значений аргумента.
 Значения в массив могут быть добавлены в любом (недетерминированном) порядке.
@@ -685,7 +696,7 @@ uniqExact(x[, ...])
 
 Вычисляет скользящую сумму входных значений.
 
-```
+```sql
 groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
@@ -835,7 +846,7 @@ FROM t
 
 Функция `groupUniqArray(max_size)(x)` ограничивает размер результирующего массива до `max_size` элементов. Например, `groupUniqArray(1)(x)` равнозначно `[any(x)]`.
 
-## quantile(level)(x)
+## quantile(level)(x) {#agg_function-quantile}
 
 Приближённо вычисляет квантиль уровня level. level - константа, число с плавающей запятой от 0 до 1.
 Рекомендуется использовать значения level в диапазоне `[0.01, 0.99]`.
@@ -862,27 +873,55 @@ FROM t
 
 Не используйте эту функцию для расчёта таймингов. Для этого есть более подходящая функция - `quantileTiming`.
 
-## quantileTiming(level)(x)
+## quantileTiming {#agg_function-quantiletiming}
 
-Вычисляет квантиль уровня level с фиксированной точностью.
-Работает для чисел. Предназначена для расчёта квантилей от времени загрузки страницы в миллисекундах.
+Вычисляет квантиль заданного уровня с детерминированной точностью. Функция предназначена для расчётов квантилей времени загрузки страниц в миллисекундах.
 
-Если значение больше 30000 (соответствует времени загрузки страницы большем 30 секундам) - результат приравнивается к 30000.
+```
+quantileTiming(level)(expr)
+```
 
-Если всего значений не больше примерно 5670, то вычисление точное.
+**Параметры**
 
-Иначе:
+- `level` — уровень квантили. Диапазон: [0, 1].
+- `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее число типа [Float*](../../data_types/float.md). Функция ожидает на вход значения в фомате UNIX-время в миллисекундах, но не проверяет формат входных значений.
+    
+    - Поведение функции не определено для отрицательных входных значений.
+    - Если входное значение больше 30,000 (т.е. время загрузки страницы превышает 30 секунд), оно приравнивается к 30,000.
 
-- если время меньше 1024 мс., то вычисление точное.
-- иначе вычисление идёт с округлением до числа, кратного 16 мс.
+**Точность**
 
-При передаче в функцию отрицательных значений, поведение не определено.
+Вычисления точны если:
 
-Возвращаемое значение имеет тип Float32. Когда в функцию не было передано ни одного значения (при использовании `quantileTimingIf`), возвращается nan. Это сделано, чтобы отличать такие случаи от нулей. Смотрите замечание о сортировке NaN-ов в разделе «Секция ORDER BY».
+- Общее количество значений не превышает 5670.
+- Общее количество значений больше 5670, но времена загрузки страниц меньше 1024мс.
+
+В противном случае, результат рассчетов округляется до ближайшего числа, кратного 16мс.
+
+!!! note "Примечание"
+    Для расчёта квантилей времени загрузки страниц, функция работает эффективней и с более высокой точностью, чем функция [quantile](#agg_function-quantile).
+
+**Возвращаемое значение**
+
+- Квантиль заданного уровня.
+
+Тип: `Float32`.
+
+!!! note "Примечание"
+    Если в функцию не передано значений (для `quantileTimingIf`), возвращается [NaN](../../data_types/float.md#data_type-float-nan-inf). Это необходимо для того, что бы отделить такие случаи от случаев, в которых результат 0. Смотрите замечания о сортировке значений `NaN` в разделе [Секция ORDER BY](../select.md#select-order-by).
 
 Результат детерминирован (не зависит от порядка выполнения запроса).
 
-Для своей задачи (расчёт квантилей времени загрузки страниц), использование этой функции эффективнее и результат точнее, чем для функции `quantile`.
+**Пример**
+
+```sql
+SELECT quantileTiming(0.5)(number / 2) FROM numbers(10)
+```
+```text
+┌─quantileTiming(0.5)(divide(number, 2))─┐
+│                                      2 │
+└────────────────────────────────────────┘
+```
 
 ## quantileTimingWeighted(level)(x, weight)
 
@@ -943,7 +982,7 @@ FROM t
 
 Реализует [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) алгоритм для анализа TopK, на основе reduce-and-combine алгоритма из методики [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
-```
+```sql
 topK(N)(column)
 ```
 
@@ -965,7 +1004,7 @@ SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
 
-```
+```text
 ┌─res─────────────────┐
 │ [19393,19790,19805] │
 └─────────────────────┘
@@ -989,7 +1028,7 @@ FROM ontime
 
 Выполняет простую (одномерную) линейную регрессию.
 
-```
+```sql
 simpleLinearRegression(x, y)
 ```
 
@@ -1044,7 +1083,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 
 ### Использование {#agg_functions-stochasticlinearregression-usage}
 
-`stochasticLinearRegression` используется на двух этапах: постоение модели и предсказание новых данных. Чтобы постоить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
+`stochasticLinearRegression` используется на двух этапах: построение модели и предсказание новых данных. Чтобы построить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
 Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
 
 <a name="stochasticlinearregression-usage-fitting"></a>

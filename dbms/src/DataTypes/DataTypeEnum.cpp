@@ -70,20 +70,20 @@ void DataTypeEnum<Type>::fillMaps()
 {
     for (const auto & name_and_value : values)
     {
-        const auto name_to_value_pair = name_to_value_map.insert(
+        const auto inserted_value = name_to_value_map.insert(
             { StringRef{name_and_value.first}, name_and_value.second });
 
-        if (!name_to_value_pair.second)
+        if (!inserted_value.second)
             throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + name_to_value_pair.first->getFirst().toString() + "' = " + toString(name_to_value_pair.first->getSecond()),
+                    + " and " + toString(*lookupResultGetMapped(inserted_value.first)),
                 ErrorCodes::SYNTAX_ERROR};
 
-        const auto value_to_name_pair = value_to_name_map.insert(
+        const auto inserted_name = value_to_name_map.insert(
             { name_and_value.second, StringRef{name_and_value.first} });
 
-        if (!value_to_name_pair.second)
+        if (!inserted_name.second)
             throw Exception{"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + value_to_name_pair.first->second.toString() + "' = " + toString(value_to_name_pair.first->first),
+                    + " and '" + toString((*inserted_name.first).first) + "'",
                 ErrorCodes::SYNTAX_ERROR};
     }
 }
@@ -115,7 +115,7 @@ void DataTypeEnum<Type>::deserializeBinary(Field & field, ReadBuffer & istr) con
 {
     FieldType x;
     readBinary(x, istr);
-    field = nearestFieldType(x);
+    field = castToNearestFieldType(x);
 }
 
 template <typename Type>

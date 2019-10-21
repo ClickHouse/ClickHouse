@@ -75,31 +75,31 @@ The POST method of transmitting data is necessary for INSERT queries. In this ca
 Examples: Creating a table:
 
 ```bash
-echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+$ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Using the familiar INSERT query for data insertion:
 
 ```bash
-echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
+$ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Data can be sent separately from the query:
 
 ```bash
-echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
+$ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
 You can specify any data format. The 'Values' format is the same as what is used when writing INSERT INTO t VALUES:
 
 ```bash
-echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
+$ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
 To insert data from a tab-separated dump, specify the corresponding format:
 
 ```bash
-echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
+$ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
 Reading the table contents. Data is output in random order due to parallel query processing:
@@ -123,7 +123,7 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 Deleting the table.
 
 ```bash
-echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
+$ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 For successful requests that don't return a data table, an empty response body is returned.
@@ -141,10 +141,10 @@ Examples of sending data with compression:
 
 ```bash
 #Sending data to the server:
-curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
+$ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
 
 #Sending data to the client:
-echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+$ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 
 !!! note "Note"
@@ -173,13 +173,13 @@ The username and password can be indicated in one of two ways:
 1. Using HTTP Basic Authentication. Example:
 
 ```bash
-echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
+$ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
 2. In the 'user' and 'password' URL parameters. Example:
 
 ```bash
-echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+$ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
@@ -207,7 +207,7 @@ Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you
 
 You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
 
-```
+```text
 X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
 X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128"}
 X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
@@ -239,7 +239,7 @@ To ensure that the entire response is buffered, set `wait_end_of_query=1`. In th
 Example:
 
 ```bash
-curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
+$ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
 ```
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
@@ -251,7 +251,7 @@ You can create a query with parameters and pass values for them from the corresp
 ### Example
 
 ```bash
-curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+$ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->

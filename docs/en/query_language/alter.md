@@ -6,7 +6,7 @@ The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`a
 
 Changing the table structure.
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN ...
 ```
 
@@ -25,7 +25,7 @@ These actions are described in detail below.
 
 #### ADD COLUMN {#alter_add-column}
 
-``` sql
+```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
 ```
 
@@ -39,13 +39,13 @@ This approach allows us to complete the `ALTER` query instantly, without increas
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 ```
 
 #### DROP COLUMN {#alter_drop-column}
 
-``` sql
+```sql
 DROP COLUMN [IF EXISTS] name
 ```
 
@@ -55,13 +55,13 @@ Deletes data from the file system. Since this deletes entire files, the query is
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits DROP COLUMN browser
 ```
 
 #### CLEAR COLUMN {#alter_clear-column}
 
-``` sql
+```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
@@ -71,13 +71,13 @@ If the `IF EXISTS` clause is specified, the query won't return an error if the c
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
 #### COMMENT COLUMN {#alter_comment-column}
 
-``` sql
+```sql
 COMMENT COLUMN [IF EXISTS] name 'comment'
 ```
 
@@ -89,13 +89,13 @@ Comments are stored in the `comment_expression` column returned by the [DESCRIBE
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
 #### MODIFY COLUMN {#alter_modify-column}
 
-``` sql
+```sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
 ```
 
@@ -105,7 +105,7 @@ When changing the type, values are converted as if the [toType](functions/type_c
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
@@ -139,7 +139,7 @@ For tables that don't store data themselves (such as `Merge` and `Distributed`),
 
 The following command is supported:
 
-``` sql
+```sql
 MODIFY ORDER BY new_expression
 ```
 
@@ -171,7 +171,7 @@ Also, they are replicated (syncing indices metadata through ZooKeeper).
 See more on [constraints](create.md#constraints)
 
 Constraints could be added or deleted using following syntax:
-```
+```sql
 ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
 ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 ```
@@ -197,7 +197,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 
 #### DETACH PARTITION {#alter_detach-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name DETACH PARTITION partition_expr
 ```
 
@@ -205,7 +205,7 @@ Moves all data for the specified partition to the `detached` directory. The serv
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits DETACH PARTITION 201901
 ```
 
@@ -217,7 +217,7 @@ This query is replicated – it moves the data to the `detached` directory on al
 
 #### DROP PARTITION {#alter_drop-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name DROP PARTITION partition_expr
 ```
 
@@ -245,7 +245,7 @@ ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
 
 Adds data to the table from the `detached` directory. It is possible to add data for an entire partition or for a separate part. Examples:
 
-``` sql
+```sql
 ALTER TABLE visits ATTACH PARTITION 201901;
 ALTER TABLE visits ATTACH PART 201901_2_2_0;
 ```
@@ -258,7 +258,7 @@ So you can put data to the `detached` directory on one replica, and use the `ALT
 
 #### REPLACE PARTITION {#alter_replace-partition}
 
-``` sql
+```sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
@@ -271,7 +271,7 @@ For the query to run successfully, the following conditions must be met:
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ```
 
@@ -279,13 +279,13 @@ Resets all values in the specified column in a partition. If the `DEFAULT` claus
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
 #### FREEZE PARTITION {#alter_freeze-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
@@ -321,7 +321,7 @@ For more information about backups and restoring data, see the [Data Backup](../
 
 #### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ```
 
@@ -329,7 +329,7 @@ The query works similar to `CLEAR COLUMN`, but it resets an index instead of a c
 
 #### FETCH PARTITION {#alter_fetch-partition}
 
-``` sql
+```sql
 ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
 ```
 
@@ -342,7 +342,7 @@ The query does the following:
 
 For example:
 
-``` sql
+```sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
@@ -370,11 +370,11 @@ For old-style tables, you can specify the partition either as a number `201901` 
 
 All the rules above are also true for the [OPTIMIZE](misc.md#misc_operations-optimize) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
 
-``` sql
+```sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
 ### Synchronicity of ALTER Queries
 
@@ -393,19 +393,19 @@ Existing tables are ready for mutations as-is (no conversion necessary), but aft
 
 Currently available commands:
 
-``` sql
+```sql
 ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
 The `filter_expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
 
-``` sql
+```sql
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 The command is available starting with the 18.12.14 version. The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
 
-``` sql
+```sql
 ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 ```
 

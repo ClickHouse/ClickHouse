@@ -10,7 +10,7 @@ Kafka позволяет:
 
 ## Создание таблицы {#table_engine-kafka-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -77,7 +77,7 @@ SETTINGS
 !!! attention
     Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
 
-```
+```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
 ```
@@ -125,7 +125,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
-```
+```sql
   DETACH TABLE consumer;
   ATTACH MATERIALIZED VIEW consumer;
 ```

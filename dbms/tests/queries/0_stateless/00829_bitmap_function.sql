@@ -103,11 +103,35 @@ SELECT bitmapAndCardinality( z, bitmapBuild(cast([19,7] AS Array(UInt32))) ) FRO
 SELECT bitmapCardinality(bitmapAnd(bitmapBuild(cast([19,7] AS Array(UInt32))), z )) FROM bitmap_column_expr_test;
 SELECT bitmapCardinality(bitmapAnd(z, bitmapBuild(cast([19,7] AS Array(UInt32))))) FROM bitmap_column_expr_test;
 
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
 
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapMergeState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+
+SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+
+SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+
+SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 
 DROP TABLE IF EXISTS bitmap_test;
 DROP TABLE IF EXISTS bitmap_state_test;
 DROP TABLE IF EXISTS bitmap_column_expr_test;
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
 
 -- bitmapHasAny:
 ---- Empty
@@ -211,3 +235,46 @@ select bitmapToArray(bitmapSubsetInRange(bitmapBuild([
 select bitmapToArray(bitmapSubsetInRange(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
     100,200,500]), toUInt32(100), toUInt32(200)));
+
+-- bitmapSubsetLimit:
+---- Empty
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(emptyArrayUInt32()), toUInt32(0), toUInt32(10)));
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild(emptyArrayUInt16()), toUInt32(0), toUInt32(10)));
+---- Small
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt32(0), toUInt32(4)));
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt32(10), toUInt32(10)));
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([1,5,7,9]), toUInt32(3), toUInt32(7)));
+---- Large
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]), toUInt32(0), toUInt32(100)));
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]), toUInt32(30), toUInt32(200)));
+select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]), toUInt32(100), toUInt32(200)));
+
+-- bitmapMin:
+---- Empty
+SELECT bitmapMin(bitmapBuild(emptyArrayUInt8()));
+SELECT bitmapMin(bitmapBuild(emptyArrayUInt16()));
+SELECT bitmapMin(bitmapBuild(emptyArrayUInt32()));
+---- Small
+select bitmapMin(bitmapBuild([1,5,7,9]));
+---- Large
+select bitmapMin(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]));
+
+-- bitmapMax:
+---- Empty
+SELECT bitmapMax(bitmapBuild(emptyArrayUInt8()));
+SELECT bitmapMax(bitmapBuild(emptyArrayUInt16()));
+SELECT bitmapMax(bitmapBuild(emptyArrayUInt32()));
+---- Small
+select bitmapMax(bitmapBuild([1,5,7,9]));
+---- Large
+select bitmapMax(bitmapBuild([
+    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
+    100,200,500]));

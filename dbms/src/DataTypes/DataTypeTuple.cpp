@@ -1,5 +1,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -100,7 +101,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 void DataTypeTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const auto & tuple = get<const Tuple &>(field).toUnderType();
+    const auto & tuple = get<const Tuple &>(field);
     for (const auto idx_elem : ext::enumerate(elems))
         idx_elem.second->serializeBinary(tuple[idx_elem.first], ostr);
 }
@@ -108,10 +109,12 @@ void DataTypeTuple::serializeBinary(const Field & field, WriteBuffer & ostr) con
 void DataTypeTuple::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     const size_t size = elems.size();
-    field = Tuple(TupleBackend(size));
-    TupleBackend & tuple = get<Tuple &>(field).toUnderType();
+
+    Tuple tuple(size);
     for (const auto i : ext::range(0, size))
         elems[i]->deserializeBinary(tuple[i], istr);
+
+    field = tuple;
 }
 
 void DataTypeTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -446,7 +449,7 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 Field DataTypeTuple::getDefault() const
 {
-    return Tuple(ext::map<TupleBackend>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
+    return Tuple(ext::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
 }
 
 void DataTypeTuple::insertDefaultInto(IColumn & column) const

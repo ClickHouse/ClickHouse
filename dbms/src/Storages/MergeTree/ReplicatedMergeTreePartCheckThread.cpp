@@ -45,7 +45,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 
 void ReplicatedMergeTreePartCheckThread::stop()
 {
-    //based on discussion on https://github.com/yandex/ClickHouse/pull/1489#issuecomment-344756259
+    //based on discussion on https://github.com/ClickHouse/ClickHouse/pull/1489#issuecomment-344756259
     //using the schedule pool there is no problem in case stop is called two time in row and the start multiple times
 
     std::lock_guard lock(start_stop_mutex);

@@ -15,21 +15,21 @@ Connected to ClickHouse server version 0.0.26176.
 
 ## Использование {#cli_usage}
 
-Клиент может быть использован в интерактивном и неинтерактивном (batch) режиме.
+Клиент может быть использован в интерактивном и не интерактивном (batch) режиме.
 Чтобы использовать batch режим, укажите параметр query, или отправьте данные в stdin (проверяется, что stdin - не терминал), или и то, и другое.
 Аналогично HTTP интерфейсу, при использовании одновременно параметра query и отправке данных в stdin, запрос составляется из конкатенации параметра query, перевода строки, и данных в stdin. Это удобно для больших INSERT запросов.
 
 Примеры использования клиента для вставки данных:
 
 ```bash
-echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 
-cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 3, 'some text', '2016-08-14 00:00:00'
 4, 'some more text', '2016-08-14 00:00:01'
 _EOF
 
-cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
 В batch режиме в качестве формата данных по умолчанию используется формат TabSeparated. Формат может быть указан в секции FORMAT запроса.
@@ -79,7 +79,7 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 
 Отформатируйте запрос обычным способом. Представьте значения, которые вы хотите передать из параметров приложения в запрос в следующем формате:
 
-```
+```sql
 {<name>:<data type>}
 ```
 
@@ -89,7 +89,7 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 #### Пример
 
 ```bash
-clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
 ## Конфигурирование {#interfaces_cli_configuration}
@@ -140,4 +140,5 @@ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM ta
     <secure>False</secure>
 </config>
 ```
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/cli/) <!--hide-->

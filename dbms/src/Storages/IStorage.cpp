@@ -3,6 +3,7 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Common/quoteString.h>
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>

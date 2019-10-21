@@ -100,6 +100,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
+list (REMOVE_ITEM clickhouse_common_io_sources src/Common/new_delete.cpp)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms src/Storages/Kafka)
@@ -132,7 +133,15 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctio
 list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
 list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
+if (NOT ENABLE_SSL)
+    list (REMOVE_ITEM clickhouse_common_io_sources src/Common/OpenSSLHelpers.cpp)
+    list (REMOVE_ITEM clickhouse_common_io_headers src/Common/OpenSSLHelpers.h)
+endif ()
+
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+
+add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
+target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -155,8 +164,9 @@ macro(add_object_library name common_path)
     endif ()
 endmacro()
 
+add_object_library(clickhouse_access src/Access)
 add_object_library(clickhouse_core src/Core)
-add_object_library(clickhouse_compression src/Compression/)
+add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)
 add_object_library(clickhouse_datatypes src/DataTypes)
 add_object_library(clickhouse_databases src/Databases)
@@ -247,6 +257,7 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
+    ${Poco_XML_LIBRARY}
 )
 
 if(RE2_LIBRARY)
@@ -260,6 +271,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
     ${CITYHASH_LIBRARIES}
         PRIVATE
+    ${Poco_XML_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARIES}
         PUBLIC
@@ -320,7 +332,7 @@ dbms_target_include_directories(SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
-if (NOT USE_INTERNAL_LZ4_LIBRARY)
+if (NOT USE_INTERNAL_LZ4_LIBRARY AND LZ4_INCLUDE_DIR)
     dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
 
@@ -414,7 +426,7 @@ endif()
 
 if (USE_JEMALLOC)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # new_delete.cpp
+    target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
 endif ()
 
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)

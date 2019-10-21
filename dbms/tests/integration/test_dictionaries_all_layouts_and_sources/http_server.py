@@ -6,12 +6,26 @@ import ssl
 import csv
 
 
+# Decorator used to see if authentification works for external dictionary who use a HTTP source.
+def check_auth(fn):
+    def wrapper(req):
+        auth_header = req.headers.get('authorization', None)
+        api_key = req.headers.get('api-key', None)
+        if not auth_header or auth_header != 'Basic Zm9vOmJhcg==' or not api_key or api_key != 'secret':
+            req.send_response(401)
+        else:
+            fn(req)
+    return wrapper
+
+
 def start_server(server_address, data_path, schema, cert_path, address_family):
     class TSVHTTPHandler(BaseHTTPRequestHandler):
+        @check_auth
         def do_GET(self):
             self.__send_headers()
             self.__send_data()
 
+        @check_auth
         def do_POST(self):
             ids = self.__read_and_decode_post_ids()
             print "ids=", ids

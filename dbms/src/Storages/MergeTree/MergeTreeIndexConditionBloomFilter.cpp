@@ -4,6 +4,7 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexGranuleBloomFilter.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnConst.h>
 #include <ext/bit_cast.h>
@@ -96,6 +97,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
                  || element.function == RPNElement::FUNCTION_NOT_EQUALS
+                 || element.function == RPNElement::FUNCTION_HAS
                  || element.function == RPNElement::FUNCTION_IN
                  || element.function == RPNElement::FUNCTION_NOT_IN
                  || element.function == RPNElement::ALWAYS_FALSE)
@@ -141,7 +143,8 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
         else if (element.function == RPNElement::FUNCTION_IN
             || element.function == RPNElement::FUNCTION_NOT_IN
             || element.function == RPNElement::FUNCTION_EQUALS
-            || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+            || element.function == RPNElement::FUNCTION_NOT_EQUALS
+            || element.function == RPNElement::FUNCTION_HAS)
         {
             bool match_rows = true;
             const auto & predicate = element.predicate;
@@ -222,7 +225,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
             if (const auto & prepared_set = getPreparedSet(arguments[1]))
                 return traverseASTIn(function->name, arguments[0], prepared_set, out);
         }
-        else if (function->name == "equals" || function->name  == "notEquals")
+        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -297,9 +300,28 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     {
         size_t position = header.getPositionByName(key_ast->getColumnName());
         const DataTypePtr & index_type = header.getByPosition(position).type;
-        Field converted_field = convertFieldToType(value_field, *index_type, &*value_type);
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*index_type, converted_field)));
-        out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+
+        if (function_name == "has")
+        {
+            out.function = RPNElement::FUNCTION_HAS;
+
+            if (!array_type)
+                throw Exception("First argument for function has must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            Field converted_field = convertFieldToType(value_field, *array_type->getNestedType(), &*value_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*array_type->getNestedType(), converted_field)));
+        }
+        else
+        {
+            if (array_type)
+                throw Exception("An array type of bloom_filter supports only has() function.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+            Field converted_field = convertFieldToType(value_field, *index_type, &*value_type);
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(&*index_type, converted_field)));
+        }
+
         return true;
     }
 
@@ -309,7 +331,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         if (which.isTuple() && function->name == "tuple")
         {
-            const TupleBackend & tuple = get<const Tuple &>(value_field).toUnderType();
+            const Tuple & tuple = get<const Tuple &>(value_field);
             const auto value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
             const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 

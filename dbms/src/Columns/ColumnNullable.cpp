@@ -168,6 +168,12 @@ void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t star
     getNullMapData().resize_fill(getNullMapData().size() + length, 0);
 }
 
+void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+        insertFromNotNullable(src, position);
+}
+
 void ColumnNullable::popBack(size_t n)
 {
     getNestedColumn().popBack(n);

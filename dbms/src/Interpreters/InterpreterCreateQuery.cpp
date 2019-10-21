@@ -2,6 +2,7 @@
 
 #include <Poco/File.h>
 
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
@@ -11,6 +12,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -201,6 +203,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
     for (const auto & column : columns)
     {
+        /// Do not include virtual columns
+        if (column.is_virtual)
+            continue;
+
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
 
@@ -416,7 +422,12 @@ ColumnsDescription InterpreterCreateQuery::setProperties(
     else if (!create.as_table.empty())
     {
         columns = as_storage->getColumns();
-        indices = as_storage->getIndices();
+
+        /// Secondary indices make sense only for MergeTree family of storage engines.
+        /// We should not copy them for other storages.
+        if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
+            indices = as_storage->getIndices();
+
         constraints = as_storage->getConstraints();
     }
     else if (create.select)

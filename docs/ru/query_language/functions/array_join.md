@@ -15,11 +15,11 @@
 
 Пример:
 
-``` sql
+```sql
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
-```
+```text
 ┌─dst─┬─\'Hello\'─┬─src─────┐
 │   1 │ Hello     │ [1,2,3] │
 │   2 │ Hello     │ [1,2,3] │

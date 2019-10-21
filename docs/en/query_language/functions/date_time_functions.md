@@ -4,7 +4,7 @@ Support for time zones
 
 All functions for working with the date and time that have a logical use for the time zone can accept a second optional time zone argument. Example: Asia/Yekaterinburg. In this case, they use the specified time zone instead of the local (default) one.
 
-``` sql
+```sql
 SELECT
     toDateTime('2016-06-15 23:00:00') AS time,
     toDate(time) AS date_local,
@@ -12,7 +12,7 @@ SELECT
     toString(time, 'US/Samoa') AS time_samoa
 ```
 
-```
+```text
 ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
@@ -201,7 +201,7 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn't matter how many days in the new year the week contained, even if it contained only one day.
 
-```
+```sql
 toWeek(date, [, mode][, Timezone])
 ```
 **Parameters**
@@ -212,11 +212,11 @@ toWeek(date, [, mode][, Timezone])
 
 **Example**
 
-``` sql
+```sql
 SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9;
 ```
 
-```
+```text
 ┌───────date─┬─week0─┬─week1─┬─week9─┐
 │ 2016-12-27 │    52 │    52 │     1 │
 └────────────┴───────┴───────┴───────┘
@@ -231,11 +231,11 @@ The mode argument works exactly like the mode argument to toWeek(). For the sing
 
 **Example**
 
-``` sql
+```sql
 SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
 ```
 
-```
+```text
 ┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
 │ 2016-12-27 │    201652 │    201652 │    201701 │
 └────────────┴───────────┴───────────┴───────────┘
@@ -286,7 +286,7 @@ SELECT
     addYears(date_time, 1) AS add_years_with_date_time
 ```
 
-```
+```text
 ┌─add_years_with_date─┬─add_years_with_date_time─┐
 │          2019-01-01 │      2019-01-01 00:00:00 │
 └─────────────────────┴──────────────────────────┘
@@ -305,7 +305,7 @@ SELECT
     subtractYears(date_time, 1) AS subtract_years_with_date_time
 ```
 
-```
+```text
 ┌─subtract_years_with_date─┬─subtract_years_with_date_time─┐
 │               2018-01-01 │           2018-01-01 00:00:00 │
 └──────────────────────────┴───────────────────────────────┘

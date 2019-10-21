@@ -269,8 +269,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             if (part->isEmpty())
                 continue;
 
-            if (minmax_idx_condition && !minmax_idx_condition->checkInParallelogram(
-                    part->minmax_idx.parallelogram, data.minmax_idx_column_types).can_be_true)
+            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInParallelogram(
+                    part->minmax_idx.parallelogram, data.minmax_idx_column_types))
                 continue;
 
             if (max_block_numbers_to_read)
@@ -1200,8 +1200,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 for (size_t i = 0; i < used_key_size; ++i)
                     index[i]->get(range.begin, index_left[i]);
 
-                may_be_true = key_condition.getMaskAfter(
-                    used_key_size, index_left.data(), data.primary_key_data_types).can_be_true;
+                may_be_true = key_condition.mayBeTrueAfter(
+                    used_key_size, index_left.data(), data.primary_key_data_types);
             }
             else
             {
@@ -1214,8 +1214,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     index[i]->get(range.end, index_right[i]);
                 }
 
-                may_be_true = key_condition.checkInRange(
-                    used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types).can_be_true;
+                may_be_true = key_condition.mayBeTrueInRange(
+                    used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types);
             }
 
             if (!may_be_true)

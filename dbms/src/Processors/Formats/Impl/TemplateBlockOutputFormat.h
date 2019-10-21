@@ -14,7 +14,8 @@ class TemplateBlockOutputFormat : public IOutputFormat
 {
     using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
-    TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_);
+    TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
+                              ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_);
 
     String getName() const override { return "TemplateBlockOutputFormat"; }
 
@@ -23,13 +24,7 @@ public:
     void setRowsBeforeLimit(size_t rows_before_limit_) override { rows_before_limit = rows_before_limit_; rows_before_limit_set = true; }
     void onProgress(const Progress & progress_) override { progress.incrementPiecewiseAtomically(progress_); }
 
-protected:
-    void consume(Chunk chunk) override;
-    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
-    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
-    void finalize() override;
-
-    enum class OutputPart : size_t
+    enum class ResultsetPart : size_t
     {
         Data,
         Totals,
@@ -42,7 +37,14 @@ protected:
         BytesRead
     };
 
-    OutputPart stringToOutputPart(const String & part);
+    static ResultsetPart stringToResultsetPart(const String & part);
+
+protected:
+    void consume(Chunk chunk) override;
+    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
+    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+    void finalize() override;
+
     void writeRow(const Chunk & chunk, size_t row_num);
     void serializeField(const IColumn & column, const IDataType & type, size_t row_num, ColumnFormat format);
     template <typename U, typename V> void writeValue(U value, ColumnFormat col_format);

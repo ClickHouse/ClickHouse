@@ -141,6 +141,7 @@ public:
         return 1;
     }
 
+    bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;

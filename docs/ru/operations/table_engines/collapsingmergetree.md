@@ -65,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Например, мы хотим рассчитать, сколько страниц проверили пользователи на каком-то сайте и как долго они там находились. В какой-то момент времени мы пишем следующую строку с состоянием действий пользователя:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
@@ -73,7 +73,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Через некоторое время мы регистрируем изменение активности пользователя и записываем его следующими двумя строками.
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -86,7 +86,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Поскольку нам нужно только последнее состояние активности пользователя, строки
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -134,7 +134,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Исходные данные:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -170,11 +170,11 @@ INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 
 
 Получение данных:
 
-```
+```sql
 SELECT * FROM UAct
 ```
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -200,7 +200,7 @@ GROUP BY UserID
 HAVING sum(Sign) > 0
 ```
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
@@ -212,7 +212,7 @@ HAVING sum(Sign) > 0
 SELECT * FROM UAct FINAL
 ```
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
@@ -224,7 +224,7 @@ SELECT * FROM UAct FINAL
 
 Исходные данные:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │        -5 │     -146 │   -1 │
@@ -253,28 +253,39 @@ insert into UAct values(4324182021466249494, -5, -146, -1);
 insert into UAct values(4324182021466249494,  6,  185,  1);
 
 select * from UAct final; // старайтесь не использовать final (он подходит только для тестов и маленьких таблиц)
+```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
-
+```
+```sql
 SELECT
     UserID,
     sum(PageViews) AS PageViews,
     sum(Duration) AS Duration
 FROM UAct
 GROUP BY UserID
+```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
-
+```
+```sql
 select count() FROM UAct
+```
+```text
 ┌─count()─┐
 │       3 │
 └─────────┘
-
+```
+```sql
 optimize table UAct final;
 
 select * FROM UAct
+```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘

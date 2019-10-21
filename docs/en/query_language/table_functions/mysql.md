@@ -2,7 +2,7 @@
 
 Allows `SELECT` queries to be performed on data that is stored on a remote MySQL server.
 
-```
+```sql
 mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
@@ -32,7 +32,7 @@ A table object with the same columns as the original MySQL table.
 
 Table in MySQL:
 
-```
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,

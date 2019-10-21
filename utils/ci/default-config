@@ -13,7 +13,7 @@ PROJECT_ROOT=$(cd $SCRIPTPATH/.. && pwd)
 
 # get-sources
 SOURCES_METHOD=local                # clone, local, tarball
-SOURCES_CLONE_URL="https://github.com/yandex/ClickHouse.git"
+SOURCES_CLONE_URL="https://github.com/ClickHouse/ClickHouse.git"
 SOURCES_BRANCH="master"
 SOURCES_COMMIT=HEAD                 # do checkout of this commit after clone
 

@@ -33,9 +33,11 @@ endif ()
 
 clickhouse_program_add_library(odbc-bridge)
 
-# clickhouse-odbc-bridge is always a separate binary.
-# Reason: it must not export symbols from SSL, mariadb-client, etc. to not break ABI compatibility with ODBC drivers.
-set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+if (OS_LINUX)
+    # clickhouse-odbc-bridge is always a separate binary.
+    # Reason: it must not export symbols from SSL, mariadb-client, etc. to not break ABI compatibility with ODBC drivers.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+endif ()
 
 add_executable(clickhouse-odbc-bridge odbc-bridge.cpp)
 set_target_properties(clickhouse-odbc-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)

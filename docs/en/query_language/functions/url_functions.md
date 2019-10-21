@@ -16,7 +16,7 @@ Examples of typical returned values: http, https, ftp, mailto, tel, magnet...
 
 Extracts the hostname from a URL.
 
-```
+```sql
 domain(url)
 ```
 
@@ -27,7 +27,7 @@ domain(url)
 
 The URL can be specified with or without a scheme. Examples:
 
-```
+```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://yandex.com/time/
@@ -35,7 +35,7 @@ https://yandex.com/time/
 
 For these examples, the `domain` function returns the following results:
 
-```
+```text
 some.svn-hosting.com
 some.svn-hosting.com
 yandex.com
@@ -67,7 +67,7 @@ Returns the domain and removes no more than one 'www.' from the beginning of it,
 
 Extracts the the top-level domain from a URL.
 
-```
+```sql
 topLevelDomain(url)
 ```
 
@@ -77,7 +77,7 @@ topLevelDomain(url)
 
 The URL can be specified with or without a scheme. Examples:
 
-```
+```text
 svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://yandex.com/time/
@@ -151,7 +151,7 @@ Returns an array containing the URL, truncated at the end by the symbols /,? in 
 
 The same as above, but without the protocol and host in the result. The / element (root) is not included. Example: the function is used to implement tree reports the URL in Yandex. Metric.
 
-```
+```text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -164,11 +164,11 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 Returns the decoded URL.
 Example:
 
-``` sql
+```sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-```
+```text
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘

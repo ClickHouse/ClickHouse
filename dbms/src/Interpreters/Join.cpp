@@ -70,6 +70,7 @@ Join::Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample
     , nullable_right_side(table_join->forceNullableRight())
     , nullable_left_side(table_join->forceNullableLeft())
     , any_take_last_row(any_take_last_row_)
+    , asof_inequality(table_join->getAsofInequality())
     , log(&Logger::get("Join"))
 {
     setSampleBlock(right_sample_block);
@@ -466,6 +467,9 @@ bool Join::addJoinedBlock(const Block & block)
 
     size_t rows = block.rows();
 
+    if (rows)
+        has_no_rows_in_maps = false;
+
     blocks.push_back(block);
     Block * stored_block = &blocks.back();
 
@@ -635,7 +639,7 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
                 if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
                 {
-                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), asof_column, i))
+                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), join.getAsofInequality(), asof_column, i))
                     {
                         filter[i] = 1;
                         mapped.setUsed();
@@ -959,29 +963,7 @@ void Join::joinBlock(Block & block)
 
 void Join::joinTotals(Block & block) const
 {
-    Block totals_without_keys = totals;
-
-    if (totals_without_keys)
-    {
-        for (const auto & name : key_names_right)
-            totals_without_keys.erase(totals_without_keys.getPositionByName(name));
-
-        for (size_t i = 0; i < totals_without_keys.columns(); ++i)
-            block.insert(totals_without_keys.safeGetByPosition(i));
-    }
-    else
-    {
-        /// We will join empty `totals` - from one row with the default values.
-
-        for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
-        {
-            const auto & col = sample_block_with_columns_to_add.getByPosition(i);
-            block.insert({
-                col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
-                col.type,
-                col.name});
-        }
-    }
+    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
 }
 
 

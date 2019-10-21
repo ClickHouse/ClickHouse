@@ -48,6 +48,11 @@ struct ClearableHashTableCell : public BaseCell
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
+template<typename Key, typename BaseCell>
+ALWAYS_INLINE inline auto lookupResultGetKey(ClearableHashTableCell<Key, BaseCell> * cell) { return &cell->key; }
+
+template<typename Key, typename BaseCell>
+ALWAYS_INLINE inline void * lookupResultGetMapped(ClearableHashTableCell<Key, BaseCell> *) { return nullptr; }
 
 template
 <
@@ -61,6 +66,9 @@ class ClearableHashSet : public HashTable<Key, ClearableHashTableCell<Key, HashT
 public:
     using key_type = Key;
     using value_type = typename ClearableHashSet::cell_type::value_type;
+
+    using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
+    using typename Base::LookupResult;
 
     void clear()
     {

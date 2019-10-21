@@ -140,7 +140,7 @@ try
     size_t num_threads = 2;
     ThreadPool pool(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
-        pool.schedule([i]() { do_io(i); });
+        pool.scheduleOrThrowOnError([i]() { do_io(i); });
     pool.wait();
 
     test_perf();

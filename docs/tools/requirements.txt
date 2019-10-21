@@ -12,7 +12,7 @@ futures==3.1.1
 htmlmin==0.1.12
 idna==2.6
 imagesize==0.7.1
-Jinja2==2.10
+Jinja2==2.10.1
 jsmin==2.2.2
 livereload==2.5.1
 Markdown==2.6.11
@@ -21,7 +21,7 @@ mkdocs==1.0.4
 Pygments==2.2.0
 python-slugify==1.2.6
 pytz==2017.3
-PyYAML==3.12
+PyYAML==5.1
 recommonmark==0.4.0
 requests==2.21.0
 singledispatch==3.4.0.3
@@ -32,4 +32,4 @@ sphinxcontrib-websupport==1.0.1
 tornado==5.1
 typing==3.6.2
 Unidecode==1.0.23
-urllib3==1.23
+urllib3==1.24.2
