@@ -32,7 +32,7 @@ struct AggregateFunctionAvgData
                 return static_cast<ResultT>(sum) / count; /// allow division by zero
 
         if (count == 0)
-            return 0;
+            return static_cast<ResultT>(0);
         return static_cast<ResultT>(sum) / count;
     }
 };
