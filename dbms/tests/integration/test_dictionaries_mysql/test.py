@@ -54,7 +54,7 @@ def test_load_mysql_dictionaries(started_cluster):
     
     for n in range(0, 5):
         # Create MySQL tables, fill them and create CH dict tables
-        prepare_tables('test' + n)
+        prepare_mysql_table('test' + n)
     
     # Check dictionaries are loaded and have correct number of elements
     for n in range(0, 100):
