@@ -761,7 +761,6 @@ private:
         else
         {
             /// Perform the loading immediately.
-            /// Deadlock when we try to load dictionary from dictionary on localhost
             doLoading(name, loading_id, false);
         }
     }

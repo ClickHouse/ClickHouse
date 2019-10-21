@@ -13,7 +13,6 @@ namespace DB
 
 using LoadablesConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
-
 /// Base interface for configurations source for Loadble objects, which can be
 /// loaded with ExternalLoader. Configurations may came from filesystem (XML-files),
 /// server memory (from database), etc. It's important that main result of this class
