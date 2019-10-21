@@ -83,13 +83,13 @@ formatDateTime({datetime}, '%C %d %D %e %F %H %I %j %m %M %n %p %R %S %t %T %u %
 COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
 functions = list(filter(lambda f: len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None, functions))
 
-# Expanded to cartesian product of all arguments.
-# NOTE: {{datetime}} to be turned into {datetime} after str.format() for keys (format string), but not for list of values!
+# Expanded later to cartesian product of all arguments.
+# NOTE: {N} to be turned into N after str.format() for keys (format string), but not for list of values!
 extra_ops =\
 [
     # With same type:
     (
-        ['{{datetime}} {op} {{datetime}}'],
+        ['N {op} N'],
         {
             'op':
             [
@@ -106,8 +106,8 @@ extra_ops =\
     # With other DateTime types:
     (
         [
-            '{{datetime}} {op} {arg}',
-            '{arg} {op} {{datetime}}'
+            'N {op} {arg}',
+            '{arg} {op} N'
         ],
         {
             'op':
@@ -120,14 +120,14 @@ extra_ops =\
                 '> ',
                 '>='
             ],
-            'arg': ['now()', 'toDate(now())'],
+            'arg': ['DT', 'D', 'DT64'],
         }
     ),
     # With arithmetic types
     (
         [
-            '{{datetime}} {op} {arg}',
-            '{arg} {op} {{datetime}}'
+            'N {op} {arg}',
+            '{arg} {op} N'
         ],
         {
             'op':
@@ -145,6 +145,13 @@ extra_ops =\
             [
                 '1',
                 '-1',
+                # 'toUInt8(1)',
+                # 'toInt8(-1)',
+                # 'toUInt16(1)',
+                # 'toInt16(-1)',
+                # 'toUInt32(1)',
+                # 'toInt32(-1)',
+                # 'toUInt64(1)',
                 'toInt64(1)',
                 'toInt64(-1)'
             ],
@@ -160,9 +167,6 @@ for funcs, args in extra_ops:
             result_func = func.format(**dict(zip(args_keys, args_vals)))
             functions.append(result_func)
 
-datetime64_args = [ #'now64(0)', 'now64(3)', 'now64(6)', 'now64(9)', 'now64(17)']
-    'now64(3)']
-
 if sys.version_info[0] > 2:
     escape_string_codec = 'unicode_escape'
 else:
@@ -171,16 +175,15 @@ else:
 def escape_string(s):
     return s.encode(escape_string_codec).decode('utf-8')
 
-# WITH toDateTime64(20191010163704, 3, 'UTC')
-
 # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
 for func in functions:
-    for dt in datetime64_args:
-        dt32 = func.format(datetime='now()')
+    func = func.format(datetime='N')
+    print("""SELECT 'SELECT {func}'""".format(func=escape_string(func)))    # for debug only
+    for dt in ['D', 'DT', 'DT64']:
+        prologue = """WITH toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, toDate('2019-09-16') as D, {X} as N""".format(X=dt)
         # dt64 = func.format(datetime=dt)
         # f = "'values match:', ({dt32}) == ({dt64}), 'types match:', toTypeName({dt32}) == toTypeName({dt64})".format(dt32=dt32, dt64=dt64)
-        print("""SELECT 'SELECT {dt32}'""".format(dt32=escape_string(dt32)))    # for debug only
-        print("""SELECT toTypeName(r), {dt32} as r""".format(dt32=dt32)) # for debug only
+        print("""{prologue} SELECT toTypeName(r), {func} as r""".format(prologue=prologue, func=func))
         # print("""SELECT toTypeName(r), {dt64} as r""".format(dt64=dt64)) # for debug only
 #        print("""SELECT {f};""".format(f=f))
-        print("""SELECT '------------------------------------------'""") # for debug only
+    print("""SELECT '------------------------------------------'""") # for debug only
