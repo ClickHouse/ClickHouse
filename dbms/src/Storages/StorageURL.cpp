@@ -5,7 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/ReadWriteBufferFromHTTPWithHostFilter.h>
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Formats/FormatFactory.h>
@@ -57,7 +57,7 @@ namespace
             : name(name_)
         {
             context.getRemoteHostFilter().checkURL(uri);
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, method, callback, timeouts, context.getSettingsRef().max_http_get_redirects);
+            read_buf = std::make_unique<ReadWriteBufferFromHTTPWithHostFilter>(uri, method, callback, timeouts, context.getSettingsRef().max_http_get_redirects, context.getRemoteHostFilter());
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -88,7 +88,7 @@ namespace
 
     private:
         String name;
-        std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
+        std::unique_ptr<ReadWriteBufferFromHTTPWithHostFilter> read_buf;
         BlockInputStreamPtr reader;
     };
 
