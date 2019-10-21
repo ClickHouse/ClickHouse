@@ -322,10 +322,10 @@ public:
             else
             {
                 const auto & new_config = new_config_it->second;
-                if (!isSameConfiguration(*info.config.config, info.config.key_in_config, *new_config.config, new_config.key_in_config))
+                if (!isSameConfiguration(*info.object_config.config, info.object_config.key_in_config, *new_config.config, new_config.key_in_config))
                 {
                     /// Configuration has been changed.
-                    info.config = new_config;
+                    info.object_config = new_config;
                     info.config_changed = true;
 
                     if (info.wasLoading())
@@ -610,7 +610,7 @@ public:
 private:
     struct Info
     {
-        Info(const ObjectConfig & config_) : config(config_) {}
+        Info(const ObjectConfig & object_config_) : object_config(object_config_) {}
 
         bool loaded() const { return object != nullptr; }
         bool failed() const { return !object && exception; }
@@ -642,12 +642,12 @@ private:
             result.exception = exception;
             result.loading_start_time = loading_start_time;
             result.loading_duration = loadingDuration();
-            result.origin = config.config_path;
-            result.repository_name = config.repository_name;
+            result.origin = object_config.config_path;
+            result.repository_name = object_config.repository_name;
             return result;
         }
 
-        ObjectConfig config;
+        ObjectConfig object_config;
         LoadablePtr object;
         TimePoint loading_start_time;
         TimePoint loading_end_time;
@@ -797,7 +797,7 @@ private:
         if (!info || !info->loading() || (info->loading_id != loading_id))
             return;
 
-        ObjectConfig config = info->config;
+        ObjectConfig config = info->object_config;
         bool config_changed = info->config_changed;
         LoadablePtr previous_version = info->object;
         size_t error_count = info->error_count;
