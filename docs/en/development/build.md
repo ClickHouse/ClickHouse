@@ -3,21 +3,21 @@
 ## Install Git and Pbuilder
 
 ```bash
-sudo apt-get update
-sudo apt-get install git pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
+$ sudo apt-get update
+$ sudo apt-get install git pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
 ## Checkout ClickHouse Sources
 
 ```bash
-git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
-cd ClickHouse
+$ git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
+$ cd ClickHouse
 ```
 
 ## Run Release Script
 
 ```bash
-./release
+$ ./release
 ```
 
 # How to Build ClickHouse for Development
@@ -29,13 +29,13 @@ Only x86_64 with SSE 4.2 is supported. Support for AArch64 is experimental.
 To test for SSE 4.2, do
 
 ```bash
-grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+$ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
 ## Install Git and CMake
 
 ```bash
-sudo apt-get install git cmake ninja-build
+$ sudo apt-get install git cmake ninja-build
 ```
 
 Or cmake3 instead of cmake on older systems.
@@ -47,48 +47,48 @@ There are several ways to do this.
 ### Install from a PPA Package
 
 ```bash
-sudo apt-get install software-properties-common
-sudo apt-add-repository ppa:ubuntu-toolchain-r/test
-sudo apt-get update
-sudo apt-get install gcc-9 g++-9
+$ sudo apt-get install software-properties-common
+$ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
+$ sudo apt-get update
+$ sudo apt-get install gcc-9 g++-9
 ```
 
 ### Install from Sources
 
-Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
 ## Use GCC 9 for Builds
 
 ```bash
-export CC=gcc-9
-export CXX=g++-9
+$ export CC=gcc-9
+$ export CXX=g++-9
 ```
 
 ## Install Required Libraries from Packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev gperf
+$ sudo apt-get install libicu-dev libreadline-dev gperf
 ```
 
 ## Checkout ClickHouse Sources
 
 ```bash
-git clone --recursive git@github.com:yandex/ClickHouse.git
-# or: git clone --recursive https://github.com/yandex/ClickHouse.git
-
-cd ClickHouse
+$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
-
-For the latest stable version, switch to the `stable` branch.
+or 
+```bash
+$ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+$ cd ClickHouse
+```
 
 ## Build ClickHouse
 
 ```bash
-mkdir build
-cd build
-cmake ..
-ninja
-cd ..
+$ mkdir build
+$ cd build
+$ cmake ..
+$ ninja
+$ cd ..
 ```
 
 To create an executable, run `ninja clickhouse`.

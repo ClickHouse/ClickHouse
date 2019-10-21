@@ -1,6 +1,6 @@
 # MergeTree {#table_engines-mergetree}
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
 
 Engines in the `MergeTree` family are designed for inserting a very large amount of data into a table. The data is quickly written to the table part by part, then rules are applied for merging the parts in the background. This method is much more efficient than continually rewriting the data in storage during insert.
 
@@ -47,7 +47,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of parameters, see the [CREATE query description](../../query_language/create.md).
 
-!!! note "Note"
+!!!note "Note"
     `INDEX` is an experimental feature, see [Data Skipping Indexes](#table_engine-mergetree-data_skipping-indexes).
 
 ### Query Clauses
@@ -78,11 +78,14 @@ For a description of parameters, see the [CREATE query description](../../query_
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
-    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. For the list of available parameters, see [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
+    - `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
+    - `index_granularity_bytes` — Maximum size of data granule in bytes. Default value: 10Mb. To restrict the size of granule only by number of rows set 0 (not recommended). See [Data Storage](#mergetree-data-storage).
+    - `enable_mixed_granularity_parts` — Enables or disables transition to controlling the granule size with the `index_granularity_bytes` setting. Before the version 19.11 there was the only `index_granularity` setting for the granule size restriction. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from the tables with big rows (tens and hundreds of megabytes). So if you have tables with big rows, you can turn the setting on for the tables to get better efficiency of your `SELECT` queries.
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in "Server configuration parameters".
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     - `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
+    - `write_final_mark` — Enables or disables writing the final index mark at the end of data part. Default value: 1. Don't turn it off.
 
 **Example of Sections Setting**
 
@@ -101,7 +104,7 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 !!! attention
     Do not use this method in new projects. If possible, switch old projects to the method described above.
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -119,14 +122,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Example**
 
-```
+```sql
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
 The `MergeTree` engine is configured in the same way as in the example above for the main engine configuration method.
 </details>
 
-## Data Storage
+## Data Storage {#mergetree-data-storage}
 
 A table consists of data parts sorted by primary key.
 
@@ -134,9 +137,9 @@ When data is inserted in a table, separate data parts are created and each of th
 
 Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged. The merge mechanism does not guarantee that all rows with the same primary key will be in the same data part.
 
-For each data part, ClickHouse creates an index file that contains the primary key value for each index row ("mark"). Index row numbers are defined as `n * index_granularity`. The maximum value `n` is equal to the integer part of dividing the total number of rows by the `index_granularity`. For each column, the "marks" are also written for the same index rows as the primary key. These "marks" allow you to find the data directly in the columns.
+Each data part is logically divided by granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse doesn't split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for this row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it is in the primary key or not, ClickHouse also stores the same marks. These marks allow finding the data directly in the columns.
 
-You can use a single large table and continually add data to it in small chunks – this is what the `MergeTree` engine is intended for.
+The size of a granule is restricted by the `index_granularity` and `index_granularity_bytes` settings of the table engine. The number of rows in granule lays in the `[1, index_granularity]` range, depending on the size of rows. The size of a granule can exceed `index_granularity_bytes` if the size of the single row is greater than the value of the setting. In this case, the size of the granule equals the size of the row.
 
 ## Primary Keys and Indexes in Queries {#primary-keys-and-indexes-in-queries}
 
@@ -159,9 +162,9 @@ If the data query specifies:
 
 The examples above show that it is always more effective to use an index than a full scan.
 
-A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read. In most cases, ClickHouse performance does not degrade when `index_granularity = 8192`.
+A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read.
 
-Sparse indexes allow you to work with a very large number of table rows, because such indexes are always stored in the computer's RAM.
+Sparse indexes allow you to work with a very large number of table rows, because such indexes fit the computer's RAM in the very most cases.
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
@@ -288,24 +291,24 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 - `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    Stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
+    Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
 
     - `n` — ngram size,
     - `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-    - `number_of_hash_functions` — The number of hash functions used in the bloom filter.
-    - `random_seed` — The seed for bloom filter hash functions.
+    - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
+    - `random_seed` — The seed for Bloom filter hash functions.
 
 - `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
     The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
-- `bloom_filter([false_positive])` — Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+- `bloom_filter([false_positive])` — Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
 
-    The `false_positive` optional parameter is the probability of false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+    The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
 
     Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
-    Supported for the following functions: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
+    The following functions can use it: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -315,9 +318,9 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 #### Functions Support
 
-Conditions in the `WHERE` clause contain calls of functions over the columns. If the column is a part of some index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subset of functions for using indexes.
+Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
 
-The `set` index can be used with all functions. Functions subsets for other indexes are in the table below.
+The `set` index can be used with all functions. Function subsets for other indexes are shown in the table below.
 
 Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter
 ----------------------------|-------------|--------|------------|------------|---------------
@@ -326,7 +329,7 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [like](../../query_language/functions/string_search_functions.md#function-like) | ✔ | ✔ | ✔ | ✗ |  ✗
 [notLike](../../query_language/functions/string_search_functions.md#function-notlike) | ✔ | ✔ | ✔ | ✔ | ✗
 [startsWith](../../query_language/functions/string_functions.md#function-startswith) | ✔ | ✔ | ✔ | ✔ | ✗
-[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ |
+[endsWith](../../query_language/functions/string_functions.md#function-endswith) | ✗ | ✗ | ✔ | ✔ | ✗
 [multiSearchAny](../../query_language/functions/string_search_functions.md#function-multisearchany) | ✗ | ✗ | ✔ | ✔ | ✗
 [in](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
 [notIn](../../query_language/functions/in_functions.md#in-functions) | ✔ | ✔ | ✔ | ✔ | ✔ 
@@ -338,9 +341,9 @@ Function (operator) / Index | primary key | minmax | ngrambf_v1 | tokenbf_v1 | b
 [notEmpty](../../query_language/functions/array_functions.md#function-notempty)  | ✔ | ✔ | ✗ | ✗ | ✗
 hasToken  | ✗ | ✗ | ✗ | ✔ | ✗ 
 
-Functions with a constant argument less than ngram size couldn't be used by `ngrambf_v1` for the query optimization.
+Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `bloom_filter` indexes couldn't be used for optimizing queries where the result of a function is expected to be false, for example:
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can't be used for optimizing queries where the result of a function is expected to be false, for example:
 
 - Can be optimized:
     - `s LIKE '%test%'`
@@ -370,14 +373,14 @@ The `TTL` clause can be set for the whole table and for each individual column. 
 
 The table must have the column in the [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md) data type. To define the lifetime of data, use operations on this time column, for example:
 
-```
+```sql
 TTL time_column
 TTL time_column + interval
 ```
 
 To define `interval`, use [time interval](../../query_language/operators.md#operators-datetime) operators.
 
-```
+```sql
 TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
@@ -457,3 +460,135 @@ When ClickHouse see that data is expired, it performs an off-schedule merge. To 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+
+
+## Using multiple block devices for data storage {#table_engine-mergetree-multiple-volumes}
+
+### General
+
+Tables of the MergeTree family are able to store their data on multiple block devices, which may be useful when, for instance, the data of a certain table are implicitly split into "hot" and "cold". The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the "hot" data may be located on fast disks (NVMe SSDs or even in memory), while the "cold" data - on relatively slow ones (HDD).
+
+Part is the minimum movable unit for MergeTree tables. The data belonging to one part are stored on one disk. Parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](../../query_language/alter.md#alter_move-partition) queries. 
+
+### Terms
+* Disk — a block device mounted to the filesystem.
+* Default disk — a disk that contains the path specified in the `<path>` tag in `config.xml`.
+* Volume — an ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
+* Storage policy — a number of volumes together with the rules for moving data between them.
+
+The names given to the described entities can be found in the system tables, [system.storage_policies](../system_tables.md#system_tables-storage_policies) and [system.disks](../system_tables.md#system_tables-disks). Storage policy name can be used as a parameter for tables of the MergeTree family.
+
+### Configuration {#table_engine-mergetree-multiple-volumes_configure}
+
+Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory. This section in a configuration file has the following structure:
+
+```xml
+<disks>
+    <fast_disk> <!-- disk name -->
+        <path>/mnt/fast_ssd/clickhouse</path>
+    </fast_disk>
+    <disk1>
+        <path>/mnt/hdd1/clickhouse</path>
+        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
+    </disk1>
+    <disk2>
+        <path>/mnt/hdd2/clickhouse</path>
+        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
+    </disk2>
+
+    ...
+</disks>
+```
+
+where
+
+* the disk name is given as a tag name.
+* `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with '/'.
+* `keep_free_space_bytes` — the amount of free disk space to be reserved.
+
+The order of the disk definition is not important.
+
+Storage policies configuration:
+
+```xml
+<policies>
+    <hdd_in_order> <!-- policy name -->
+        <volumes>
+            <single> <!-- volume name -->
+                <disk>disk1</disk>
+                <disk>disk2</disk>
+            </single>
+        </volumes>
+    </hdd_in_order>
+
+    <moving_from_ssd_to_hdd>
+        <volumes>
+            <hot>
+                <disk>fast_ssd</disk>
+                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+            </hot>
+            <cold>
+                <disk>disk1</disk>
+            </cold>            
+        </volumes>
+        <move_factor>0.2</move_factor>
+    </moving_from_ssd_to_hdd>
+</policies>
+```
+
+where
+
+* volume and storage policy names are given as tag names.
+* `disk` — a disk within a volume.
+* `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks.
+* `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
+
+
+In the given example, the `hdd_in_order` policy implements the [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) approach. Since the policy defines only one volume (`single`), the data are stored on all its disks in circular order. Such a policy can be quite useful if there are several similar disks mounted to the system. If there are different disks, the policy `moving_from_ssd_to_hdd` can be used instead. 
+The volume `hot` consists of an SSD disk (`fast_ssd`), and the maximum size of a part that can be stored on this volume is 1GB. All the parts with the size larger than 1GB will be stored directly on the `cold` volume, which contains an HDD disk `disk1`. 
+Also, once the disk `fast_ssd` gets filled by more than 80%, data will be transferred to the `disk1` by a background process.
+
+The order of volume enumeration within a storage policy is important. Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns. 
+
+When creating a table, one can apply one of the configured storage policies to it: 
+
+```sql
+CREATE TABLE table_with_non_default_policy (
+    EventDate Date,
+    OrderID UInt64,
+    BannerID UInt64,
+    SearchPhrase String
+) ENGINE = MergeTree
+ORDER BY (OrderID, BannerID)
+PARTITION BY toYYYYMM(EventDate)
+SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
+```
+
+The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.  
+
+### Details
+
+In the case of MergeTree tables, data is getting to disk in different ways:
+
+* as a result of an insert (`INSERT` query).
+* during background merges and [mutations](../../query_language/alter.md#alter-mutations).
+* when downloading from another replica.
+* as a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](../../query_language/alter.md#alter_freeze-partition).
+
+In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
+
+1. The first volume (in the order of definition) that has enough disk space for storing a part (`unreserved_space > current_part_size`) and allows for storing parts of a given size (`max_data_part_size_bytes > current_part_size`) is chosen.
+2. Within this volume, that disk is chosen that follows the one, which was used for storing the previous chunk of data, and that has free space more than the part size (`unreserved_space - keep_free_space_bytes > current_part_size`). 
+
+Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones. 
+
+In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
+Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](../system_tables.md#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](../system_tables.md#system_tables-parts) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
+
+User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART|PARTITION ... TO VOLUME|DISK ...](../../query_language/alter.md#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
+
+Moving data does not interfere with data replication. Therefore, different storage policies can be specified for the same table on different replicas.
+
+After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
+During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
+

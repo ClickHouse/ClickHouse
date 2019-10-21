@@ -410,36 +410,36 @@ inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
 }
 
 /// Outputs a string in backquotes.
-inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
+inline void writeBackQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'`'>(s, buf);
 }
 
 /// Outputs a string in backquotes for MySQL.
-inline void writeBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
+inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 {
     writeChar('`', buf);
-    writeAnyEscapedString<'`', true>(s.data(), s.data() + s.size(), buf);
+    writeAnyEscapedString<'`', true>(s.data, s.data + s.size, buf);
     writeChar('`', buf);
 }
 
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
 template <typename F>
-inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F && write_quoted_string)
+inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
 {
-    if (s.empty() || !isValidIdentifierBegin(s[0]))
+    if (!s.size || !isValidIdentifierBegin(s.data[0]))
         write_quoted_string(s, buf);
     else
     {
-        const char * pos = s.data() + 1;
-        const char * end = s.data() + s.size();
+        const char * pos = s.data + 1;
+        const char * end = s.data + s.size;
         for (; pos < end; ++pos)
             if (!isWordCharASCII(*pos))
                 break;
@@ -450,19 +450,19 @@ inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F
     }
 }
 
-inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+inline void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
 }
 
-inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
+inline void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
 }
 
-inline void writeProbablyBackQuotedStringMySQL(const String & s, WriteBuffer & buf)
+inline void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 
@@ -905,5 +905,4 @@ inline String toString(const T & x)
     writeText(x, buf);
     return buf.str();
 }
-
 }

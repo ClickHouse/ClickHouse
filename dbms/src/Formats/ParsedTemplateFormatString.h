@@ -3,9 +3,12 @@
 #include <Core/Types.h>
 #include <functional>
 #include <optional>
+#include <Formats/FormatSchemaInfo.h>
 
 namespace DB
 {
+
+class Block;
 
 struct ParsedTemplateFormatString
 {
@@ -34,17 +37,20 @@ struct ParsedTemplateFormatString
     typedef std::function<std::optional<size_t>(const String &)> ColumnIdxGetter;
 
     ParsedTemplateFormatString() = default;
-    ParsedTemplateFormatString(const String & format_string, const ColumnIdxGetter & idx_by_name);
+    ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name);
 
     void parse(const String & format_string, const ColumnIdxGetter & idx_by_name);
 
-    ColumnFormat stringToFormat(const String & format) const;
+    static ColumnFormat stringToFormat(const String & format);
     static String formatToString(ColumnFormat format);
     static const char * readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s);
     size_t columnsCount() const;
 
     String dump() const;
     [[noreturn]] void throwInvalidFormat(const String & message, size_t column) const;
+
+    static ParsedTemplateFormatString setupCustomSeparatedResultsetFormat(const Context & context);
+    static ParsedTemplateFormatString setupCustomSeparatedRowFormat(const Context & context, const Block & sample);
 };
 
 }

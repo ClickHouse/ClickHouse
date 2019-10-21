@@ -6,7 +6,7 @@
 
 ## Создание таблицы {#table_engines-stripelog-creating-a-table}
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -61,7 +61,7 @@ ClickHouse использует несколько потоков при выб�
 SELECT * FROM stripe_log_table
 ```
 
-```
+```text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
@@ -77,7 +77,7 @@ SELECT * FROM stripe_log_table
 SELECT * FROM stripe_log_table ORDER BY timestamp
 ```
 
-```
+```text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │

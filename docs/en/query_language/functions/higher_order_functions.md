@@ -25,18 +25,20 @@ Returns an array obtained from the original application of the `func` function t
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;
-
+```
+```text
 ┌─res─────┐
 │ [3,4,5] │
 └─────────┘
 ```
 The following example shows how to create a tuple of elements from different arrays:
 
-``` sql
+```sql
 SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
-
+```
+```text
 ┌─res─────────────────┐
 │ [(1,4),(2,5),(3,6)] │
 └─────────────────────┘
@@ -50,17 +52,17 @@ Returns an array containing only the elements in `arr1` for which `func` returns
 
 Examples:
 
-``` sql
+```sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-```
+```text
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
 ```
 
-``` sql
+```sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -69,7 +71,7 @@ SELECT
     AS res
 ```
 
-```
+```text
 ┌─res─┐
 │ [2] │
 └─────┘
@@ -111,11 +113,11 @@ Returns an array of partial sums of elements in the source array (a running sum)
 
 Example:
 
-``` sql
+```sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-```
+```text
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
@@ -125,11 +127,11 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 Same as `arrayCumSum`, returns an array of partial sums of elements in the source array (a running sum). Different `arrayCumSum`, when then returned value contains a value less than zero, the value is replace with zero and the subsequent calculation is performed with zero parameters. For example:
 
-``` sql
+```sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
-```
+```text
 ┌─res───────┐
 │ [1,2,0,1] │
 └───────────┘
@@ -143,11 +145,11 @@ The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform)
 
 Example:
 
-``` sql
+```sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-```
+```text
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘
@@ -161,10 +163,10 @@ Returns an array as result of sorting the elements of `arr1` in descending order
 
 Example:
 
-``` sql
+```sql
 SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
-``` sql
+```text
 ┌─res───────────────┐
 │ ['hello','world'] │
 └───────────────────┘

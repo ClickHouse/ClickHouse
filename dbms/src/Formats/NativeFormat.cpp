@@ -13,7 +13,6 @@ void registerInputFormatNative(FormatFactory & factory)
         const Block & sample,
         const Context &,
         UInt64 /* max_block_size */,
-        UInt64 /* min_read_rows */,
         FormatFactory::ReadCallback /* callback */,
         const FormatSettings &)
     {

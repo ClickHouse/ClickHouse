@@ -26,14 +26,14 @@ Possible issues:
 
 Command:
 
-```
-sudo service clickhouse-server status
+```bash
+$ sudo service clickhouse-server status
 ```
 
 If the server is not running, start it with the command:
 
-```
-sudo service clickhouse-server start
+```bash
+$ sudo service clickhouse-server start
 ```
 
 **Check logs**
@@ -47,19 +47,19 @@ If the server started successfully, you should see the strings:
 
 If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
-```
+```text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
 If you don't see an error at the end of the file, look through the entire file starting from the string:
 
-```
+```text
 <Information> Application: starting up.
 ```
 
 If you try to start a second instance of `clickhouse-server` on the server, you see the following log:
 
-```
+```text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
 2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
 2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
@@ -77,14 +77,14 @@ Revision: 54413
 
 If you don't find any useful information in `clickhouse-server` logs or there aren't any logs, you can view `system.d` logs using the command:
 
-```
-sudo journalctl -u clickhouse-server
+```bash
+$ sudo journalctl -u clickhouse-server
 ```
 
 **Start clickhouse-server in interactive mode**
 
-```
-sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
+```bash
+$ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
 This command starts the server as an interactive app with standard parameters of the autostart script. In this mode `clickhouse-server` prints all the event messages in the console.

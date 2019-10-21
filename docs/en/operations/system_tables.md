@@ -91,6 +91,46 @@ The `system.columns` table contains the following columns (the column type is sh
 - `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 - `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
+## system.contributors {#system_contributors}
+
+Contains information about contributors. All constributors in random order. The order is random at query execution time.
+
+Columns:
+
+- `name` (String) — Contributor (author) name from git log.
+
+**Example**
+
+```sql
+SELECT * FROM system.contributors LIMIT 10
+```
+
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+│ Max Vetrov       │
+│ LiuYangkuan      │
+│ svladykin        │
+│ zamulla          │
+│ Šimon Podlipský  │
+│ BayoNet          │
+│ Ilya Khomutov    │
+│ Amy Krishnevsky  │
+│ Loud_Scream      │
+└──────────────────┘
+```
+
+To find out yourself in the table, use a query:
+
+```sql
+SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
+```
+```text
+┌─name─────────────┐
+│ Olga Khvostikova │
+└──────────────────┘
+```
+
 ## system.databases
 
 This table contains a single String column called 'name' – the name of a database.
@@ -211,6 +251,8 @@ Columns:
 - `value` ([Int64](../data_types/int_uint.md)) — Metric value.
 - `description` ([String](../data_types/string.md)) — Metric description.
 
+The list of supported metrics you can find in the [dbms/src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Common/CurrentMetrics.cpp) source file of ClickHouse.
+
 **Example**
 
 ```sql
@@ -269,45 +311,45 @@ Columns:
     - `YYYYMM` for automatic partitioning by month.
     - `any_string` when partitioning manually.
 
-- `name` (String) – Name of the data part.
-- `active` (UInt8) – Flag that indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
-- `marks` (UInt64) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn't work for adaptive granularity).
-- `rows` (UInt64) – The number of rows.
-- `bytes_on_disk` (UInt64) – Total size of all the data part files in bytes.
-- `data_compressed_bytes` (UInt64) – Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
-- `data_uncompressed_bytes` (UInt64) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
-- `marks_bytes` (UInt64) – The size of the file with marks.
-- `modification_time` (DateTime) – The modification time of the directory with the data part. This usually corresponds to the time of data part creation.|
-- `remove_time` (DateTime) – The time when the data part became inactive.
-- `refcount` (UInt32) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
-- `min_date` (Date) – The minimum value of the date key in the data part.
-- `max_date` (Date) – The maximum value of the date key in the data part.
-- `min_time` (DateTime) – The minimum value of the date and time key in the data part.
+- `name` (`String`) – Name of the data part.
+- `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
+- `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn't work for adaptive granularity).
+- `rows` (`UInt64`) – The number of rows.
+- `bytes_on_disk` (`UInt64`) – Total size of all the data part files in bytes.
+- `data_compressed_bytes` (`UInt64`) – Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
+- `data_uncompressed_bytes` (`UInt64`) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
+- `marks_bytes` (`UInt64`) – The size of the file with marks.
+- `modification_time` (`DateTime`) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.|
+- `remove_time` (`DateTime`) – The time when the data part became inactive.
+- `refcount` (`UInt32`) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
+- `min_date` (`Date`) – The minimum value of the date key in the data part.
+- `max_date` (`Date`) – The maximum value of the date key in the data part.
+- `min_time` (`DateTime`) – The minimum value of the date and time key in the data part.
 - `max_time`(`DateTime`) – The maximum value of the date and time key in the data part.
-- `partition_id` (String) – Id of the partition.
-- `min_block_number` (UInt64) – The minimum number of data parts that make up the current part after merging.
-- `max_block_number` (UInt64) – The maximum number of data parts that make up the current part after merging.
-- `level` (UInt32) – Depth of the merge tree. Zero means that current part was created by insert rather than by merging other parts.
-- `data_version` (UInt64) – Number that is used to determine which mutations should be applied to the data part (the mutations with the higher version than `data_version`).
-- `primary_key_bytes_in_memory` (UInt64) – The amount of memory (in bytes) used by primary key values.
-- `primary_key_bytes_in_memory_allocated` (UInt64) – The amount of memory (in bytes) reserved for primary key values.
-- `is_frozen` (UInt8) – Flag that shows partition data backup existence. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
-- `database` (String) – Name of the database.
-- `table` (String) – Name of the table.
-- `engine` (String) – Name of the table engine without parameters.
-- `path` (String) – Absolute path to the folder with data part files.
-- `hash_of_all_files` (String) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
-- `hash_of_uncompressed_files` (String) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed data.
-- `uncompressed_hash_of_compressed_files` (String) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of the file with marks.
-- `bytes` (UInt64) – Alias for `bytes_on_disk`.
-- `marks_size` (UInt64) – Alias for `marks_bytes`.
+- `partition_id` (`String`) – ID of the partition.
+- `min_block_number` (`UInt64`) – The minimum number of data parts that make up the current part after merging.
+- `max_block_number` (`UInt64`) – The maximum number of data parts that make up the current part after merging.
+- `level` (`UInt32`) – Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts.
+- `data_version` (`UInt64`) – Number that is used to determine which mutations should be applied to the data part (mutations with a  version higher than `data_version`).
+- `primary_key_bytes_in_memory` (`UInt64`) – The amount of memory (in bytes) used by primary key values.
+- `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
+- `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+- `database` (`String`) – Name of the database.
+- `table` (`String`) – Name of the table.
+- `engine` (`String`) – Name of the table engine without parameters.
+- `path` (`String`) – Absolute path to the folder with data part files.
+- `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
+- `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
+- `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
+- `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
+- `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
 
 ## system.part_log {#system_tables-part-log}
 
 The `system.part_log` table is created only if the [part_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
 
-This table contains information about the events that occurred with the [data parts](table_engines/custom_partitioning_key.md) in the [MergeTree](table_engines/mergetree.md) family tables. For instance, adding or merging data.
+This table contains information about events that occurred with [data parts](table_engines/custom_partitioning_key.md) in the [MergeTree](table_engines/mergetree.md) family tables, such as adding or merging data.
 
 The `system.part_log` table contains the following columns:
 
@@ -387,7 +429,7 @@ Columns:
 - `query` (String) — Query string.
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Kind of query. Possible values:
+- `is_initial_query` (UInt8) — Query type. Possible values:
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user who initiated the current query.
@@ -454,7 +496,7 @@ WHERE table = 'visits'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 database:           merge
@@ -480,7 +522,7 @@ active_replicas:    2
 
 Columns:
 
-```
+```text
 database:          Database name
 table:              Table name
 engine:            Table engine name
@@ -533,7 +575,7 @@ If you don't request the last 4 columns (log_max_index, log_pointer, total_repli
 
 For example, you can check that everything is working correctly like this:
 
-``` sql
+```sql
 SELECT
     database,
     table,
@@ -579,13 +621,13 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.settings
 WHERE changed
 ```
 
-```
+```text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
 │ use_uncompressed_cache │ 0           │       1 │
@@ -646,14 +688,14 @@ Columns:
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.zookeeper
 WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-```
+```text
 Row 1:
 ──────
 name:           example01-08-1.yandex.ru

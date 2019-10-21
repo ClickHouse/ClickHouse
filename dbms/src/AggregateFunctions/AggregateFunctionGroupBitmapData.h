@@ -1,13 +1,17 @@
 #pragma once
 
 #include <algorithm>
-#include <roaring/roaring.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/noncopyable.hpp>
-#include <roaring/roaring.hh>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
+
+// Include this header last, because it is an auto-generated dump of questionable
+// garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
+// TODO: find out what it is. On github, they have proper inteface headers like
+// this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
+#include <roaring/roaring.h>
 
 namespace DB
 {
@@ -63,7 +67,12 @@ public:
             roaring_bitmap_add(rb, value);
     }
 
-    UInt64 size() const { return isSmall() ? small.size() : roaring_bitmap_get_cardinality(rb); }
+    UInt64 size() const
+    {
+        return isSmall()
+            ? small.size()
+            : roaring_bitmap_get_cardinality(rb);
+    }
 
     void merge(const RoaringBitmapWithSmallSet & r1)
     {
@@ -91,7 +100,7 @@ public:
             std::string s;
             readStringBinary(s,in);
             rb = roaring_bitmap_portable_deserialize(s.c_str());
-            for (const auto & x : small) //merge from small
+            for (const auto & x : small) // merge from small
                 roaring_bitmap_add(rb, x.getValue());
         }
         else
@@ -245,13 +254,13 @@ public:
         {
             for (const auto & x : small)
                 if (r1.small.find(x.getValue()) != r1.small.end())
-                    retSize++;
+                    ++retSize;
         }
         else if (isSmall() && r1.isLarge())
         {
             for (const auto & x : small)
                 if (roaring_bitmap_contains(r1.rb, x.getValue()))
-                    retSize++;
+                    ++retSize;
         }
         else
         {
@@ -391,8 +400,7 @@ public:
      */
     UInt8 rb_contains(const UInt32 x) const
     {
-        return isSmall() ? small.find(x) != small.end() :
-            roaring_bitmap_contains(rb, x);
+        return isSmall() ? small.find(x) != small.end() : roaring_bitmap_contains(rb, x);
     }
 
     /**
@@ -460,21 +468,20 @@ public:
     /**
      * Return new set with specified range (not include the range_end)
      */
-    UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet& r1) const
+    UInt64 rb_range(UInt32 range_start, UInt32 range_end, RoaringBitmapWithSmallSet & r1) const
     {
         UInt64 count = 0;
         if (range_start >= range_end)
             return count;
         if (isSmall())
         {
-            std::vector<T> ans;
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if ((UInt32)val >= range_start && (UInt32)val < range_end)
+                if (UInt32(val) >= range_start && UInt32(val) < range_end)
                 {
                     r1.add(val);
-                    count++;
+                    ++count;
                 }
             }
         }
@@ -483,16 +490,95 @@ public:
             roaring_uint32_iterator_t iterator;
             roaring_init_iterator(rb, &iterator);
             roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
-            while (iterator.has_value)
+            while (iterator.has_value && UInt32(iterator.current_value) < range_end)
             {
-                if ((UInt32)iterator.current_value >= range_end)
-                    break;
                 r1.add(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
-                count++;
+                ++count;
             }
         }
         return count;
+    }
+
+    /**
+     * Return new set of the smallest `limit` values in set which is no less than `range_start`.
+     */
+    UInt64 rb_limit(UInt32 range_start, UInt32 limit, RoaringBitmapWithSmallSet & r1) const
+    {
+        UInt64 count = 0;
+        if (isSmall())
+        {
+            std::vector<T> ans;
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if (UInt32(val) >= range_start)
+                {
+                    ans.push_back(val);
+                }
+            }
+            sort(ans.begin(), ans.end());
+            if (limit > ans.size())
+                limit = ans.size();
+            for (size_t i = 0; i < limit; ++i)
+                r1.add(ans[i]);
+            count = UInt64(limit);
+        }
+        else
+        {
+            roaring_uint32_iterator_t iterator;
+            roaring_init_iterator(rb, &iterator);
+            roaring_move_uint32_iterator_equalorlarger(&iterator, range_start);
+            while (UInt32(count) < limit && iterator.has_value)
+            {
+                r1.add(iterator.current_value);
+                roaring_advance_uint32_iterator(&iterator);
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    UInt64 rb_min() const
+    {
+        UInt64 min_val = UINT32_MAX;
+        if (isSmall())
+        {
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if (UInt64(val) < min_val)
+                {
+                    min_val = UInt64(val);
+                }
+            }
+        }
+        else
+        {
+            min_val = UInt64(roaring_bitmap_minimum(rb));
+        }
+        return min_val;
+    }
+
+    UInt64 rb_max() const
+    {
+        UInt64 max_val = 0;
+        if (isSmall())
+        {
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if (UInt64(val) > max_val)
+                {
+                    max_val = UInt64(val);
+                }
+            }
+        }
+        else
+        {
+            max_val = UInt64(roaring_bitmap_maximum(rb));
+        }
+        return max_val;
     }
 
 private:
@@ -510,8 +596,8 @@ private:
         readBinary(val, dbBuf);
         container = containerptr_roaring_bitmap_add(r, val, &typecode, &containerindex);
         prev = val;
-        i++;
-        for (; i < n_args; i++)
+        ++i;
+        for (; i < n_args; ++i)
         {
             readBinary(val, dbBuf);
             if (((prev ^ val) >> 16) == 0)
@@ -622,6 +708,7 @@ private:
 template <typename T>
 struct AggregateFunctionGroupBitmapData
 {
+    bool doneFirst = false;
     RoaringBitmapWithSmallSet<T, 32> rbs;
     static const char * name() { return "groupBitmap"; }
 };

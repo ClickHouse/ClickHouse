@@ -52,6 +52,17 @@ DataTypePtr AggregateFunctionState::getReturnType() const
 
         return arguments[0];
     }
+    if (arguments.size() > 0)
+    {
+        DataTypePtr argument_type_ptr = arguments[0];
+        WhichDataType which(*argument_type_ptr);
+        if (which.idx == TypeIndex::AggregateFunction)
+        {
+            if (arguments.size() != 1)
+                throw Exception("Nested aggregation expects only one argument", ErrorCodes::BAD_ARGUMENTS);
+            return arguments[0];
+        }
+    }
 
     return ptr;
 }

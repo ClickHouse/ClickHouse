@@ -176,12 +176,16 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
-Просит движок таблицы сделать что-нибудь, что может привести к более оптимальной работе.
-Поддерживается только движками `*MergeTree`, в котором выполнение этого запроса инициирует внеочередное слияние кусков данных.
-Если указан `PARTITION`, то оптимизация будет производиться только для указаной партиции.
-Если указан `FINAL`, то оптимизация будет производиться даже когда все данные уже лежат в одном куске.
+Запрос пытается запустить внеплановый мёрж кусков данных для таблиц семейства [MergeTree](../operations/table_engines/mergetree.md). Другие движки таблиц не поддерживаются.
 
-!!! warning "Внимание"Запрос OPTIMIZE не может устранить причину появления ошибки "Too many parts".
+Если `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../operations/table_engines/replication.md), ClickHouse создаёт задачу на мёрж и ожидает её исполнения на всех узлах (если активирована настройка `replication_alter_partitions_sync`).
+
+- Если `OPTIMIZE` не выполняет мёрж по любой причине, ClickHouse не оповещает об этом клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop).
+- Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции.
+- Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске.
+
+!!! warning "Внимание"
+    Запрос `OPTIMIZE` не может устранить причину появления ошибки "Too many parts".
 
 ## RENAME {#misc_operations-rename}
 
@@ -257,7 +261,7 @@ SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 Полезный совет (выполните в консоли):
 
 ```bash
-watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
 ## SHOW TABLES

@@ -27,14 +27,15 @@ struct RowInputFormatParams
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;
 
-    UInt64 rows_portion_size;
-
     using ReadCallback = std::function<void()>;
     ReadCallback callback;
 
     Poco::Timespan max_execution_time = 0;
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
+
+bool isParseError(int code);
+bool checkTimeLimit(const RowInputFormatParams & params, const Stopwatch & stopwatch);
 
 ///Row oriented input format: reads data row by row.
 class IRowInputFormat : public IInputFormat
@@ -76,7 +77,6 @@ protected:
 
 private:
     Params params;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     size_t total_rows = 0;
     size_t num_errors = 0;
@@ -85,4 +85,3 @@ private:
 };
 
 }
-

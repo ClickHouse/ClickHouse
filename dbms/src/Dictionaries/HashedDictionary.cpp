@@ -3,6 +3,21 @@
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 
+namespace
+{
+
+/// NOTE: Trailing return type is explicitly specified for SFINAE.
+
+/// google::sparse_hash_map
+template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; }
+template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
+
+/// HashMap
+template <typename T> auto first(const T & value) -> decltype(value.getFirst()) { return value.getFirst(); }
+template <typename T> auto second(const T & value) -> decltype(value.getSecond()) { return value.getSecond(); }
+
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -21,12 +36,14 @@ HashedDictionary::HashedDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_,
+    bool sparse_,
     BlockPtr saved_block_)
     : name{name_}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
+    , sparse(sparse_)
     , saved_block{std::move(saved_block_)}
 {
     createAttributes();
@@ -57,11 +74,10 @@ static inline HashedDictionary::Key getAt(const HashedDictionary::Key & value, c
     return value;
 }
 
-template <typename ChildType, typename AncestorType>
-void HashedDictionary::isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
+template <typename AttrType, typename ChildType, typename AncestorType>
+void HashedDictionary::isInAttrImpl(const AttrType & attr, const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    const auto & attr = *std::get<CollectionPtrType<Key>>(hierarchical_attribute->maps);
     const auto rows = out.size();
 
     for (const auto row : ext::range(0, rows))
@@ -73,7 +89,7 @@ void HashedDictionary::isInImpl(const ChildType & child_ids, const AncestorType 
         {
             auto it = attr.find(id);
             if (it != std::end(attr))
-                id = it->getSecond();
+                id = second(*it);
             else
                 break;
         }
@@ -82,6 +98,13 @@ void HashedDictionary::isInImpl(const ChildType & child_ids, const AncestorType 
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+template <typename ChildType, typename AncestorType>
+void HashedDictionary::isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
+{
+    if (!sparse)
+        return isInAttrImpl(*std::get<CollectionPtrType<Key>>(hierarchical_attribute->maps), child_ids, ancestor_ids, out);
+    return isInAttrImpl(*std::get<SparseCollectionPtrType<Key>>(hierarchical_attribute->sparse_maps), child_ids, ancestor_ids, out);
 }
 
 void HashedDictionary::isInVectorVector(
@@ -407,9 +430,22 @@ void HashedDictionary::loadData()
 template <typename T>
 void HashedDictionary::addAttributeSize(const Attribute & attribute)
 {
-    const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
-    bytes_allocated += sizeof(CollectionType<T>) + map_ref->getBufferSizeInBytes();
-    bucket_count = map_ref->getBufferSizeInCells();
+    if (!sparse)
+    {
+        const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
+        bytes_allocated += sizeof(CollectionType<T>) + map_ref->getBufferSizeInBytes();
+        bucket_count = map_ref->getBufferSizeInCells();
+    }
+    else
+    {
+        const auto & map_ref = std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps);
+        bucket_count = map_ref->bucket_count();
+
+        /** TODO: more accurate calculation */
+        bytes_allocated += sizeof(CollectionType<T>);
+        bytes_allocated += bucket_count;
+        bytes_allocated += map_ref->size() * sizeof(Key) * sizeof(T);
+    }
 }
 
 void HashedDictionary::calculateBytesAllocated()
@@ -479,12 +515,15 @@ template <typename T>
 void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
     attribute.null_values = T(null_value.get<NearestFieldType<T>>());
-    attribute.maps = std::make_unique<CollectionType<T>>();
+    if (!sparse)
+        attribute.maps = std::make_unique<CollectionType<T>>();
+    else
+        attribute.sparse_maps = std::make_unique<SparseCollectionType<T>>();
 }
 
 HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}};
+    Attribute attr{type, {}, {}, {}, {}};
 
     switch (type)
     {
@@ -535,7 +574,10 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
         case AttributeUnderlyingType::utString:
         {
             attr.null_values = null_value.get<String>();
-            attr.maps = std::make_unique<CollectionType<StringRef>>();
+            if (!sparse)
+                attr.maps = std::make_unique<CollectionType<StringRef>>();
+            else
+                attr.sparse_maps = std::make_unique<SparseCollectionType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
         }
@@ -545,28 +587,43 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
 }
 
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-void HashedDictionary::getItemsImpl(
-    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+template <typename OutputType, typename AttrType, typename ValueSetter, typename DefaultGetter>
+void HashedDictionary::getItemsAttrImpl(
+    const AttrType & attr, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
 {
-    const auto & attr = *std::get<CollectionPtrType<AttributeType>>(attribute.maps);
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(it->getSecond()) : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : get_default(i));
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
+}
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+void HashedDictionary::getItemsImpl(
+    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+{
+    if (!sparse)
+        return getItemsAttrImpl<OutputType>(*std::get<CollectionPtrType<AttributeType>>(attribute.maps), ids, set_value, get_default);
+    return getItemsAttrImpl<OutputType>(*std::get<SparseCollectionPtrType<AttributeType>>(attribute.sparse_maps), ids, set_value, get_default);
 }
 
 
 template <typename T>
 bool HashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T value)
 {
-    auto & map = *std::get<CollectionPtrType<T>>(attribute.maps);
-    return map.insert({id, value}).second;
+    if (!sparse)
+    {
+        auto & map = *std::get<CollectionPtrType<T>>(attribute.maps);
+        return map.insert({id, value}).second;
+    }
+    else
+    {
+        auto & map = *std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps);
+        return map.insert({id, value}).second;
+    }
 }
 
 bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
@@ -605,10 +662,18 @@ bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
 
         case AttributeUnderlyingType::utString:
         {
-            auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
             const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
+            if (!sparse)
+            {
+                auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
+                return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
+            }
+            else
+            {
+                auto & map = *std::get<SparseCollectionPtrType<StringRef>>(attribute.sparse_maps);
+                return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
+            }
         }
     }
 
@@ -631,22 +696,27 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
-        out[i] = attr.find(ids[i]) != std::end(attr);
+        out[i] = attr.find(ids[i]) != nullptr;
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
 
-template <typename T>
-PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute & attribute) const
+template <typename T, typename AttrType>
+PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIdsAttrImpl(const AttrType & attr) const
 {
-    const HashMap<UInt64, T> & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
-
     PaddedPODArray<Key> ids;
     ids.reserve(attr.size());
     for (const auto & value : attr)
-        ids.push_back(value.getFirst());
+        ids.push_back(first(value));
 
     return ids;
+}
+template <typename T>
+PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute & attribute) const
+{
+    if (!sparse)
+        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<T>>(attribute.maps));
+    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps));
 }
 
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
@@ -714,9 +784,11 @@ void registerDictionaryHashed(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        const bool sparse = name == "sparse_hashed";
+        return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
     factory.registerLayout("hashed", create_layout);
+    factory.registerLayout("sparse_hashed", create_layout);
 }
 
 }

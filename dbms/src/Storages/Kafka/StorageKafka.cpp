@@ -278,7 +278,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, row_delimiter, stream_cancelled);
+    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled);
 }
 
 
@@ -382,7 +382,8 @@ bool StorageKafka::streamToViews()
     streams.reserve(num_created_consumers);
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size);
+        auto stream
+            = std::make_shared<KafkaBlockInputStream>(*this, global_context, block_io.out->getHeader().getNames(), block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -401,6 +402,8 @@ bool StorageKafka::streamToViews()
 
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
+    for (auto & stream : streams)
+        stream->as<KafkaBlockInputStream>()->commit();
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;

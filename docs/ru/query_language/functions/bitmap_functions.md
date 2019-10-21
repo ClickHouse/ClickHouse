@@ -4,7 +4,7 @@
 
 Создаёт битовый массив из массива целочисленных значений.
 
-```
+```sql
 bitmapBuild(array)
 ```
 
@@ -28,7 +28,7 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
 
 Преобразует битовый массив в массив целочисленных значений.
 
-```
+```sql
 bitmapToArray(bitmap)
 ```
 
@@ -42,7 +42,7 @@ bitmapToArray(bitmap)
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-```
+```text
 ┌─res─────────┐
 │ [1,2,3,4,5] │
 └─────────────┘
@@ -52,7 +52,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 Проверяет вхождение элемента в битовый массив.
 
-```
+```sql
 bitmapContains(haystack, needle)
 ```
 
@@ -70,7 +70,7 @@ bitmapContains(haystack, needle)
 
 **Пример**
 
-``` sql
+```sql
 SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
 ```
 ```text
@@ -83,7 +83,7 @@ SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
 
 Проверяет, имеют ли два битовых массива хотя бы один общий элемент.
 
-```
+```sql
 bitmapHasAny(bitmap1, bitmap2)
 ```
 
@@ -104,7 +104,7 @@ bitmapHasAny(bitmap1, bitmap2)
 SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 
-```
+```text
 ┌─res─┐
 │  1  │
 └─────┘
@@ -115,7 +115,7 @@ SELECT bitmapHasAny(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 Аналогично функции `hasAll(array, array)` возвращает 1 если первый битовый массив содержит все элементы второго, 0 в противном случае.
 Если второй аргумент является пустым битовым массивом, то возвращает 1.
 
-```
+```sql
 bitmapHasAll(bitmap,bitmap)
 ```
 
@@ -129,7 +129,7 @@ bitmapHasAll(bitmap,bitmap)
 SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 ```
 
-```
+```text
 ┌─res─┐
 │  0  │
 └─────┘
@@ -139,7 +139,7 @@ SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 
 Логическое И для двух битовых массивов. Результат — новый битовый массив.
 
-```
+```sql
 bitmapAnd(bitmap,bitmap)
 ```
 
@@ -153,7 +153,7 @@ bitmapAnd(bitmap,bitmap)
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
+```text
 ┌─res─┐
 │ [3] │
 └─────┘
@@ -163,7 +163,7 @@ SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
 
 Логическое ИЛИ для двух битовых массивов. Результат — новый битовый массив.
 
-```
+```sql
 bitmapOr(bitmap,bitmap)
 ```
 
@@ -177,7 +177,7 @@ bitmapOr(bitmap,bitmap)
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
+```text
 ┌─res─────────┐
 │ [1,2,3,4,5] │
 └─────────────┘
@@ -187,7 +187,7 @@ SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 
 Логическое исключающее ИЛИ для двух битовых массивов. Результат — новый битовый массив.
 
-```
+```sql
 bitmapXor(bitmap,bitmap)
 ```
 
@@ -201,7 +201,7 @@ bitmapXor(bitmap,bitmap)
 SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
+```text
 ┌─res───────┐
 │ [1,2,4,5] │
 └───────────┘
@@ -211,7 +211,7 @@ SELECT bitmapToArray(bitmapXor(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
 
 Логическое отрицание И для двух битовых массивов. Результат — новый битовый массив.
 
-```
+```sql
 bitmapAndnot(bitmap,bitmap)
 ```
 
@@ -225,7 +225,7 @@ bitmapAndnot(bitmap,bitmap)
 SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
-```
+```text
 ┌─res───┐
 │ [1,2] │
 └───────┘
@@ -235,7 +235,7 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS
 
 Возвращает кардинальность битового массива в виде значения типа `UInt64`.
 
-```
+```sql
 bitmapCardinality(bitmap)
 ```
 
@@ -249,7 +249,7 @@ bitmapCardinality(bitmap)
 SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-```
+```text
 ┌─res─┐
 │   5 │
 └─────┘
@@ -259,7 +259,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 Выполняет логическое И и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
-```
+```sql
 bitmapAndCardinality(bitmap,bitmap)
 ```
 
@@ -273,7 +273,7 @@ bitmapAndCardinality(bitmap,bitmap)
 SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
+```text
 ┌─res─┐
 │   1 │
 └─────┘
@@ -283,7 +283,7 @@ SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 Выполняет логическое ИЛИ и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
-```
+```sql
 bitmapOrCardinality(bitmap,bitmap)
 ```
 
@@ -297,7 +297,7 @@ bitmapOrCardinality(bitmap,bitmap)
 SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
+```text
 ┌─res─┐
 │   5 │
 └─────┘
@@ -307,7 +307,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 Выполняет логическое исключающее ИЛИ и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
-```
+```sql
 bitmapXorCardinality(bitmap,bitmap)
 ```
 
@@ -321,7 +321,7 @@ bitmapXorCardinality(bitmap,bitmap)
 SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
+```text
 ┌─res─┐
 │   4 │
 └─────┘
@@ -331,7 +331,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 Выполняет логическое отрицание И и возвращает кардинальность (`UInt64`) результирующего битового массива.
 
-```
+```sql
 bitmapAndnotCardinality(bitmap,bitmap)
 ```
 
@@ -345,7 +345,7 @@ bitmapAndnotCardinality(bitmap,bitmap)
 SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 ```
 
-```
+```text
 ┌─res─┐
 │   2 │
 └─────┘

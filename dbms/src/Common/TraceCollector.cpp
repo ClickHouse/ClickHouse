@@ -46,7 +46,7 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> & trace_log_)
     if (-1 == fcntl(trace_pipe.fds_rw[1], F_SETFL, flags | O_NONBLOCK))
         throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 
-#if !defined(__FreeBSD__)
+#if defined(OS_LINUX)
     /** Increase pipe size to avoid slowdown during fine-grained trace collection.
       */
     int pipe_size = fcntl(trace_pipe.fds_rw[1], F_GETPIPE_SZ);

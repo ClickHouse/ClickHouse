@@ -35,7 +35,7 @@ Returns the value of a field, including separators.
 
 Examples:
 
-```
+```sql
 visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
@@ -46,7 +46,7 @@ Parses the string in double quotes. The value is unescaped. If unescaping failed
 
 Examples:
 
-```
+```sql
 visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
 visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
 visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
@@ -65,9 +65,9 @@ If the value does not exist, `0` will be returned.
 
 Examples:
 
-```
-select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
-select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
+```sql
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
+SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 ```
 
 `indices_or_keys` is a list of zero or more arguments each of them can be either string or integer.
@@ -82,12 +82,12 @@ You may use integers to access both JSON arrays and JSON objects.
 
 So, for example:
 
-```
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
-select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
-select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
+```sql
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
+SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
+SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
 ## JSONLength(json[, indices_or_keys]...)
@@ -98,9 +98,9 @@ If the value does not exist or has a wrong type, `0` will be returned.
 
 Examples:
 
-```
-select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
-select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
+```sql
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
+SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
 ## JSONType(json[, indices_or_keys]...)
@@ -111,10 +111,10 @@ If the value does not exist, `Null` will be returned.
 
 Examples:
 
-```
-select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
-select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
-select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
+```sql
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
+SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
 ## JSONExtractUInt(json[, indices_or_keys]...)
@@ -128,10 +128,10 @@ If the value does not exist or has a wrong type, `0` will be returned.
 
 Examples:
 
-```
-select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
-select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
-select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+```sql
+SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
+SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
+SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
 ## JSONExtractString(json[, indices_or_keys]...)
@@ -144,12 +144,12 @@ The value is unescaped. If unescaping failed, it returns an empty string.
 
 Examples:
 
-```
-select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
-select JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
-select JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
-select JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
-select JSONExtractString('{"abc":"hello}', 'abc') = ''
+```sql
+SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
+SELECT JSONExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
+SELECT JSONExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
+SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
+SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
 ## JSONExtract(json[, indices_or_keys...], return_type)
@@ -163,7 +163,7 @@ This means
 
 Examples:
 
-```
+```sql
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') = ('hello',[-100,200,300])
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(b Array(Float64), a String)') = ([-100,200,300],'hello')
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Nullable(Int8))') = [-100, NULL, NULL]
@@ -179,7 +179,7 @@ Parse key-value pairs from a JSON where the values are of the given ClickHouse d
 
 Example:
 
-```
+```sql
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
@@ -191,8 +191,8 @@ If the part does not exist or has a wrong type, an empty string will be returned
 
 Example:
 
-```
-select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
+```sql
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->

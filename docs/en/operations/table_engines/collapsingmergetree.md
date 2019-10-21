@@ -65,7 +65,7 @@ Use the particular column `Sign`. If `Sign = 1` it means that the row is a state
 
 For example, we want to calculate how much pages users checked at some site and how long they were there. At some moment of time we write the following row with the state of user activity:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
@@ -73,7 +73,7 @@ For example, we want to calculate how much pages users checked at some site and 
 
 At some moment later we register the change of user activity and write it with the following two rows.
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -86,7 +86,7 @@ The second row contains the current state.
 
 As we need only the last state of user activity, the rows
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -131,7 +131,7 @@ If you need to extract data without aggregation (for example, to check whether r
 
 Example data:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -166,11 +166,11 @@ We use two `INSERT` queries to create two different data parts. If we insert the
 
 Getting the data:
 
-```
+```sql
 SELECT * FROM UAct
 ```
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -195,7 +195,7 @@ FROM UAct
 GROUP BY UserID
 HAVING sum(Sign) > 0
 ```
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
@@ -206,7 +206,7 @@ If we do not need aggregation and want to force collapsing, we can use `FINAL` m
 ```sql
 SELECT * FROM UAct FINAL
 ```
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
@@ -218,7 +218,7 @@ This way of selecting the data is very inefficient. Don't use it for big tables.
 
 Example data:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │        -5 │     -146 │   -1 │
@@ -247,28 +247,38 @@ insert into UAct values(4324182021466249494, -5, -146, -1);
 insert into UAct values(4324182021466249494,  6,  185,  1);
 
 select * from UAct final; // avoid using final in production (just for a test or small tables)
+```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
-
+```
+```sql
 SELECT
     UserID,
     sum(PageViews) AS PageViews,
     sum(Duration) AS Duration
 FROM UAct
 GROUP BY UserID
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
-
+```
+```sqk
 select count() FROM UAct
+```
+```text
 ┌─count()─┐
 │       3 │
 └─────────┘
-
+```
+```sql
 optimize table UAct final;
 
 select * FROM UAct
+```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘

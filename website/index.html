@@ -427,15 +427,13 @@ clickhouse-client
     <p>For other operating systems the easiest way to get started is using
         <a href="https://hub.docker.com/r/yandex/clickhouse-server/" rel="external nofollow"
            target="_blank">
-            official Docker images of ClickHouse</a>
-        . Alternatively you can build ClickHouse from <a
-            href="https://github.com/yandex/ClickHouse" rel="external nofollow"
-            target="_blank">sources</a>
-        according to the <a
-                href="https://clickhouse.yandex/docs/en/development/build.html" rel="external nofollow"
-                target="_blank">instruction</a>.</p>
+            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.yandex/docs/en/getting_started/">option</a> though.
+        Alternatively, you can easily get a running ClickHouse instance or cluster at 
+        <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link1" rel="external nofollow" target="_blank">
+            Yandex Managed Service for ClickHouse</a>.
+    </p>
 
-    <p>After installation proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="docs/en/">full
+    <p>After you got connected to your ClickHouse server, you can proceed to <strong><a href="tutorial.html">tutorial</a></strong> or <strong><a href="docs/en/">full
         documentation</a></strong>.</p>
 
     <h2 id="contacts">Contacts</h2>
@@ -457,7 +455,7 @@ clickhouse-client
         <li>Follow official <a
                href="https://twitter.com/ClickHouseDB"
                rel="external nofollow" target="_blank">Twitter account</a>.</li>
-        <li>Open <a href="https://github.com/yandex/ClickHouse/issues/new/choose"
+        <li>Open <a href="https://github.com/ClickHouse/ClickHouse/issues/new/choose"
                     rel="external nofollow" target="_blank">GitHub issue</a> if you have a bug report or feature request.</li>
         <li>Or email Yandex ClickHouse team directly at
             <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
@@ -476,7 +474,7 @@ clickhouse-client
         if you are interested and we'll get in touch.
         Short reports about previous meetups are <a href="https://clickhouse.yandex/blog/en?tag=meetup" target="_blank">published in official ClickHouse blog</a>.</p>
 
-    <p class="warranty"><a href="https://github.com/yandex/ClickHouse/blob/master/LICENSE"
+    <p class="warranty"><a href="https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE"
                            rel="external nofollow" target="_blank">
         ClickHouse source code is published under Apache 2.0 License.</a> Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND, either express or implied.</p>
@@ -486,7 +484,7 @@ clickhouse-client
 </div>
 
 <a id="github_link"
-   href="https://github.com/yandex/ClickHouse"
+   href="https://github.com/ClickHouse/ClickHouse"
    rel="external nofollow"
    target="_blank"
 ><div id="github">Fork me on GitHub</div></a>
@@ -494,7 +492,7 @@ clickhouse-client
 <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
 <script type="text/javascript">
     $(document).ready(function () {
-        $.get('https://raw.githubusercontent.com/yandex/ClickHouse/master/README.md', function(e) {
+        $.get('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/README.md', function(e) {
             var skip = true;
             var lines = e.split('\n');
             var result = [];

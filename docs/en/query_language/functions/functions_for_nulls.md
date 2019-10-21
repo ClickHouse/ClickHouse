@@ -4,7 +4,7 @@
 
 Checks whether the argument is [NULL](../syntax.md#null).
 
-```
+```sql
 isNull(x)
 ```
 
@@ -21,7 +21,7 @@ isNull(x)
 
 Input table
 
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -30,25 +30,21 @@ Input table
 
 Query
 
+```sql
+SELECT x FROM t_null WHERE isNull(y)
 ```
-:) SELECT x FROM t_null WHERE isNull(y)
-
-SELECT x
-FROM t_null
-WHERE isNull(y)
-
+```text
 ┌─x─┐
 │ 1 │
 └───┘
 
-1 rows in set. Elapsed: 0.010 sec.
 ```
 
 ## isNotNull
 
 Checks whether the argument is [NULL](../syntax.md#null).
 
-```
+```sql
 isNotNull(x)
 ```
 
@@ -65,7 +61,7 @@ isNotNull(x)
 
 Input table
 
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -74,25 +70,21 @@ Input table
 
 Query
 
+```sql
+SELECT x FROM t_null WHERE isNotNull(y)
 ```
-:) SELECT x FROM t_null WHERE isNotNull(y)
-
-SELECT x
-FROM t_null
-WHERE isNotNull(y)
-
+```text
 ┌─x─┐
 │ 2 │
 └───┘
 
-1 rows in set. Elapsed: 0.010 sec.
 ```
 
 ## coalesce
 
 Checks from left to right whether `NULL` arguments were passed and returns the first non-`NULL` argument.
 
-```
+```sql
 coalesce(x,...)
 ```
 
@@ -109,7 +101,7 @@ coalesce(x,...)
 
 Consider a list of contacts that may specify multiple ways to contact a customer.
 
-```
+```text
 ┌─name─────┬─mail─┬─phone─────┬──icq─┐
 │ client 1 │ ᴺᵁᴸᴸ │ 123-45-67 │  123 │
 │ client 2 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ │
@@ -120,25 +112,22 @@ The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32
 
 Get the first available contact method for the customer from the contact list:
 
+```sql
+SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 ```
-:) SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
-
-SELECT coalesce(mail, phone, CAST(icq, 'Nullable(String)'))
-FROM aBook
-
+```text
 ┌─name─────┬─coalesce(mail, phone, CAST(icq, 'Nullable(String)'))─┐
 │ client 1 │ 123-45-67                                            │
 │ client 2 │ ᴺᵁᴸᴸ                                                 │
 └──────────┴──────────────────────────────────────────────────────┘
 
-2 rows in set. Elapsed: 0.006 sec.
 ```
 
 ## ifNull
 
 Returns an alternative value if the main argument is `NULL`.
 
-```
+```sql
 ifNull(x,alt)
 ```
 
@@ -154,17 +143,19 @@ ifNull(x,alt)
 
 **Example**
 
-```
+```sql
 SELECT ifNull('a', 'b')
-
+```
+```text
 ┌─ifNull('a', 'b')─┐
 │ a                │
 └──────────────────┘
 ```
 
-```
+```sql
 SELECT ifNull(NULL, 'b')
-
+```
+```text
 ┌─ifNull(NULL, 'b')─┐
 │ b                 │
 └───────────────────┘
@@ -174,7 +165,7 @@ SELECT ifNull(NULL, 'b')
 
 Returns `NULL` if the arguments are equal.
 
-```
+```sql
 nullIf(x, y)
 ```
 
@@ -189,17 +180,19 @@ nullIf(x, y)
 
 **Example**
 
-```
+```sql
 SELECT nullIf(1, 1)
-
+```
+```text
 ┌─nullIf(1, 1)─┐
 │         ᴺᵁᴸᴸ │
 └──────────────┘
 ```
 
-```
+```sql
 SELECT nullIf(1, 2)
-
+```
+```text
 ┌─nullIf(1, 2)─┐
 │            1 │
 └──────────────┘
@@ -209,7 +202,7 @@ SELECT nullIf(1, 2)
 
 Results in a value of type [Nullable](../../data_types/nullable.md) for a non- `Nullable`, if the value is not `NULL`.
 
-```
+```sql
 assumeNotNull(x)
 ```
 
@@ -226,15 +219,16 @@ assumeNotNull(x)
 
 Consider the `t_null` table.
 
-```
+```sql
 SHOW CREATE TABLE t_null
-
+```
+```text
 ┌─statement─────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_null ( x Int8,  y Nullable(Int8)) ENGINE = TinyLog │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-```
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -243,18 +237,20 @@ SHOW CREATE TABLE t_null
 
 Apply the `assumeNotNull` function to the `y` column.
 
-```
+```sql
 SELECT assumeNotNull(y) FROM t_null
-
+```
+```text
 ┌─assumeNotNull(y)─┐
 │                0 │
 │                3 │
 └──────────────────┘
 ```
 
-```
+```sql
 SELECT toTypeName(assumeNotNull(y)) FROM t_null
-
+```
+```text
 ┌─toTypeName(assumeNotNull(y))─┐
 │ Int8                         │
 │ Int8                         │
@@ -265,7 +261,7 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null
 
 Converts the argument type to `Nullable`.
 
-```
+```sql
 toNullable(x)
 ```
 
@@ -279,15 +275,18 @@ toNullable(x)
 
 **Example**
 
-```
+```sql
 SELECT toTypeName(10)
-
+```
+```text
 ┌─toTypeName(10)─┐
 │ UInt8          │
 └────────────────┘
-
+```
+```sql
 SELECT toTypeName(toNullable(10))
-
+```
+```text
 ┌─toTypeName(toNullable(10))─┐
 │ Nullable(UInt8)            │
 └────────────────────────────┘

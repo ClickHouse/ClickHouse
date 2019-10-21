@@ -357,7 +357,7 @@ void ComplexKeyHashedDictionary::updateData()
             {
                 const auto s_key = placeKeysInPool(i, saved_key_column_ptrs, keys, temp_key_pool);
                 auto it = update_key_hash.find(s_key);
-                if (it != std::end(update_key_hash))
+                if (it)
                     filter[i] = 0;
                 else
                     filter[i] = 1;
@@ -561,7 +561,7 @@ void ComplexKeyHashedDictionary::getItemsImpl(
         const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
 
         const auto it = attr.find(key);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(it->getSecond()) : get_default(i));
+        set_value(i, it ? static_cast<OutputType>(*lookupResultGetMapped(it)) : get_default(i));
 
         /// free memory allocated for the key
         temporary_keys_pool.rollback(key.size);
@@ -672,7 +672,7 @@ void ComplexKeyHashedDictionary::has(const Attribute & attribute, const Columns 
         const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
 
         const auto it = attr.find(key);
-        out[i] = it != attr.end();
+        out[i] = static_cast<bool>(it);
 
         /// free memory allocated for the key
         temporary_keys_pool.rollback(key.size);

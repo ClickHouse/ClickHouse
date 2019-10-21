@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Common/Arena.h>
-#include <Common/RadixSort.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/asof.h>
 
 #include <optional>
 #include <variant>
@@ -144,34 +144,45 @@ public:
         array.push_back(std::forward<U>(x), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
-    // Transition into second stage, ensures that the vector is sorted
-    typename Base::const_iterator upper_bound(const TEntry & k)
+    const RowRef * upperBound(const TEntry & k, bool ascending)
     {
-        sort();
-        return std::upper_bound(array.cbegin(), array.cend(), k);
+        sort(ascending);
+        auto it = std::upper_bound(array.cbegin(), array.cend(), k, (ascending ? less : greater));
+        if (it != array.cend())
+            return &(it->row_ref);
+        return nullptr;
     }
 
-    // After ensuring that the vector is sorted by calling a lookup these are safe to call
-    typename Base::const_iterator cbegin() const { return array.cbegin(); }
-    typename Base::const_iterator cend() const { return array.cend(); }
+    const RowRef * lowerBound(const TEntry & k, bool ascending)
+    {
+        sort(ascending);
+        auto it = std::lower_bound(array.cbegin(), array.cend(), k, (ascending ? less : greater));
+        if (it != array.cend())
+            return &(it->row_ref);
+        return nullptr;
+    }
 
 private:
     std::atomic<bool> sorted = false;
     Base array;
     mutable std::mutex lock;
 
-    struct RadixSortTraits : RadixSortNumTraits<TKey>
+    static bool less(const TEntry & a, const TEntry & b)
     {
-        using Element = TEntry;
-        static TKey & extractKey(Element & elem) { return elem.asof_value; }
-    };
+        return a.asof_value < b.asof_value;
+    }
+
+    static bool greater(const TEntry & a, const TEntry & b)
+    {
+        return a.asof_value > b.asof_value;
+    }
 
     // Double checked locking with SC atomics works in C++
     // https://preshing.com/20130930/double-checked-locking-is-fixed-in-cpp11/
     // The first thread that calls one of the lookup methods sorts the data
     // After calling the first lookup method it is no longer allowed to insert any data
     // the array becomes immutable
-    void sort()
+    void sort(bool ascending)
     {
         if (!sorted.load(std::memory_order_acquire))
         {
@@ -179,13 +190,7 @@ private:
             if (!sorted.load(std::memory_order_relaxed))
             {
                 if (!array.empty())
-                {
-                    /// TODO: It has been tested only for UInt32 yet. It needs to check UInt64, Float32/64.
-                    if constexpr (std::is_same_v<TKey, UInt32>)
-                        RadixSort<RadixSortTraits>::executeLSD(&array[0], array.size());
-                    else
-                        std::sort(array.begin(), array.end());
-                }
+                    std::sort(array.begin(), array.end(), (ascending ? less : greater));
 
                 sorted.store(true, std::memory_order_release);
             }
@@ -206,11 +211,6 @@ public:
 
         Entry(T v) : asof_value(v) {}
         Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
-
-        bool operator < (const Entry & o) const
-        {
-            return asof_value < o.asof_value;
-        }
     };
 
     using Lookups = std::variant<
@@ -236,13 +236,13 @@ public:
     void insert(Type type, const IColumn * asof_column, const Block * block, size_t row_num);
 
     // This will internally synchronize
-    const RowRef * findAsof(Type type, const IColumn * asof_column, size_t row_num) const;
+    const RowRef * findAsof(Type type, ASOF::Inequality inequality, const IColumn * asof_column, size_t row_num) const;
 
 private:
     // Lookups can be stored in a HashTable because it is memmovable
     // A std::variant contains a currently active type id (memmovable), together with a union of the types
     // The types are all std::unique_ptr, which contains a single pointer, which is memmovable.
-    // Source: https://github.com/yandex/ClickHouse/issues/4906
+    // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
     Lookups lookups;
 };
 

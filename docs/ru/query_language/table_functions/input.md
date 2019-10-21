@@ -23,13 +23,13 @@
 а в файле `data.csv` данные имеют другую структуру `(col1 String, col2 Date, col3 Int32)`. Запрос для вставки
 данных из файла `data.csv` в таблицу `test` с одновременным преобразованием и использованием функций выглядит так:
 ```bash
-cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
 - Если в `data.csv` лежат данные той же структуры `test_structure`, что и у таблицы `test`, то следующие два запроса эквивалентны:
 ```bash
-cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
-cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
+$ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/input/) <!--hide-->

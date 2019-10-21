@@ -5,6 +5,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -742,6 +743,74 @@ void DataTypeLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr)
     dictionary_type->deserializeBinary(field, istr);
 }
 
+void DataTypeLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeBinary, ostr);
+}
+void DataTypeLowCardinality::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+{
+    deserializeImpl(column, &IDataType::deserializeBinary, istr);
+}
+
+void DataTypeLowCardinality::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextEscaped, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextQuoted, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextQuoted, istr, settings);
+}
+
+void DataTypeLowCardinality::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextEscaped, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextCSV, ostr, settings);
+}
+
+void DataTypeLowCardinality::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextCSV, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsText, ostr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextJSON, ostr, settings);
+}
+void DataTypeLowCardinality::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &IDataType::deserializeAsTextJSON, istr, settings);
+}
+
+void DataTypeLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
+}
+
+void DataTypeLowCardinality::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
+}
+
 void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     if (allow_add_row)
@@ -863,6 +932,11 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
     return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+}
+
+Field DataTypeLowCardinality::getDefault() const
+{
+    return dictionary_type->getDefault();
 }
 
 bool DataTypeLowCardinality::equals(const IDataType & rhs) const

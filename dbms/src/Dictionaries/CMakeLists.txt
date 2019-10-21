@@ -39,4 +39,14 @@ if(USE_POCO_MONGODB)
     target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
+if(USE_POCO_REDIS)
+    # for code highlighting in CLion
+    # target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${Poco_Redis_INCLUDE_DIR})
+
+    # for build
+    target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_Redis_LIBRARY})
+endif()
+
 add_subdirectory(Embedded)
+
+target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})

@@ -42,18 +42,18 @@ struct AggregateIndependent
             auto end = data.begin() + (data.size() * (i + 1)) / num_threads;
             auto & map = *results[i];
 
-            pool.schedule([&, begin, end]()
+            pool.scheduleOrThrowOnError([&, begin, end]()
             {
                 for (auto it = begin; it != end; ++it)
                 {
-                    typename Map::iterator place;
+                    typename Map::LookupResult place;
                     bool inserted;
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(place->getSecond());
+                        creator(*lookupResultGetMapped(place));
                     else
-                        updater(place->getSecond());
+                        updater(*lookupResultGetMapped(place));
                 }
             });
         }
@@ -85,15 +85,15 @@ struct AggregateIndependentWithSequentialKeysOptimization
             auto end = data.begin() + (data.size() * (i + 1)) / num_threads;
             auto & map = *results[i];
 
-            pool.schedule([&, begin, end]()
+            pool.scheduleOrThrowOnError([&, begin, end]()
             {
-                typename Map::iterator place;
+                typename Map::LookupResult place = nullptr;
                 Key prev_key {};
                 for (auto it = begin; it != end; ++it)
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        updater(place->getSecond());
+                        updater(*lookupResultGetMapped(place));
                         continue;
                     }
                     prev_key = *it;
@@ -102,9 +102,9 @@ struct AggregateIndependentWithSequentialKeysOptimization
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(place->getSecond());
+                        creator(*lookupResultGetMapped(place));
                     else
-                        updater(place->getSecond());
+                        updater(*lookupResultGetMapped(place));
                 }
             });
         }
@@ -180,7 +180,7 @@ struct MergeParallelForTwoLevelTable
                         ThreadPool & pool)
     {
         for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
-            pool.schedule([&, bucket, num_maps]
+            pool.scheduleOrThrowOnError([&, bucket, num_maps]
             {
                 std::vector<typename Map::Impl *> section(num_maps);
                 for (size_t i = 0; i < num_maps; ++i)

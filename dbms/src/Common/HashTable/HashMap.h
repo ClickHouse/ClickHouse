@@ -43,6 +43,9 @@ struct HashMapCell
     using State = TState;
 
     using value_type = PairNoInit<Key, Mapped>;
+    using mapped_type = Mapped;
+    using key_type = Key;
+
     value_type value;
 
     HashMapCell() {}
@@ -107,6 +110,14 @@ struct HashMapCell
     }
 };
 
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCell<Key, Mapped, Hash, State> * cell)
+{ return &cell->getFirst(); }
+
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCell<Key, Mapped, Hash, State> * cell)
+{ return &cell->getSecond(); }
+
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
@@ -125,6 +136,14 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
     size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
 };
 
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetKey(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
+{ return &cell->getFirst(); }
+
+template<typename Key, typename Mapped, typename Hash, typename State>
+ALWAYS_INLINE inline auto lookupResultGetMapped(HashMapCellWithSavedHash<Key, Mapped, Hash, State> * cell)
+{ return &cell->getSecond(); }
+
 
 template <
     typename Key,
@@ -136,9 +155,13 @@ class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
 public:
     using Self = HashMapTable;
+    using Base = HashTable<Key, Cell, Hash, Grower, Allocator>;
+
     using key_type = Key;
-    using mapped_type = typename Cell::Mapped;
     using value_type = typename Cell::value_type;
+    using mapped_type = typename Cell::Mapped;
+
+    using LookupResult = typename Base::LookupResult;
 
     using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
 
@@ -153,10 +176,10 @@ public:
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            decltype(it) res_it;
+            typename Self::LookupResult res_it;
             bool inserted;
             that.emplace(it->getFirst(), res_it, inserted, it.getHash());
-            func(res_it->getSecond(), it->getSecond(), inserted);
+            func(*lookupResultGetMapped(res_it), it->getSecond(), inserted);
         }
     }
 
@@ -170,11 +193,11 @@ public:
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            decltype(it) res_it = that.find(it->getFirst(), it.getHash());
-            if (res_it == that.end())
+            auto res_it = that.find(it->getFirst(), it.getHash());
+            if (!res_it)
                 func(it->getSecond(), it->getSecond(), false);
             else
-                func(res_it->getSecond(), it->getSecond(), true);
+                func(*lookupResultGetMapped(res_it), it->getSecond(), true);
         }
     }
 
@@ -196,7 +219,7 @@ public:
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
-        typename HashMapTable::iterator it;
+        typename HashMapTable::LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
 
@@ -215,9 +238,9 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new(&it->getSecond()) mapped_type();
+            new(lookupResultGetMapped(it)) mapped_type();
 
-        return it->getSecond();
+        return *lookupResultGetMapped(it);
     }
 };
 

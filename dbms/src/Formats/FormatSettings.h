@@ -29,7 +29,6 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
-        bool null_as_default = false;
     };
 
     CSV csv;
@@ -46,23 +45,33 @@ struct FormatSettings
     struct Values
     {
         bool interpret_expressions = true;
+        bool deduce_templates_of_expressions = true;
+        bool accurate_types_of_literals = true;
     };
 
     Values values;
 
     struct Template
     {
-        String format;
+        String resultset_format;
         String row_format;
         String row_between_delimiter;
     };
 
     Template template_settings;
 
+    struct TSV
+    {
+        bool empty_as_default = false;
+    };
+
+    TSV tsv;
+
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
+    bool null_as_default = false;
 
     enum class DateTimeInputFormat
     {

@@ -22,7 +22,7 @@ Rounds a value to a specified number of decimal places.
 
 The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers the function returns the number having the nearest even digit (banker's rounding).
 
-```
+```sql
 round(expression [, decimal_places])
 ```
 
@@ -42,10 +42,10 @@ The rounded number of the same type as the input number.
 
 **Example of use**
 
-``` sql
+```sql
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 ```
-```
+```text
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
@@ -57,7 +57,7 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 
 Rounding to the nearest number.
 
-```
+```text
 round(3.2, 0) = 3
 round(4.1267, 2) = 4.13
 round(22,-1) = 20
@@ -67,7 +67,7 @@ round(-467,-2) = -500
 
 Banker's rounding.
 
-```
+```text
 round(3.5) = 4
 round(4.5) = 4
 round(3.55, 1) = 3.6

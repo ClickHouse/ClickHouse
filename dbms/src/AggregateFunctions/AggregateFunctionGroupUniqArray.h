@@ -218,7 +218,7 @@ public:
             return;
 
         bool inserted;
-        State::Set::iterator it;
+        State::Set::LookupResult it;
         auto key_holder = getKeyHolder(*columns[0], row_num, *arena);
         set.emplace(key_holder, it, inserted);
     }
@@ -229,7 +229,7 @@ public:
         auto & rhs_set = this->data(rhs).value;
 
         bool inserted;
-        State::Set::iterator it;
+        State::Set::LookupResult it;
         for (auto & rhs_elem : rhs_set)
         {
             if (limit_num_elems && cur_set.size() >= max_elems)

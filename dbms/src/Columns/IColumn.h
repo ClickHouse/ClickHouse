@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Common/COW.h>
-#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
+#include <Core/Types.h>
 
 
 class SipHash;
@@ -23,6 +23,7 @@ namespace ErrorCodes
 
 class Arena;
 class ColumnGathererStream;
+class Field;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -140,11 +141,18 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
-    virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
+    virtual void insertFrom(const IColumn & src, size_t n);
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+
+    /// Appends one element from other column with the same type multiple times.
+    virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src, position);
+    }
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).
@@ -156,6 +164,13 @@ public:
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.
     /// For example, ColumnNullable(Nested) absolutely ignores values of nested column if it is marked as NULL.
     virtual void insertDefault() = 0;
+
+    /// Appends "default value" multiple times.
+    virtual void insertManyDefaults(size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertDefault();
+    }
 
     /** Removes last n elements.
       * Is used to support exception-safety of several operations.
@@ -359,32 +374,7 @@ protected:
     /// Template is to devirtualize calls to insertFrom method.
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
-    std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const
-    {
-        size_t num_rows = size();
-
-        if (num_rows != selector.size())
-            throw Exception(
-                    "Size of selector: " + std::to_string(selector.size()) + " doesn't match size of column: " + std::to_string(num_rows),
-                    ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        std::vector<MutablePtr> columns(num_columns);
-        for (auto & column : columns)
-            column = cloneEmpty();
-
-        {
-            size_t reserve_size = num_rows * 1.1 / num_columns;    /// 1.1 is just a guess. Better to use n-sigma rule.
-
-            if (reserve_size > 1)
-                for (auto & column : columns)
-                    column->reserve(reserve_size);
-        }
-
-        for (size_t i = 0; i < num_rows; ++i)
-            static_cast<Derived &>(*columns[selector[i]]).insertFrom(*this, i);
-
-        return columns;
-    }
+    std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

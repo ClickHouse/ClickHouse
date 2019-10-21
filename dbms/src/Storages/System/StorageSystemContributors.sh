@@ -2,11 +2,15 @@
 
 set -x
 
+# doesn't actually cd to directory, but return absolute path
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# cd to directory
+cd $CUR_DIR
 
 CONTRIBUTORS_FILE=${CONTRIBUTORS_FILE=$CUR_DIR/StorageSystemContributors.generated.cpp}
 
-git shortlog --summary | perl -lnE 's/^\s+\d+\s+(.+)/    "$1",/; next unless $1; say $_' > $CONTRIBUTORS_FILE.tmp
+# if you don't specify HEAD here, without terminal `git shortlog` would expect input from stdin
+git shortlog HEAD --summary | perl -lnE 's/^\s+\d+\s+(.+)/    "$1",/; next unless $1; say $_' > $CONTRIBUTORS_FILE.tmp
 
 # If git history not available - dont make target file
 if [ ! -s $CONTRIBUTORS_FILE.tmp ]; then

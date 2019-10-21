@@ -20,9 +20,10 @@ Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an a
 
 **Example:**
 
-```
+```sql
 SELECT alphaTokens('abca1abc')
-
+```
+```text
 ┌─alphaTokens('abca1abc')─┐
 │ ['abca','abc']          │
 └─────────────────────────┘

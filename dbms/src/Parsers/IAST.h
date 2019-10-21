@@ -222,10 +222,4 @@ private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
 
-
-/// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(const String & x);
-/// Quote the identifier with backquotes.
-String backQuote(const String & x);
-
 }
