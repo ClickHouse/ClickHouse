@@ -98,6 +98,8 @@ public:
     {
         auto & x = keyHolderGetKey(key_holder);
         size_t sz = x.size;
+        if (!sz)
+            return func(impls[0].m0, VoidKey{}, VoidHash{});
         const char * p = x.data;
         // pending bits that needs to be shifted out
         char s = (-sz & 7) * 8;
@@ -110,12 +112,11 @@ public:
             UInt64 n[3];
         };
         StringHashTableHash hash;
+        const char * lp;
 
         switch (sz)
         {
-            case 0:
-                return func(impls[0].m0, VoidKey{}, VoidHash{});
-            CASE_1_8 : {
+            case 0: {
                 // first half page
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
@@ -124,7 +125,7 @@ public:
                 }
                 else
                 {
-                    const char * lp = x.data + x.size - 8;
+                    lp = x.data + x.size - 8;
                     memcpy(&n[0], lp, 8);
                     n[0] >>= s;
                 }
@@ -132,18 +133,18 @@ public:
                 buck = getBucketFromHash(res);
                 return func(impls[buck].m1, k8, res);
             }
-            CASE_9_16 : {
+            case 1: {
                 memcpy(&n[0], p, 8);
-                const char * lp = x.data + x.size - 8;
+                lp = x.data + x.size - 8;
                 memcpy(&n[1], lp, 8);
                 n[1] >>= s;
                 res = hash(k16);
                 buck = getBucketFromHash(res);
                 return func(impls[buck].m2, k16, res);
             }
-            CASE_17_24 : {
+            case 2: {
                 memcpy(&n[0], p, 16);
-                const char * lp = x.data + x.size - 8;
+                lp = x.data + x.size - 8;
                 memcpy(&n[2], lp, 8);
                 n[2] >>= s;
                 res = hash(k24);

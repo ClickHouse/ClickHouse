@@ -94,11 +94,11 @@ public:
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
     template <typename Func>
-    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func) const
     {
-        if (this->m0.size() && that.m0.size())
+        if (this->m0.hasZero() && that.m0.hasZero())
             func(that.m0.zeroValue()->getSecond(), this->m0.zeroValue()->getSecond(), false);
-        else if (this->m0.size())
+        else if (this->m0.hasZero())
             func(that.m0.zeroValue()->getSecond(), this->m0.zeroValue()->getSecond(), true);
         this->m1.mergeToViaEmplace(that.m1, func);
         this->m2.mergeToViaEmplace(that.m2, func);
@@ -112,7 +112,7 @@ public:
     ///  have a key equals to the given cell, func is invoked with the third argument
     ///  exist set to false. Otherwise exist is set to true.
     template <typename Func>
-    void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
+    void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func) const
     {
         if (this->m0.size() && that.m0.size())
             func(that.m0.zeroValue()->getSecond(), this->m0.zeroValue()->getSecond(), true);

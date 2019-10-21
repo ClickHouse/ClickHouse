@@ -4,36 +4,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
-#define CASE_1_8 \
-    case 1: \
-    case 2: \
-    case 3: \
-    case 4: \
-    case 5: \
-    case 6: \
-    case 7: \
-    case 8
-
-#define CASE_9_16 \
-    case 9: \
-    case 10: \
-    case 11: \
-    case 12: \
-    case 13: \
-    case 14: \
-    case 15: \
-    case 16
-
-#define CASE_17_24 \
-    case 17: \
-    case 18: \
-    case 19: \
-    case 20: \
-    case 21: \
-    case 22: \
-    case 23: \
-    case 24
-
 using StringKey8 = UInt64;
 using StringKey16 = DB::UInt128;
 struct StringKey24
@@ -354,7 +324,9 @@ public:
     decltype(auto) ALWAYS_INLINE dispatch(KeyHolder && key_holder, Func && func)
     {
         auto & x = keyHolderGetKey(key_holder);
-        size_t sz = x.size;
+        const size_t sz = x.size;
+        if (!sz)
+            return func(m0, VoidKey{}, VoidHash{});
         const char * p = x.data;
         // pending bits that needs to be shifted out
         char s = (-sz & 7) * 8;
@@ -366,11 +338,10 @@ public:
             UInt64 n[3];
         };
         StringHashTableHash hash;
-        switch (sz)
+        const char * lp;
+        switch ((sz - 1) >> 3)
         {
-            case 0:
-                return func(m0, VoidKey{}, VoidHash{});
-            CASE_1_8 : {
+            case 0: {
                 // first half page
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
@@ -379,22 +350,22 @@ public:
                 }
                 else
                 {
-                    const char * lp = x.data + x.size - 8;
+                    lp = x.data + x.size - 8;
                     memcpy(&n[0], lp, 8);
                     n[0] >>= s;
                 }
                 return func(m1, k8, hash(k8));
             }
-            CASE_9_16 : {
+            case 1: {
                 memcpy(&n[0], p, 8);
-                const char * lp = x.data + x.size - 8;
+                lp = x.data + x.size - 8;
                 memcpy(&n[1], lp, 8);
                 n[1] >>= s;
                 return func(m2, k16, hash(k16));
             }
-            CASE_17_24 : {
+            case 2: {
                 memcpy(&n[0], p, 16);
-                const char * lp = x.data + x.size - 8;
+                lp = x.data + x.size - 8;
                 memcpy(&n[2], lp, 8);
                 n[2] >>= s;
                 return func(m3, k24, hash(k24));
