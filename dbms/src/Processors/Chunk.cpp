@@ -103,7 +103,7 @@ void Chunk::addColumn(ColumnPtr column)
         throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
                         toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
 
-    columns.emplace_back(std::move(column))
+    columns.emplace_back(std::move(column));
 }
 
 void Chunk::erase(size_t position)
