@@ -19,11 +19,7 @@ protected:
     void transform(Chunk & chunk) override
     {
         auto num_rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
-
-        columns.emplace_back(data_type->createColumnConst(num_rows, value)->convertToFullColumnIfConst());
-
-        chunk.setColumns(std::move(columns), num_rows);
+        chunk.addColumn(data_type->createColumnConst(num_rows, value)->convertToFullColumnIfConst());
     }
 
 private:

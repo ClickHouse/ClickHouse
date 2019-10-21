@@ -1568,10 +1568,10 @@ void InterpreterSelectQuery::executeFetchColumns(
               */
             if (options.to_stage == QueryProcessingStage::Complete)
             {
-                limits.speed_limits.min_execution_speed = settings.min_execution_speed;
-                limits.speed_limits.max_execution_speed = settings.max_execution_speed;
-                limits.speed_limits.min_execution_speed_bytes = settings.min_execution_speed_bytes;
-                limits.speed_limits.max_execution_speed_bytes = settings.max_execution_speed_bytes;
+                limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+                limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+                limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+                limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
                 limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
             }
 

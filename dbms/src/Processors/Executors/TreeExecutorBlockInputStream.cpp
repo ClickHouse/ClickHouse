@@ -1,4 +1,4 @@
-#include <Processors/Executors/TreeExecutor.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <stack>
 
@@ -9,7 +9,7 @@ static void checkProcessorHasSingleOutput(IProcessor * processor)
 {
     size_t num_outputs = processor->getOutputs().size();
     if (num_outputs != 1)
-        throw Exception("All processors in TreeExecutor must have single output, "
+        throw Exception("All processors in TreeExecutorBlockInputStream must have single output, "
                         "but processor with name " + processor->getName() + " has " + std::to_string(num_outputs),
                         ErrorCodes::LOGICAL_ERROR);
 }
@@ -25,7 +25,7 @@ static void validateTree(const Processors & processors, IProcessor * root, std::
         bool is_inserted = index.try_emplace(processor.get(), index.size()).second;
 
         if (!is_inserted)
-            throw Exception("Duplicate processor in TreeExecutor with name " + processor->getName(),
+            throw Exception("Duplicate processor in TreeExecutorBlockInputStream with name " + processor->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -43,13 +43,13 @@ static void validateTree(const Processors & processors, IProcessor * root, std::
 
         if (it == index.end())
             throw Exception("Processor with name " + node->getName() + " "
-                            "was not mentioned in list passed to TreeExecutor, "
+                            "was not mentioned in list passed to TreeExecutorBlockInputStream, "
                             "but was traversed to from other processors.", ErrorCodes::LOGICAL_ERROR);
 
         size_t position = it->second;
 
         if (is_visited[position])
-            throw Exception("Processor with name " + node->getName() + " was visited twice while traverse in TreeExecutor. "
+            throw Exception("Processor with name " + node->getName() + " was visited twice while traverse in TreeExecutorBlockInputStream. "
                             "Passed processors are not tree.", ErrorCodes::LOGICAL_ERROR);
 
         is_visited[position] = true;
@@ -71,13 +71,13 @@ static void validateTree(const Processors & processors, IProcessor * root, std::
     for (size_t i = 0; i < is_visited.size(); ++i)
         if (!is_visited[i])
             throw Exception("Processor with name " + processors[i]->getName() +
-                            " was not visited by traverse in TreeExecutor.", ErrorCodes::LOGICAL_ERROR);
+                            " was not visited by traverse in TreeExecutorBlockInputStream.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void TreeExecutor::init()
+void TreeExecutorBlockInputStream::init()
 {
     if (processors.empty())
-        throw Exception("No processors were passed to TreeExecutor.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("No processors were passed to TreeExecutorBlockInputStream.", ErrorCodes::LOGICAL_ERROR);
 
     root = &output_port.getProcessor();
 
@@ -88,7 +88,7 @@ void TreeExecutor::init()
     input_port->setNeeded();
 }
 
-void TreeExecutor::execute()
+void TreeExecutorBlockInputStream::execute()
 {
     std::stack<IProcessor *> stack;
     stack.push(root);
@@ -120,7 +120,7 @@ void TreeExecutor::execute()
 
                 if (inputs.empty())
                     throw Exception("Processors " + node->getName() + " with empty input "
-                                    "has returned NeedData in TreeExecutor", ErrorCodes::LOGICAL_ERROR);
+                                    "has returned NeedData in TreeExecutorBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 
                 bool all_finished = true;
 
@@ -135,7 +135,7 @@ void TreeExecutor::execute()
                 }
 
                 if (all_finished)
-                    throw Exception("Processors " + node->getName() + " has returned NeedData in TreeExecutor, "
+                    throw Exception("Processors " + node->getName() + " has returned NeedData in TreeExecutorBlockInputStream, "
                                     "but all it's inputs are finished.", ErrorCodes::LOGICAL_ERROR);
                 break;
             }
@@ -160,13 +160,13 @@ void TreeExecutor::execute()
             {
                 throw Exception("Processor with name " + node->getName() + " "
                                 "returned status " + IProcessor::statusToName(status) + " "
-                                "which is not supported in TreeExecutor.", ErrorCodes::LOGICAL_ERROR);
+                                "which is not supported in TreeExecutorBlockInputStream.", ErrorCodes::LOGICAL_ERROR);
             }
         }
     }
 }
 
-Block TreeExecutor::readImpl()
+Block TreeExecutorBlockInputStream::readImpl()
 {
     while (true)
     {
@@ -180,31 +180,31 @@ Block TreeExecutor::readImpl()
     }
 }
 
-void TreeExecutor::setProgressCallback(const ProgressCallback & callback)
+void TreeExecutorBlockInputStream::setProgressCallback(const ProgressCallback & callback)
 {
     for (auto & source : sources_with_progress)
         source->setProgressCallback(callback);
 }
 
-void TreeExecutor::setProcessListElement(QueryStatus * elem)
+void TreeExecutorBlockInputStream::setProcessListElement(QueryStatus * elem)
 {
     for (auto & source : sources_with_progress)
         source->setProcessListElement(elem);
 }
 
-void TreeExecutor::setLimits(const IBlockInputStream::LocalLimits & limits_)
+void TreeExecutorBlockInputStream::setLimits(const IBlockInputStream::LocalLimits & limits_)
 {
     for (auto & source : sources_with_progress)
         source->setLimits(limits_);
 }
 
-void TreeExecutor::setQuota(QuotaForIntervals & quota_)
+void TreeExecutorBlockInputStream::setQuota(QuotaForIntervals & quota_)
 {
     for (auto & source : sources_with_progress)
         source->setQuota(quota_);
 }
 
-void TreeExecutor::addTotalRowsApprox(size_t value)
+void TreeExecutorBlockInputStream::addTotalRowsApprox(size_t value)
 {
     /// Add only for one source.
     if (!sources_with_progress.empty())

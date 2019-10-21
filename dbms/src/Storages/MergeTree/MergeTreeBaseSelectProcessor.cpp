@@ -59,7 +59,7 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 
         auto res = readFromPart();
 
-        if (!res.hasNoRows())
+        if (res.hasRows())
         {
             injectVirtualColumns(res, task.get(), virt_column_names);
             return res;
@@ -231,7 +231,7 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeString().createColumn();
 
-                callback.template insert<DataTypeString>(column, virtual_column_name);
+                callback.template operator()<DataTypeString>(column, virtual_column_name);
             }
             else if (virtual_column_name == "_part_index")
             {
@@ -241,7 +241,7 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeUInt64().createColumn();
 
-                callback.template insert<DataTypeUInt64>(column, virtual_column_name);
+                callback.template operator()<DataTypeUInt64>(column, virtual_column_name);
             }
             else if (virtual_column_name == "_partition_id")
             {
@@ -251,7 +251,7 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeString().createColumn();
 
-                callback.template insert<DataTypeString>(column, virtual_column_name);
+                callback.template operator()<DataTypeString>(column, virtual_column_name);
             }
         }
     }
@@ -262,7 +262,7 @@ namespace
     struct InsertIntoBlockCallback
     {
         template <typename DataType>
-        void insert(const ColumnPtr & column, const String & name)
+        void operator()(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataType>(), name});
         }
@@ -273,7 +273,7 @@ namespace
     struct InsertIntoColumnsCallback
     {
         template <typename>
-        void insert(const ColumnPtr & column, const String &)
+        void operator()(const ColumnPtr & column, const String &)
         {
             columns.push_back(column);
         }
