@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Dictionaries/IDictionary_fwd.h>
+#include <Dictionaries/IDictionary.h>
 #include <Common/Exception.h>
 
 #include <ctime>

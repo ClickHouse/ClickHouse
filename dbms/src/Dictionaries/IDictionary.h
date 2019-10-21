@@ -16,7 +16,7 @@ namespace DB
 {
 
 struct IDictionaryBase;
-using DictionaryPtr = std::shared_ptr<IDictionaryBase>;
+using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
 struct DictionaryStructure;
 class ColumnString;
@@ -57,7 +57,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual std::exception_ptr getLastException() const { return {}; }
 
-    DictionaryPtr shared_from_this()
+    std::shared_ptr<IDictionaryBase> shared_from_this()
     {
         return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
     }

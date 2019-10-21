@@ -43,8 +43,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 
-#include <Dictionaries/DictionaryFactory.h>
-
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
