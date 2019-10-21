@@ -14,11 +14,13 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Dictionaries/registerDictionaries.h>
 
 #include <gtest/gtest.h>
 
 using namespace DB;
 
+static bool registered = false;
 /// For debug
 std::string configurationToString(const DictionaryConfigurationPtr & config)
 {
@@ -30,6 +32,12 @@ std::string configurationToString(const DictionaryConfigurationPtr & config)
 
 TEST(ConvertDictionaryAST, SimpleDictConfiguration)
 {
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
     String input = " CREATE DICTIONARY test.dict1"
                    " ("
                    "    key_column UInt64 DEFAULT 0,"
@@ -55,8 +63,8 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
     EXPECT_EQ(config->getInt("dictionary.lifetime.max"), 10);
 
     /// range
-    EXPECT_EQ(config->getString("dictionary.range_min"), "second_column");
-    EXPECT_EQ(config->getString("dictionary.range_max"), "third_column");
+    EXPECT_EQ(config->getString("dictionary.structure.range_min"), "second_column");
+    EXPECT_EQ(config->getString("dictionary.structure.range_max"), "third_column");
 
     /// source
     EXPECT_EQ(config->getString("dictionary.source.clickhouse.host"), "localhost");
@@ -70,7 +78,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys("dictionary.structure", keys);
 
-    EXPECT_EQ(keys.size(), 3);
+    EXPECT_EQ(keys.size(), 5); /// + ranged keys
     EXPECT_EQ(config->getString("dictionary.structure." + keys[0] + ".name"), "second_column");
     EXPECT_EQ(config->getString("dictionary.structure." + keys[0] + ".type"), "UInt8");
     EXPECT_EQ(config->getInt("dictionary.structure." + keys[0] + ".null_value"), 1);
@@ -89,6 +97,12 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
 
 TEST(ConvertDictionaryAST, TrickyAttributes)
 {
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
     String input = " CREATE DICTIONARY dict2"
                    " ("
                    "    key_column UInt64 IS_OBJECT_ID,"
@@ -127,6 +141,12 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
 
 TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
 {
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
     String input = " CREATE DICTIONARY dict4"
                    " ("
                    "    key_column1 String,"
@@ -172,6 +192,12 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
 
 TEST(ConvertDictionaryAST, ComplexSource)
 {
+    if (!registered)
+    {
+        registerDictionaries();
+        registered = true;
+    }
+
     String input = " CREATE DICTIONARY dict4"
                    " ("
                    "    key_column UInt64,"

@@ -13,10 +13,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-void DictionaryFactory::registerLayout(const std::string & layout_type, Creator create_layout)
+void DictionaryFactory::registerLayout(const std::string & layout_type, Creator create_layout, bool is_complex)
 {
     if (!registered_layouts.emplace(layout_type, std::move(create_layout)).second)
         throw Exception("DictionaryFactory: the layout name '" + layout_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+
+    layout_complexity[layout_type] = is_complex;
+
 }
 
 

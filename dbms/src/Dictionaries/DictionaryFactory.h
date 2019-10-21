@@ -45,11 +45,15 @@ public:
         const std::string & config_prefix,
         DictionarySourcePtr source_ptr)>;
 
-    void registerLayout(const std::string & layout_type, Creator create_layout);
+    bool isComplex(const std::string & layout_type) const { return layout_complexity.at(layout_type); }
+
+    void registerLayout(const std::string & layout_type, Creator create_layout, bool is_complex);
 
 private:
     using LayoutRegistry = std::unordered_map<std::string, Creator>;
     LayoutRegistry registered_layouts;
+    using LayoutComplexity = std::unordered_map<std::string, bool>;
+    LayoutComplexity layout_complexity;
 };
 
 }
