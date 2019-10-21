@@ -108,9 +108,12 @@ public:
       */
     double quantileInterpolated(double level)
     {
-        if (samples.empty())
+        if (samples.empty()) {
+            if (DB::IsDecimalNumber<T>) {
+                return 0;
+            }
             return onEmpty<double>();
-
+        }
         sortIfNeeded();
 
         double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
