@@ -6,6 +6,7 @@
 #include <mysqlxx/Pool.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
+#include <memory>
 
 
 namespace DB
@@ -33,7 +34,7 @@ public:
 
     DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context &, const FilterByNameFunction & = {}) override
     {
-        return nullptr;
+        return std::make_unique<DatabaseDictionariesSnapshotIterator>();
     }
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
