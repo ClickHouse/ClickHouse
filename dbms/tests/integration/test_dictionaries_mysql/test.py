@@ -54,7 +54,7 @@ def test_load_mysql_dictionaries(started_cluster):
     
     for n in range(0, 5):
         # Create MySQL tables, fill them and create CH dict tables
-        prepare_mysql_table('test' + n)
+        prepare_mysql_table('test' + str(n))
     
     # Check dictionaries are loaded and have correct number of elements
     for n in range(0, 100):
@@ -63,7 +63,7 @@ def test_load_mysql_dictionaries(started_cluster):
             query("SYSTEM RELOAD DICTIONARIES")
 
         # Check number of rows            
-        assert query("SELECT count() FROM `dict_table_`.{}".format('test' + (n % 5))).rstrip() == '10000'
+        assert query("SELECT count() FROM `dict_table_`.{}".format('test' + str(n % 5))).rstrip() == '10000'
 
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
@@ -83,7 +83,7 @@ def prepare_mysql_table(table_name):
     mysql_connection.close()
     
     #Create CH Dictionary tables based on MySQL tables 
-    query(create_clickhouse_dictionary_table_template.format(table_name + n), 'dict' + n)
+    query(create_clickhouse_dictionary_table_template.format(table_name + str(n)), 'dict' + str(n))
 
 def get_mysql_conn():
     conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
