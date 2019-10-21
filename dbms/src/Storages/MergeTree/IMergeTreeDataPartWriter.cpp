@@ -1,24 +1,25 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <IO/createWriteBufferFromFileBase.h>
 
 namespace DB
 {
-    IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
-        const String & part_path_,
-        const MergeTreeData & storage_,
-        const NamesAndTypesList & columns_list_,
-        const IColumn::Permutation * permutation_,
-        const String & marks_file_extension_,
-        const CompressionCodecPtr & default_codec_,
-        size_t max_compress_block_size_,
-        size_t aio_threshold_)
-    : part_path(part_path_)
-    , storage(storage_)
-    , columns_list(columns_list_)
-    , permutation(permutation_)
-    , marks_file_extension(marks_file_extension_)
-    , default_codec(default_codec_)
-    , max_compress_block_size(max_compress_block_size_)
-    , aio_threshold(aio_threshold_) {}
+IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
+    const String & part_path_,
+    const MergeTreeData & storage_,
+    const NamesAndTypesList & columns_list_,
+    const IColumn::Permutation * permutation_,
+    const String & marks_file_extension_,
+    const CompressionCodecPtr & default_codec_,
+    const WriterSettings & settings_)
+: part_path(part_path_)
+, storage(storage_)
+, columns_list(columns_list_)
+, permutation(permutation_)
+, marks_file_extension(marks_file_extension_)
+, default_codec(default_codec_)
+, settings(settings_) {}
+
+IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 
 void IMergeTreeDataPartWriter::ColumnStream::finalize()
 {
@@ -52,18 +53,18 @@ IMergeTreeDataPartWriter::ColumnStream::ColumnStream(
 {
 }
 
-// void IMergeTreeDataPartWriter::ColumnStream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
-// {
-//     String name = escaped_column_name;
+void IMergeTreeDataPartWriter::ColumnStream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
+{
+    String name = escaped_column_name;
 
-//     checksums.files[name + data_file_extension].is_compressed = true;
-//     checksums.files[name + data_file_extension].uncompressed_size = compressed.count();
-//     checksums.files[name + data_file_extension].uncompressed_hash = compressed.getHash();
-//     checksums.files[name + data_file_extension].file_size = plain_hashing.count();
-//     checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
+    checksums.files[name + data_file_extension].is_compressed = true;
+    checksums.files[name + data_file_extension].uncompressed_size = compressed.count();
+    checksums.files[name + data_file_extension].uncompressed_hash = compressed.getHash();
+    checksums.files[name + data_file_extension].file_size = plain_hashing.count();
+    checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
 
-//     checksums.files[name + marks_file_extension].file_size = marks.count();
-//     checksums.files[name + marks_file_extension].file_hash = marks.getHash();
-// }
+    checksums.files[name + marks_file_extension].file_size = marks.count();
+    checksums.files[name + marks_file_extension].file_hash = marks.getHash();
+}
 
 }

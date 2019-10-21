@@ -4,20 +4,21 @@ namespace DB
 {
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    const MergeTreeData & storage_, const Block & header_, const String & part_path_, bool sync_,
+    const MergeTreeDataPartPtr & data_part_, const Block & header_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     WrittenOffsetColumns & already_written_offset_columns_,
-    const MergeTreeIndexGranularity & index_granularity_,
     const MergeTreeIndexGranularityInfo * index_granularity_info_)
     : IMergedBlockOutputStream(
-        storage_, part_path_, storage_.global_context.getSettings().min_compress_block_size,
-        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
-        storage_.global_context.getSettings().min_bytes_to_use_direct_io,
+        data_part_, default_codec_,
+        {
+            data_part_->storage.global_context.getSettings().min_compress_block_size,
+            data_part_->storage.global_context.getSettings().max_compress_block_size,
+            data_part_->storage.global_context.getSettings().min_bytes_to_use_direct_io,
+        },
         false,
         indices_to_recalc_,
-        index_granularity_,
-        index_granularity_info_),
+        index_granularity_info_ ? index_granularity_info_->is_adaptive : data_part_->storage.canUseAdaptiveGranularity()),
     header(header_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns_)
 {
@@ -30,9 +31,11 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         const auto & col = header.getByName(column_name);
 
         const auto columns = storage.getColumns();
-        addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
+        /// FIXME
+        // addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
         serialization_states.emplace_back(nullptr);
-        settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
+        /// FIXME
+        // settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
         col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
     }
 
@@ -65,8 +68,9 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     WrittenOffsetColumns offset_columns = already_written_offset_columns;
     for (size_t i = 0; i < header.columns(); ++i)
     {
-        const ColumnWithTypeAndName & column = block.getByName(header.getByPosition(i).name);
-        std::tie(new_current_mark, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_mark);
+        /// FIXME
+        // const ColumnWithTypeAndName & column = block.getByName(header.getByPosition(i).name);
+        // std::tie(new_current_mark, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_mark);
     }
 
     /// Should be written before index offset update, because we calculate,
@@ -94,7 +98,8 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     for (size_t i = 0, size = header.columns(); i < size; ++i)
     {
         auto & column = header.getByPosition(i);
-        serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
+        /// FIXME
+        // serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
 
         /// We wrote at least one row
@@ -104,19 +109,23 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 
     MergeTreeData::DataPart::Checksums checksums;
 
-    for (auto & column_stream : column_streams)
-    {
-        column_stream.second->finalize();
-        if (sync)
-            column_stream.second->sync();
+    /// FIXME
 
-        column_stream.second->addToChecksums(checksums);
-    }
+    UNUSED(sync);
 
-    finishSkipIndicesSerialization(checksums);
+    // for (auto & column_stream : column_streams)
+    // {
+    //     column_stream.second->finalize();
+    //     if (sync)
+    //         column_stream.second->sync();
 
-    column_streams.clear();
-    serialization_states.clear();
+    //     column_stream.second->addToChecksums(checksums);
+    // }
+
+    // finishSkipIndicesSerialization(checksums);
+
+    // column_streams.clear();
+    // serialization_states.clear();
 
     return checksums;
 }

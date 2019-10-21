@@ -14,15 +14,13 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedBlockOutputStream(
-        const MergeTreeData & storage_,
-        const String & part_path_,
+        const MergeTreeDataPartPtr & data_part_,
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size_ = false);
 
     MergedBlockOutputStream(
-        const MergeTreeData & storage_,
-        const String & part_path_,
+        const MergeTreeDataPartPtr & data_part_,
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,

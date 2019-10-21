@@ -6,13 +6,22 @@ namespace DB
 class MergeTreeDataPartWriterWide : IMergeTreeDataPartWriter
 {
 public:
+
+    using ColumnToSize = std::map<std::string, UInt64>;
+
+    MergeTreeDataPartWriterWide(
+        const String & part_path,
+        const MergeTreeData & storage,
+        const NamesAndTypesList & columns_list,
+        const IColumn::Permutation * permutation,
+        const String & marks_file_extension,
+        const CompressionCodecPtr & default_codec,
+        const WriterSettings & settings,
+        const ColumnToSize & merged_column_to_size = {});
+
     size_t write(const Block & block, size_t from_mark, size_t index_offset, 
         const MergeTreeIndexGranularity & index_granularity,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
-
-       void addStreams(const String & path, const String & name, const IDataType & type,
-                    const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
-
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
@@ -23,6 +32,7 @@ public:
         const String & name,
         const IDataType & type,
         const IColumn & column,
+        const MergeTreeIndexGranularity & index_granularity,
         WrittenOffsetColumns & offset_columns,
         bool skip_offsets,
         IDataType::SerializeBinaryBulkStatePtr & serialization_state,
@@ -51,6 +61,13 @@ private:
         bool skip_offsets,
         size_t number_of_rows,
         DB::IDataType::SubstreamPath & path);
+
+    void addStreams(
+        const String & name,
+        const IDataType & type,
+        const CompressionCodecPtr & effective_codec,
+        size_t estimated_size,
+        bool skip_offsets);      
 
     SerializationStates serialization_states;
     bool can_use_adaptive_granularity;

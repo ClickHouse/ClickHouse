@@ -553,6 +553,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
+
+    /// FIXME
     // for (const MergeTreeData::DataPartPtr & part : parts)
     //     part->accumulateColumnSizes(merged_column_to_size);
 
@@ -730,8 +732,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge, force_ttl);
 
     MergedBlockOutputStream to{
-        data,
-        new_part_tmp_path,
+        new_data_part,
         merging_columns,
         compression_codec,
         merged_column_to_size,
@@ -831,9 +832,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
 
             MergedColumnOnlyOutputStream column_to(
-                data,
+                new_data_part,
                 column_gathered_stream.getHeader(),
-                new_part_tmp_path,
                 false,
                 compression_codec,
                 false,
@@ -841,8 +841,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 /// because all of them were already recalculated and written
                 /// as key part of vertical merge
                 std::vector<MergeTreeIndexPtr>{},
-                written_offset_columns,
-                to.getIndexGranularity());
+                written_offset_columns);
 
             size_t column_elems_written = 0;
 
@@ -991,7 +990,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
        IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
-        MergedBlockOutputStream out(data, new_part_tmp_path, all_columns, compression_codec);
+        MergedBlockOutputStream out(new_data_part, all_columns, compression_codec);
 
         in->readPrefix();
         out.writePrefix();
@@ -1092,15 +1091,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
-            data,
+            new_data_part,
             updated_header,
-            new_part_tmp_path,
             /* sync = */ false,
             compression_codec,
             /* skip_offsets = */ false,
             std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
             unused_written_offsets,
-            source_part->index_granularity,
             &source_part->index_granularity_info
         );
 

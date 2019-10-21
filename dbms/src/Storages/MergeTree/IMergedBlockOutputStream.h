@@ -7,8 +7,8 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
 namespace DB
 {
@@ -22,7 +22,6 @@ public:
         const WriterSettings & writer_settings_,
         bool blocks_are_granules_size_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const MergeTreeIndexGranularity & index_granularity_,
         bool can_use_adaptive_granularity_);
 
     using WrittenOffsetColumns = std::set<std::string>;
@@ -45,7 +44,7 @@ protected:
         DB::IDataType::SubstreamPath & path);
 
     void initSkipIndices();
-    void calculateAndSerializeSkipIndices(const ColumnsWithTypeAndName & skip_indexes_columns, size_t rows);
+    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 protected:
     const MergeTreeData & storage;
@@ -78,7 +77,7 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
 
-    std::unique_ptr<IMergeTreeDataPartWriter> writer;
+    MergeTreeWriterPtr writer;
 
     const bool with_final_mark;
 };

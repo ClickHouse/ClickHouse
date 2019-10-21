@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Storages/MergeTree/MergeTreeReaderSettings.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+
 namespace DB
 {
 
@@ -11,7 +13,7 @@ namespace ErrorCodes
 
 namespace
 {
-    constexpr auto DATA_FILE_EXTENSION = ".bin";
+    // constexpr auto DATA_FILE_EXTENSION = ".bin";
     constexpr auto INDEX_FILE_EXTENSION = ".idx";
 }
 
@@ -22,7 +24,6 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     const WriterSettings & writer_settings_,
     bool blocks_are_granules_size_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const MergeTreeIndexGranularity & index_granularity_,
     bool can_use_adaptive_granularity_)
     : storage(data_part->storage)
     , part_path(data_part->getFullPath())
@@ -37,27 +38,6 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 {
     if (blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
-    
-    writer = data_part->getWriter(columns_list, permutation, default_codec, writer_settings);
-}
-
-IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
-        const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets)
-{
-    return [&, skip_offsets] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
-    {
-        bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets && skip_offsets)
-            return nullptr;
-
-        String stream_name = IDataType::getFileNameForStream(name, substream_path);
-
-        /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.count(stream_name))
-            return nullptr;
-
-        return &column_streams[stream_name]->compressed;
-    };
 }
 
 void fillIndexGranularityImpl(
@@ -112,129 +92,14 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
         can_use_adaptive_granularity);
 }
 
-size_t IMergedBlockOutputStream::writeSingleGranule(
-    const String & name,
-    const IDataType & type,
-    const IColumn & column,
-    WrittenOffsetColumns & offset_columns,
-    bool skip_offsets,
-    IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-    IDataType::SerializeBinaryBulkSettings & serialize_settings,
-    size_t from_row,
-    size_t number_of_rows,
-    bool write_marks)
-{
-    if (write_marks)
-        writeSingleMark(name, type, offset_columns, skip_offsets, number_of_rows, serialize_settings.path);
-
-    type.serializeBinaryBulkWithMultipleStreams(column, from_row, number_of_rows, serialize_settings, serialization_state);
-
-    /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-    {
-        bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets && skip_offsets)
-            return;
-
-        String stream_name = IDataType::getFileNameForStream(name, substream_path);
-
-        /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.count(stream_name))
-            return;
-
-        column_streams[stream_name]->compressed.nextIfAtEnd();
-    }, serialize_settings.path);
-
-    return from_row + number_of_rows;
-}
-
-/// column must not be empty. (column.size() !== 0)
-
-std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
-    const String & name,
-    const IDataType & type,
-    const IColumn & column,
-    WrittenOffsetColumns & offset_columns,
-    bool skip_offsets,
-    IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-    size_t from_mark)
-{
-    auto & settings = storage.global_context.getSettingsRef();
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
-    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-
-    size_t total_rows = column.size();
-    size_t current_row = 0;
-    size_t current_column_mark = from_mark;
-    while (current_row < total_rows)
-    {
-        size_t rows_to_write;
-        bool write_marks = true;
-
-        /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
-        if (current_row == 0 && index_offset != 0)
-        {
-            write_marks = false;
-            rows_to_write = index_offset;
-        }
-        else
-        {
-            if (index_granularity.getMarksCount() <= current_column_mark)
-                throw Exception(
-                    "Incorrect size of index granularity expect mark " + toString(current_column_mark) + " totally have marks " + toString(index_granularity.getMarksCount()),
-                    ErrorCodes::LOGICAL_ERROR);
-
-            rows_to_write = index_granularity.getMarkRows(current_column_mark);
-        }
-
-        current_row = writeSingleGranule(
-            name,
-            type,
-            column,
-            offset_columns,
-            skip_offsets,
-            serialization_state,
-            serialize_settings,
-            current_row,
-            rows_to_write,
-            write_marks
-        );
-
-        if (write_marks)
-            current_column_mark++;
-    }
-
-    /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-    {
-        bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets)
-        {
-            String stream_name = IDataType::getFileNameForStream(name, substream_path);
-            offset_columns.insert(stream_name);
-        }
-    }, serialize_settings.path);
-
-    std::cerr << "(IMergedBlockOutputStream::writeColumn) name: " << name << "\n";
-    std::cerr << "(IMergedBlockOutputStream::writeColumn) from_mark: " << from_mark << "\n";
-    std::cerr << "(IMergedBlockOutputStream::writeColumn) current_column_mark: " << current_column_mark << "\n";
-    std::cerr << "(IMergedBlockOutputStream::writeColumn) current_row: " << current_row << "\n";
-    std::cerr << "(IMergedBlockOutputStream::writeColumn) total_rows: " << total_rows;
-    std::cerr << "(IMergedBlockOutputStream::writeColumn) blocks_are_granules_size: " << blocks_are_granules_size << "\n";    
-
-    return std::make_pair(current_column_mark, current_row - total_rows);
-}
-
 void IMergedBlockOutputStream::writeFinalMark(
     const std::string & column_name,
     const DataTypePtr column_type,
     WrittenOffsetColumns & offset_columns,
-    bool skip_offsets,
+    bool /* skip_offsets */,
     DB::IDataType::SubstreamPath & path)
 {
-    writeSingleMark(column_name, *column_type, offset_columns, skip_offsets, 0, path);
+    // writer->writeSingleMark(column_name, *column_type, offset_columns, skip_offsets, 0, path);
     /// Memoize information about offsets
     column_type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
@@ -253,22 +118,20 @@ void IMergedBlockOutputStream::initSkipIndices()
     {
         String stream_name = index->getFileName();
         skip_indices_streams.emplace_back(
-                std::make_unique<ColumnStream>(
+                std::make_unique<IMergeTreeDataPartWriter::ColumnStream>(
                         stream_name,
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,
-                        codec, max_compress_block_size,
-                        0, aio_threshold));
+                        codec, writer_settings.max_compress_block_size,
+                        0, writer_settings.aio_threshold));
         skip_indices_aggregators.push_back(index->createIndexAggregator());
         skip_index_filling.push_back(0);
     }
 }
 
 void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
-        const ColumnsWithTypeAndName & skip_indexes_columns, size_t rows)
+        const Block & skip_indexes_block, size_t rows)
 {
-    /// Creating block for update
-    Block indices_update_block(skip_indexes_columns);
     size_t skip_index_current_data_mark = 0;
 
     /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
@@ -293,7 +156,7 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
                     skip_indices_aggregators[i] = index->createIndexAggregator();
                     skip_index_filling[i] = 0;
 
-                    if (stream.compressed.offset() >= min_compress_block_size)
+                    if (stream.compressed.offset() >= writer_settings.min_compress_block_size)
                         stream.compressed.next();
 
                     writeIntBinary(stream.plain_hashing.count(), stream.marks);
@@ -308,7 +171,7 @@ void IMergedBlockOutputStream::calculateAndSerializeSkipIndices(
             }
 
             size_t pos = prev_pos;
-            skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
+            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, limit);
 
             if (pos == prev_pos + limit)
             {

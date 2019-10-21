@@ -57,6 +57,12 @@ public:
         const ReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{}) const override;
+    
+    MergeTreeWriterPtr getWriter(
+        const NamesAndTypesList & columns_list,
+        const IColumn::Permutation * permutation,
+        const CompressionCodecPtr & default_codec,
+        const WriterSettings & writer_settings) const override;
 
     bool isStoredOnDisk() const override { return true; }
 
