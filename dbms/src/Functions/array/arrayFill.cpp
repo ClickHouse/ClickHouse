@@ -47,6 +47,8 @@ struct ArrayFillImpl
                 {
                     if (end == array_end || fill[end + 1] != fill[begin]) {
                         if (fill[begin])
+                            out_data.insertRangeFrom(in_data, begin, end + 1 - begin);
+                        else
                         {
                             if constexpr (Reverse)
                             {
@@ -63,8 +65,6 @@ struct ArrayFillImpl
                                     out_data.insertManyFrom(in_data, begin - 1, end + 1 - begin);
                             }
                         }
-                        else
-                            out_data.insertRangeFrom(in_data, begin, end + 1 - begin);
 
                         begin = end + 1;
                     }
@@ -81,29 +81,27 @@ struct ArrayFillImpl
                 throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_fill_const->getValue<UInt8>())
-            {
-                size_t array_begin = 0;
-                size_t array_end = 0;
-
-                out_data.reserve(in_data.size());
-
-                for (size_t i = 0; i < in_offsets.size(); ++i)
-                {
-                    array_end = in_offsets[i] - 1;
-
-                    if constexpr (Reverse)
-                        out_data.insertManyFrom(in_data, array_end, array_end + 1 - array_begin);
-                    else
-                        out_data.insertManyFrom(in_data, array_begin, array_end + 1 - array_begin);
-
-                    array_begin = array_end + 1;
-                }
-            }
-            else
                 return ColumnArray::create(
                     array.getDataPtr(),
                     array.getOffsetsPtr()
                 );
+
+            size_t array_begin = 0;
+            size_t array_end = 0;
+
+            out_data.reserve(in_data.size());
+
+            for (size_t i = 0; i < in_offsets.size(); ++i)
+            {
+                array_end = in_offsets[i] - 1;
+
+                if constexpr (Reverse)
+                    out_data.insertManyFrom(in_data, array_end, array_end + 1 - array_begin);
+                else
+                    out_data.insertManyFrom(in_data, array_begin, array_end + 1 - array_begin);
+
+                array_begin = array_end + 1;
+            }
         }
 
         return ColumnArray::create(
