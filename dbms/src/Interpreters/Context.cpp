@@ -1315,12 +1315,6 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 
 const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() const
 {
-    {
-        std::lock_guard lock(shared->external_dictionaries_mutex);
-        if (shared->external_dictionaries_loader)
-            return *shared->external_dictionaries_loader;
-    }
-
     std::lock_guard lock(shared->external_dictionaries_mutex);
     if (!shared->external_dictionaries_loader)
     {
@@ -1340,21 +1334,13 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
-    {
-        std::lock_guard lock(shared->external_models_mutex);
-        if (shared->external_models_loader)
-            return *shared->external_models_loader;
-    }
-
-    const auto & config = getConfigRef();
     std::lock_guard lock(shared->external_models_mutex);
     if (!shared->external_models_loader)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config, "models_config");
-        shared->external_models_loader.emplace(std::move(config_repository), *this->global_context);
+        shared->external_models_loader.emplace(*this->global_context);
     }
     return *shared->external_models_loader;
 }

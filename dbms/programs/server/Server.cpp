@@ -37,6 +37,7 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -922,8 +923,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
             }
 
-            auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config");
-            global_context->getExternalDictionariesLoader().addConfigRepository("", std::move(config_repository));
+            auto dictionaries_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config");
+            global_context->getExternalDictionariesLoader().addConfigRepository("", std::move(dictionaries_repository));
+
+            auto models_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config");
+            global_context->getExternalModelsLoader().addConfigRepository("", std::move(models_repository));
         }
         catch (...)
         {

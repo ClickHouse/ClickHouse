@@ -6,6 +6,9 @@
 
 namespace DB
 {
+
+/// Repository from database, which stores dictionary definitions on disk.
+/// Tracks update time and existance of .sql files through IDatabase.
 class ExternalLoaderDatabaseConfigRepository : public IExternalLoaderConfigRepository
 {
 public:
@@ -27,4 +30,5 @@ private:
     DatabasePtr database;
     Context context;
 };
+
 }
