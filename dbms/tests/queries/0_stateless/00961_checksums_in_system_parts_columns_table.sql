@@ -11,7 +11,7 @@ SELECT
     hash_of_uncompressed_files, 
     uncompressed_hash_of_compressed_files
 FROM system.parts
-WHERE table = 'test_00961';
+WHERE table = 'test_00961' and database = currentDatabase();
 
 DROP TABLE test_00961;
 
