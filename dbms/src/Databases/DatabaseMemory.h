@@ -41,7 +41,7 @@ public:
     void attachDictionary(
         const String & name,
         const Context & context,
-        bool load) override;
+        bool reload) override;
 
     void removeTable(
         const Context & context,
@@ -53,7 +53,8 @@ public:
 
     void detachDictionary(
         const String & name,
-        const Context & context) override;
+        const Context & context,
+        bool reload) override;
 
     time_t getObjectMetadataModificationTime(const Context & context, const String & table_name) override;
 

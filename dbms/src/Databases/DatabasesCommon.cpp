@@ -161,7 +161,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
     return res;
 }
 
-void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name, const Context & context)
+void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name, const Context & context, bool reload)
 {
     {
         std::lock_guard lock(mutex);
@@ -171,7 +171,11 @@ void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name,
         dictionaries.erase(it);
     }
 
-    context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name, true);
+    if (reload)
+    {
+        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
+        context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name, !lazy_load);
+    }
 
 }
 

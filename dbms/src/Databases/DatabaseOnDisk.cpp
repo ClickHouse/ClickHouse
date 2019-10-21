@@ -312,6 +312,7 @@ void DatabaseOnDisk::createDictionary(
     }
     catch (...)
     {
+        database.detachDictionary(dictionary_name, context);
         Poco::File(dictionary_metadata_tmp_path).remove();
         throw;
     }

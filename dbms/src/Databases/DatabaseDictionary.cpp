@@ -102,13 +102,13 @@ void DatabaseDictionary::removeDictionary(
 }
 
 void DatabaseDictionary::attachDictionary(
-    const String & /*dictionary_name*/, const Context & /*context*/, bool /*load*/)
+    const String & /*dictionary_name*/, const Context & /*context*/, bool /*reload*/)
 {
     throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 void DatabaseDictionary::detachDictionary(
-    const String & /*dictionary_name*/, const Context & /*context*/)
+    const String & /*dictionary_name*/, const Context & /*context*/, bool /*reload*/)
 {
     throw Exception("Dictionary engine doesn't support dictionaries.", ErrorCodes::UNSUPPORTED_METHOD);
 }
