@@ -52,18 +52,18 @@ IMergeTreeDataPartWriter::ColumnStream::ColumnStream(
 {
 }
 
-void IMergeTreeDataPartWriter::ColumnStream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
-{
-    String name = escaped_column_name;
+// void IMergeTreeDataPartWriter::ColumnStream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
+// {
+//     String name = escaped_column_name;
 
-    checksums.files[name + data_file_extension].is_compressed = true;
-    checksums.files[name + data_file_extension].uncompressed_size = compressed.count();
-    checksums.files[name + data_file_extension].uncompressed_hash = compressed.getHash();
-    checksums.files[name + data_file_extension].file_size = plain_hashing.count();
-    checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
+//     checksums.files[name + data_file_extension].is_compressed = true;
+//     checksums.files[name + data_file_extension].uncompressed_size = compressed.count();
+//     checksums.files[name + data_file_extension].uncompressed_hash = compressed.getHash();
+//     checksums.files[name + data_file_extension].file_size = plain_hashing.count();
+//     checksums.files[name + data_file_extension].file_hash = plain_hashing.getHash();
 
-    checksums.files[name + marks_file_extension].file_size = marks.count();
-    checksums.files[name + marks_file_extension].file_hash = marks.getHash();
-}
+//     checksums.files[name + marks_file_extension].file_size = marks.count();
+//     checksums.files[name + marks_file_extension].file_hash = marks.getHash();
+// }
 
 }

@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <Storages/MergeTree/MergeTreeReaderSettings.h>
 
 
 namespace DB

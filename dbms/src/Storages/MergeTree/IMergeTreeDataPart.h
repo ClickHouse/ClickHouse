@@ -65,21 +65,11 @@ public:
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{}) const = 0;
 
-        const String & part_path_,
-        const MergeTreeData & storage_,
-        const NamesAndTypesList & columns_list_,
-        const IColumn::Permutation * permutation_,
-        const String & marks_file_extension_,
-        const CompressionCodecPtr & default_codec_,
-        size_t max_compress_block_size_,
-        size_t aio_threshold_
-
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
         const IColumn::Permutation * permutation,
         const CompressionCodecPtr & default_codec_,
-        const WriterSettings & writer_settings,
-    )
+        const WriterSettings & writer_settings) const = 0;
      
     // virtual MergeTreeWriterPtr getWriter() const = 0;
 
