@@ -1562,7 +1562,7 @@ void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & conf
     shared->remote_host_filter.setValuesFromConfig(config);
 }
 
-RemoteHostFilter & Context::getRemoteHostFilter() const
+const RemoteHostFilter & Context::getRemoteHostFilter() const
 {
     return shared->remote_host_filter;
 }

@@ -14,14 +14,14 @@ namespace ErrorCodes
     extern const int UNACCEPTABLE_URL;
 }
 
-void RemoteHostFilter::checkURL(const Poco::URI & uri)
+void RemoteHostFilter::checkURL(const Poco::URI & uri) const
 {
     if (!checkString(uri.getHost()) &&
         !checkString(uri.getHost() + ":" + toString(uri.getPort())))
         throw Exception("URL \"" + uri.toString() + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
 }
 
-void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port)
+void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
     if (!checkString(host) &&
         !checkString(host + ":" + port))
@@ -44,7 +44,7 @@ void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
     }
 }
 
-bool RemoteHostFilter::checkString(const std::string &host)
+bool RemoteHostFilter::checkString(const std::string &host) const
 {
     if (!primary_hosts.empty() || !regexp_hosts.empty())
     {

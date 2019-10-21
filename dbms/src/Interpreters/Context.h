@@ -350,7 +350,7 @@ public:
 
     /// Storage of allowed hosts from config.xml
     void setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config);
-    RemoteHostFilter & getRemoteHostFilter() const;
+    const RemoteHostFilter & getRemoteHostFilter() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
