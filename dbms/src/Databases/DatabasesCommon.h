@@ -33,11 +33,11 @@ public:
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
 
-    void attachDictionary(const String & name, const Context & context, bool load) override;
+    void attachDictionary(const String & name, const Context & context, bool reload) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
-    void detachDictionary(const String & name, const Context & context) override;
+    void detachDictionary(const String & name, const Context & context, bool reload) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 

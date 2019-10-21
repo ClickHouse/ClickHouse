@@ -281,23 +281,25 @@ void buildPrimaryKeyConfiguration(
 /**
   * Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
   */
-void buildDictionaryAttributesConfiguration(
+std::unordered_set<std::string> buildDictionaryAttributesConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTExpressionList * dictionary_attributes,
     const Names & key_columns)
 {
     const auto & children = dictionary_attributes->children;
+    std::unordered_set<std::string> dictionary_attributes_names;
     for (size_t i = 0; i < children.size(); ++i)
     {
         const ASTDictionaryAttributeDeclaration * dict_attr = children[i]->as<const ASTDictionaryAttributeDeclaration>();
         if (!dict_attr->type)
             throw Exception("Dictionary attribute must has type", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
+        dictionary_attributes_names.insert(dict_attr->name);
         if (std::find(key_columns.begin(), key_columns.end(), dict_attr->name) == key_columns.end())
             buildSingleAttribute(doc, root, dict_attr);
-
     }
+    return dictionary_attributes_names;
 }
 
 /** Transform function with key-value arguments to configuration
@@ -371,21 +373,28 @@ void checkAST(const ASTCreateQuery & query)
         throw Exception("Cannot convert dictionary to configuration from non-dictionary AST.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
-        throw Exception("Dictionary AST missing attributes list.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
+        throw Exception("Cannot create dictionary with empty attributes list", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->layout == nullptr)
-        throw Exception("Cannot create dictionary with empty layout.", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
+        throw Exception("Cannot create dictionary with empty layout", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->lifetime == nullptr)
-        throw Exception("Dictionary AST missing lifetime section", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
+        throw Exception("Cannot create dictionary with empty lifetime", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->primary_key == nullptr)
-        throw Exception("Dictionary AST missing primary key", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
+        throw Exception("Cannot create dictionary without primary key", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->source == nullptr)
-        throw Exception("Dictionary AST missing source", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
+        throw Exception("Cannot create dictionary with empty source", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     /// Range can be empty
+}
+
+void checkPrimaryKey(const std::unordered_set<std::string> & all_attrs, const Names & key_attrs)
+{
+    for (const auto & key_attr : key_attrs)
+        if (all_attrs.count(key_attr) == 0)
+            throw Exception("Unknown key attribute '" + key_attr + "'", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 }
 
 }
@@ -409,14 +418,15 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));
     current_dictionary->appendChild(structure_element);
-    Names pk_columns = getPrimaryKeyColumns(query.dictionary->primary_key);
+    Names pk_attrs = getPrimaryKeyColumns(query.dictionary->primary_key);
     auto dictionary_layout = query.dictionary->layout;
 
     bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 
-    buildDictionaryAttributesConfiguration(xml_document, structure_element, query.dictionary_attributes_list, pk_columns);
+    auto all_attr_names = buildDictionaryAttributesConfiguration(xml_document, structure_element, query.dictionary_attributes_list, pk_attrs);
+    checkPrimaryKey(all_attr_names, pk_attrs);
 
-    buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_columns, query.dictionary_attributes_list);
+    buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
     buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source);

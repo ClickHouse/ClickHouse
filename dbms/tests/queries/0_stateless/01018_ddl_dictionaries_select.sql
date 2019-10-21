@@ -41,6 +41,8 @@ SELECT count(distinct(dictGetUInt8('database_for_dict.dict1', 'second_column', t
 
 DETACH DICTIONARY database_for_dict.dict1;
 
+SYSTEM RELOAD DICTIONARY 'database_for_dict.dict1';
+
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(11)); -- {serverError 36}
 
 ATTACH DICTIONARY database_for_dict.dict1;
@@ -48,6 +50,8 @@ ATTACH DICTIONARY database_for_dict.dict1;
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(11));
 
 DROP DICTIONARY database_for_dict.dict1;
+
+SYSTEM RELOAD DICTIONARY 'database_for_dict.dict1';
 
 SELECT dictGetUInt8('database_for_dict.dict1', 'second_column', toUInt64(11)); -- {serverError 36}
 
