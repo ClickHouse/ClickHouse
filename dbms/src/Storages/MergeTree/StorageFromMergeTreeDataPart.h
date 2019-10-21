@@ -6,7 +6,7 @@
 #include <Core/Defines.h>
 
 #include <ext/shared_ptr_helper.h>
-#include <Processors/Executors/TreeExecutor.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 
 namespace DB
@@ -36,7 +36,7 @@ public:
         streams.reserve(pipes.size());
 
         for (auto & pipe : pipes)
-            streams.emplace_back(std::make_shared<TreeExecutor>(std::move(pipe)));
+            streams.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
 
         return streams;
     }

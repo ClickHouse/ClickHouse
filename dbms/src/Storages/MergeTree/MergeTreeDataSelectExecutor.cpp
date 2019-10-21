@@ -58,7 +58,7 @@ namespace std
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/MergingSortedTransform.h>
-#include <Processors/Executors/TreeExecutor.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 
 namespace ProfileEvents
@@ -1103,7 +1103,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
-    auto streams_to_merge = [&]()
+    auto streams_to_merge = [&pipes]()
     {
         size_t num_streams = pipes.size();
 
@@ -1111,7 +1111,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         streams.reserve(num_streams);
 
         for (size_t i = 0; i < num_streams; ++i)
-            streams.emplace_back(std::make_shared<TreeExecutor>(std::move(pipes[i])));
+            streams.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipes[i])));
 
         pipes.clear();
         return streams;

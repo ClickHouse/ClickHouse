@@ -9,8 +9,8 @@ class ISourceWithProgress;
 
 /// It's a wrapper from processors tree-shaped pipeline to block input stream.
 /// Execute all processors in a single thread, by in-order tree traverse.
-/// Also, support fro progress and quotas.
-class TreeExecutor : public IBlockInputStream
+/// Also, support for progress and quotas.
+class TreeExecutorBlockInputStream : public IBlockInputStream
 {
 public:
     /// Last processor in list must be a tree root.
@@ -18,7 +18,7 @@ public:
     ///  * processors form a tree
     ///  * all processors are attainable from root
     ///  * there is no other connected processors
-    explicit TreeExecutor(Pipe pipe) : output_port(pipe.getPort()), processors(std::move(pipe).detachProcessors())
+    explicit TreeExecutorBlockInputStream(Pipe pipe) : output_port(pipe.getPort()), processors(std::move(pipe).detachProcessors())
     {
         init();
     }

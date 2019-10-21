@@ -5,7 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 
-#include <Processors/Executors/TreeExecutor.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
@@ -440,7 +440,7 @@ BlockInputStreams IStorage::read(
     res.reserve(pipes.size());
 
     for (auto & pipe : pipes)
-        res.emplace_back(std::make_shared<TreeExecutor>(std::move(pipe)));
+        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
 
     return res;
 }
