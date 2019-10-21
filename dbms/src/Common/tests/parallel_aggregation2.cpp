@@ -42,7 +42,7 @@ struct AggregateIndependent
             auto end = data.begin() + (data.size() * (i + 1)) / num_threads;
             auto & map = *results[i];
 
-            pool.schedule([&, begin, end]()
+            pool.scheduleOrThrowOnError([&, begin, end]()
             {
                 for (auto it = begin; it != end; ++it)
                 {
@@ -85,7 +85,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
             auto end = data.begin() + (data.size() * (i + 1)) / num_threads;
             auto & map = *results[i];
 
-            pool.schedule([&, begin, end]()
+            pool.scheduleOrThrowOnError([&, begin, end]()
             {
                 typename Map::LookupResult place = nullptr;
                 Key prev_key {};
@@ -180,7 +180,7 @@ struct MergeParallelForTwoLevelTable
                         ThreadPool & pool)
     {
         for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
-            pool.schedule([&, bucket, num_maps]
+            pool.scheduleOrThrowOnError([&, bucket, num_maps]
             {
                 std::vector<typename Map::Impl *> section(num_maps);
                 for (size_t i = 0; i < num_maps; ++i)

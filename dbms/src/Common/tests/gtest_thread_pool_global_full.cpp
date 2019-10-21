@@ -30,11 +30,11 @@ TEST(ThreadPool, GlobalFull1)
     ThreadPool pool(num_jobs);
 
     for (size_t i = 0; i < capacity; ++i)
-        pool.schedule(func);
+        pool.scheduleOrThrowOnError(func);
 
     for (size_t i = capacity; i < num_jobs; ++i)
     {
-        EXPECT_THROW(pool.schedule(func), DB::Exception);
+        EXPECT_THROW(pool.scheduleOrThrowOnError(func), DB::Exception);
         ++counter;
     }
 
@@ -67,10 +67,10 @@ TEST(ThreadPool, GlobalFull2)
 
     ThreadPool pool(capacity, 0, capacity);
     for (size_t i = 0; i < capacity; ++i)
-        pool.schedule(func);
+        pool.scheduleOrThrowOnError(func);
 
     ThreadPool another_pool(1);
-    EXPECT_THROW(another_pool.schedule(func), DB::Exception);
+    EXPECT_THROW(another_pool.scheduleOrThrowOnError(func), DB::Exception);
 
     ++counter;
 
@@ -79,7 +79,7 @@ TEST(ThreadPool, GlobalFull2)
     global_pool.wait();
 
     for (size_t i = 0; i < capacity; ++i)
-        another_pool.schedule([&] { ++counter; });
+        another_pool.scheduleOrThrowOnError([&] { ++counter; });
 
     another_pool.wait();
     EXPECT_EQ(counter, capacity * 2 + 1);

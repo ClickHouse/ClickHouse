@@ -34,9 +34,23 @@ template <typename T>
 using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 
 class Field;
-using Array = std::vector<Field>;
-using TupleBackend = std::vector<Field>;
-STRONG_TYPEDEF(TupleBackend, Tuple) /// Array and Tuple are different types with equal representation inside Field.
+using FieldVector = std::vector<Field>;
+
+/// Array and Tuple use the same storage type -- FieldVector, but we declare
+/// distinct types for them, so that the caller can choose whether it wants to
+/// construct a Field of Array or a Tuple type. An alternative approach would be
+/// to construct both of these types from FieldVector, and have the caller
+/// specify the desired Field type explicitly.
+#define DEFINE_FIELD_VECTOR(X) \
+struct X : public FieldVector \
+{ \
+    using FieldVector::FieldVector; \
+}
+
+DEFINE_FIELD_VECTOR(Array);
+DEFINE_FIELD_VECTOR(Tuple);
+
+#undef DEFINE_FIELD_VECTOR
 
 struct AggregateFunctionStateData
 {
@@ -457,7 +471,6 @@ private:
     void createConcrete(T && x)
     {
         using UnqualifiedType = std::decay_t<T>;
-        which = TypeToEnum<UnqualifiedType>::value;
 
         // In both Field and PODArray, small types may be stored as wider types,
         // e.g. char is stored as UInt64. Field can return this extended value
@@ -466,6 +479,7 @@ private:
         // nominal type.
         using StorageType = NearestFieldType<UnqualifiedType>;
         new (&storage) StorageType(std::forward<T>(x));
+        which = TypeToEnum<UnqualifiedType>::value;
     }
 
     /// Assuming same types.
@@ -747,6 +761,8 @@ void readBinary(Tuple & x, ReadBuffer & buf);
 void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
+
+void writeFieldText(const Field & x, WriteBuffer & buf);
 
 [[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }
