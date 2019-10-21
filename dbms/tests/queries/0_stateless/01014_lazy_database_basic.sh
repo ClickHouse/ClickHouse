@@ -3,6 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
+${CLICKHOUSE_CLIENT} -n -q "DROP DATABASE IF EXISTS testlazy"
 
 ${CLICKHOUSE_CLIENT} -n -q "
     CREATE DATABASE testlazy ENGINE = Lazy(1);
@@ -10,6 +11,8 @@ ${CLICKHOUSE_CLIENT} -n -q "
     CREATE TABLE testlazy.slog (a UInt64, b UInt64) ENGINE = StripeLog;
     CREATE TABLE testlazy.tlog (a UInt64, b UInt64) ENGINE = TinyLog;
 "
+
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.parts WHERE database = 'testlazy'";
 
 sleep 1.5
 
