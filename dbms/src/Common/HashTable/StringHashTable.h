@@ -330,10 +330,13 @@ public:
 
     struct FindCallable
     {
-        template <typename Map, typename KeyHolder>
-        LookupResult ALWAYS_INLINE operator()(Map & map, KeyHolder && key_holder, size_t hash)
+        // find() doesn't need any key memory management, so we don't work with
+        // any key holders here, only with normal keys. The key type is still
+        // different for every subtable, this is why it is a template parameter.
+        template <typename Submap, typename SubmapKey>
+        LookupResult ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
         {
-            return lookupResultGetMapped(map.find(keyHolderGetKey(key_holder), hash));
+            return lookupResultGetMapped(map.find(key, hash));
         }
     };
 
