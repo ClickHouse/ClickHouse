@@ -248,7 +248,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         if (src.getType() == Field::Types::Tuple)
         {
-            const TupleBackend & src_tuple = src.get<Tuple>();
+            const auto & src_tuple = src.get<Tuple>();
             size_t src_tuple_size = src_tuple.size();
             size_t dst_tuple_size = type_tuple->getElements().size();
 
@@ -256,7 +256,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 throw Exception("Bad size of tuple in IN or VALUES section. Expected size: "
                     + toString(dst_tuple_size) + ", actual size: " + toString(src_tuple_size), ErrorCodes::TYPE_MISMATCH);
 
-            TupleBackend res(dst_tuple_size);
+            Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
