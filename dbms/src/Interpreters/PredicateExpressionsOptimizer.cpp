@@ -406,7 +406,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     /// TODO: get tables from evaluateAsterisk instead of tablesOnly() to extract asterisks in general way
     std::vector<TableWithColumnNames> tables_with_columns = TranslateQualifiedNamesVisitor::Data::tablesOnly(tables);
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, tables_with_columns, false);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, std::move(tables_with_columns), false);
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};

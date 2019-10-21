@@ -177,8 +177,10 @@ void DatabaseOrdinary::loadStoredObjects(
 
     ThreadPool pool(SettingMaxThreads().getAutoValue());
 
-    for (const auto & file_with_ast : file_names)
-        pool.schedule([&]() { loadOneObject(file_with_ast.second); });
+    for (const auto & name_with_query : file_names)
+    {
+        pool.scheduleOrThrowOnError([&]() { loadOneObject(name_with_query.second); });
+    }
 
     pool.wait();
 
@@ -209,9 +211,16 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
         logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
 
-    for (const auto & table : tables)
-        thread_pool.schedule([&]() { startupOneTable(table.second); });
-
+    try
+    {
+        for (const auto & table : tables)
+            thread_pool.scheduleOrThrowOnError([&]() { startupOneTable(table.second); });
+    }
+    catch (...)
+    {
+        thread_pool.wait();
+        throw;
+    }
     thread_pool.wait();
 }
 
