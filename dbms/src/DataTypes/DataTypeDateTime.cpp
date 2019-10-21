@@ -50,6 +50,10 @@ DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
 {
 }
 
+DataTypeDateTime::DataTypeDateTime(const TimezoneMixin & time_zone_)
+    : TimezoneMixin(time_zone_)
+{}
+
 String DataTypeDateTime::doGetName() const
 {
     if (!has_explicit_time_zone)

@@ -12,6 +12,7 @@ class TimezoneMixin
 {
 public:
     explicit TimezoneMixin(const String & time_zone_name = "");
+    TimezoneMixin(const TimezoneMixin & ) = default;
 
     const DateLUTImpl & getTimeZone() const { return time_zone; }
 
@@ -45,6 +46,7 @@ class DataTypeDateTime final : public DataTypeNumberBase<UInt32>, public Timezon
 {
 public:
     explicit DataTypeDateTime(const String & time_zone_name = "");
+    explicit DataTypeDateTime(const TimezoneMixin & time_zone);
 
     const char * getFamilyName() const override { return "DateTime"; }
     String doGetName() const override;
