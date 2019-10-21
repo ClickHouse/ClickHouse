@@ -130,30 +130,30 @@ Possible values:
 
 Default value: 0.
 
-## input_format_allow_errors_num
+## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_ratio`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_ratio`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_num`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_num` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
-## input_format_allow_errors_ratio
+## input_format_allow_errors_ratio {#settings-input_format_allow_errors_ratio}
 
 Sets the maximum percentage of errors allowed when reading from text formats (CSV, TSV, etc.).
 The percentage of errors is set as a floating-point number between 0 and 1.
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_num`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_num`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
 
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
@@ -227,7 +227,7 @@ Enabled by default.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow) and [CSV](../../interfaces/formats.md#csv) formats.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
 
 !!! note "Note"
     When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -239,9 +239,15 @@ Possible values:
 
 Default value: 1.
 
+## input_format_tsv_empty_as_default {#settings-input_format_tsv_empty_as_default}
+
+When enabled, replace empty input fields in TSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Disabled by default.
+
 ## input_format_null_as_default {#settings-input_format_null_as_default}
 
-Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for CSV format).
+Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for text input formats).
 
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}

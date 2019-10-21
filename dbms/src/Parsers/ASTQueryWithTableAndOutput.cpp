@@ -1,4 +1,5 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

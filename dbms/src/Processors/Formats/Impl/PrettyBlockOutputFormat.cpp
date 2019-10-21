@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
 
 

@@ -581,7 +581,7 @@ Function:
 
 - Provides the result deterministically (it doesn't depend on the query processing order).
 
-!! note "Note"
+!!! note "Note"
     Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
@@ -881,7 +881,7 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-!! note "Note"
+!!! note "Note"
     For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#agg_function-quantile).
 
 **Returned value**
@@ -1210,11 +1210,6 @@ SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
 │               3   │
 └───────────────────┘
 
-SELECT groupBitmapAndMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-┌─groupBitmapAnd(z)─┐
-│               3   │
-└───────────────────┘
-
 SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 ┌─arraySort(bitmapToArray(groupBitmapAndState(z)))─┐
 │ [6,8,10]                                         │
@@ -1260,11 +1255,6 @@ SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%')
 │             15   │
 └──────────────────┘
 
-SELECT groupBitmapOrMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-┌─groupBitmapOrMerge(z)─┐
-│                  15   │
-└───────────────────────┘
-
 SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 ┌─arraySort(bitmapToArray(groupBitmapOrState(z)))─┐
 │ [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]           │
@@ -1309,11 +1299,6 @@ SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
 ┌─groupBitmapXor(z)─┐
 │              10   │
 └───────────────────┘
-
-SELECT groupBitmapXorMerge(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
-┌─groupBitmapXorMerge(z)─┐
-│                   10   │
-└────────────────────────┘
 
 SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 ┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐

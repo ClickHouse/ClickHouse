@@ -150,7 +150,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads; ++i)
-        pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
+        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count));
     pool.wait();
 
     fsync(fd);

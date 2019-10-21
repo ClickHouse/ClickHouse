@@ -7,6 +7,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 

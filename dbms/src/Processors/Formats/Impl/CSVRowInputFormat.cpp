@@ -24,12 +24,17 @@ CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, co
     , with_names(with_names_)
     , format_settings(format_settings_)
 {
+
+    const String bad_delimiters = " \t\"'.UL";
+    if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
+        throw Exception(String("CSV format may not work correctly with delimiter '") + format_settings.csv.delimiter +
+                        "'. Try use CustomSeparated format instead.", ErrorCodes::BAD_ARGUMENTS);
+
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
 
     data_types.resize(num_columns);
     column_indexes_by_names.reserve(num_columns);
-    column_idx_to_nullable_column_idx.resize(num_columns);
 
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -37,16 +42,6 @@ CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, co
 
         data_types[i] = column_info.type;
         column_indexes_by_names.emplace(column_info.name, i);
-
-        /// If input_format_null_as_default=1 we need ColumnNullable of type DataTypeNullable(nested_type)
-        /// to parse value as nullable before inserting it in corresponding column of not-nullable type.
-        /// Constructing temporary column for each row is slow, so we prepare it here
-        if (format_settings_.csv.null_as_default && !column_info.type->isNullable() && column_info.type->canBeInsideNullable())
-        {
-            column_idx_to_nullable_column_idx[i] = nullable_columns.size();
-            nullable_types.emplace_back(std::make_shared<DataTypeNullable>(column_info.type));
-            nullable_columns.emplace_back(nullable_types.back()->createColumn());
-        }
     }
 }
 
@@ -220,6 +215,7 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
     /// it doesn't have to check it.
     bool have_default_columns = have_always_default_columns;
 
+    ext.read_columns.assign(read_columns.size(), true);
     const auto delimiter = format_settings.csv.delimiter;
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
@@ -229,9 +225,8 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
         if (table_column)
         {
             skipWhitespacesAndTabs(in);
-            read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column],
-                                                    is_last_file_column, *table_column);
-            if (!read_columns[*table_column])
+            ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column], is_last_file_column);
+            if (!ext.read_columns[*table_column])
                 have_default_columns = true;
             skipWhitespacesAndTabs(in);
         }
@@ -258,9 +253,9 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
                 /// value, we do not have to use the default value specified by
                 /// the data type, and can just use IColumn::insertDefault().
                 columns[i]->insertDefault();
+                ext.read_columns[i] = false;
             }
         }
-        ext.read_columns = read_columns;
     }
 
     return true;
@@ -365,8 +360,7 @@ void CSVRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & 
     if (column_indexes_for_input_fields[file_column])
     {
         const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
-        if (!readField(column, type, is_last_file_column, *column_indexes_for_input_fields[file_column]))
-            column.insertDefault();
+        readField(column, type, is_last_file_column);
     }
     else
     {
@@ -378,12 +372,14 @@ void CSVRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & 
     skipWhitespacesAndTabs(in);
 }
 
-bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column, size_t column_idx)
+bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
 {
     const bool at_delimiter = !in.eof() && *in.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
                                          && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
 
+    /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
+    /// only one empty or NULL column will be expected
     if (format_settings.csv.empty_as_default
         && (at_delimiter || at_last_column_line_end))
     {
@@ -393,20 +389,13 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
         /// commas, which might be also used as delimiters. However,
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
+        column.insertDefault();
         return false;
     }
-    else if (column_idx_to_nullable_column_idx[column_idx])
+    else if (format_settings.null_as_default && !type->isNullable())
     {
         /// If value is null but type is not nullable then use default value instead.
-        const size_t nullable_idx = *column_idx_to_nullable_column_idx[column_idx];
-        auto & tmp_col = *nullable_columns[nullable_idx];
-        nullable_types[nullable_idx]->deserializeAsTextCSV(tmp_col, in, format_settings);
-        Field value = tmp_col[0];
-        tmp_col.popBack(1);     /// do not store copy of values in memory
-        if (value.isNull())
-            return false;
-        column.insert(value);
-        return true;
+        return DataTypeNullable::deserializeTextCSV(column, in, format_settings, type);
     }
     else
     {
