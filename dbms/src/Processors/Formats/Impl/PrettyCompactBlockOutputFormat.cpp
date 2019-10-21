@@ -1,3 +1,4 @@
+#include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 ///#include <DataStreams/SquashingBlockOutputStream.h>

@@ -214,6 +214,7 @@ private:
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -231,6 +232,7 @@ private:
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     /// Add ConvertingBlockInputStream to specified header.
     void unifyStreams(Pipeline & pipeline, Block header);
@@ -252,9 +254,6 @@ private:
       * But the use of this section is justified if you need to set the settings for one subquery.
       */
     void initSettings();
-
-    /// Whether you need to check if the set is empty before ExpressionActions is executed. Create a CheckNonEmptySetBlockInputStream if needed.
-    BlockInputStreamPtr createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const;
 
     const SelectQueryOptions options;
     ASTPtr query_ptr;
