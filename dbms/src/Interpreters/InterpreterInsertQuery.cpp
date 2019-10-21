@@ -34,8 +34,12 @@ namespace ErrorCodes
 
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_)
-    : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_), no_squash(no_squash_)
+    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
+    : query_ptr(query_ptr_)
+    , context(context_)
+    , allow_materialized(allow_materialized_)
+    , no_squash(no_squash_)
+    , no_destination(no_destination_)
 {
     checkStackSize();
 }
@@ -61,7 +65,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        if (query.no_destination)
+        if (no_destination)
             return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
@@ -100,10 +104,10 @@ BlockIO InterpreterInsertQuery::execute()
 
     /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
-    if (table->as<StorageKafka>() && !query.no_destination)
+    if (table->noPushingToViews() && !no_destination)
         out = table->write(query_ptr, context);
     else
-        out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
+        out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, no_destination);
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).

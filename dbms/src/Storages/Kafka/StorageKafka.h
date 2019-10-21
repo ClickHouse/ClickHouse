@@ -30,7 +30,9 @@ public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const override { return database_name; }
+
     bool supportsSettings() const override { return true; }
+    bool noPushingToViews() const override { return true; }
 
     void startup() override;
     void shutdown() override;
