@@ -36,14 +36,12 @@ public:
         const std::string & repository_name,
         std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
 
-
     /// Starts reloading of a specified object.
-    void reloadSingleDictionary(
-        const String & name,
+    void addDictionaryWithConfig(
+        const String & dictionary_name,
         const String & repo_name,
         const ASTCreateQuery & query,
-        bool load_never_loading = false,
-        bool sync = false) const;
+        bool load_never_loading = false) const;
 
 
 protected:

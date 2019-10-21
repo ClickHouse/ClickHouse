@@ -302,7 +302,8 @@ void DatabaseOnDisk::createDictionary(
         /// Load dictionary
         bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
         String dict_name = database.getDatabaseName() + "." + dictionary_name;
-        context.getExternalDictionariesLoader().reloadSingleDictionary(dict_name, database.getDatabaseName(), query->as<const ASTCreateQuery &>(), !lazy_load, !lazy_load);
+        context.getExternalDictionariesLoader().addDictionaryWithConfig(
+            dict_name, database.getDatabaseName(), query->as<const ASTCreateQuery &>(), !lazy_load);
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
