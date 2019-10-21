@@ -20,6 +20,9 @@ public:
 
     explicit DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name = "");
 
+    // reuse timezone from other DateTime/DateTime64
+    DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info);
+
     const char * getFamilyName() const override { return "DateTime64"; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime64; }

@@ -46,6 +46,11 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_z
 {
 }
 
+DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
+    : DataTypeDecimalBase<DateTime64>(maxDecimalPrecision<DateTime64>() - scale_, scale_),
+      TimezoneMixin(time_zone_info)
+{}
+
 std::string DataTypeDateTime64::doGetName() const
 {
     if (!has_explicit_time_zone)
