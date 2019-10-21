@@ -143,16 +143,13 @@ extra_ops =\
             ],
             'arg':
             [
-                '1',
-                '-1',
-                # 'toUInt8(1)',
-                # 'toInt8(-1)',
-                # 'toUInt16(1)',
-                # 'toInt16(-1)',
-                # 'toUInt32(1)',
-                # 'toInt32(-1)',
-                # 'toUInt64(1)',
-                'toInt64(1)',
+                'toUInt8(1)',
+                'toInt8(-1)',
+                'toUInt16(1)',
+                'toInt16(-1)',
+                'toUInt32(1)',
+                'toInt32(-1)',
+                'toUInt64(1)',
                 'toInt64(-1)'
             ],
         },
