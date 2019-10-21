@@ -13,6 +13,7 @@
 #include <Core/Names.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Dictionaries/DictionaryFactory.h>
 
 namespace DB
 {
@@ -411,7 +412,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     Names pk_columns = getPrimaryKeyColumns(query.dictionary->primary_key);
     auto dictionary_layout = query.dictionary->layout;
 
-    bool complex = startsWith(dictionary_layout->layout_type, "complex");
+    bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 
     buildDictionaryAttributesConfiguration(xml_document, structure_element, query.dictionary_attributes_list, pk_columns);
 
@@ -422,7 +423,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)
-        buildRangeConfiguration(xml_document, current_dictionary, query.dictionary->range);
+        buildRangeConfiguration(xml_document, structure_element, query.dictionary->range);
 
     conf->load(xml_document);
     return conf;
