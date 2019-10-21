@@ -24,6 +24,8 @@
 
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
 
 namespace DB
@@ -87,15 +89,13 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const NamesAndTypesList & columns_list,
-    const IColumn::Permutation * permutation,
     const CompressionCodecPtr & default_codec,
     const WriterSettings & writer_settings) const
 {
-    UNUSED(columns_list);
-    UNUSED(permutation);
-    UNUSED(default_codec);
-    UNUSED(writer_settings);
-    return {};
+    return std::make_unique<MergeTreeDataPartWriterWide>(
+        getFullPath(), storage, columns_list,
+        index_granularity_info.marks_file_extension,
+        default_codec, writer_settings);
 }        
 
 

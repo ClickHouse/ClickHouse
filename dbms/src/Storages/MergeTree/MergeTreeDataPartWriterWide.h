@@ -3,7 +3,7 @@
 namespace DB
 {
 
-class MergeTreeDataPartWriterWide : IMergeTreeDataPartWriter
+class MergeTreeDataPartWriterWide : public IMergeTreeDataPartWriter
 {
 public:
 
@@ -13,15 +13,17 @@ public:
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
-        const IColumn::Permutation * permutation,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const WriterSettings & settings,
         const ColumnToSize & merged_column_to_size = {});
 
-    size_t write(const Block & block, size_t from_mark, size_t index_offset, 
+    size_t write(const Block & block, const IColumn::Permutation * permutation,
+        size_t from_mark, size_t index_offset, 
         const MergeTreeIndexGranularity & index_granularity,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
+
+    void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
@@ -60,6 +62,13 @@ private:
         WrittenOffsetColumns & offset_columns,
         bool skip_offsets,
         size_t number_of_rows,
+        DB::IDataType::SubstreamPath & path);
+    
+    void writeFinalMark(
+        const std::string & column_name,
+        const DataTypePtr column_type,
+        WrittenOffsetColumns & offset_columns,
+        bool skip_offsets,
         DB::IDataType::SubstreamPath & path);
 
     void addStreams(

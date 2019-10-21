@@ -37,6 +37,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , columns_list(columns_list_)
 {
     init();
+    writer = data_part_->getWriter(columns_list_, default_codec_, writer_settings);
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -58,6 +59,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , columns_list(columns_list_)
 {
     init();
+    writer = data_part_->getWriter(columns_list_, default_codec_, writer_settings);
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -89,36 +91,18 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         const NamesAndTypesList * total_column_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
+    /// Finish write and get checksums.
+    MergeTreeData::DataPart::Checksums checksums;
+
     /// Finish columns serialization.
-    {
-        /// FIXME
-        // const auto & settings = storage.global_context.getSettingsRef();
-        // IDataType::SerializeBinaryBulkSettings serialize_settings;
-        // serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-        // serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-        // WrittenOffsetColumns offset_columns;
-        // auto it = columns_list.begin();
-        // for (size_t i = 0; i < columns_list.size(); ++i, ++it)
-        // {
-        //     if (!serialization_states.empty())
-        //     {
-        //         serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
-        //         it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
-        //     }
+    bool write_final_mark = (with_final_mark && rows_count != 0);
+    writer->finalize(checksums, write_final_mark);
 
-        //     if (with_final_mark && rows_count != 0)
-        //         writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
-        // }
-    }
-
-    if (with_final_mark && rows_count != 0)
+    if (write_final_mark)
         index_granularity.appendMark(0); /// last mark
 
     if (!total_column_list)
         total_column_list = &columns_list;
-
-    /// Finish write and get checksums.
-    MergeTreeData::DataPart::Checksums checksums;
 
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
@@ -142,16 +126,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         index_stream = nullptr;
     }
 
-    /// FIXME
-    // for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
-    // {
-    //     it->second->finalize();
-    //     it->second->addToChecksums(checksums);
-    // }
-
     finishSkipIndicesSerialization(checksums);
-
-    // column_streams.clear();
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -278,7 +253,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
-    size_t new_index_offset = writer->write(block, current_mark, index_offset, index_granularity, primary_key_block, skip_indexes_block);
+    size_t new_index_offset = writer->write(block, permutation, current_mark, index_offset, index_granularity, primary_key_block, skip_indexes_block);
     rows_count += rows;
 
     /// Should be written before index offset update, because we calculate,
@@ -299,9 +274,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         {
             if (storage.hasPrimaryKey())
             {
-                for (size_t j = 0, size = primary_key_block.rows(); j < size; ++j)
+                for (size_t j = 0, size = primary_key_block.columns(); j < size; ++j)
                 {
                     const auto & primary_column = primary_key_block.getByPosition(j);
+                    std::cerr << "(writeImpl) primary_column: " << !!primary_column.column << "\n";
+                    std::cerr << "(writeImpl) index_column: " << !!index_columns[j] << "\n";
                     index_columns[j]->insertFrom(*primary_column.column, i);
                     primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
                 }
@@ -316,7 +293,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     }
 
     /// store last index row to write final mark at the end of column
-    for (size_t j = 0, size = primary_key_block.rows(); j < size; ++j)
+    for (size_t j = 0, size = primary_key_block.columns(); j < size; ++j)
     {
         const IColumn & primary_column = *primary_key_block.getByPosition(j).column.get();
         auto mutable_column = std::move(*last_index_row[j].column).mutate();

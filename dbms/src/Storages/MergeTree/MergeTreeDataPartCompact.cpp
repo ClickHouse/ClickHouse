@@ -87,12 +87,10 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const NamesAndTypesList & columns_list,
-    const IColumn::Permutation * permutation,
     const CompressionCodecPtr & default_codec,
     const WriterSettings & writer_settings) const
 {
     UNUSED(columns_list);
-    UNUSED(permutation);
     UNUSED(default_codec);
     UNUSED(writer_settings);
     return {};

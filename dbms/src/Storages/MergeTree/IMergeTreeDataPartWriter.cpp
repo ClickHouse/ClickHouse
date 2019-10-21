@@ -7,14 +7,12 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
-    const IColumn::Permutation * permutation_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const WriterSettings & settings_)
 : part_path(part_path_)
 , storage(storage_)
 , columns_list(columns_list_)
-, permutation(permutation_)
 , marks_file_extension(marks_file_extension_)
 , default_codec(default_codec_)
 , settings(settings_) {}

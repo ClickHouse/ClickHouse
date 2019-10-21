@@ -61,17 +61,17 @@ public:
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
-        const IColumn::Permutation * permutation,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const WriterSettings & settings);
 
     virtual size_t write(
-        const Block & block, size_t from_mark, size_t offset, const MergeTreeIndexGranularity & index_granularity,
+        const Block & block, const IColumn::Permutation * permutation,
+        size_t from_mark, size_t offset, const MergeTreeIndexGranularity & index_granularity,
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
-    
-    // virtual void writeFinalMarks() = 0;
+
+    virtual void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark) = 0;
 
     virtual ~IMergeTreeDataPartWriter();
 
@@ -82,7 +82,6 @@ protected:
     String part_path;
     const MergeTreeData & storage;
     NamesAndTypesList columns_list;
-    const IColumn::Permutation * permutation;
     const String marks_file_extension;
 
     CompressionCodecPtr default_codec;
