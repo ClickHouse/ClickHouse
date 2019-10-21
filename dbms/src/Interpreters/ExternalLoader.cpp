@@ -70,7 +70,7 @@ public:
         return collectConfigs();
     }
 
-    ObjectConfigsPtr updateLoadableInfo(
+    ObjectConfig updateLoadableInfo(
         const String & external_name,
         const String & object_name,
         const String & repo_name,
@@ -102,7 +102,7 @@ public:
             loadable_info.configs.emplace_back(external_name, object_config);
         loadable_info.last_update_time = Poco::Timestamp{}; /// now
         loadable_info.in_use = true;
-        return collectConfigs();
+        return object_config;
     }
 
 private:
@@ -360,6 +360,12 @@ public:
         event.notify_all();
     }
 
+    void setSingleObjectConfigurationWithoutLoading(const String & external_name, const ObjectConfig & config)
+    {
+        std::lock_guard lock{mutex};
+        infos.emplace(external_name, Info{config});
+    }
+
     /// Sets whether all the objects from the configuration should be always loaded (even if they aren't used).
     void enableAlwaysLoadEverything(bool enable)
     {
@@ -499,7 +505,7 @@ public:
     void load(LoadResults & loaded_results, Duration timeout = NO_TIMEOUT) { load(allNames, loaded_results, timeout); }
 
     /// Starts reloading a specified object.
-    void reload(const String & name, bool load_never_loading = false, bool sync = false)
+    void reload(const String & name, bool load_never_loading = false)
     {
         std::lock_guard lock{mutex};
         Info * info = getInfo(name);
@@ -512,7 +518,7 @@ public:
         {
             cancelLoading(*info);
             info->forced_to_reload = true;
-            startLoading(name, *info, sync);
+            startLoading(name, *info);
         }
     }
 
@@ -735,7 +741,7 @@ private:
             event.wait_for(lock, timeout, pred);
     }
 
-    void startLoading(const String & name, Info & info, bool sync = false)
+    void startLoading(const String & name, Info & info)
     {
         if (info.loading())
             return;
@@ -746,7 +752,7 @@ private:
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
 
-        if (enable_async_loading && !sync)
+        if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
             auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, name, loading_id, true};
@@ -1130,11 +1136,11 @@ void ExternalLoader::load(Loadables & loaded_objects, Duration timeout) const
     return loading_dispatcher->load(loaded_objects, timeout);
 }
 
-void ExternalLoader::reload(const String & name, bool load_never_loading, bool sync) const
+void ExternalLoader::reload(const String & name, bool load_never_loading) const
 {
     auto configs = config_files_reader->read();
     loading_dispatcher->setConfiguration(configs);
-    loading_dispatcher->reload(name, load_never_loading, sync);
+    loading_dispatcher->reload(name, load_never_loading);
 }
 
 void ExternalLoader::reload(bool load_never_loading) const
@@ -1143,18 +1149,21 @@ void ExternalLoader::reload(bool load_never_loading) const
     loading_dispatcher->reload(load_never_loading);
 }
 
-void ExternalLoader::reloadWithConfig(
+void ExternalLoader::addObjectAndLoad(
     const String & name,
     const String & external_name,
     const String & repo_name,
     const Poco::AutoPtr<Poco::Util::AbstractConfiguration> & config,
     const String & key,
-    bool load_never_loading,
-    bool sync) const
+    bool load_never_loading) const
 {
-    loading_dispatcher->setConfiguration(
-        config_files_reader->updateLoadableInfo(external_name, name, repo_name, config, key));
-    loading_dispatcher->reload(name, load_never_loading, sync);
+    auto object_config = config_files_reader->updateLoadableInfo(external_name, name, repo_name, config, key);
+    loading_dispatcher->setSingleObjectConfigurationWithoutLoading(external_name, object_config);
+    LoadablePtr loaded_object;
+    if (load_never_loading)
+        loading_dispatcher->loadStrict(name, loaded_object);
+    else
+        loading_dispatcher->load(name, loaded_object, Duration::zero());
 }
 
 

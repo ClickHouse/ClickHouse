@@ -29,17 +29,14 @@ void ExternalDictionariesLoader::addConfigRepository(
 }
 
 
-void ExternalDictionariesLoader::reloadSingleDictionary(
-    const String & name,
-    const String & repo_name,
-    const ASTCreateQuery & query,
-    bool load_never_loading, bool sync) const
+void ExternalDictionariesLoader::addDictionaryWithConfig(
+    const String & dictionary_name, const String & repo_name, const ASTCreateQuery & query, bool load_never_loading) const
 {
-    return ExternalLoader::reloadWithConfig(
-        name, /// names are equal
-        name,
+    ExternalLoader::addObjectAndLoad(
+        dictionary_name, /// names are equal
+        dictionary_name,
         repo_name,
         getDictionaryConfigurationFromAST(query),
-        "dictionary", load_never_loading, sync);
+        "dictionary", load_never_loading);
 }
 }
