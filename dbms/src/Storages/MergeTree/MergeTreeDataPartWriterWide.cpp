@@ -12,13 +12,13 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
-    const IColumn::Permutation * permutation_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const WriterSettings & settings_,
     const ColumnToSize & merged_column_to_size)
-    : IMergeTreeDataPartWriter(part_path_, storage_, columns_list_,
-        permutation_, marks_file_extension_,
+    : IMergeTreeDataPartWriter(part_path_,
+        storage_, columns_list_,
+        marks_file_extension_,
         default_codec_, settings_)
 {
     size_t total_size = 0;
@@ -89,9 +89,10 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     };
 }
 
-size_t MergeTreeDataPartWriterWide::write(const Block & block, size_t from_mark, size_t index_offset,
-        const MergeTreeIndexGranularity & index_granularity,
-        const Block & primary_key_block, const Block & skip_indexes_block)
+size_t MergeTreeDataPartWriterWide::write(const Block & block, 
+    const IColumn::Permutation * permutation, size_t from_mark, size_t index_offset,
+    const MergeTreeIndexGranularity & index_granularity,
+    const Block & primary_key_block, const Block & skip_indexes_block)
 {
     if (serialization_states.empty())
     {
@@ -284,6 +285,58 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     }, serialize_settings.path);
 
     return std::make_pair(current_column_mark, current_row - total_rows);
+}
+
+void MergeTreeDataPartWriterWide::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark)
+{
+    const auto & settings = storage.global_context.getSettingsRef();
+    IDataType::SerializeBinaryBulkSettings serialize_settings;
+    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
+    WrittenOffsetColumns offset_columns;
+
+    {
+        auto it = columns_list.begin();
+        for (size_t i = 0; i < columns_list.size(); ++i, ++it)
+        {
+            if (!serialization_states.empty())
+            {
+                serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
+                it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+            }
+
+            if (write_final_mark)
+                writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
+        }
+    }
+
+    for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
+    {
+        it->second->finalize();
+        it->second->addToChecksums(checksums);
+    }
+
+    column_streams.clear();
+}
+
+void MergeTreeDataPartWriterWide::writeFinalMark(
+    const std::string & column_name,
+    const DataTypePtr column_type,
+    WrittenOffsetColumns & offset_columns,
+    bool skip_offsets,
+    DB::IDataType::SubstreamPath & path)
+{
+    writeSingleMark(column_name, *column_type, offset_columns, skip_offsets, 0, path);
+    /// Memoize information about offsets
+    column_type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+    {
+        bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+        if (is_offsets)
+        {
+            String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
+            offset_columns.insert(stream_name);
+        }
+    }, path);
 }
 
 }

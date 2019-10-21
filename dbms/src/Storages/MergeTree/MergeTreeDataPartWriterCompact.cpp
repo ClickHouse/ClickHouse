@@ -3,7 +3,9 @@
 namespace DB
 {
 
-size_t MergeTreeDataPartWriterCompact::write(const Block & block, size_t from_mark, size_t index_offset,
+size_t MergeTreeDataPartWriterCompact::write(
+    const Block & block, const IColumn::Permutation * permutation,
+    size_t from_mark, size_t index_offset,
     const MergeTreeIndexGranularity & index_granularity,
     const Block & primary_key_block, const Block & skip_indexes_block)
 {
@@ -81,6 +83,23 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
 
     return from_row + number_of_rows;
+}
+
+void MergeTreeDataPartWriterCompact::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark)
+{
+    if (write_final_mark)
+    {
+        writeIntBinary(0, stream->marks);
+        for (size_t i = 0; i < columns_list.size(); ++i)
+        {
+            writeIntBinary(stream->plain_hashing.count(), stream->marks);
+            writeIntBinary(stream->compressed.offset(), stream->marks);
+        }
+    }
+
+    stream->finalize();
+    stream->addToChecksums(checksums);
+    stream.reset();
 }
 
 }

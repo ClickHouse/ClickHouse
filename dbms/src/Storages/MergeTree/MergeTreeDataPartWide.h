@@ -60,7 +60,6 @@ public:
 
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
-        const IColumn::Permutation * permutation,
         const CompressionCodecPtr & default_codec_,
         const WriterSettings & writer_settings) const override;
 

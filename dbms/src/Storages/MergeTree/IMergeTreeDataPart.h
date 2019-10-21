@@ -35,7 +35,7 @@ struct ColumnSize;
 class MergeTreeData;
 
 class IMergeTreeReader;
-class IMergeTreeWriter;
+class IMergeTreeDataPartWriter;
 
 namespace ErrorCodes
 {
@@ -50,7 +50,7 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeWriter>;
+    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     // virtual BlockInputStreamPtr readAll() = 0;
     // virtual BlockInputStreamPtr read() = 0;
@@ -68,7 +68,6 @@ public:
 
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
-        const IColumn::Permutation * permutation,
         const CompressionCodecPtr & default_codec_,
         const WriterSettings & writer_settings) const = 0;
      
