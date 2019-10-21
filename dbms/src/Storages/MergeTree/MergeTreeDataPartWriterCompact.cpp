@@ -72,7 +72,7 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
-    serialize_settings.getter = [&stream](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->compressed; };
+    serialize_settings.getter = [this](IDataType::SubstreamPath) -> WriteBuffer * { return &stream->compressed; };
     serialize_settings.position_independent_encoding = false;
     serialize_settings.low_cardinality_max_dictionary_size = 0;
 

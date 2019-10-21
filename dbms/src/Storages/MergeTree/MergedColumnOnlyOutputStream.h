@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -13,11 +14,10 @@ public:
     /// Pass empty 'already_written_offset_columns' first time then and pass the same object to subsequent instances of MergedColumnOnlyOutputStream
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, const Block & header_, const String & part_path_, bool sync_,
+        const MergeTreeDataPartPtr & data_part, const Block & header_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
         WrittenOffsetColumns & already_written_offset_columns_,
-        const MergeTreeIndexGranularity & index_granularity_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
     Block getHeader() const override { return header; }

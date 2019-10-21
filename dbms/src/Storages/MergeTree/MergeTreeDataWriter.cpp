@@ -175,7 +175,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// This will generate unique name in scope of current server process.
     Int64 temp_index = data.insert_increment.get();
 
-    IMergeTreeDataPart::MinMaxIndex minmax_idx;
+   IMergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
@@ -263,7 +263,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
-    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_codec);
+    MergedBlockOutputStream out(new_data_part, columns, compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

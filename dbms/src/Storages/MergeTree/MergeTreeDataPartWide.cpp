@@ -85,6 +85,19 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
         mark_cache, mark_ranges, reader_settings, avg_value_size_hints, profile_callback);
 }
 
+IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
+    const NamesAndTypesList & columns_list,
+    const IColumn::Permutation * permutation,
+    const CompressionCodecPtr & default_codec,
+    const WriterSettings & writer_settings) const
+{
+    UNUSED(columns_list);
+    UNUSED(permutation);
+    UNUSED(default_codec);
+    UNUSED(writer_settings);
+    return {};
+}        
+
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.

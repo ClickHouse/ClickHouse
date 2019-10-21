@@ -1667,16 +1667,14 @@ void MergeTreeData::alterDataPart(
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
 
         MergedColumnOnlyOutputStream out(
-            *this,
+            part,
             in.getHeader(),
-            part->getFullPath(),
             true /* sync */,
             compression_codec,
             true /* skip_offsets */,
             /// Don't recalc indices because indices alter is restricted
             std::vector<MergeTreeIndexPtr>{},
             unused_written_offsets,
-            part->index_granularity,
             &part->index_granularity_info);
 
         in.readPrefix();

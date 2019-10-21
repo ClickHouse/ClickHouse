@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <IO/WriteBufferFromFile.h>
@@ -6,6 +8,8 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/IBlockOutputStream.h>
+// #include <Storages/MergeTree/MergeTreeData.h>
+// #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 
 namespace DB
@@ -60,13 +64,16 @@ public:
         const IColumn::Permutation * permutation,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
-        size_t max_compress_block_size,
-        size_t aio_threshold);
+        const WriterSettings & settings);
 
     virtual size_t write(
         const Block & block, size_t from_mark, size_t offset, const MergeTreeIndexGranularity & index_granularity,
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
+    
+    // virtual void writeFinalMarks() = 0;
+
+    virtual ~IMergeTreeDataPartWriter();
 
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
@@ -78,14 +85,11 @@ protected:
     const IColumn::Permutation * permutation;
     const String marks_file_extension;
 
-
     CompressionCodecPtr default_codec;
 
-    size_t min_compress_block_size;
-    size_t max_compress_block_size;
-    size_t aio_threshold;
+    WriterSettings settings;
 };
 
-using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
+using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
 }

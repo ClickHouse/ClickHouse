@@ -20,58 +20,44 @@ namespace ErrorCodes
 
 
 MergedBlockOutputStream::MergedBlockOutputStream(
-    MergeTreeData & storage_,
-    const String & part_path_,
+    const MergeTreeDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_,
     bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
-        storage_, part_path_, storage_.global_context.getSettings().min_compress_block_size,
-        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
-        storage_.global_context.getSettings().min_bytes_to_use_direct_io,
+        data_part_, default_codec_,
+        {
+            data_part_->storage.global_context.getSettings().min_compress_block_size,
+            data_part_->storage.global_context.getSettings().max_compress_block_size,
+            data_part_->storage.global_context.getSettings().min_bytes_to_use_direct_io
+        },
         blocks_are_granules_size_,
-        std::vector<MergeTreeIndexPtr>(std::begin(storage_.skip_indices), std::end(storage_.skip_indices)),
-        {})
+        std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)),
+        data_part_->storage.canUseAdaptiveGranularity())
     , columns_list(columns_list_)
 {
     init();
-    const auto & columns = storage.getColumns();
-    for (const auto & it : columns_list)
-        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
-    MergeTreeData & storage_,
-    const String & part_path_,
+    const MergeTreeDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_,
-    const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
+    const MergeTreeData::DataPart::ColumnToSize & /* merged_column_to_size_ */,
     size_t aio_threshold_,
     bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
-        storage_, part_path_, storage_.global_context.getSettings().min_compress_block_size,
-        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
-        aio_threshold_, blocks_are_granules_size_,
-        std::vector<MergeTreeIndexPtr>(std::begin(storage_.skip_indices), std::end(storage_.skip_indices)), {})
+        data_part_, default_codec_,
+        {
+            data_part_->storage.global_context.getSettings().min_compress_block_size,
+            data_part_->storage.global_context.getSettings().max_compress_block_size,
+            aio_threshold_
+        },
+        blocks_are_granules_size_,
+        std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)), {})
     , columns_list(columns_list_)
 {
     init();
-
-    /// If summary size is more than threshold than we will use AIO
-    size_t total_size = 0;
-    if (aio_threshold > 0)
-    {
-        for (const auto & it : columns_list)
-        {
-            auto it2 = merged_column_to_size_.find(it.name);
-            if (it2 != merged_column_to_size_.end())
-                total_size += it2->second;
-        }
-    }
-
-    const auto & columns = storage.getColumns();
-    for (const auto & it : columns_list)
-        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -105,23 +91,24 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 {
     /// Finish columns serialization.
     {
-        const auto & settings = storage.global_context.getSettingsRef();
-        IDataType::SerializeBinaryBulkSettings serialize_settings;
-        serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-        serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-        WrittenOffsetColumns offset_columns;
-        auto it = columns_list.begin();
-        for (size_t i = 0; i < columns_list.size(); ++i, ++it)
-        {
-            if (!serialization_states.empty())
-            {
-                serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
-                it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
-            }
+        /// FIXME
+        // const auto & settings = storage.global_context.getSettingsRef();
+        // IDataType::SerializeBinaryBulkSettings serialize_settings;
+        // serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+        // serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
+        // WrittenOffsetColumns offset_columns;
+        // auto it = columns_list.begin();
+        // for (size_t i = 0; i < columns_list.size(); ++i, ++it)
+        // {
+        //     if (!serialization_states.empty())
+        //     {
+        //         serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
+        //         it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+        //     }
 
-            if (with_final_mark && rows_count != 0)
-                writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
-        }
+        //     if (with_final_mark && rows_count != 0)
+        //         writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
+        // }
     }
 
     if (with_final_mark && rows_count != 0)
@@ -155,15 +142,16 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         index_stream = nullptr;
     }
 
-    for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
-    {
-        it->second->finalize();
-        it->second->addToChecksums(checksums);
-    }
+    /// FIXME
+    // for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
+    // {
+    //     it->second->finalize();
+    //     it->second->addToChecksums(checksums);
+    // }
 
     finishSkipIndicesSerialization(checksums);
 
-    column_streams.clear();
+    // column_streams.clear();
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -245,9 +233,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     Block primary_key_block;
     Block skip_indexes_block;
 
-    Block primary_key_block;
-    Block skip_indexes_block;
-
     auto primary_key_column_names = storage.primary_key_columns;
 
     std::set<String> skip_indexes_column_names_set;
@@ -293,60 +278,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
-    size_t new_index_offset = writer->write(block, primary_key_block, skip_indexes_block, current_mark, index_offset);
-
-<<<<<<< HEAD
-        for (const auto & col : columns_list)
-        {
-            settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
-            serialization_states.emplace_back(nullptr);
-            col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
-        }
-    }
-
-    writer->write(block, primary_key_block, skip_indexes_block, current_mark, index_offset);
-
-    size_t new_index_offset = 0;
-    /// Now write the data.
-    auto it = columns_list.begin();
-    for (size_t i = 0; i < columns_list.size(); ++i, ++it)
-    {
-        const ColumnWithTypeAndName & column = block.getByName(it->name);
-
-        if (permutation)
-        {
-            if (primary_key_block.has(it->name))
-            {
-                const auto & primary_column = *primary_key_columns[primary_column_it->second].column;
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i], current_mark);
-            }
-            else if (skip_indexes_column_name_to_position.end() != skip_index_column_it)
-            {
-                const auto & index_column = *skip_indexes_columns[skip_index_column_it->second].column;
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, index_column, offset_columns, false, serialization_states[i], current_mark);
-            }
-            else
-            {
-                /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
-                ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *permuted_column, offset_columns, false, serialization_states[i], current_mark);
-            }
-        }
-        else
-        {
-            std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i], current_mark);
-        }
-    }
-=======
->>>>>>> 03dc18db16... tmp
-
-    std::cerr << "(MergedBlockOutputStream::writeImpl) new_index_offset: " << new_index_offset << "\n";
-
+    size_t new_index_offset = writer->write(block, current_mark, index_offset, index_granularity, primary_key_block, skip_indexes_block);
     rows_count += rows;
 
     /// Should be written before index offset update, because we calculate,
     /// indices of currently written granules
-    calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
+    calculateAndSerializeSkipIndices(skip_indexes_block, rows);
 
     {
         /** While filling index (index_columns), disable memory tracker.
@@ -362,11 +299,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         {
             if (storage.hasPrimaryKey())
             {
-                for (size_t j = 0, size = primary_key_columns.size(); j < size; ++j)
+                for (size_t j = 0, size = primary_key_block.rows(); j < size; ++j)
                 {
-                    const IColumn & primary_column = *primary_key_columns[j].column.get();
-                    index_columns[j]->insertFrom(primary_column, i);
-                    primary_key_columns[j].type->serializeBinary(primary_column, i, *index_stream);
+                    const auto & primary_column = primary_key_block.getByPosition(j);
+                    index_columns[j]->insertFrom(*primary_column.column, i);
+                    primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
                 }
             }
 
@@ -379,9 +316,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     }
 
     /// store last index row to write final mark at the end of column
-    for (size_t j = 0, size = primary_key_columns.size(); j < size; ++j)
+    for (size_t j = 0, size = primary_key_block.rows(); j < size; ++j)
     {
-        const IColumn & primary_column = *primary_key_columns[j].column.get();
+        const IColumn & primary_column = *primary_key_block.getByPosition(j).column.get();
         auto mutable_column = std::move(*last_index_row[j].column).mutate();
         if (!mutable_column->empty())
             mutable_column->popBack(1);

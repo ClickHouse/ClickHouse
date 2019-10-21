@@ -85,4 +85,6 @@ protected:
     friend class MergeTreeRangeReader::DelayedStream;
 };
 
+using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+
 }

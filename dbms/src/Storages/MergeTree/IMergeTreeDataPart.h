@@ -15,8 +15,9 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+// #include <Storages/MergeTree/IMergeTreeDataPart_fwd.h>
+// #include <Storages/MergeTree/IMergeTreeReader.h>
+// #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 // #include <Storages/MergeTree/MergeTreeWriter.h>
 // #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Columns/IColumn.h>
@@ -30,26 +31,26 @@
 namespace DB
 {
 
-    struct ColumnSize;
-    class MergeTreeData;
-    class IMergeTreeReader;
+struct ColumnSize;
+class MergeTreeData;
+
+class IMergeTreeReader;
+class IMergeTreeWriter;
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMETED;
 }
-
-// class MergeTreeDataPartOnDisk;
-
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
 
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
-    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
     using ValueSizeMap = std::map<std::string, double>;
+
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeWriter>;
 
     // virtual BlockInputStreamPtr readAll() = 0;
     // virtual BlockInputStreamPtr read() = 0;
@@ -71,8 +72,6 @@ public:
         const CompressionCodecPtr & default_codec_,
         const WriterSettings & writer_settings) const = 0;
      
-    // virtual MergeTreeWriterPtr getWriter() const = 0;
-
     virtual bool isStoredOnDisk() const = 0;
 
     virtual void remove() const = 0;
@@ -352,5 +351,6 @@ private:
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 }
