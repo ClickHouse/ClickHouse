@@ -3,36 +3,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
-#define CASE_1_8 \
-    case 1: \
-    case 2: \
-    case 3: \
-    case 4: \
-    case 5: \
-    case 6: \
-    case 7: \
-    case 8
-
-#define CASE_9_16 \
-    case 9: \
-    case 10: \
-    case 11: \
-    case 12: \
-    case 13: \
-    case 14: \
-    case 15: \
-    case 16
-
-#define CASE_17_24 \
-    case 17: \
-    case 18: \
-    case 19: \
-    case 20: \
-    case 21: \
-    case 22: \
-    case 23: \
-    case 24
-
 struct StringKey0
 {
 };
@@ -46,17 +16,6 @@ struct StringKey24
     UInt64 c;
 
     bool operator==(const StringKey24 rhs) const { return a == rhs.a && b == rhs.b && c == rhs.c; }
-    bool operator!=(const StringKey24 rhs) const { return !operator==(rhs); }
-    bool operator==(const UInt64 rhs) const { return a == rhs && b == 0 && c == 0; }
-    bool operator!=(const UInt64 rhs) const { return !operator==(rhs); }
-
-    StringKey24 & operator=(const UInt64 rhs)
-    {
-        a = rhs;
-        b = 0;
-        c = 0;
-        return *this;
-    }
 };
 
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
@@ -70,10 +29,6 @@ inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
 {
     return {reinterpret_cast<const char *>(&n), 24ul - (__builtin_clzll(n.c) >> 3)};
-}
-inline const StringRef & ALWAYS_INLINE toStringRef(const StringRef & s)
-{
-    return s;
 }
 
 struct StringHashTableHash
@@ -242,18 +197,23 @@ public:
     // Dispatch is written in a way that maximizes the performance:
     // 1. Always memcpy 8 times bytes
     // 2. Use switch case extension to generate fast dispatching table
-    // 3. Combine hash computation along with key loading
-    // 4. Funcs are named callables that can be force_inlined
-    // NOTE: It relies on Little Endianness and SSE4.2
+    // 3. Funcs are named callables that can be force_inlined
+    // NOTE: It relies on Little Endianness
     template <typename KeyHolder, typename Func>
     decltype(auto) ALWAYS_INLINE dispatch(KeyHolder && key_holder, Func && func)
     {
-        static constexpr StringKey0 key0{};
         const StringRef & x = keyHolderGetKey(key_holder);
-        size_t sz = x.size;
+        const size_t sz = x.size;
+        if (sz == 0)
+        {
+            static constexpr StringKey0 key0{};
+            keyHolderDiscardKey(key_holder);
+            return func(m0, key0, 0);
+        }
+
         const char * p = x.data;
         // pending bits that needs to be shifted out
-        char s = (-sz & 7) * 8;
+        const char s = (-sz & 7) * 8;
         union
         {
             StringKey8 k8;
@@ -262,12 +222,10 @@ public:
             UInt64 n[3];
         };
         StringHashTableHash hash;
-        switch (sz)
+        switch ((sz - 1) >> 3)
         {
-            case 0:
-                keyHolderDiscardKey(key_holder);
-                return func(m0, key0, 0);
-            CASE_1_8 : {
+            case 0: // 1..8 bytes
+            {
                 // first half page
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
@@ -283,7 +241,8 @@ public:
                 keyHolderDiscardKey(key_holder);
                 return func(m1, k8, hash(k8));
             }
-            CASE_9_16 : {
+            case 1: // 9..16 bytes
+            {
                 memcpy(&n[0], p, 8);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[1], lp, 8);
@@ -291,7 +250,8 @@ public:
                 keyHolderDiscardKey(key_holder);
                 return func(m2, k16, hash(k16));
             }
-            CASE_17_24 : {
+            case 2: // 17..24 bytes
+            {
                 memcpy(&n[0], p, 16);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[2], lp, 8);
@@ -299,7 +259,8 @@ public:
                 keyHolderDiscardKey(key_holder);
                 return func(m3, k24, hash(k24));
             }
-            default: {
+            default: // >= 25 bytes
+            {
                 return func(ms, std::forward<KeyHolder>(key_holder), hash(x));
             }
         }

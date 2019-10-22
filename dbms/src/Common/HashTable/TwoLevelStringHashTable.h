@@ -69,23 +69,23 @@ public:
         }
     }
 
-    // Dispatch is written in a way that maximizes the performance:
-    // 1. Always memcpy 8 times bytes
-    // 2. Use switch case extension to generate fast dispatching table
-    // 3. Combine hash computation along with bucket computation and key loading
-    // 4. Funcs are named callables that can be force_inlined
-    // NOTE: It relies on Little Endianness and SSE4.2
+    // This function is mostly the same as StringHashTable::dispatch, but with
+    // added bucket computation. See the comments there.
     template <typename Func, typename KeyHolder>
     decltype(auto) ALWAYS_INLINE dispatch(KeyHolder && key_holder, Func && func)
     {
-        static constexpr StringKey0 key0{};
         const StringRef & x = keyHolderGetKey(key_holder);
-        size_t sz = x.size;
+        const size_t sz = x.size;
+        if (sz == 0)
+        {
+            static constexpr StringKey0 key0{};
+            keyHolderDiscardKey(key_holder);
+            return func(impls[0].m0, key0, 0);
+        }
+
         const char * p = x.data;
         // pending bits that needs to be shifted out
-        char s = (-sz & 7) * 8;
-        size_t res = -1ULL;
-        size_t buck;
+        const char s = (-sz & 7) * 8;
         union
         {
             StringKey8 k8;
@@ -94,12 +94,10 @@ public:
             UInt64 n[3];
         };
         StringHashTableHash hash;
-        switch (sz)
+        switch ((sz - 1) >> 3)
         {
             case 0:
-                keyHolderDiscardKey(key_holder);
-                return func(impls[0].m0, key0, 0);
-            CASE_1_8 : {
+            {
                 // first half page
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
@@ -112,34 +110,37 @@ public:
                     memcpy(&n[0], lp, 8);
                     n[0] >>= s;
                 }
-                res = hash(k8);
-                buck = getBucketFromHash(res);
+                auto res = hash(k8);
+                auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
                 return func(impls[buck].m1, k8, res);
             }
-            CASE_9_16 : {
+            case 1:
+            {
                 memcpy(&n[0], p, 8);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[1], lp, 8);
                 n[1] >>= s;
-                res = hash(k16);
-                buck = getBucketFromHash(res);
+                auto res = hash(k16);
+                auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
                 return func(impls[buck].m2, k16, res);
             }
-            CASE_17_24 : {
+            case 2:
+            {
                 memcpy(&n[0], p, 16);
                 const char * lp = x.data + x.size - 8;
                 memcpy(&n[2], lp, 8);
                 n[2] >>= s;
-                res = hash(k24);
-                buck = getBucketFromHash(res);
+                auto res = hash(k24);
+                auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
                 return func(impls[buck].m3, k24, res);
             }
-            default: {
-                res = hash(x);
-                buck = getBucketFromHash(res);
+            default:
+            {
+                auto res = hash(x);
+                auto buck = getBucketFromHash(res);
                 return func(impls[buck].ms, std::forward<KeyHolder>(key_holder), res);
             }
         }
