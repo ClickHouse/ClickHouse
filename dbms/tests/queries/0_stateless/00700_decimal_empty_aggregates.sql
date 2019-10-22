@@ -35,8 +35,8 @@ SELECT argMin(a, b), argMin(a, c), argMin(b, a), argMin(b, c), argMin(c, a), arg
 SELECT argMax(a, b), argMax(a, c), argMax(b, a), argMax(b, c), argMax(c, a), argMax(c, b) FROM decimal;
 SELECT argMax(a, b), argMax(a, c), argMax(b, a), argMax(b, c), argMax(c, a), argMax(c, b) FROM decimal WHERE a < 0;
 
-SELECT median(a), median(b), median(c) as x, toTypeName(x) FROM decimal;
-SELECT quantile(a), quantile(b), quantile(c) as x, toTypeName(x) FROM decimal WHERE a < 0;
+SELECT median(a) as ma, median(b) as mb, median(c) as mc, toTypeName(ma),toTypeName(mb),toTypeName(mc) FROM decimal;
+SELECT quantile(a) as qa, quantile(b) as qb, quantile(c) as qc, toTypeName(qa),toTypeName(qb),toTypeName(qc) FROM decimal WHERE a < 0;
 SELECT quantile(0.0)(a), quantile(0.0)(b), quantile(0.0)(c) FROM decimal WHERE a >= 0;
 SELECT quantile(0.2)(a), quantile(0.2)(b), quantile(0.2)(c) FROM decimal WHERE a >= 0;
 SELECT quantile(0.4)(a), quantile(0.4)(b), quantile(0.4)(c) FROM decimal WHERE a >= 0;
