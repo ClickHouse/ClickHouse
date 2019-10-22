@@ -55,12 +55,18 @@ public:
         blocks.resize(max_threads_to_use);
         exceptions.resize(max_threads_to_use);
         buffers.reserve(max_threads_to_use);
-        working_field.reserve(max_threads_to_use);
+        readers.reserve(max_threads_to_use);
+        is_last.assign(max_threads_to_use, false);
 
         for (size_t i = 0; i < max_threads_to_use; ++i)
         {
+            status.emplace_back(ProcessingUnitStatus::READY_TO_INSERT);
             buffers.emplace_back(std::make_unique<ReadBuffer>(segments[i].memory.data(), segments[i].used_size, 0));
-            working_field.emplace_back(builder.input_processor_creator, builder.input_creator_params, segments[i], *buffers[i], blocks[i], exceptions[i]);
+            readers.emplace_back(std::make_unique<InputStreamFromInputFormat>(builder.input_processor_creator(*buffers[i],
+                    builder.input_creator_params.sample,
+                    builder.input_creator_params.context,
+                    builder.input_creator_params.row_input_format_params,
+                    builder.input_creator_params.settings)));
         }
 
         segmentator_thread = ThreadFromGlobalPool([this] { segmentatorThreadFunction(); });
@@ -81,15 +87,15 @@ public:
         if (!is_cancelled.compare_exchange_strong(old_val, true))
             return;
 
-        for (auto& unit: working_field)
-            unit.reader->cancel(kill);
+        for (auto& reader: readers)
+            reader->cancel(kill);
 
         waitForAllThreads();
     }
 
     Block getHeader() const override
     {
-        return working_field.at(0).reader->getHeader();
+        return readers.at(0)->getHeader();
     }
 
 protected:
@@ -101,7 +107,7 @@ protected:
     const BlockMissingValues & getMissingValues() const override
     {
         std::lock_guard missing_values_lock(missing_values_mutex);
-        return block_missing_values;
+        return last_block_missing_values;
     }
 
 private:
@@ -111,7 +117,7 @@ private:
 
     std::atomic<bool> is_exception_occured{false};
 
-    BlockMissingValues block_missing_values;
+    BlockMissingValues last_block_missing_values;
     mutable std::mutex missing_values_mutex;
 
     // Original ReadBuffer to read from.
@@ -146,45 +152,30 @@ private:
         size_t used_size{0};
     };
 
-
-    struct ProcessingUnit
+    struct BlockExt
     {
-        ProcessingUnit(const InputProcessorCreator & input_getter,
-                       const InputCreatorParams & params,
-                       MemoryExt & chunk_,
-                       ReadBuffer & readbuffer_,
-                       Block & block_,
-                       std::exception_ptr & exception_) : chunk(chunk_), readbuffer(readbuffer_), block(block_), exception(exception_)
-        {
-            reader = std::make_shared<InputStreamFromInputFormat>(input_getter(readbuffer, params.sample, params.context, params.row_input_format_params, params.settings));
-        }
-
-        MemoryExt & chunk;
-        ReadBuffer & readbuffer;
-        Block & block;
-        BlockInputStreamPtr reader;
-
-        std::exception_ptr & exception;
-        ProcessingUnitStatus status{READY_TO_INSERT};
-        bool is_last_unit{false};
+        Block block;
+        BlockMissingValues block_missing_values;
     };
 
-
-    using Blocks = std::vector<Block>;
+    using Blocks = std::vector<BlockExt>;
     using ReadBuffers = std::vector<std::unique_ptr<ReadBuffer>>;
     using Segments = std::vector<MemoryExt>;
-    using ProcessingUnits = std::vector<ProcessingUnit>;
+    using Status = std::deque<std::atomic<ProcessingUnitStatus>>;
+    using InputStreamFromInputFormats = std::vector<std::unique_ptr<InputStreamFromInputFormat>>;
+    using IsLastFlags = std::vector<bool>;
 
     Segments segments;
     ReadBuffers buffers;
     Blocks blocks;
     Exceptions exceptions;
-
-    ProcessingUnits working_field;
+    Status status;
+    InputStreamFromInputFormats readers;
+    IsLastFlags is_last;
 
     void scheduleParserThreadForUnitWithNumber(size_t unit_number)
     {
-        pool.schedule(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, unit_number));
+        pool.scheduleOrThrowOnError(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, unit_number));
     }
 
     void waitForAllThreads()

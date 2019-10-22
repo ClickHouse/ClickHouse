@@ -291,7 +291,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
-void registerFileSegmentationEngineValues(FormatFactory & factory);
+//void registerFileSegmentationEngineValues(FormatFactory & factory);
 void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineTSKV(FormatFactory & factory);
 
@@ -349,7 +349,7 @@ FormatFactory::FormatFactory()
 
     registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineTabSeparated(*this);
-    registerFileSegmentationEngineValues(*this);
+    //registerFileSegmentationEngineValues(*this);
     registerFileSegmentationEngineCSV(*this);
     registerFileSegmentationEngineTSKV(*this);
 
