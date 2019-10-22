@@ -785,18 +785,36 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity()
+## identity() {#identity}
+
+Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan. Returns the same value that was used as its argument. 
+
+**Syntax**
+
+```sql
+identity()
+```
+
+**Returned value**
 
 Returns the same value that was used as its argument. 
 
+Type: [all Data Types](#https://clickhouse.yandex/docs/en/data_types/).
+
+**Example**
+
+Query:
+
 ```sql
-SELECT identity(42)
+SELECT identity(43)
 ```
+
+Result:
+
 ```text
-┌─identity(42)─┐
-│           42 │
+┌─identity(43)─┐
+│           43 │
 └──────────────┘
 ```
-Used for debugging and testing, allows to "break" access by index, and get the result and query performance for a full scan.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->
