@@ -3,6 +3,7 @@
 #include <common/DayNum.h>
 #include <Common/PODArray.h>
 #include <Common/UInt128.h>
+#include <common/StringRef.h>
 #include <Core/UUID.h>
 
 #include "config_formats.h"
@@ -132,7 +133,7 @@ private:
     class IConverter
     {
     public:
-       virtual ~IConverter() = default;
+       virtual ~IConverter() {};
        virtual bool readStringInto(PaddedPODArray<UInt8> &) = 0;
        virtual bool readInt8(Int8&) = 0;
        virtual bool readUInt8(UInt8 &) = 0;
@@ -188,6 +189,25 @@ private:
     Message* current_message = nullptr;
     size_t current_field_index = 0;
     IConverter* current_converter = nullptr;
+
+    class IColumnsFiller;
+    class ColumnsFillerFromMessage;
+    class DefaultColumnFiller;
+    class NullableColumnFiller;
+    class ArrayColumnFiller;
+    class StringColumnFiller;
+    class FixedStringColumnFiller;
+
+    template <typename NumberType>
+    class NumberColumnFiller;
+
+    template <typename UnderlyingType>
+    class EnumColumnFiller;
+
+    template <typename UnderlyingType>
+    class DecimalColumnFiller;
+
+    std::unique_ptr<IColumnFiller> column_filler;
 };
 
 }
