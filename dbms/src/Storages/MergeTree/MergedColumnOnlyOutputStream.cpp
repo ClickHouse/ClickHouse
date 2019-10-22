@@ -102,9 +102,12 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         // serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
 
+        UNUSED(skip_offsets);
+
+        /// FIXME
         /// We wrote at least one row
-        if (with_final_mark && (index_offset != 0 || current_mark != 0))
-            writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
+        // if (with_final_mark && (index_offset != 0 || current_mark != 0))
+        //     writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
     }
 
     MergeTreeData::DataPart::Checksums checksums;

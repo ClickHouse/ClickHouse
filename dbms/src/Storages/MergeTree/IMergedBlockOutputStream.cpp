@@ -92,26 +92,6 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
         can_use_adaptive_granularity);
 }
 
-void IMergedBlockOutputStream::writeFinalMark(
-    const std::string & column_name,
-    const DataTypePtr column_type,
-    WrittenOffsetColumns & offset_columns,
-    bool /* skip_offsets */,
-    DB::IDataType::SubstreamPath & path)
-{
-    // writer->writeSingleMark(column_name, *column_type, offset_columns, skip_offsets, 0, path);
-    /// Memoize information about offsets
-    column_type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-    {
-        bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets)
-        {
-            String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
-            offset_columns.insert(stream_name);
-        }
-    }, path);
-}
-
 void IMergedBlockOutputStream::initSkipIndices()
 {
     for (const auto & index : skip_indices)

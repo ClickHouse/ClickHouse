@@ -23,6 +23,7 @@
 #include <common/JSON.h>
 
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 
 
@@ -90,12 +91,11 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const CompressionCodecPtr & default_codec,
     const WriterSettings & writer_settings) const
 {
-    UNUSED(columns_list);
-    UNUSED(default_codec);
-    UNUSED(writer_settings);
-    return {};
+     return std::make_unique<MergeTreeDataPartWriterCompact>(
+        getFullPath(), storage, columns_list,
+        index_granularity_info.marks_file_extension,
+        default_codec, writer_settings);
 }
-
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
@@ -145,7 +145,7 @@ String MergeTreeDataPartCompact::getColumnNameWithMinumumCompressedSize() const
         if (!hasColumnFiles(column.name, *column.type))
             continue;
 
-        const auto size = getColumnSize(column.name, *column.type).data_compressed;
+        const auto size = getColumnSizeImpl(column.name, *column.type, nullptr).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -469,7 +469,7 @@ void MergeTreeDataPartCompact::loadRowsCount()
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
-            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
+            size_t column_size = getColumnSizeImpl(column.name, *column.type, nullptr).data_uncompressed;
             if (!column_size)
                 continue;
 

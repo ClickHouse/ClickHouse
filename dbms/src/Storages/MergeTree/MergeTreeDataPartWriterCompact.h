@@ -3,9 +3,17 @@
 namespace DB
 {
 
-class MergeTreeDataPartWriterCompact : IMergeTreeDataPartWriter
+class MergeTreeDataPartWriterCompact : public IMergeTreeDataPartWriter
 {
 public:
+    MergeTreeDataPartWriterCompact(
+        const String & part_path,
+        const MergeTreeData & storage,
+        const NamesAndTypesList & columns_list,
+        const String & marks_file_extension,
+        const CompressionCodecPtr & default_codec,
+        const WriterSettings & settings);
+
     size_t write(const Block & block, const IColumn::Permutation * permutation,
         size_t from_mark, size_t index_offset, const MergeTreeIndexGranularity & index_granularity,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
