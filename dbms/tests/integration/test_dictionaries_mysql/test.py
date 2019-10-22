@@ -54,7 +54,7 @@ def test_load_mysql_dictionaries(started_cluster):
     
     for n in range(0, 5):
         # Create MySQL tables, fill them and create CH dict tables
-        prepare_mysql_table('test' + str(n))
+        prepare_mysql_table('test', str(n))
     
     # Check dictionaries are loaded and have correct number of elements
     for n in range(0, 100):
@@ -70,20 +70,20 @@ def create_mysql_db(mysql_connection, name):
         cursor.execute(
             "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
-def prepare_mysql_table(table_name):
+def prepare_mysql_table(table_name, index):
     mysql_connection = get_mysql_conn()
     
     # Create table
-    create_mysql_table(mysql_connection, table_name)
+    create_mysql_table(mysql_connection, table_name + str(index))
 
     # Insert rows using CH
     query = instance.query
-    query("INSERT INTO `clickhouse_mysql`.{}(id, value) select number, concat('{} value ', toString(number)) from numbers(10000) ".format(table_name, table_name))
-    assert query("SELECT count() FROM `clickhouse_mysql`.{}".format(table_name)).rstrip() == '10000'
+    query("INSERT INTO `clickhouse_mysql`.{}(id, value) select number, concat('{} value ', toString(number)) from numbers(10000) ".format(table_name + str(index), table_name + str(index)))
+    assert query("SELECT count() FROM `clickhouse_mysql`.{}".format(table_name + str(index))).rstrip() == '10000'
     mysql_connection.close()
     
     #Create CH Dictionary tables based on MySQL tables 
-    query(create_clickhouse_dictionary_table_template.format(table_name + str(n)), 'dict' + str(n))
+    query(create_clickhouse_dictionary_table_template.format(table_name + str(index)), 'dict' + str(index))
 
 def get_mysql_conn():
     conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
