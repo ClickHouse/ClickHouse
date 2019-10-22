@@ -172,10 +172,7 @@ void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name,
     }
 
     if (reload)
-    {
-        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
-        context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name, !lazy_load);
-    }
+        context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name);
 
 }
 
@@ -196,10 +193,7 @@ void DatabaseWithOwnTablesBase::attachDictionary(const String & dictionary_name,
     }
 
     if (load)
-    {
-        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
-        context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name, !lazy_load);
-    }
+        context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name, true);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

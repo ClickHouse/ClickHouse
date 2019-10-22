@@ -179,6 +179,8 @@ void DatabaseOrdinary::loadStoredObjects(
     auto dictionaries_repository = std::make_unique<ExternalLoaderDatabaseConfigRepository>(shared_from_this(), context);
     auto & external_loader = context.getExternalDictionariesLoader();
     external_loader.addConfigRepository(getDatabaseName(), std::move(dictionaries_repository));
+    bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
+    external_loader.reload(!lazy_load);
 }
 
 
