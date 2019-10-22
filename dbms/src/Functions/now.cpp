@@ -10,12 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
 class FunctionNow : public IFunction
 {
