@@ -17,14 +17,14 @@ int main(int, char **)
         cont.insert(1);
         cont.insert(2);
 
-        Cont::iterator it;
+        Cont::LookupResult it;
         bool inserted;
+        int key = 3;
+        cont.emplace(key, it, inserted);
+        std::cerr << inserted << ", " << key << std::endl;
 
-        cont.emplace(3, it, inserted);
-        std::cerr << inserted << ", " << it->getValue() << std::endl;
-
-        cont.emplace(3, it, inserted);
-        std::cerr << inserted << ", " << it->getValue() << std::endl;
+        cont.emplace(key, it, inserted);
+        std::cerr << inserted << ", " << key << std::endl;
 
         for (auto x : cont)
             std::cerr << x.getValue() << std::endl;

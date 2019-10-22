@@ -10,7 +10,7 @@ $ sudo apt-get install git pbuilder debhelper lsb-release fakeroot sudo debian-a
 ## Checkout ClickHouse Sources
 
 ```bash
-$ git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
+$ git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
 
@@ -55,7 +55,7 @@ $ sudo apt-get install gcc-9 g++-9
 
 ### Install from Sources
 
-Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
 ## Use GCC 9 for Builds
 
@@ -73,15 +73,13 @@ $ sudo apt-get install libicu-dev libreadline-dev gperf
 ## Checkout ClickHouse Sources
 
 ```bash
-$ git clone --recursive git@github.com:yandex/ClickHouse.git
+$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 or 
 ```bash
-$ git clone --recursive https://github.com/yandex/ClickHouse.git
+$ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
-
-For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 

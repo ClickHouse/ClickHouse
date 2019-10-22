@@ -366,10 +366,10 @@ private:
     Counter * findCounter(const TKey & key, size_t hash)
     {
         auto it = counter_map.find(key, hash);
-        if (it == counter_map.end())
+        if (!it)
             return nullptr;
 
-        return it->getSecond();
+        return *lookupResultGetMapped(it);
     }
 
     void rebuildCounterMap()

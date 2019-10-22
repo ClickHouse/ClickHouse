@@ -68,8 +68,6 @@ public:
 
     void drop() override;
 
-    void shutdown() override;
-
 private:
     const String metadata_path;
     const String data_path;

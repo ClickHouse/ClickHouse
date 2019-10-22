@@ -696,7 +696,7 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
-        out[i] = attr.find(ids[i]) != std::end(attr);
+        out[i] = attr.find(ids[i]) != nullptr;
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
@@ -715,8 +715,8 @@ template <typename T>
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute & attribute) const
 {
     if (!sparse)
-        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<Key>>(attribute.maps));
-    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<Key>>(attribute.sparse_maps));
+        return getIdsAttrImpl<T>(*std::get<CollectionPtrType<T>>(attribute.maps));
+    return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps));
 }
 
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const

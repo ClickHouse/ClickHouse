@@ -152,9 +152,34 @@ Similar to base64Decode, but in case of error an empty string would be returned.
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(s, prefix) {#function-startswith}
+## startsWith(str, prefix) {#function-startswith}
 
-Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
+Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
+
+```sql
+SELECT startsWith('Spider-Man', 'Spi');
+```
+
+**Returned values**
+
+- 1, if the string starts with the specified prefix.
+- 0, if the string doesn't start with the specified prefix.
+
+**Example**
+
+Query:
+
+```sql
+SELECT startsWith('Hello, world!', 'He');
+```
+
+Result:
+
+```text
+┌─startsWith('Hello, world!', 'He')─┐
+│                                 1 │
+└───────────────────────────────────┘
+```
 
 ## trimLeft(s)
 
