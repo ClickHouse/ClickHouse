@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -129,21 +130,23 @@ void JSONEachRowRowInputFormat::skipUnknownField(const StringRef & name_ref)
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
-    if (read_columns[index])
+    if (seen_columns[index])
         throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
 
     try
     {
-        auto & header = getPort().getHeader();
-        header.getByPosition(index).type->deserializeAsTextJSON(*columns[index], in, format_settings);
+        seen_columns[index] = read_columns[index] = true;
+        const auto & type = getPort().getHeader().getByPosition(index).type;
+        if (format_settings.null_as_default && !type->isNullable())
+            read_columns[index] = DataTypeNullable::deserializeTextJSON(*columns[index], in, format_settings, type);
+        else
+            type->deserializeAsTextJSON(*columns[index], in, format_settings);
     }
     catch (Exception & e)
     {
         e.addMessage("(while read the value of key " + columnName(index) + ")");
         throw;
     }
-
-    read_columns[index] = true;
 }
 
 inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
@@ -230,8 +233,8 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     size_t num_columns = columns.size();
 
-    /// Set of columns for which the values were read. The rest will be filled with default values.
     read_columns.assign(num_columns, false);
+    seen_columns.assign(num_columns, false);
 
     nested_prefix_length = 0;
     readJSONObject(columns);
@@ -239,7 +242,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     auto & header = getPort().getHeader();
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
-        if (!read_columns[i])
+        if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set

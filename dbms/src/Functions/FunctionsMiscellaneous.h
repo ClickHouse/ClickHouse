@@ -26,6 +26,9 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
@@ -109,6 +112,9 @@ public:
     }
 
     String getName() const override { return name; }
+
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return captured_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }

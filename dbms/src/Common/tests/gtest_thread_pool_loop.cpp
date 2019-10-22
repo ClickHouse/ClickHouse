@@ -14,7 +14,7 @@ TEST(ThreadPool, Loop)
         size_t threads = 16;
         ThreadPool pool(threads);
         for (size_t j = 0; j < threads; ++j)
-            pool.schedule([&]{ ++res; });
+            pool.scheduleOrThrowOnError([&] { ++res; });
         pool.wait();
     }
 

@@ -1,3 +1,4 @@
+#include <Core/Field.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeString.h>

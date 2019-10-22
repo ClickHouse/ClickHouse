@@ -115,7 +115,7 @@ void DataTypeEnum<Type>::deserializeBinary(Field & field, ReadBuffer & istr) con
 {
     FieldType x;
     readBinary(x, istr);
-    field = nearestFieldType(x);
+    field = castToNearestFieldType(x);
 }
 
 template <typename Type>
