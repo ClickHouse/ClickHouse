@@ -360,7 +360,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, external_table_functions_use_nulls, true, "If it is set to true, external table functions will implicitly use Nullable type if needed. Otherwise NULLs will be substituted with default values. Currently supported only for 'mysql' table function.") \
     M(SettingBool, allow_experimental_data_skipping_indices, false, "If it is set to true, data skipping indices can be used in CREATE TABLE/ALTER TABLE queries.") \
     \
-    M(SettingBool, experimental_use_processors, true, "Use processors pipeline.") \
+    M(SettingBool, experimental_use_processors, false, "Use processors pipeline.") \
     \
     M(SettingBool, allow_hyperscan, true, "Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.") \
     M(SettingBool, allow_simdjson, true, "Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.") \
@@ -381,7 +381,7 @@ struct Settings : public SettingsCollection<Settings>
     \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
-    M(SettingBool, allow_experimental_low_cardinality_type, false, "Obsolete setting, does nothing. Will be removed after 2019-08-13") \
+    M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13") \
     M(SettingBool, compile, false, "Whether query compilation is enabled. Will be removed after 2020-03-13") \
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
