@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <IO/BufferBase.h>
-#include <Columns/ColumnString.h>
-#include <Formats/FormatSettings.h>
+#include "../Core/Types.h"
+#include "../IO/BufferBase.h"
+#include "../Columns/ColumnString.h"
+#include "../Formats/FormatSettings.h"
 
 namespace DB
 {

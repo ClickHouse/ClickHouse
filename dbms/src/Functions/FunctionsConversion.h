@@ -44,9 +44,9 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/JSONBDataMark.h>
 #include <DataTypes/DataTypeJSONB.h>
-#include <DataTypes/JSONB/JSONBStreamBuffer.h>
-#include <DataTypes/JSONB/JSONBSerialization.h>
-#include <DataTypes/JSONB/JSONBStreamFactory.h>
+#include <DataTypes/JSONBStreamBuffer.h>
+#include <DataTypes/JSONBSerialization.h>
+#include <DataTypes/JSONBStreamFactory.h>
 #include <IO/LimitReadBuffer.h>
 
 

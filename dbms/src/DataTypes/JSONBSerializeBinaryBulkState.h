@@ -15,9 +15,9 @@
 namespace DB
 {
 
-struct SerializeBinaryBulkStateJSONB : public IDataType::SerializeBinaryBulkState
+struct JSONBSerializeBinaryBulkState : public IDataType::SerializeBinaryBulkState
 {
-    SerializeBinaryBulkStateJSONB(IDataType::SerializeBinaryBulkSettings & settings, const size_t & serialize_version)
+    JSONBSerializeBinaryBulkState(IDataType::SerializeBinaryBulkSettings & settings, const size_t & serialize_version)
     {
         SCOPE_EXIT({settings.path.pop_back();});
         settings.path.push_back(IDataType::Substream::JSONBinaryRelations);
@@ -64,17 +64,17 @@ struct SerializeBinaryBulkStateJSONB : public IDataType::SerializeBinaryBulkStat
         /// TODO: 否则, 数据已经被分割到多个列中, 需要对应的序列化
     }
 
-    static const SerializeBinaryBulkStateJSONB * check(IDataType::SerializeBinaryBulkStatePtr & state)
+    static const JSONBSerializeBinaryBulkState * check(IDataType::SerializeBinaryBulkStatePtr & state)
     {
         if (!state)
             throw Exception("Got empty state for DataTypeJSONB.", ErrorCodes::LOGICAL_ERROR);
 
-        auto * checked_serialize_state = typeid_cast<SerializeBinaryBulkStateJSONB *>(state.get());
+        auto * checked_serialize_state = typeid_cast<JSONBSerializeBinaryBulkState *>(state.get());
         if (!checked_serialize_state)
         {
             auto & state_ref = *state;
             throw Exception(
-                "Invalid SerializeBinaryBulkState for DataTypeJSONB. Expected: " + demangle(typeid(SerializeBinaryBulkStateJSONB).name()) +
+                "Invalid SerializeBinaryBulkState for DataTypeJSONB. Expected: " + demangle(typeid(JSONBSerializeBinaryBulkState).name()) +
                 ", got " + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
         }
 

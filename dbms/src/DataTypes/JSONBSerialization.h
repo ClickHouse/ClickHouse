@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <ext/scope_guard.h>
-#include <rapidjson/reader.h>
-#include <IO/ReadBuffer.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/JSONB/JSONBinaryConverter.h>
-#include <Columns/ColumnJSONB.h>
-#include <Columns/ColumnString.h>
-#include <Columns/JSONBDataMark.h>
-#include <rapidjson/writer.h>
-#include <Fleece/Dict.hh>
+#include "../Core/Types.h"
+#include "../../../libs/libcommon/include/ext/scope_guard.h"
+#include "../../../contrib/rapidjson/include/rapidjson/reader.h"
+#include "../IO/ReadBuffer.h"
+#include "DataTypesNumber.h"
+#include "JSONBinaryConverter.h"
+#include "../Columns/ColumnJSONB.h"
+#include "../Columns/ColumnString.h"
+#include "../Columns/JSONBDataMark.h"
+#include "../../../contrib/rapidjson/include/rapidjson/writer.h"
+#include "../../../contrib/fleece/Fleece/Dict.hh"
 
 namespace DB
 {

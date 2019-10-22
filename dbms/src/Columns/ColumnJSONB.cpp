@@ -8,9 +8,9 @@
 #include <IO/WriteHelpers.h>
 #include <rapidjson/reader.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/JSONB/JSONBStreamBuffer.h>
-#include <DataTypes/JSONB/JSONBSerialization.h>
-#include <DataTypes/JSONB/JSONBStreamFactory.h>
+#include <DataTypes/JSONBStreamBuffer.h>
+#include <DataTypes/JSONBSerialization.h>
+#include <DataTypes/JSONBStreamFactory.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/JSONBDataMark.h>
 

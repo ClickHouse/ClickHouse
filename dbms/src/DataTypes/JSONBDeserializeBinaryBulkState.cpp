@@ -1,4 +1,4 @@
-#include <DataTypes/DeserializeBinaryBulkStateJSONB.h>
+#include <DataTypes/JSONBDeserializeBinaryBulkState.h>
 #include <IO/ReadHelpers.h>
 #include <ext/scope_guard.h>
 #include <Columns/ColumnArray.h>
@@ -11,7 +11,7 @@
 namespace DB
 {
 
-DeserializeBinaryBulkStateJSONB::DeserializeBinaryBulkStateJSONB(IDataType::DeserializeBinaryBulkSettings & settings)
+JSONBDeserializeBinaryBulkState::JSONBDeserializeBinaryBulkState(IDataType::DeserializeBinaryBulkSettings & settings)
 {
     UInt64 serialize_version;
     SCOPE_EXIT({ settings.path.pop_back(); });
@@ -19,7 +19,7 @@ DeserializeBinaryBulkStateJSONB::DeserializeBinaryBulkStateJSONB(IDataType::Dese
     readVarUInt(serialize_version, *settings.getter(settings.path));
 }
 
-ColumnPtr DeserializeBinaryBulkStateJSONB::deserializeJSONKeysDictionaryColumn(ReadBuffer & istr) const
+ColumnPtr JSONBDeserializeBinaryBulkState::deserializeJSONKeysDictionaryColumn(ReadBuffer & istr) const
 {
     UInt64 dictionary_size;
     readVarUInt(dictionary_size, istr);
@@ -31,7 +31,7 @@ ColumnPtr DeserializeBinaryBulkStateJSONB::deserializeJSONKeysDictionaryColumn(R
     return ColumnUnique<ColumnString>::create(std::move(dictionary_nested_column), false);
 }
 
-ColumnPtr DeserializeBinaryBulkStateJSONB::deserializeJSONRelationsDictionaryColumn(ReadBuffer & istr) const
+ColumnPtr JSONBDeserializeBinaryBulkState::deserializeJSONRelationsDictionaryColumn(ReadBuffer & istr) const
 {
     UInt64 nested_offset_size, nested_data_size;
     readVarUInt(nested_offset_size, istr);
@@ -48,7 +48,7 @@ ColumnPtr DeserializeBinaryBulkStateJSONB::deserializeJSONRelationsDictionaryCol
     return ColumnUnique<ColumnArray>::create(std::move(dictionary_nested_column), false);
 }
 
-DeserializeBinaryBulkStateJSONB::JSONSerializeInfo DeserializeBinaryBulkStateJSONB::deserializeJSONSerializeInfo(ReadBuffer & istr) const
+JSONBDeserializeBinaryBulkState::JSONSerializeInfo JSONBDeserializeBinaryBulkState::deserializeJSONSerializeInfo(ReadBuffer & istr) const
 {
     UInt64 type_index, row_size, is_nullable, multiple_columns;
 
@@ -61,7 +61,7 @@ DeserializeBinaryBulkStateJSONB::JSONSerializeInfo DeserializeBinaryBulkStateJSO
 
 using OffsetColumn = ColumnVector<ColumnArray::Offset>;
 using OffsetDataType = DataTypeNumber<ColumnArray::Offset>;
-DeserializeBinaryBulkStateJSONB::JSONRelationsInfo DeserializeBinaryBulkStateJSONB::deserializeRowRelationsColumn(ReadBuffer & istr) const
+JSONBDeserializeBinaryBulkState::JSONRelationsInfo JSONBDeserializeBinaryBulkState::deserializeRowRelationsColumn(ReadBuffer & istr) const
 {
     std::tuple<UInt64, UInt64, bool, bool> serialize_info = deserializeJSONSerializeInfo(istr);
 
@@ -74,8 +74,8 @@ DeserializeBinaryBulkStateJSONB::JSONRelationsInfo DeserializeBinaryBulkStateJSO
         std::move(std::get<3>(serialize_info)), ColumnArray::create(std::move(relations_column), std::move(offset_column)));
 }
 
-std::vector<ColumnPtr> DeserializeBinaryBulkStateJSONB::deserializeJSONBinaryDataColumn(
-    const DeserializeBinaryBulkStateJSONB::JSONRelationsInfo & info, IDataType::DeserializeBinaryBulkSettings & settings) const
+std::vector<ColumnPtr> JSONBDeserializeBinaryBulkState::deserializeJSONBinaryDataColumn(
+    const JSONBDeserializeBinaryBulkState::JSONRelationsInfo & info, IDataType::DeserializeBinaryBulkSettings & settings) const
 {
     if (!std::get<3>(info))
     {

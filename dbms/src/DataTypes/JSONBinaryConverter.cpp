@@ -1,4 +1,4 @@
-#include <DataTypes/JSONB/JSONBinaryConverter.h>
+#include <DataTypes/JSONBinaryConverter.h>
 #include <ext/scope_guard.h>
 #include <Columns/ColumnArray.h>
 #include "JSONBinaryConverter.h"

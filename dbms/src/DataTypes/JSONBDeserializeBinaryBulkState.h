@@ -12,10 +12,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class DeserializeBinaryBulkStateJSONB : public IDataType::DeserializeBinaryBulkState
+class JSONBDeserializeBinaryBulkState : public IDataType::DeserializeBinaryBulkState
 {
 public:
-    DeserializeBinaryBulkStateJSONB(IDataType::DeserializeBinaryBulkSettings & settings);
+    JSONBDeserializeBinaryBulkState(IDataType::DeserializeBinaryBulkSettings & settings);
 
     ColumnPtr deserializeJSONKeysDictionaryColumn(ReadBuffer & istr) const;
 
@@ -29,17 +29,17 @@ public:
 
     Columns deserializeJSONBinaryDataColumn(const JSONRelationsInfo & info, IDataType::DeserializeBinaryBulkSettings & settings) const;
 
-    static DeserializeBinaryBulkStateJSONB * check(IDataType::DeserializeBinaryBulkStatePtr & state)
+    static JSONBDeserializeBinaryBulkState * check(IDataType::DeserializeBinaryBulkStatePtr & state)
     {
         if (!state)
             throw Exception("Got empty state for DataTypeJSONB.", ErrorCodes::LOGICAL_ERROR);
 
-        auto * checked_deserialize_state = typeid_cast<DeserializeBinaryBulkStateJSONB *>(state.get());
+        auto * checked_deserialize_state = typeid_cast<JSONBDeserializeBinaryBulkState *>(state.get());
         if (!checked_deserialize_state)
         {
             auto & state_ref = *state;
             throw Exception("Invalid DeserializeBinaryBulkState for DataTypeJSONB. Expected: "
-                            + demangle(typeid(DeserializeBinaryBulkStateJSONB).name()) + ", got "
+                            + demangle(typeid(JSONBDeserializeBinaryBulkState).name()) + ", got "
                             + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
         }
 

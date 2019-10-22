@@ -14,11 +14,11 @@
 #include <Columns/ColumnString.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/JSONB/JSONBStreamBuffer.h>
-#include <DataTypes/JSONB/JSONBStreamFactory.h>
-#include <DataTypes/JSONB/JSONBSerialization.h>
-#include <DataTypes/SerializeBinaryBulkStateJSONB.h>
-#include <DataTypes/DeserializeBinaryBulkStateJSONB.h>
+#include <DataTypes/JSONBStreamBuffer.h>
+#include <DataTypes/JSONBStreamFactory.h>
+#include <DataTypes/JSONBSerialization.h>
+#include <DataTypes/JSONBSerializeBinaryBulkState.h>
+#include <DataTypes/JSONBDeserializeBinaryBulkState.h>
 
 
 namespace DB
@@ -160,7 +160,7 @@ void DataTypeJSONB::serializeTextXML(const IColumn & column, size_t row_num, Wri
 
 void DataTypeJSONB::serializeBinaryBulkStatePrefix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & serialize_state) const
 {
-    serialize_state = std::make_shared<SerializeBinaryBulkStateJSONB>(settings, 1);
+    serialize_state = std::make_shared<JSONBSerializeBinaryBulkState>(settings, 1);
 }
 
 void DataTypeJSONB::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
@@ -181,7 +181,7 @@ void DataTypeJSONB::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings &
 
 void DataTypeJSONB::deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & deserialize_state) const
 {
-    deserialize_state = std::make_shared<DeserializeBinaryBulkStateJSONB>(settings);
+    deserialize_state = std::make_shared<JSONBDeserializeBinaryBulkState>(settings);
 }
 
 void DataTypeJSONB::serializeBinaryBulkWithMultipleStreams(
@@ -189,7 +189,7 @@ void DataTypeJSONB::serializeBinaryBulkWithMultipleStreams(
 {
     if (size_t fixed_limit = fixAndGetLimit(offset, limit, column.size()))
     {
-        const auto & serialize_state = SerializeBinaryBulkStateJSONB::check(state);
+        const auto & serialize_state = JSONBSerializeBinaryBulkState::check(state);
         const auto & serialize_column = checkAndGetColumn<ColumnJSONB>(column)->convertToMultipleIfNeed(offset, fixed_limit);
 
         SCOPE_EXIT({settings.path.pop_back();});
@@ -216,7 +216,7 @@ void DataTypeJSONB::deserializeBinaryBulkWithMultipleStreams(
     if (ReadBuffer * relations_stream = settings.getter(settings.path))
     {
         auto & full_binary_column = static_cast<ColumnJSONB &>(column);
-        const auto & deserialize_state = DeserializeBinaryBulkStateJSONB::check(state);
+        const auto & deserialize_state = JSONBDeserializeBinaryBulkState::check(state);
 
         while (limit && !relations_stream->eof())
         {
