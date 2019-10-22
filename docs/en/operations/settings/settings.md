@@ -74,7 +74,7 @@ If `force_primary_key=1`, ClickHouse checks to see if the query has a primary ke
 
 ## format_schema
 
-This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/), [Protobuf](https://developers.google.com/protocol-buffers/) or [Template](../../interfaces/formats.md#format-template). The value depends on the format.
+This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
 
 ## fsync_metadata
 
@@ -130,30 +130,30 @@ Possible values:
 
 Default value: 0.
 
-## input_format_allow_errors_num
+## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_ratio`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_ratio`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_num`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_num` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
-## input_format_allow_errors_ratio
+## input_format_allow_errors_ratio {#settings-input_format_allow_errors_ratio}
 
 Sets the maximum percentage of errors allowed when reading from text formats (CSV, TSV, etc.).
 The percentage of errors is set as a floating-point number between 0 and 1.
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_num`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_num`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
 
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
@@ -203,9 +203,31 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
+## input_format_values_deduce_templates_of_expressions {#settings-input_format_values_deduce_templates_of_expressions}
+Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on batch of successfully parsed rows. For the following query:
+```sql
+INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
+``` 
+ - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
+ - if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
+ - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
+  
+ This feature is experimental, disabled by default.
+
+## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
+This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
+```sql
+(..., abs(0), ...),             -- UInt64 literal
+(..., abs(3.141592654), ...),   -- Float64 literal
+(..., abs(-1), ...),            -- Int64 literal
+```
+When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`. 
+When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
+Enabled by default.
+
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow) and [CSV](../../interfaces/formats.md#csv) formats.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
 
 !!! note "Note"
     When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -217,9 +239,15 @@ Possible values:
 
 Default value: 1.
 
+## input_format_tsv_empty_as_default {#settings-input_format_tsv_empty_as_default}
+
+When enabled, replace empty input fields in TSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Disabled by default.
+
 ## input_format_null_as_default {#settings-input_format_null_as_default}
 
-Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for CSV format).
+Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for text input formats).
 
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
@@ -377,52 +405,90 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ClickHouse uses multiple threads when reading from [MergeTree*](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
 
-**Possible values**
+Possible values:
 
 - 0 — Do not use uniform read distribution.
 - 1 — Use uniform read distribution.
 
-**Default value**: 1.
+Default value: 1.
 
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
 
 If the number of rows to be read from a file of a [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
-**Possible values**
+Possible values:
 
-Any positive integer.
+- Any positive integer.
 
-**Default value**: 163840.
+Default value: 163840.
+
+## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
+
+If a number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 240 ✕ 1024 ✕ 1024.
+
 
 ## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
 
 If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
 
-**Possible values**
+Possible values:
 
-Any positive integer.
+- Any positive integer.
 
-**Default value**: 0.
+Default value: 0.
+
+## merge_tree_min_bytes_for_seek {#setting-merge_tree_min_bytes_for_seek}
+
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 0.
+
 
 ## merge_tree_coarse_index_granularity {#setting-merge_tree_coarse_index_granularity}
 
 When searching data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
 
-**Possible values**
+Possible values:
 
-Any positive even integer.
+- Any positive even integer.
 
-**Default value**: 8.
+Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cash of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
-**Possible values**
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
 
-Any positive integer.
+Possible values:
 
-**Default value**: 1048576.
+- Any positive integer.
+
+Default value: 128 ✕ 8192.
+
+
+## merge_tree_max_bytes_to_use_cache {#setting-merge_tree_max_bytes_to_use_cache}
+
+If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 1920 ✕ 1024 ✕ 1024.
+
 
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 

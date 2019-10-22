@@ -6,6 +6,12 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
 void readAndAssert(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
@@ -63,10 +69,6 @@ try
     peekable.rollbackToCheckpoint();
     peekable.dropCheckpoint();
     assertAvailable(peekable, "789");
-    peekable.peekNext();
-    assertAvailable(peekable, "789qwertyuiop");
-    ASSERT_EQ(peekable.lastPeeked().size(), 10);
-    ASSERT_EQ(strncmp(peekable.lastPeeked().begin(), "asdfghjkl;", 10), 0);
 
     exception = false;
     try
@@ -82,8 +84,6 @@ try
     }
     ASSERT_TRUE(exception);
     assertAvailable(peekable, "789qwertyuiop");
-    ASSERT_EQ(peekable.lastPeeked().size(), 10);
-    ASSERT_EQ(strncmp(peekable.lastPeeked().begin(), "asdfghjkl;", 10), 0);
 
     readAndAssert(peekable, "789qwertyu");
     peekable.setCheckpoint();
@@ -100,28 +100,14 @@ try
     readAndAssert(peekable, "kl;zxcvbnm");
     peekable.dropCheckpoint();
 
-    exception = false;
-    try
-    {
-        peekable.assertCanBeDestructed();
-    }
-    catch (DB::Exception & e)
-    {
-        if (e.code() != DB::ErrorCodes::LOGICAL_ERROR)
-            throw;
-        exception = true;
-    }
-    ASSERT_TRUE(exception);
+    ASSERT_TRUE(peekable.hasUnreadData());
+    readAndAssert(peekable, ",./");
+    ASSERT_FALSE(peekable.hasUnreadData());
 
-    auto buf_ptr = peekable.takeUnreadData();
     ASSERT_TRUE(peekable.eof());
     ASSERT_TRUE(peekable.eof());
     ASSERT_TRUE(peekable.eof());
 
-    readAndAssert(*buf_ptr, ",./");
-    ASSERT_TRUE(buf_ptr->eof());
-
-    peekable.assertCanBeDestructed();
 }
 catch (const DB::Exception & e)
 {

@@ -273,6 +273,8 @@ bool StorageLiveView::hasColumn(const String & column_name) const
 
 Block StorageLiveView::getHeader() const
 {
+    std::lock_guard lock(sample_block_lock);
+
     if (!sample_block)
     {
         auto storage = global_context.getTable(select_database_name, select_table_name);
@@ -375,7 +377,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
     {
         while (1)
         {
-            std::unique_lock lock(storage->no_users_thread_mutex);
+            std::unique_lock lock(storage->no_users_thread_wakeup_mutex);
             if (!storage->no_users_thread_condition.wait_for(lock, std::chrono::seconds(timeout), [&] { return storage->no_users_thread_wakeup; }))
             {
                 storage->no_users_thread_wakeup = false;
@@ -421,17 +423,22 @@ void StorageLiveView::startNoUsersThread(const UInt64 & timeout)
 
     if (is_temporary)
     {
+        std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+
+        if (shutdown_called)
+            return;
+
         if (no_users_thread.joinable())
         {
             {
-                std::lock_guard lock(no_users_thread_mutex);
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
                 no_users_thread_wakeup = true;
                 no_users_thread_condition.notify_one();
             }
             no_users_thread.join();
         }
         {
-            std::lock_guard lock(no_users_thread_mutex);
+            std::lock_guard lock(no_users_thread_wakeup_mutex);
             no_users_thread_wakeup = false;
         }
         if (!is_dropped)
@@ -453,12 +460,15 @@ void StorageLiveView::shutdown()
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
 
-    if (no_users_thread.joinable())
     {
+        std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+        if (no_users_thread.joinable())
         {
-            std::lock_guard lock(no_users_thread_mutex);
-            no_users_thread_wakeup = true;
-            no_users_thread_condition.notify_one();
+            {
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
+                no_users_thread_wakeup = true;
+                no_users_thread_condition.notify_one();
+            }
         }
     }
 }
@@ -466,8 +476,12 @@ void StorageLiveView::shutdown()
 StorageLiveView::~StorageLiveView()
 {
     shutdown();
-    if (no_users_thread.joinable())
-        no_users_thread.detach();
+
+    {
+        std::lock_guard lock(no_users_thread_mutex);
+        if (no_users_thread.joinable())
+            no_users_thread.detach();
+    }
 }
 
 void StorageLiveView::drop(TableStructureWriteLockHolder &)
@@ -499,8 +513,7 @@ BlockInputStreams StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    /// add user to the blocks_ptr
-    std::shared_ptr<BlocksPtr> stream_blocks_ptr = blocks_ptr;
+    std::shared_ptr<BlocksBlockInputStream> stream;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -508,8 +521,9 @@ BlockInputStreams StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
+        stream = std::make_shared<BlocksBlockInputStream>(blocks_ptr, getHeader());
     }
-    return { std::make_shared<BlocksBlockInputStream>(stream_blocks_ptr, getHeader()) };
+    return { stream };
 }
 
 BlockInputStreams StorageLiveView::watch(
@@ -539,11 +553,14 @@ BlockInputStreams StorageLiveView::watch(
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
             context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
-        if (no_users_thread.joinable())
         {
-            std::lock_guard lock(no_users_thread_mutex);
-            no_users_thread_wakeup = true;
-            no_users_thread_condition.notify_one();
+            std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+            if (no_users_thread.joinable())
+            {
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
+                no_users_thread_wakeup = true;
+                no_users_thread_condition.notify_one();
+            }
         }
 
         {
@@ -567,11 +584,14 @@ BlockInputStreams StorageLiveView::watch(
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
             context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
 
-        if (no_users_thread.joinable())
         {
-            std::lock_guard lock(no_users_thread_mutex);
-            no_users_thread_wakeup = true;
-            no_users_thread_condition.notify_one();
+            std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+            if (no_users_thread.joinable())
+            {
+                std::lock_guard lock(no_users_thread_wakeup_mutex);
+                no_users_thread_wakeup = true;
+                no_users_thread_condition.notify_one();
+            }
         }
 
         {

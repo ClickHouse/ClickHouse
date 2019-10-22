@@ -12,6 +12,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -202,6 +203,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
     for (const auto & column : columns)
     {
+        /// Do not include virtual columns
+        if (column.is_virtual)
+            continue;
+
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
 

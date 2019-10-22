@@ -24,7 +24,7 @@ std::vector<std::string> getMultipleValuesFromConfig(const Poco::Util::AbstractC
 {
     std::vector<std::string> values;
     for (const auto & key : DB::getMultipleKeysFromConfig(config, root, name))
-        values.emplace_back(config.getString(key));
+        values.emplace_back(config.getString(root.empty() ? key : root + "." + key));
     return values;
 }
 

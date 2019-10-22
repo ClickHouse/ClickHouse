@@ -149,16 +149,16 @@ int main(int argc, char ** argv)
         Map map;
         for (size_t i = 0; i < map_size; ++i)
         {
-            Map::iterator it;
+            Map::LookupResult it;
             bool inserted;
 
             map.emplace(rand(), it, inserted);
             if (inserted)
             {
-                new(&it->getSecond()) Arr(n);
+                new(lookupResultGetMapped(it)) Arr(n);
 
                 for (size_t j = 0; j < n; ++j)
-                    it->getSecond()[j] = field;
+                    (*lookupResultGetMapped(it))[j] = field;
             }
         }
 

@@ -1,4 +1,4 @@
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import copy
 
 
@@ -8,8 +8,10 @@ class Layout(object):
         'hashed': '<hashed/>',
         'cache': '<cache><size_in_cells>128</size_in_cells></cache>',
         'complex_key_hashed': '<complex_key_hashed/>',
+        'complex_key_hashed_one_key': '<complex_key_hashed/>',
+        'complex_key_hashed_two_keys': '<complex_key_hashed/>',
         'complex_key_cache': '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>',
-        'range_hashed': '<range_hashed/>'
+        'range_hashed': '<range_hashed/>',
     }
 
     def __init__(self, name):
@@ -18,13 +20,13 @@ class Layout(object):
         self.is_simple = False
         self.is_ranged = False
         if self.name.startswith('complex'):
-            self.layout_type = "complex"
+            self.layout_type = 'complex'
             self.is_complex = True
-        elif name.startswith("range"):
-            self.layout_type = "ranged"
+        elif name.startswith('range'):
+            self.layout_type = 'ranged'
             self.is_ranged = True
         else:
-            self.layout_type = "simple"
+            self.layout_type = 'simple'
             self.is_simple = True
 
     def get_str(self):
@@ -33,8 +35,7 @@ class Layout(object):
     def get_key_block_name(self):
         if self.is_complex:
             return 'key'
-        else:
-            return 'id'
+        return 'id'
 
 
 class Row(object):
@@ -43,8 +44,14 @@ class Row(object):
         for field, value in zip(fields, values):
             self.data[field.name] = value
 
+    def has_field(self, name):
+        return name in self.data
+
     def get_value_by_name(self, name):
         return self.data[name]
+
+    def set_value(self, name, value):
+        self.data[name] = value
 
 
 class Field(object):
@@ -93,6 +100,8 @@ class DictionaryStructure(object):
         self.range_key = None
         self.ordinary_fields = []
         self.range_fields = []
+        self.has_hierarchy = False
+
         for field in fields:
             if field.is_key:
                 self.keys.append(field)
@@ -100,6 +109,9 @@ class DictionaryStructure(object):
                 self.range_fields.append(field)
             else:
                 self.ordinary_fields.append(field)
+            
+            if field.hierarchical:
+                self.has_hierarchy = True
 
             if field.is_range_key:
                 if self.range_key is not None:
@@ -116,11 +128,12 @@ class DictionaryStructure(object):
         fields_strs = []
         for field in self.ordinary_fields:
             fields_strs.append(field.get_attribute_str())
+
         key_strs = []
         if self.layout.is_complex:
             for key_field in self.keys:
                 key_strs.append(key_field.get_attribute_str())
-        else: # same for simple and ranged
+        else:  # same for simple and ranged
             for key_field in self.keys:
                 key_strs.append(key_field.get_simple_index_str())
 
@@ -179,7 +192,7 @@ class DictionaryStructure(object):
                 if isinstance(val, str):
                     val = "'" + val + "'"
                 key_exprs_strs.append('to{type}({value})'.format(type=key.field_type, value=val))
-            key_expr = ', (' + ','.join(key_exprs_strs) + ')'
+            key_expr = ', tuple(' + ','.join(key_exprs_strs) + ')'
 
         date_expr = ''
         if self.layout.is_ranged:
@@ -280,12 +293,13 @@ class DictionaryStructure(object):
 
 
 class Dictionary(object):
-    def __init__(self, name, structure, source, config_path, table_name):
+    def __init__(self, name, structure, source, config_path, table_name, fields):
         self.name = name
         self.structure = copy.deepcopy(structure)
         self.source = copy.deepcopy(source)
         self.config_path = config_path
         self.table_name = table_name
+        self.fields = fields
 
     def generate_config(self):
         with open(self.config_path, 'w') as result:
@@ -335,3 +349,6 @@ class Dictionary(object):
 
     def is_complex(self):
         return self.structure.layout.is_complex
+    
+    def get_fields(self):
+        return self.fields

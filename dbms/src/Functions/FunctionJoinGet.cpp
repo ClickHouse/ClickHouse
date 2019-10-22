@@ -82,13 +82,18 @@ DataTypePtr FunctionBuilderJoinGet::getReturnTypeImpl(const ColumnsWithTypeAndNa
 }
 
 
-void FunctionJoinGet::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+void FunctionJoinGet::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
-    auto & ctn = block.getByPosition(arguments[2]);
+    auto ctn = block.getByPosition(arguments[2]);
+    if (isColumnConst(*ctn.column))
+        ctn.column = ctn.column->cloneResized(1);
     ctn.name = ""; // make sure the key name never collide with the join columns
     Block key_block = {ctn};
     join->joinGet(key_block, attr_name);
-    block.getByPosition(result) = key_block.getByPosition(1);
+    auto & result_ctn = key_block.getByPosition(1);
+    if (isColumnConst(*ctn.column))
+        result_ctn.column = ColumnConst::create(result_ctn.column, input_rows_count);
+    block.getByPosition(result) = result_ctn;
 }
 
 void registerFunctionJoinGet(FunctionFactory & factory)

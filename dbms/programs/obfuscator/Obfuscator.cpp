@@ -670,13 +670,13 @@ public:
 
         while (pos < end)
         {
-            Table::iterator it = table.end();
+            Table::LookupResult it;
 
             size_t context_size = params.order;
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (table.end() != it && it->getSecond().total + it->getSecond().count_end != 0)
+                if (it && lookupResultGetMapped(it)->total + lookupResultGetMapped(it)->count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -684,7 +684,7 @@ public:
                 --context_size;
             }
 
-            if (table.end() == it)
+            if (!it)
                 throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
 
             size_t offset_from_begin_of_string = pos - data;
@@ -710,7 +710,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = it->getSecond().sample(determinator, end_probability_multiplier);
+            CodePoint code = lookupResultGetMapped(it)->sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;

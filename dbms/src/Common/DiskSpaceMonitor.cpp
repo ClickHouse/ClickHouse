@@ -1,6 +1,6 @@
 #include <Common/DiskSpaceMonitor.h>
 #include <Common/escapeForFileName.h>
-#include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 #include <set>
 

@@ -76,20 +76,20 @@ void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator 
 
 void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
-    Map::iterator found;
+    Map::LookupResult found = nullptr;
     auto prev_it = end;
     for (auto it = begin; it != end; ++it)
     {
-        if (*it == *prev_it)
+        if (prev_it != end && *it == *prev_it)
         {
-            ++found->getSecond();
+            ++*lookupResultGetMapped(found);
             continue;
         }
         prev_it = it;
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        ++found->getSecond();
+        ++*lookupResultGetMapped(found);
     }
 }
 
@@ -101,20 +101,20 @@ void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_i
 
 void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
-    MapTwoLevel::iterator found;
+    MapTwoLevel::LookupResult found = nullptr;
     auto prev_it = end;
     for (auto it = begin; it != end; ++it)
     {
         if (*it == *prev_it)
         {
-            ++found->getSecond();
+            ++*lookupResultGetMapped(found);
             continue;
         }
         prev_it = it;
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        ++found->getSecond();
+        ++*lookupResultGetMapped(found);
     }
 }
 
@@ -135,10 +135,10 @@ void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_
 
     for (auto it = begin; it != end; ++it)
     {
-        Map::iterator found = local_map.find(*it);
+        auto found = local_map.find(*it);
 
-        if (found != local_map.end())
-            ++found->getSecond();
+        if (found)
+            ++*lookupResultGetMapped(found);
         else if (local_map.size() < threshold)
             ++local_map[*it];    /// TODO You could do one lookup, not two.
         else
@@ -160,10 +160,10 @@ void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const
 
     for (auto it = begin; it != end; ++it)
     {
-        Map::iterator found;
+        Map::LookupResult found;
         bool inserted;
         local_map.emplace(*it, found, inserted);
-        ++found->getSecond();
+        ++*lookupResultGetMapped(found);
 
         if (inserted && local_map.size() == threshold)
         {
@@ -195,10 +195,10 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Sour
         {
             for (; it != block_end; ++it)
             {
-                Map::iterator found = local_map.find(*it);
+                auto found = local_map.find(*it);
 
-                if (found != local_map.end())
-                    ++found->getSecond();
+                if (found)
+                    ++*lookupResultGetMapped(found);
                 else
                 {
                     size_t hash_value = global_map.hash(*it);
@@ -284,7 +284,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate1,
+            pool.scheduleOrThrowOnError(std::bind(aggregate1,
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads));
@@ -338,7 +338,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate12,
+            pool.scheduleOrThrowOnError(std::bind(aggregate12,
                                     std::ref(maps[i]),
                                     data.begin() + (data.size() * i) / num_threads,
                                     data.begin() + (data.size() * (i + 1)) / num_threads));
@@ -397,7 +397,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate1,
+            pool.scheduleOrThrowOnError(std::bind(aggregate1,
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads));
@@ -473,7 +473,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate2,
+            pool.scheduleOrThrowOnError(std::bind(aggregate2,
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads));
@@ -499,7 +499,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.schedule(std::bind(merge2,
+            pool.scheduleOrThrowOnError(std::bind(merge2,
                 maps.data(), num_threads, i));
 
         pool.wait();
@@ -527,7 +527,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate22,
+            pool.scheduleOrThrowOnError(std::bind(aggregate22,
                                     std::ref(maps[i]),
                                     data.begin() + (data.size() * i) / num_threads,
                                     data.begin() + (data.size() * (i + 1)) / num_threads));
@@ -553,7 +553,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.schedule(std::bind(merge2, maps.data(), num_threads, i));
+            pool.scheduleOrThrowOnError(std::bind(merge2, maps.data(), num_threads, i));
 
         pool.wait();
 
@@ -592,7 +592,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate3,
+            pool.scheduleOrThrowOnError(std::bind(aggregate3,
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 std::ref(mutex),
@@ -658,7 +658,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate33,
+            pool.scheduleOrThrowOnError(std::bind(aggregate33,
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 std::ref(mutex),
@@ -727,7 +727,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate4,
+            pool.scheduleOrThrowOnError(std::bind(aggregate4,
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 mutexes.data(),
@@ -797,7 +797,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate5,
+            pool.scheduleOrThrowOnError(std::bind(aggregate5,
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 data.begin() + (data.size() * i) / num_threads,
@@ -860,7 +860,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.schedule(std::bind(aggregate1,
+            pool.scheduleOrThrowOnError(std::bind(aggregate1,
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads));

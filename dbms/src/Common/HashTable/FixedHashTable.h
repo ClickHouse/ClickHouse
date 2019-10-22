@@ -8,6 +8,7 @@ struct FixedHashTableCell
     using State = TState;
 
     using value_type = Key;
+    using mapped_type = void;
     bool full;
 
     FixedHashTableCell() {}
@@ -16,7 +17,6 @@ struct FixedHashTableCell
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
     static constexpr bool need_zero_value_storage = false;
-    void setMapped(const value_type & /*value*/) {}
 
     /// This Cell is only stored inside an iterator. It's used to accomodate the fact
     ///  that the iterator based API always provide a reference to a continuous memory
@@ -141,6 +141,11 @@ protected:
 public:
     using key_type = Key;
     using value_type = typename Cell::value_type;
+    using mapped_type = typename Cell::mapped_type;
+
+    using LookupResult = Cell *;
+    using ConstLookupResult = const Cell *;
+
 
     size_t hash(const Key & x) const { return x; }
 
@@ -263,9 +268,9 @@ public:
 
 public:
     /// The last parameter is unused but exists for compatibility with HashTable interface.
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t /* hash */ = 0)
+    void ALWAYS_INLINE emplace(Key x, LookupResult & it, bool & inserted, size_t /* hash */ = 0)
     {
-        it = iterator(this, &buf[x]);
+        it = &buf[x];
 
         if (!buf[x].isZero(*this))
         {
@@ -278,34 +283,34 @@ public:
         ++m_size;
     }
 
-    std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
-        std::pair<iterator, bool> res;
+        std::pair<LookupResult, bool> res;
         emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
-            res.first.ptr->setMapped(x);
+            insertSetMapped(lookupResultGetMapped(res.first), x);
 
         return res;
     }
 
-    iterator ALWAYS_INLINE find(Key x)
+    LookupResult ALWAYS_INLINE find(Key x)
     {
-        return !buf[x].isZero(*this) ? iterator(this, &buf[x]) : end();
+        return !buf[x].isZero(*this) ? &buf[x] : nullptr;
     }
 
-    const_iterator ALWAYS_INLINE find(Key x) const
+    ConstLookupResult ALWAYS_INLINE find(Key x) const
     {
-        return !buf[x].isZero(*this) ? const_iterator(this, &buf[x]) : end();
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x);
     }
 
-    iterator ALWAYS_INLINE find(Key, size_t hash_value)
+    LookupResult ALWAYS_INLINE find(Key, size_t hash_value)
     {
-        return !buf[hash_value].isZero(*this) ? iterator(this, &buf[hash_value]) : end();
+        return !buf[hash_value].isZero(*this) ? &buf[hash_value] : nullptr;
     }
 
-    const_iterator ALWAYS_INLINE find(Key, size_t hash_value) const
+    ConstLookupResult ALWAYS_INLINE find(Key key, size_t hash_value) const
     {
-        return !buf[hash_value].isZero(*this) ? const_iterator(this, &buf[hash_value]) : end();
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(key, hash_value);
     }
 
     bool ALWAYS_INLINE has(Key x) const { return !buf[x].isZero(*this); }

@@ -94,7 +94,7 @@ public:
         , ands_only(true)
     {}
 
-    void visit(const ASTFunction & node, ASTPtr & ast)
+    void visit(const ASTFunction & node, const ASTPtr & ast)
     {
         if (!ands_only)
             return;
@@ -231,8 +231,8 @@ private:
     }
 };
 
-using CheckExpressionMatcher = OneTypeMatcher<CheckExpressionVisitorData, false>;
-using CheckExpressionVisitor = InDepthNodeVisitor<CheckExpressionMatcher, true>;
+using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, false>;
+using CheckExpressionVisitor = ConstInDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 
 bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables, size_t & num_comma)
@@ -314,7 +314,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
         return;
 
     CheckExpressionVisitor::Data visitor_data{joined_tables};
-    CheckExpressionVisitor(visitor_data).visit(select.refWhere());
+    CheckExpressionVisitor(visitor_data).visit(select.where());
 
     if (visitor_data.complex())
         return;
