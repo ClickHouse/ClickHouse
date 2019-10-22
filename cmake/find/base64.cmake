@@ -4,7 +4,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/base64/lib/lib.c")
 endif ()
 
 if (NOT MISSING_INTERNAL_BASE64_LIBRARY)
-    option (ENABLE_BASE64 "Enable base64" ON)
+    option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
 endif ()
 
 if (ENABLE_BASE64)

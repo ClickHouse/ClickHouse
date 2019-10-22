@@ -1,4 +1,5 @@
 #include "config_core.h"
+#include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
@@ -13,6 +14,7 @@
 #include <Functions/IFunction.h>
 #include <set>
 #include <optional>
+#include <Columns/ColumnSet.h>
 
 
 namespace ProfileEvents
@@ -1164,6 +1166,58 @@ JoinPtr ExpressionActions::getTableJoinAlgo() const
         if (action.join)
             return action.join;
     return {};
+}
+
+
+bool ExpressionActions::resultIsAlwaysEmpty() const
+{
+    /// Check that has join which returns empty result.
+
+    for (auto & action : actions)
+    {
+        if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
+            return true;
+    }
+
+    return false;
+}
+
+
+bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const
+{
+    /// Check has column in (empty set).
+    String set_to_check;
+
+    for (auto & action : actions)
+    {
+        if (action.type == action.APPLY_FUNCTION && action.function_base)
+        {
+            auto name = action.function_base->getName();
+            if ((name == "in" || name == "globalIn")
+                && action.result_name == column_name
+                && action.argument_names.size() > 1)
+            {
+                set_to_check = action.argument_names[1];
+            }
+        }
+    }
+
+    if (!set_to_check.empty())
+    {
+        for (auto & action : actions)
+        {
+            if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
+            {
+                if (auto * column_set = typeid_cast<const ColumnSet *>(action.added_column.get()))
+                {
+                    if (column_set->getData()->getTotalRowCount() == 0)
+                        return true;
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
 

@@ -45,8 +45,8 @@ public:
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override { nested_data_type->serializeBinary(field, ostr); }
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override { nested_data_type->deserializeBinary(field, istr); }
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -77,7 +77,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override { return Null(); }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 
@@ -99,6 +99,17 @@ public:
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
+
+    /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
+    /// If ReturnType is void, deserialize Nullable(T)
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const DataTypePtr & nested);
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &, const DataTypePtr & nested);
 
 private:
     DataTypePtr nested_data_type;

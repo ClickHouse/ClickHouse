@@ -1,3 +1,5 @@
+#include <limits>
+
 #include <Core/NamesAndTypes.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnNullable.h>
@@ -7,6 +9,10 @@
 #include <Interpreters/join_common.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/MergeSortingBlockInputStream.h>
+#include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/TemporaryFileStream.h>
+#include <DataStreams/ConcatBlockInputStream.h>
 
 namespace DB
 {
@@ -16,6 +22,7 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -133,9 +140,8 @@ public:
         return getNextEqualRangeImpl<false>(rhs);
     }
 
-    int intersect(const Block & right_block, const Block & right_table_keys, const Names & key_names)
+    int intersect(const Block & min_max, const Names & key_names)
     {
-        const Block min_max = extractMinMax(right_block, right_table_keys);
         if (end() == 0 || min_max.rows() != 2)
             throw Exception("Unexpected block size", ErrorCodes::LOGICAL_ERROR);
 
@@ -320,20 +326,126 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns, M
     appendNulls(right_columns, rows_to_add);
 }
 
+Blocks blocksListToBlocks(const BlocksList & in_blocks)
+{
+    Blocks out_blocks;
+    out_blocks.reserve(in_blocks.size());
+    for (const auto & block : in_blocks)
+        out_blocks.push_back(block);
+    return out_blocks;
+}
+
+std::unique_ptr<TemporaryFile> flushBlockToFile(const String & tmp_path, const Block & header, Block && block)
+{
+    auto tmp_file = createTemporaryFile(tmp_path);
+
+    OneBlockInputStream stream(block);
+    std::atomic<bool> is_cancelled{false};
+    TemporaryFileStream::write(tmp_file->path(), header, stream, &is_cancelled);
+    if (is_cancelled)
+        throw Exception("Cannot flush MergeJoin data on disk. No space at " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+
+    return tmp_file;
+}
+
+void flushStreamToFiles(const String & tmp_path, const Block & header, IBlockInputStream & stream,
+                        std::vector<std::unique_ptr<TemporaryFile>> & files,
+                        std::function<void(const Block &)> callback = [](const Block &){})
+{
+    while (Block block = stream.read())
+    {
+        if (!block.rows())
+            continue;
+
+        callback(block);
+        auto tmp_file = flushBlockToFile(tmp_path, header, std::move(block));
+        files.emplace_back(std::move(tmp_file));
+    }
+}
+
+BlockInputStreams makeSortedInputStreams(std::vector<MiniLSM::SortedFiles> & sorted_files, const Block & header)
+{
+    BlockInputStreams inputs;
+
+    for (const auto & track : sorted_files)
+    {
+        BlockInputStreams sequence;
+        for (const auto & file : track)
+            sequence.emplace_back(std::make_shared<TemporaryFileLazyInputStream>(file->path(), header));
+        inputs.emplace_back(std::make_shared<ConcatBlockInputStream>(sequence));
+    }
+
+    return inputs;
+}
+
 }
 
 
+void MiniLSM::insert(const BlocksList & blocks)
+{
+    if (blocks.empty())
+        return;
 
-MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block)
+    SortedFiles sorted_blocks;
+    if (blocks.size() > 1)
+    {
+        BlockInputStreams inputs;
+        inputs.reserve(blocks.size());
+        for (auto & block : blocks)
+            inputs.push_back(std::make_shared<OneBlockInputStream>(block));
+
+        MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+        flushStreamToFiles(path, sample_block, sorted_input, sorted_blocks);
+    }
+    else
+    {
+        OneBlockInputStream sorted_input(blocks.front());
+        flushStreamToFiles(path, sample_block, sorted_input, sorted_blocks);
+    }
+
+    sorted_files.emplace_back(std::move(sorted_blocks));
+    if (sorted_files.size() >= max_size)
+        merge();
+}
+
+/// TODO: better merge strategy
+void MiniLSM::merge(std::function<void(const Block &)> callback)
+{
+    BlockInputStreams inputs = makeSortedInputStreams(sorted_files, sample_block);
+    MergingSortedBlockInputStream sorted_stream(inputs, sort_description, rows_in_block);
+
+    SortedFiles out;
+    flushStreamToFiles(path, sample_block, sorted_stream, out, callback);
+
+    sorted_files.clear();
+    sorted_files.emplace_back(std::move(out));
+}
+
+
+MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
     : table_join(table_join_)
+    , size_limits(table_join->sizeLimits())
+    , right_sample_block(right_sample_block_)
     , nullable_right_side(table_join->forceNullableRight())
     , is_all(table_join->strictness() == ASTTableJoin::Strictness::All)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
     , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
+    , max_rows_in_right_block(table_join->maxRowsInRightBlock())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
         throw Exception("Partial merge supported for LEFT and INNER JOINs only", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (!max_rows_in_right_block)
+        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+    if (!size_limits.hasLimits())
+    {
+        size_limits.max_bytes = table_join->defaultMaxBytes();
+        if (!size_limits.max_bytes)
+            throw Exception("No limit for MergeJoin (max_rows_in_join, max_bytes_in_join or default_max_bytes_in_join have to be set)",
+                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+    }
 
     JoinCommon::extractKeysForJoin(table_join->keyNamesRight(), right_sample_block, right_table_keys, right_columns_to_add);
 
@@ -350,6 +462,8 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
 
     makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
     makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
+
+    lsm = std::make_unique<MiniLSM>(table_join->getTemporaryPath(), right_sample_block, right_sort_description, max_rows_in_right_block);
 }
 
 void MergeJoin::setTotals(const Block & totals_block)
@@ -365,24 +479,83 @@ void MergeJoin::joinTotals(Block & block) const
 
 void MergeJoin::mergeRightBlocks()
 {
+    if (is_in_memory)
+        mergeInMemoryRightBlocks();
+    else
+        mergeFlushedRightBlocks();
+}
+
+void MergeJoin::mergeInMemoryRightBlocks()
+{
+    std::unique_lock lock(rwlock);
+
     if (right_blocks.empty())
         return;
 
-    Blocks unsorted_blocks;
-    unsorted_blocks.reserve(right_blocks.size());
-    for (const auto & block : right_blocks)
-        unsorted_blocks.push_back(block);
-
-    size_t max_rows_in_block = table_join->maxRowsInRightBlock();
-    if (!max_rows_in_block)
-        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+    Blocks blocks_to_merge = blocksListToBlocks(right_blocks);
+    clearRightBlocksList();
 
     /// TODO: there should be no splitted keys by blocks for RIGHT|FULL JOIN
-    MergeSortingBlocksBlockInputStream stream(unsorted_blocks, right_sort_description, max_rows_in_block);
+    MergeSortingBlocksBlockInputStream sorted_input(blocks_to_merge, right_sort_description, max_rows_in_right_block);
 
-    right_blocks.clear();
-    while (Block block = stream.read())
-        right_blocks.emplace_back(std::move(block));
+    while (Block block = sorted_input.read())
+    {
+        if (!block.rows())
+            continue;
+
+        if (skip_not_intersected)
+            min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
+        countBlockSize(block);
+        loaded_right_blocks.emplace_back(std::make_shared<Block>(std::move(block)));
+    }
+}
+
+void MergeJoin::mergeFlushedRightBlocks()
+{
+    std::unique_lock lock(rwlock);
+
+    lsm->insert(right_blocks);
+    clearRightBlocksList();
+
+    auto callback = [&](const Block & block)
+    {
+        if (skip_not_intersected)
+            min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
+        countBlockSize(block);
+    };
+
+    lsm->merge(callback);
+    flushed_right_blocks.swap(lsm->sorted_files.front());
+
+    /// Get memory limit or aproximate it from row limit and bytes per row factor
+    UInt64 memory_limit = size_limits.max_bytes;
+    UInt64 rows_limit = size_limits.max_rows;
+    if (!memory_limit && rows_limit)
+        memory_limit = right_blocks_bytes * rows_limit / right_blocks_row_count;
+
+    cached_right_blocks = std::make_unique<Cache>(memory_limit);
+}
+
+void MergeJoin::flushRightBlocks()
+{
+    /// it's under unique_lock(rwlock)
+
+    is_in_memory = false;
+    lsm->insert(right_blocks);
+    clearRightBlocksList();
+}
+
+bool MergeJoin::saveRightBlock(Block && block)
+{
+    std::unique_lock lock(rwlock);
+
+    countBlockSize(block);
+    right_blocks.emplace_back(std::move(block));
+
+    bool has_memory = size_limits.softCheck(right_blocks_row_count, right_blocks_bytes);
+    if (!has_memory)
+        flushRightBlocks();
+    return true;
 }
 
 bool MergeJoin::addJoinedBlock(const Block & src_block)
@@ -391,14 +564,7 @@ bool MergeJoin::addJoinedBlock(const Block & src_block)
     JoinCommon::removeLowCardinalityInplace(block);
 
     sortBlock(block, right_sort_description);
-
-    std::unique_lock lock(rwlock);
-
-    right_blocks.push_back(block);
-    right_blocks_row_count += block.rows();
-    right_blocks_bytes += block.bytes();
-
-    return table_join->sizeLimits().check(right_blocks_row_count, right_blocks_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return saveRightBlock(std::move(block));
 }
 
 void MergeJoin::joinBlock(Block & block)
@@ -408,7 +574,15 @@ void MergeJoin::joinBlock(Block & block)
     JoinCommon::removeLowCardinalityInplace(block);
 
     sortBlock(block, left_sort_description);
+    if (is_in_memory)
+        joinSortedBlock<true>(block);
+    else
+        joinSortedBlock<false>(block);
+}
 
+template <bool in_memory>
+void MergeJoin::joinSortedBlock(Block & block)
+{
     std::shared_lock lock(rwlock);
 
     size_t rows_to_reserve = is_left ? block.rows() : 0;
@@ -416,24 +590,27 @@ void MergeJoin::joinBlock(Block & block)
     MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows_to_reserve);
     MergeJoinCursor left_cursor(block, left_merge_description);
     size_t left_key_tail = 0;
+    size_t right_blocks_count = rightBlocksCount<in_memory>();
 
     if (is_left)
     {
-        for (auto it = right_blocks.begin(); it != right_blocks.end(); ++it)
+        for (size_t i = 0; i < right_blocks_count; ++i)
         {
             if (left_cursor.atEnd())
                 break;
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(*it, right_table_keys, table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
                     continue; /// (right) ... (left)
             }
 
-            leftJoin(left_cursor, block, *it, left_columns, right_columns, left_key_tail);
+            std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
+
+            leftJoin(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail);
         }
 
         left_cursor.nextN(left_key_tail);
@@ -445,21 +622,23 @@ void MergeJoin::joinBlock(Block & block)
     }
     else if (is_inner)
     {
-        for (auto it = right_blocks.begin(); it != right_blocks.end(); ++it)
+        for (size_t i = 0; i < right_blocks_count; ++i)
         {
             if (left_cursor.atEnd())
                 break;
 
             if (skip_not_intersected)
             {
-                int intersection = left_cursor.intersect(*it, right_table_keys, table_join->keyNamesRight());
+                int intersection = left_cursor.intersect(min_max_right_blocks[i], table_join->keyNamesRight());
                 if (intersection < 0)
                     break; /// (left) ... (right)
                 if (intersection > 0)
                     continue; /// (right) ... (left)
             }
 
-            innerJoin(left_cursor, block, *it, left_columns, right_columns, left_key_tail);
+            std::shared_ptr<Block> right_block = loadRightBlock<in_memory>(i);
+
+            innerJoin(left_cursor, block, *right_block, left_columns, right_columns, left_key_tail);
         }
 
         left_cursor.nextN(left_key_tail);
@@ -544,6 +723,32 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
         const auto & column = right_columns_to_add.getByPosition(i);
         block.insert(ColumnWithTypeAndName{std::move(right_columns[i]), column.type, column.name});
     }
+}
+
+template <bool in_memory>
+size_t MergeJoin::rightBlocksCount()
+{
+    if constexpr (!in_memory)
+        return flushed_right_blocks.size();
+    else
+        return loaded_right_blocks.size();
+}
+
+template <bool in_memory>
+std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos)
+{
+    if constexpr (!in_memory)
+    {
+        auto load_func = [&]() -> std::shared_ptr<Block>
+        {
+            TemporaryFileStream input(flushed_right_blocks[pos]->path(), right_sample_block);
+            return std::make_shared<Block>(input.block_in->read());
+        };
+
+        return cached_right_blocks->getOrSet(pos, load_func).first;
+    }
+    else
+        return loaded_right_blocks[pos];
 }
 
 }

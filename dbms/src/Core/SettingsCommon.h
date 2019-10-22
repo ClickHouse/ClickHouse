@@ -4,7 +4,6 @@
 #include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 #include <common/StringRef.h>
-#include <Common/SettingsChanges.h>
 #include <Core/Types.h>
 #include <unordered_map>
 #include <boost/noncopyable.hpp>
@@ -14,6 +13,8 @@ namespace DB
 {
 
 class Field;
+struct SettingChange;
+using SettingsChanges = std::vector<SettingChange>;
 class ReadBuffer;
 class WriteBuffer;
 
@@ -184,10 +185,10 @@ struct SettingEnum
     SettingEnum & operator= (EnumType x) { set(x); return *this; }
 
     String toString() const;
-    Field toField() const { return toString(); }
+    Field toField() const;
 
     void set(EnumType x) { value = x; changed = true; }
-    void set(const Field & x) { set(safeGet<const String &>(x)); }
+    void set(const Field & x);
     void set(const String & x);
 
     void serialize(WriteBuffer & buf) const;
@@ -380,7 +381,7 @@ private:
         std::unordered_map<StringRef, size_t> by_name_map;
     };
 
-    static const MemberInfos & members() { return MemberInfos::instance(); }
+    static const MemberInfos & members();
 
 public:
     class const_iterator;
@@ -394,7 +395,7 @@ public:
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
         bool isChanged() const { return member->isChanged(*collection); }
-        Field getValue() const { return member->get_field(*collection); }
+        Field getValue() const;
         String getValueAsString() const { return member->get_string(*collection); }
     protected:
         friend class SettingsCollection<Derived>::const_iterator;
@@ -410,7 +411,7 @@ public:
     public:
         reference(Derived & collection_, const MemberInfo & member_) : const_reference(collection_, member_) {}
         reference(const const_reference & src) : const_reference(src) {}
-        void setValue(const Field & value) { this->member->set_field(*const_cast<Derived *>(this->collection), value); }
+        void setValue(const Field & value);
         void setValue(const String & value) { this->member->set_string(*const_cast<Derived *>(this->collection), value); }
     };
 
@@ -464,8 +465,8 @@ public:
 
     /// Casts a value to a type according to a specified setting without actual changing this settings.
     /// E.g. for SettingInt64 it casts Field to Field::Types::Int64.
-    static Field castValueWithoutApplying(size_t index, const Field & value) { return members()[index].cast_value_without_applying(value); }
-    static Field castValueWithoutApplying(const String & name, const Field & value) { return members().findStrict(name)->cast_value_without_applying(value); }
+    static Field castValueWithoutApplying(size_t index, const Field & value);
+    static Field castValueWithoutApplying(const String & name, const Field & value);
 
     iterator begin() { return iterator(castToDerived(), members().begin()); }
     const_iterator begin() const { return const_iterator(castToDerived(), members().begin()); }
@@ -487,58 +488,29 @@ public:
     const_iterator findStrict(const String & name) const { return const_iterator(castToDerived(), members().findStrict(name)); }
 
     /// Sets setting's value.
-    void set(size_t index, const Field & value) { (*this)[index].setValue(value); }
-    void set(const String & name, const Field & value) { (*this)[name].setValue(value); }
+    void set(size_t index, const Field & value);
+    void set(const String & name, const Field & value);
 
     /// Sets setting's value. Read value in text form from string (for example, from configuration file or from URL parameter).
     void set(size_t index, const String & value) { (*this)[index].setValue(value); }
     void set(const String & name, const String & value) { (*this)[name].setValue(value); }
 
     /// Returns value of a setting.
-    Field get(size_t index) const { return (*this)[index].getValue(); }
-    Field get(const String & name) const { return (*this)[name].getValue(); }
+    Field get(size_t index) const;
+    Field get(const String & name) const;
 
     /// Returns value of a setting converted to string.
     String getAsString(size_t index) const { return (*this)[index].getValueAsString(); }
     String getAsString(const String & name) const { return (*this)[name].getValueAsString(); }
 
     /// Returns value of a setting; returns false if there is no setting with the specified name.
-    bool tryGet(const String & name, Field & value) const
-    {
-        auto it = find(name);
-        if (it == end())
-            return false;
-        value = it->getValue();
-        return true;
-    }
+    bool tryGet(const String & name, Field & value) const;
 
     /// Returns value of a setting converted to string; returns false if there is no setting with the specified name.
-    bool tryGet(const String & name, String & value) const
-    {
-        auto it = find(name);
-        if (it == end())
-            return false;
-        value = it->getValueAsString();
-        return true;
-    }
+    bool tryGet(const String & name, String & value) const;
 
     /// Compares two collections of settings.
-    bool operator ==(const Derived & rhs) const
-    {
-        for (const auto & member : members())
-        {
-            bool left_changed = member.isChanged(castToDerived());
-            bool right_changed = member.isChanged(rhs);
-            if (left_changed || right_changed)
-            {
-                if (left_changed != right_changed)
-                    return false;
-                if (member.get_field(castToDerived()) != member.get_field(rhs))
-                    return false;
-            }
-        }
-        return true;
-    }
+    bool operator ==(const Derived & rhs) const;
 
     bool operator !=(const Derived & rhs) const
     {
@@ -546,41 +518,17 @@ public:
     }
 
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
-    SettingsChanges changes() const
-    {
-        SettingsChanges found_changes;
-        for (const auto & member : members())
-        {
-            if (member.isChanged(castToDerived()))
-                found_changes.push_back({member.name.toString(), member.get_field(castToDerived())});
-        }
-        return found_changes;
-    }
+    SettingsChanges changes() const;
 
     /// Applies change to concrete setting.
-    void applyChange(const SettingChange & change)
-    {
-        set(change.name, change.value);
-    }
+    void applyChange(const SettingChange & change);
 
     /// Applies changes to the settings.
-    void applyChanges(const SettingsChanges & changes)
-    {
-        for (const SettingChange & change : changes)
-            applyChange(change);
-    }
+    void applyChanges(const SettingsChanges & changes);
 
-    void copyChangesFrom(const Derived & src)
-    {
-        for (const auto & member : members())
-            if (member.isChanged(src))
-                member.set_field(castToDerived(), member.get_field(src));
-    }
+    void copyChangesFrom(const Derived & src);
 
-    void copyChangesTo(Derived & dest) const
-    {
-        dest.copyChangesFrom(castToDerived());
-    }
+    void copyChangesTo(Derived & dest) const;
 
     /// Writes the settings to buffer (e.g. to be sent to remote server).
     /// Only changed settings are written. They are written as list of contiguous name-value pairs,
@@ -632,7 +580,13 @@ public:
     { \
         static const SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos single_instance; \
         return single_instance; \
-    }
+    } \
+    /** \
+      * Instantiation should happen when all method definitions from SettingsCollectionImpl.h \
+      * are accessible, so we instantiate explicitly. \
+      */ \
+    template class SettingsCollection<DERIVED_CLASS_NAME>;
+
 
 
 #define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \

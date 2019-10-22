@@ -222,6 +222,7 @@ private:
 
         context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
+        context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
         for (auto && setting : context.getSettingsRef())

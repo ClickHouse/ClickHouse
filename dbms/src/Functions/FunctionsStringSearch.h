@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -29,6 +28,7 @@ namespace DB
   * match(haystack, pattern)       - search by regular expression re2; Returns 0 or 1.
   * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns 0 or 1 if any pattern_i matches.
   * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns index of any match or zero if none;
+  * multiMatchAllIndices(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns an array of matched indices in any order;
   *
   * Applies regexp re2 and pulls:
   * - the first subpattern, if the regexp has a subpattern;
@@ -313,9 +313,7 @@ public:
         if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-
-        return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
+        return Impl::ReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
@@ -348,20 +346,22 @@ public:
         for (const auto & el : src_arr)
             refs.emplace_back(el.get<String>());
 
-        const size_t column_haystack_size = column_haystack->size();
-
         auto col_res = ColumnVector<ResultType>::create();
+        auto col_offsets = ColumnArray::ColumnOffsets::create();
 
         auto & vec_res = col_res->getData();
+        auto & offsets_res = col_offsets->getData();
 
-        vec_res.resize(column_haystack_size);
-
+        /// The blame for resizing output is for the callee.
         if (col_haystack_vector)
-            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
+            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = std::move(col_res);
+        if constexpr (Impl::is_column_array)
+            block.getByPosition(result).column = ColumnArray::create(std::move(col_res), std::move(col_offsets));
+        else
+            block.getByPosition(result).column = std::move(col_res);
     }
 };
 

@@ -15,6 +15,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 
 namespace DB
@@ -31,6 +32,9 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 {
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
+    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
+    param_visitor.visit(ast);
+    String name = ast->getColumnName();
     auto syntax_result = SyntaxAnalyzer(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
@@ -42,16 +46,15 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (!block_with_constants || block_with_constants.rows() == 0)
         throw Exception("Logical error: empty block after evaluation of constant expression for IN, VALUES or LIMIT", ErrorCodes::LOGICAL_ERROR);
 
-    String name = node->getColumnName();
-
     if (!block_with_constants.has(name))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column not found): " + name, ErrorCodes::BAD_ARGUMENTS);
 
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
 
+    /// Expressions like rand() or now() are not constant
     if (!isColumnConst(result_column))
-        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression (result column is not const): " + name, ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_pair(result_column[0], result.type);
 }
@@ -59,11 +62,11 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
-    /// Branch with string in query.
+    /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
 
-    /// Branch with TableFunction in query.
+    /// Skip table functions.
     if (const auto * table_func_ptr = node->as<ASTFunction>())
         if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
             return node;

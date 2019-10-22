@@ -129,7 +129,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.schedule([=]
+            pool.scheduleOrThrowOnError([=]
             {
                 setThreadName("PushingToViews");
                 if (thread_group)

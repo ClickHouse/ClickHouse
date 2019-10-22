@@ -895,7 +895,7 @@ public:
             ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
             for (const TaskShardPtr & task_shard : task_table.all_shards)
-                thread_pool.schedule([this, timeouts, task_shard]() { discoverShardPartitions(timeouts, task_shard); });
+                thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]() { discoverShardPartitions(timeouts, task_shard); });
 
             LOG_DEBUG(log, "Waiting for " << thread_pool.active() << " setup jobs");
             thread_pool.wait();
@@ -2038,7 +2038,7 @@ protected:
             ThreadPool thread_pool(std::min<UInt64>(num_shards, getNumberOfPhysicalCPUCores()));
 
             for (UInt64 shard_index = 0; shard_index < num_shards; ++shard_index)
-                thread_pool.schedule([=] { do_for_shard(shard_index); });
+                thread_pool.scheduleOrThrowOnError([=] { do_for_shard(shard_index); });
 
             thread_pool.wait();
         }

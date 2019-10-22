@@ -719,6 +719,8 @@ The minimum set of characters that you need to escape when passing data in Value
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
+See also: [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) and [input_format_values_deduce_templates_of_expressions](../operations/settings/settings.md#settings-input_format_values_deduce_templates_of_expressions) settings.
+
 ## Vertical {#vertical}
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.
@@ -981,3 +983,11 @@ should be located in the directory specified in [format_schema_path](../operatio
 in the server configuration.
 
 [Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->
+
+## Skipping Errors {#skippingerrors}
+
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and 
+[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
+Limitations:
+ - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
+ - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
