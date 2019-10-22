@@ -442,7 +442,7 @@ struct MinhashImpl
         } while (start < end && (found = read_code_points(cp, start, end)));
         std::sort(hash_values, hash_values + num);
         // detemine the hashes we take to sum
-        size_t true_K = (K < num) ? K : num - 1;
+        size_t true_K = (K < num - 1) ? K : num - 2;
         UInt64 res1 = Hash::hashSum(hash_values, true_K);
         UInt64 res2 = Hash::hashSum(hash_values + num - true_K, true_K);
         return std::make_tuple(res1, res2);
@@ -490,7 +490,7 @@ struct MinhashImpl
 
         std::sort(hash_values, hash_values + num);
         // detemine the hashes we take to sum
-        size_t true_K = (K < num) ? K : num - 1;
+        size_t true_K = (K < num - 1) ? K : num - 2;
         UInt64 res1 = Hash::hashSum(hash_values, true_K);
         UInt64 res2 = Hash::hashSum(hash_values + num - true_K, true_K);
         return std::make_tuple(res1, res2);
