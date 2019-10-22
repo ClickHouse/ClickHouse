@@ -3,6 +3,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -726,7 +727,16 @@ public:
 
     TTLEntry ttl_table_entry;
 
-    TTLEntriesByName move_ttl_entries_by_name;
+    struct MoveTTLEntry
+    {
+        ExpressionActionsPtr expression;
+        String result_column;
+        ASTTTLElement::DestinationType destination_type;
+        String destination_name; 
+    };
+
+    using MoveTTLEntriesByName = std::unordered_map<String, MoveTTLEntry>;
+    MoveTTLEntriesByName move_ttl_entries_by_name;
 
     String sampling_expr_column_name;
     Names columns_required_for_sampling;

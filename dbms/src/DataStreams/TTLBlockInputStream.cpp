@@ -85,6 +85,8 @@ Block TTLBlockInputStream::readImpl()
 
     removeValuesWithExpiredColumnTTL(block);
 
+    updateMovesTTL(block);
+
     return block;
 }
 
@@ -193,6 +195,29 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
     }
 
     for (const auto & elem : storage.ttl_entries_by_name)
+        if (block.has(elem.second.result_column))
+            block.erase(elem.second.result_column);
+}
+
+void TTLBlockInputStream::updateMovesTTL(Block & block)
+{
+    for (const auto & [name, ttl_entry] : storage.move_ttl_entries_by_name)
+    {
+        auto & new_ttl_info = new_ttl_infos.moves_ttl[name];
+
+        if (!block.has(ttl_entry.result_column))
+            ttl_entry.expression->execute(block);
+
+        const IColumn * ttl_column = block.getByName(ttl_entry.result_column).column.get();
+
+        for (size_t i = 0; i < block.rows(); ++i)
+        {
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+            new_ttl_info.update(cur_ttl);
+        }
+    }
+
+    for (const auto & elem : storage.move_ttl_entries_by_name)
         if (block.has(elem.second.result_column))
             block.erase(elem.second.result_column);
 }
