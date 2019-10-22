@@ -94,13 +94,15 @@ bool MergeTreePartsMover::selectPartsForMove(
     {
         for (const auto & disk : volumes[i]->disks)
         {
-            UInt64 required_available_space = disk->getTotalSpace() * policy->getMoveFactor();
+            UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
             UInt64 unreserved_space = disk->getUnreservedSpace();
 
-            if (required_available_space > unreserved_space)
-                need_to_move.emplace(disk, required_available_space - unreserved_space);
+            if (unreserved_space < required_maximum_available_space)
+                need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
         }
     }
+
+    auto current_time = time(nullptr);
 
     for (const auto & part : data_parts)
     {
@@ -109,6 +111,60 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
+        const auto ttl_entries_end = part->storage.move_ttl_entries_by_name.end();
+        auto best_ttl_entry_it = ttl_entries_end;
+        time_t max_max_ttl = 0;
+        for (auto & [name, ttl_info] : part->ttl_infos.moves_ttl)
+        {
+            auto move_ttl_entry_it = part->storage.move_ttl_entries_by_name.find(name);
+            if (move_ttl_entry_it != part->storage.move_ttl_entries_by_name.end())
+            {
+                if (ttl_info.max < current_time && max_max_ttl < ttl_info.max)
+                {
+                    best_ttl_entry_it = move_ttl_entry_it;
+                    max_max_ttl = ttl_info.max;
+                }
+            }
+        }
+        if (best_ttl_entry_it != ttl_entries_end)
+        {
+            auto & move_ttl_entry = best_ttl_entry_it->second;
+            if (move_ttl_entry.destination_type == ASTTTLElement::DestinationType::VOLUME)
+            {
+                auto volume_ptr = policy->getVolumeByName(move_ttl_entry.destination_name);
+                if (volume_ptr)
+                {
+                    auto reservation = volume_ptr->reserve(part->bytes_on_disk);
+                    if (reservation)
+                    {
+                        parts_to_move.emplace_back(part, std::move(reservation));
+                        continue;
+                    }
+                }
+                else
+                {
+                    /// FIXME: log error
+                }
+            }
+            else if (move_ttl_entry.destination_type == ASTTTLElement::DestinationType::DISK)
+            {
+                auto disk_ptr = policy->getDiskByName(move_ttl_entry.destination_name);
+                if (disk_ptr)
+                {
+                    auto reservation = disk_ptr->reserve(part->bytes_on_disk);
+                    if (reservation)
+                    {
+                        parts_to_move.emplace_back(part, std::move(reservation));
+                        continue;
+                    }
+                }
+                else
+                {
+                    /// FIXME: log error
+                }
+            }
+        }
+
         auto to_insert = need_to_move.find(part->disk);
         if (to_insert != need_to_move.end())
             to_insert->second.add(part);
@@ -116,13 +172,13 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     for (auto && move : need_to_move)
     {
-        auto min_volume_priority = policy->getVolumeIndexByDisk(move.first) + 1;
+        auto min_volume_index = policy->getVolumeIndexByDisk(move.first) + 1;
         for (auto && part : move.second.getAccumulatedParts())
         {
-            auto reservation = policy->reserve(part->bytes_on_disk, min_volume_priority);
+            auto reservation = policy->reserve(part->bytes_on_disk, min_volume_index);
             if (!reservation)
             {
-                /// Next parts to move from this disk has greater size and same min volume priority
+                /// Next parts to move from this disk has greater size and same min volume index
                 /// There are no space for them
                 /// But it can be possible to move data from other disks
                 break;
