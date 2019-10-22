@@ -108,10 +108,10 @@ public:
       */
     double quantileInterpolated(double level)
     {
-        if (samples.empty()) {
-            if (DB::IsDecimalNumber<T>) {
+        if (samples.empty())
+        {
+            if (DB::IsDecimalNumber<T>)
                 return 0;
-            }
             return onEmpty<double>();
         }
         sortIfNeeded();
