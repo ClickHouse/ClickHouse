@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class MergeTreeDataPartWriterWide;
+
 /// Writes only those columns that are in `header`
 class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {

@@ -18,19 +18,19 @@ public:
         const WriterSettings & settings,
         const ColumnToSize & merged_column_to_size = {});
 
-    size_t write(const Block & block, const IColumn::Permutation * permutation,
+    MarkWithOffset write(const Block & block, const IColumn::Permutation * permutation,
         size_t from_mark, size_t index_offset, 
         const MergeTreeIndexGranularity & index_granularity,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark) override;
+    void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
     /// Write data of one column.
     /// Return how many marks were written and
     /// how many rows were written for last mark
-    std::pair<size_t, size_t> writeColumn(
+    MarkWithOffset writeColumn(
         const String & name,
         const IDataType & type,
         const IColumn & column,
