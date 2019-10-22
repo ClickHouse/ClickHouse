@@ -570,7 +570,7 @@ For more information, see the section "[Table engines/Distributed](../../operati
 For the value of the `incl` attribute, see the section "[Configuration files](../configuration_files.md#configuration_files)".
 
 
-## timezone
+## timezone {#server_settings-timezone}
 
 The server's time zone.
 
