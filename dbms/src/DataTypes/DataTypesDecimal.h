@@ -243,6 +243,17 @@ inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value 
     return default_value;
 }
 
+inline UInt32 getDecimalPrecision(const IDataType & data_type, UInt32 default_value = std::numeric_limits<UInt32>::max())
+    {
+        if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+            return decimal_type->getPrecision();
+        if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+            return decimal_type->getPrecision();
+        if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+            return decimal_type->getPrecision();
+        return default_value;
+    }
+
 ///
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

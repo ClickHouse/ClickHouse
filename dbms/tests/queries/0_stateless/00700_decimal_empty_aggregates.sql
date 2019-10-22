@@ -2,9 +2,9 @@ DROP TABLE IF EXISTS decimal;
 
 CREATE TABLE decimal
 (
-    a Decimal32(4),
-    b Decimal64(8),
-    c Decimal128(8)
+    a Decimal(6, 4),
+    b Decimal(16, 7),
+    c Decimal(20, 8)
 ) ENGINE = Memory;
 
 SELECT count(a), count(b), count(c) FROM decimal;
@@ -16,9 +16,9 @@ SELECT sum(a), sum(b), sum(c), sumWithOverflow(a), sumWithOverflow(b), sumWithOv
 SELECT sum(a+1), sum(b+1), sum(c+1), sumWithOverflow(a+1), sumWithOverflow(b+1), sumWithOverflow(c+1) FROM decimal;
 SELECT sum(a-1), sum(b-1), sum(c-1), sumWithOverflow(a-1), sumWithOverflow(b-1), sumWithOverflow(c-1) FROM decimal;
 
-SELECT avg(a), avg(b), avg(c) FROM decimal;
-SELECT avg(a), avg(b), avg(c) FROM decimal WHERE a > 0;
-SELECT avg(a), avg(b), avg(c) FROM decimal WHERE a < 0;
+SELECT avg(a) as aa, avg(b) as ab, avg(c) as ac, toTypeName(aa), toTypeName(ab),toTypeName(ac) FROM decimal;
+SELECT avg(a) as aa, avg(b) as ab, avg(c) as ac, toTypeName(aa), toTypeName(ab),toTypeName(ac) FROM decimal WHERE a > 0;
+SELECT avg(a) as aa, avg(b) as ab, avg(c) as ac, toTypeName(aa), toTypeName(ab),toTypeName(ac) FROM decimal WHERE a < 0;
 
 SELECT (uniq(a), uniq(b), uniq(c)),
     (uniqCombined(a), uniqCombined(b), uniqCombined(c)),
