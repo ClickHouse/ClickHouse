@@ -3,7 +3,6 @@
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 
-
 namespace DB
 {
 /// arrayCompact(['a', 'a', 'b', 'b', 'a']) = ['a', 'b', 'a'] - compact arrays
@@ -14,6 +13,7 @@ namespace DB
 
     struct ArrayCompactImpl
     {
+        static bool useDefaultImplementationForConstants() { return true; }
         static bool needBoolean() { return false; }
         static bool needExpression() { return false; }
         static bool needOneArray() { return false; }
@@ -41,40 +41,7 @@ namespace DB
             const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
 
             if (!column)
-            {
-                const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
-
-                if (!column_const)
-                    return false;
-
-                const Element x = column_const->template getValue<Element>();
-                const IColumn::Offsets & offsets = array.getOffsets();
-                auto column_data = ColumnVector<Result>::create(column_const->size());
-                typename ColumnVector<Result>::Container & res_values = column_data->getData();
-                auto column_offsets = ColumnArray::ColumnOffsets::create(offsets.size());
-                IColumn::Offsets & res_offsets = column_offsets->getData();
-
-                size_t res_pos = 0;
-                size_t pos = 0;
-                for (size_t i = 0; i < offsets.size(); ++i)
-                {
-                    if (pos < offsets[i])
-                    {
-                        res_values[res_pos] = x;
-                        for (++pos, ++res_pos; pos < offsets[i]; ++pos)
-                        {
-                            res_values[res_pos++] = x;
-                        }
-                    }
-                    res_offsets[i] = res_pos;
-                }
-                for (size_t i = 0; i < column_data->size() - res_pos; ++i)
-                {
-                    res_values.pop_back();
-                }
-                res_ptr = ColumnArray::create(std::move(column_data), std::move(column_offsets));
-                return true;
-            }
+                return false;
 
             const IColumn::Offsets & offsets = array.getOffsets();
             const typename ColumnVector<Element>::Container & data = column->getData();
@@ -138,4 +105,3 @@ namespace DB
     }
 
 }
-
