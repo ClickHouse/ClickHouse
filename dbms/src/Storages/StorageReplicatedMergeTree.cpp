@@ -5110,13 +5110,16 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             auto src_data_parts_lock = lockParts();
             auto dest_data_parts_lock = dest_table_storage->lockParts();
 
+            std::mutex mutex;
+            DataPartsLock lock(mutex);
+
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, nullptr, &transaction, dest_data_parts_lock);
+                dest_table_storage->renameTempPartAndReplace(part, nullptr, &transaction, lock);
 
             op_results = zookeeper->multi(ops);
 
-            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, dest_data_parts_lock);
-            transaction.commit(&dest_data_parts_lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, lock);
+            transaction.commit(&lock);
         }
 
         PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
