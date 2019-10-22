@@ -79,10 +79,6 @@ CAST({datetime} as DateTime64(18))
 formatDateTime({datetime}, '%C %d %D %e %F %H %I %j %m %M %n %p %R %S %t %T %u %V %w %y %Y %%')
 """.splitlines()
 
-# filter out empty lines and commented out lines
-COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
-functions = list(filter(lambda f: len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None, functions))
-
 # Expanded later to cartesian product of all arguments.
 # NOTE: {N} to be turned into N after str.format() for keys (format string), but not for list of values!
 extra_ops =\
@@ -163,6 +159,10 @@ for funcs, args in extra_ops:
         for func in funcs:
             result_func = func.format(**dict(zip(args_keys, args_vals)))
             functions.append(result_func)
+
+# filter out empty lines and commented out lines
+COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
+functions = list(filter(lambda f: len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None, functions))
 
 if sys.version_info[0] > 2:
     escape_string_codec = 'unicode_escape'
