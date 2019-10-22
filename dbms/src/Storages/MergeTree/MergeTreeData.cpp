@@ -2723,14 +2723,19 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     if (!disk)
         throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
-    for (const auto & part : parts)
-    {
-        if (part->disk->getName() == disk->getName())
-            throw Exception("Part " + part->name + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
-    }
+    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr) {
+        return part_ptr->disk->getName() == disk->getName();
+    }), parts.end());
 
-    if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+    if (!parts.empty())
+    {
+        if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
+            throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+    }
+    else
+    {
+        LOG_DEBUG(log, "No parts of partition " << partition_id << " to move to disk " << disk->getName());
+    }
 }
 
 
@@ -2763,8 +2768,27 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             if (part->disk->getName() == disk->getName())
                 throw Exception("Part " + part->name + " already on volume '" + name + "'", ErrorCodes::UNKNOWN_DISK);
 
-    if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
-        throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr) {
+        for (const auto & disk : volume->disks)
+        {
+            if (part_ptr->disk->getName() == disk->getName())
+            {
+                return true;
+            }
+        }
+        return false;
+    }), parts.end());
+
+
+    if (!parts.empty())
+    {
+        if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
+            throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
+    }
+    else
+    {
+        LOG_DEBUG(log, "No parts of partition " << partition_id << " to move to volume " << volume->getName());
+    }
 }
 
 
