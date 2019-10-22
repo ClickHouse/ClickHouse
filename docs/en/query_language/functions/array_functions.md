@@ -789,5 +789,22 @@ SELECT arrayReverse([1, 2, 3])
 
 Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
-
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
+
+## arrayCompact(arr) {#array_functions-arraycompact}
+
+Takes an array, returns an array with elements that are different between two adjacent elements.
+
+Example:
+
+```sql
+SELECT arrayCompact([1, 2, 2, 3, 2, 3, 3])
+```
+
+```text
+┌─arrayDistinct([1, 2, 2, 3, 2, 3, 3])─┐
+│ [1,2,3,2,3]                          │
+└──────────────────────────────────────┘
+```
+
+## 
