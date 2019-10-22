@@ -631,6 +631,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
             if (database->isTableExist(context, table_name))
             {
+                /// TODO Check structure of table
                 if (create.if_not_exists)
                     return {};
                 else if (create.replace_view)
@@ -716,6 +717,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     if (database->isDictionaryExist(context, dictionary_name))
     {
+        /// TODO Check structure of dictionary
         if (create.if_not_exists)
             return {};
         else
