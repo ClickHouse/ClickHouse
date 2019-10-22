@@ -23,44 +23,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// RAII wrapper for LoadingDispatcher::doLoading() method.
-/// Remove information about loading in destructor
-struct LoadingIdsCleaner
-{
-    bool async;
-    std::mutex & mutex;
-    size_t loading_id;
-    std::unordered_map<size_t, ThreadFromGlobalPool> & loading_ids;
-
-    LoadingIdsCleaner(
-        bool async_,
-        std::mutex & mutex_,
-        size_t loading_id_,
-        std::unordered_map<size_t, ThreadFromGlobalPool> & loading_ids_)
-        : async(async_)
-        , mutex(mutex_)
-        , loading_id(loading_id_)
-        , loading_ids(loading_ids_)
-    {
-    }
-
-    ~LoadingIdsCleaner()
-    {
-        if (async)
-        {
-            std::lock_guard lock(mutex);
-            /// Remove the information about the thread after it finishes.
-            /// Should be done with lock
-            auto it = loading_ids.find(loading_id);
-            if (it != loading_ids.end())
-            {
-                it->second.detach();
-                loading_ids.erase(it);
-            }
-        }
-    }
-};
-
 /// Lock mutex only in async mode
 /// In other case does nothing
 struct LoadingGuardForAsyncLoad
@@ -853,6 +815,18 @@ private:
         return *info;
     }
 
+    /// Removes object loading_id from loading_ids if it present
+    /// in other case do nothin should by done with lock
+    void finishObjectLoading(size_t loading_id, const LoadingGuardForAsyncLoad &)
+    {
+        auto it = loading_ids.find(loading_id);
+        if (it != loading_ids.end())
+        {
+            it->second.detach();
+            loading_ids.erase(it);
+        }
+    }
+
     /// Process loading result
     /// Calculates next update time and process errors
     void processLoadResult(
@@ -917,34 +891,42 @@ private:
         info->forced_to_reload = false;
         if (new_object)
             info->config_changed = false;
+
+        finishObjectLoading(loading_id, lock);
     }
 
 
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool async)
     {
-        /// We should clean loading_id when we finish, even in case of exceptions
-        LoadingIdsCleaner cleaner(async, mutex, loading_id, loading_ids);
+        try
+        {
+            /// We check here if this is exactly the same loading as we planned to perform.
+            /// This check is necessary because the object could be removed or load with another config before this thread even starts.
+            std::optional<Info> info = getSingleObjectInfo(name, loading_id, async);
+            if (!info)
+                return;
 
-        /// We check here if this is exactly the same loading as we planned to perform.
-        /// This check is necessary because the object could be removed or load with another config before this thread even starts.
-        std::optional<Info> info = getSingleObjectInfo(name, loading_id, async);
-        if (!info)
-            return;
+            /// Use `create_function` to perform the actual loading.
+            /// It's much better to do it with `mutex` unlocked because the loading can take a lot of time
+            /// and require access to other objects.
+            auto [new_object, new_exception] = loadOneObject(name, info->object_config, info->config_changed, info->object);
+            if (!new_object && !new_exception)
+                throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
 
-        /// Use `create_function` to perform the actual loading.
-        /// It's much better to do it with `mutex` unlocked because the loading can take a lot of time
-        /// and require access to other objects.
-        auto [new_object, new_exception] = loadOneObject(name, info->object_config, info->config_changed, info->object);
-        if (!new_object && !new_exception)
-            throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
+            /// In synchronus mode we throw exception immediately
+            if (!async && new_exception)
+                std::rethrow_exception(new_exception);
 
-        /// In synchronus mode we throw exception immediately
-        if (!async && new_exception)
-            std::rethrow_exception(new_exception);
-
-        processLoadResult(name, loading_id, info->object, new_object, new_exception, info->error_count, async);
-        event.notify_all();
+            processLoadResult(name, loading_id, info->object, new_object, new_exception, info->error_count, async);
+            event.notify_all();
+        }
+        catch (...)
+        {
+            LoadingGuardForAsyncLoad lock(async, mutex);
+            finishObjectLoading(loading_id, lock);
+            throw;
+        }
     }
 
     void cancelLoading(const String & name)
