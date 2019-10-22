@@ -949,13 +949,14 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, std::vector<String> & full_types)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("LowCardinality data type family must have single argument - type of elements",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<DataTypeLowCardinality>(DataTypeFactory::instance().get(arguments->children[0]));
+    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0], full_types);
+    return nested_type->isLowCardinality() ? nested_type : std::make_shared<DataTypeLowCardinality>(nested_type);
 }
 
 void registerDataTypeLowCardinality(DataTypeFactory & factory)

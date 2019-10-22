@@ -1,15 +1,19 @@
 #include <DataTypes/JSONBinaryConverter.h>
 #include <ext/scope_guard.h>
 #include <Columns/ColumnArray.h>
-#include "JSONBinaryConverter.h"
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_JSON;
+}
+
 JSONBinaryConverter::JSONBinaryConverter(
-    IColumnUnique & key_unique_column, IColumnUnique & relations_unique_column)
-    : JSONBinaryStructTracker(key_unique_column, relations_unique_column)
+    bool is_nullable_, IColumnUnique & key_unique_column, IColumnUnique & relations_unique_column)
+    : JSONBinaryStructTracker(key_unique_column, relations_unique_column), is_nullable(is_nullable_)
 {
 }
 
@@ -57,6 +61,10 @@ size_t JSONBinaryStructTracker::trackDownKey(const JSONBDataMark & data_mark)
 
 bool JSONBinaryConverter::Null()
 {
+    if (!is_nullable)
+        throw Exception("Cannot parse NULL, you can use Nullable(JSONB) data type instead of JSONB data type.",
+            ErrorCodes::CANNOT_PARSE_JSON);
+
     encoder.writeNull();
     trackDownKey(JSONBDataMark::NullMark);
     return true;

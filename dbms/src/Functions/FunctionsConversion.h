@@ -1209,7 +1209,7 @@ public:
             {
                 const IColumn::Offset & offset = column_offsets_data[index - 1];
                 ReadBuffer limit_buffer = LimitReadBuffer(buffer, column_offsets_data[index] - offset, true, "Attempt to read after eof.");
-                JSONBSerialization::deserialize(*smallest_column.get(), JSONBStreamFactory::from<FormatStyle::ESCAPED>(&limit_buffer, settings));
+                JSONBSerialization::deserialize(true, *smallest_column.get(), JSONBStreamFactory::from<FormatStyle::ESCAPED>(&limit_buffer, settings));
 
                 if (!limit_buffer.eof())
                 {

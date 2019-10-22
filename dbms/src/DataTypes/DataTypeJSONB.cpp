@@ -19,6 +19,7 @@
 #include <DataTypes/JSONBSerialization.h>
 #include <DataTypes/JSONBSerializeBinaryBulkState.h>
 #include <DataTypes/JSONBDeserializeBinaryBulkState.h>
+#include "DataTypeJSONB.h"
 
 
 namespace DB
@@ -80,7 +81,8 @@ MutableColumnPtr DataTypeJSONB::createColumn() const
     binary_data_columns[0] = ColumnArray::create(ColumnUInt64::create());
     binary_data_columns[1] = ColumnString::create();
     return ColumnJSONB::create(ColumnUnique<ColumnString>::create(DataTypeString()),
-        ColumnUnique<ColumnArray>::create(DataTypeArray(std::make_shared<DataTypeUInt64>())), std::move(binary_data_columns), false, false, false);
+        ColumnUnique<ColumnArray>::create(DataTypeArray(std::make_shared<DataTypeUInt64>())), std::move(binary_data_columns),
+        false, isNullable(), isLowCardinality());
 }
 
 void DataTypeJSONB::serializeBinary(const Field & field, WriteBuffer & ostr) const
@@ -110,22 +112,22 @@ void DataTypeJSONB::deserializeProtobuf(IColumn &, ProtobufReader &, bool, bool 
 
 void DataTypeJSONB::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::CSV>(&istr, settings));
+    JSONBSerialization::deserialize(isNullable(), column, JSONBStreamFactory::from<FormatStyle::CSV>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::JSON>(&istr, settings));
+    JSONBSerialization::deserialize(isNullable(), column, JSONBStreamFactory::from<FormatStyle::JSON>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::QUOTED>(&istr, settings));
+    JSONBSerialization::deserialize(isNullable(), column, JSONBStreamFactory::from<FormatStyle::QUOTED>(&istr, settings));
 }
 
 void DataTypeJSONB::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    JSONBSerialization::deserialize(column, JSONBStreamFactory::from<FormatStyle::ESCAPED>(&istr, settings));
+    JSONBSerialization::deserialize(isNullable(), column, JSONBStreamFactory::from<FormatStyle::ESCAPED>(&istr, settings));
 }
 
 void DataTypeJSONB::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -252,9 +254,26 @@ void DataTypeJSONB::enumerateStreams(const IDataType::StreamCallback & callback,
     path.pop_back();
 }
 
+const char * DataTypeJSONB::getFamilyName() const
+{
+    if (isNullable())
+        return "Nullable(JSONB)";
+
+    return "JSONB";
+}
+
 void registerDataTypeJSONB(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("JSONB", [&]() { return std::make_shared<DataTypeJSONB>(false, false); });
+    factory.registerDataType("JSONB", [&](const ASTPtr & /*arguments*/, std::vector<String> & full_types)
+    {
+        bool is_nullable = false, is_low_cardinality = false;
+
+        /// Nullable(JSONB)
+        is_nullable = full_types.size() >= 2 && full_types.back() == "JSONB" && Poco::toLower(full_types[full_types.size() - 2]) == "nullable";
+
+        /// TODO: LowCardinality(JSONB), Nullable(LowCardinality(JSONB)) LowCardinality(Nullable(JSONB))
+        return std::make_shared<DataTypeJSONB>(is_nullable, is_low_cardinality);
+    });
 }
 
 }

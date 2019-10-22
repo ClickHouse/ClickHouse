@@ -184,7 +184,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, std::vector<String> & /*full_types*/)
 {
     if (!arguments)
         return std::make_shared<DataTypeDateTime>();

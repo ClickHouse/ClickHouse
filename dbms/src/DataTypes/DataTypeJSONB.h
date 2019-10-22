@@ -20,8 +20,8 @@ public:
 
     Field getDefault() const override { return Null(); }
 
+    const char * getFamilyName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::JSONB; }
-    const char * getFamilyName() const override { return "JSONB"; }
 
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
@@ -65,6 +65,8 @@ public:
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
+    bool isNullable() const override { return is_nullable; }
+    bool isLowCardinality() const override { return is_low_cardinality; }
 
 protected:
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
@@ -88,8 +90,8 @@ protected:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
 private:
-    const bool is_nullable{false};
-    const bool is_low_cardinality{false};
+    bool is_nullable{false};
+    bool is_low_cardinality{false};
 };
 
 }

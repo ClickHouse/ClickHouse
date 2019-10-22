@@ -522,7 +522,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, std::vector<String> & full_types)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -537,11 +537,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     {
         if (const auto * name_and_type_pair = child->as<ASTNameTypePair>())
         {
-            nested_types.emplace_back(DataTypeFactory::instance().get(name_and_type_pair->type));
+            nested_types.emplace_back(DataTypeFactory::instance().get(name_and_type_pair->type, full_types));
             names.emplace_back(name_and_type_pair->name);
         }
         else
-            nested_types.emplace_back(DataTypeFactory::instance().get(child));
+            nested_types.emplace_back(DataTypeFactory::instance().get(child, full_types));
     }
 
     if (names.empty())
@@ -561,9 +561,9 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 void registerDataTypeNested(DataTypeFactory & factory)
 {
     /// Nested(...) data type is just a sugar for Array(Tuple(...))
-    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
+    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments, std::vector<String> & full_types)
     {
-        return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
+        return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments, full_types));
     });
 }
 

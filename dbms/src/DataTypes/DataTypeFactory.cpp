@@ -9,6 +9,7 @@
 #include <Poco/String.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
+#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -32,28 +33,43 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
 
 DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 {
+    std::vector<String> full_types;
+    return get(ast, full_types);
+}
+
+DataTypePtr DataTypeFactory::get(const ASTPtr & ast, std::vector<String> & full_types) const
+{
     if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->parameters)
             throw Exception("Data type cannot have multiple parenthesed parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
-        return get(func->name, func->arguments);
+
+        full_types.push_back(func->name);
+        SCOPE_EXIT({ full_types.pop_back(); });
+        return get(func->name, func->arguments, full_types);
     }
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name, {});
+        full_types.push_back(ident->name);
+        SCOPE_EXIT({ full_types.pop_back(); });
+        return get(ident->name, {}, full_types);
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
     {
         if (lit->value.isNull())
-            return get("Null", {});
+        {
+            full_types.push_back("Null");
+            SCOPE_EXIT({ full_types.pop_back(); });
+            return get("Null", {}, full_types);
+        }
     }
 
     throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
-DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
+DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters, std::vector<String> & full_types) const
 {
     String family_name = getAliasToOrName(family_name_param);
 
@@ -71,10 +87,12 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         else
             low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
 
-        return get("LowCardinality", low_cardinality_params);
+        full_types.push_back("LowCardinality");
+        SCOPE_EXIT({ full_types.pop_back(); });
+        return get("LowCardinality", low_cardinality_params, full_types);
     }
 
-    return findCreatorByName(family_name)(parameters);
+    return findCreatorByName(family_name)(parameters, full_types);
 }
 
 
@@ -107,7 +125,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
         throw Exception("DataTypeFactory: the data type " + name + " has been provided "
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
-    registerDataType(name, [name, creator](const ASTPtr & ast)
+    registerDataType(name, [name, creator](const ASTPtr & ast, std::vector<String> & /*full_types*/)
     {
         if (ast)
             throw Exception("Data type " + name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
@@ -117,7 +135,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
 
 void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
-    registerDataType(family_name, [creator](const ASTPtr & ast)
+    registerDataType(family_name, [creator](const ASTPtr & ast, std::vector<String> & /*full_types*/)
     {
         auto res = creator(ast);
         res.first->setCustomization(std::move(res.second));

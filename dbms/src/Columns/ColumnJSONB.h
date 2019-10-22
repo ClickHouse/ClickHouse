@@ -17,7 +17,8 @@ namespace DB
 {
 
 /** Column for JSON values.
-  */
+ *  It should work the same as removing the String Column of white space in JSON
+ */
 class ColumnJSONB final : public COWHelper<IColumn, ColumnJSONB>
 {
 public:
@@ -73,6 +74,8 @@ public:
 
     MutableColumnPtr cloneEmpty() const override;
 
+    bool isNullable() const override { return binary_json_data.isNullable(); }
+
 private:
     class StructGraph   /// Store JSON data structure information for some rows
     {
@@ -115,6 +118,8 @@ private:
         BinaryJSONData(
             MutableColumns && data_columns_, bool multiple_columns_ = false, bool is_nullable_ = false, bool is_low_cardinality_ = false);
 
+        bool isNullable() { return is_nullable; }
+        bool isNullable() const { return is_nullable; }
         bool isMultipleColumns() { return multiple_columns; }
         bool isMultipleColumns() const { return multiple_columns; }
         void setMultipleColumns(bool multiple_columns_) { multiple_columns = multiple_columns_; }

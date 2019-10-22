@@ -1,16 +1,15 @@
 #pragma once
 
-#include "../Core/Types.h"
-#include "../../../libs/libcommon/include/ext/scope_guard.h"
-#include "../../../contrib/rapidjson/include/rapidjson/reader.h"
-#include "../IO/ReadBuffer.h"
-#include "DataTypesNumber.h"
-#include "JSONBinaryConverter.h"
-#include "../Columns/ColumnJSONB.h"
-#include "../Columns/ColumnString.h"
-#include "../Columns/JSONBDataMark.h"
-#include "../../../contrib/rapidjson/include/rapidjson/writer.h"
-#include "../../../contrib/fleece/Fleece/Dict.hh"
+#include <Core/Types.h>
+#include <ext/scope_guard.h>
+#include <rapidjson/reader.h>
+#include <IO/ReadBuffer.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/JSONBinaryConverter.h>
+#include <Columns/ColumnJSONB.h>
+#include <Columns/ColumnString.h>
+#include <Columns/JSONBDataMark.h>
+#include <rapidjson/writer.h>
 
 namespace DB
 {
@@ -25,16 +24,17 @@ struct JSONBSerialization
 {
 public:
     template <typename InputStream>
-    static void deserialize(IColumn & column_, const std::unique_ptr<InputStream> & input_stream)
+    static void deserialize(bool is_nullable, IColumn & column_, const std::unique_ptr<InputStream> & input_stream)
     {
         auto & column_json_binary = static_cast<ColumnJSONB &>(column_);
-        JSONBinaryConverter binary_converter(column_json_binary.getKeysDictionary(), column_json_binary.getRelationsDictionary());
+        JSONBinaryConverter binary_converter(is_nullable, column_json_binary.getKeysDictionary(), column_json_binary.getRelationsDictionary());
 
         input_stream->skipQuoted();
-        SCOPE_EXIT({ input_stream->skipQuoted(); });
-        if (!rapidjson::Reader{}.Parse<rapidjson::kParseStopWhenDoneFlag>(*input_stream.get(), binary_converter))
-            throw Exception("Invalid JSON characters.", ErrorCodes::CANNOT_PARSE_JSON);
+        rapidjson::EncodedInputStream<rapidjson::UTF8<>, InputStream> is(*input_stream);
+        if (!rapidjson::Reader{}.Parse<rapidjson::kParseStopWhenDoneFlag>(is, binary_converter))
+            throw Exception("Cannot parse JSON, invalid JSON characters.", ErrorCodes::CANNOT_PARSE_JSON);
 
+        input_stream->skipQuoted();;
         binary_converter.finalize(column_json_binary.getRelationsBinary(), column_json_binary.getDataBinary());
     }
 
@@ -50,19 +50,19 @@ private:
     static void toJSONString(const ColumnJSONB & column, size_t row_num, RapidWrite & writer)
     {
         if (!column.isMultipleColumn())
-            toJSONString(column.getKeysDictionary(), *checkAndGetColumn<ColumnString>(column.getDataBinary()), row_num, writer);
+            toJSONString(column.getKeysDictionary(), *checkAndGetColumn<ColumnString>(column.getDataBinary()), row_num, writer, column.isNullable());
     }
 
     template <typename RapidWrite>
-    static void toJSONString(const IColumnUnique & keys, const ColumnString & binary_column, size_t row_num, RapidWrite & writer)
+    static void toJSONString(const IColumnUnique & keys, const ColumnString & binary_column, size_t row_num, RapidWrite & writer, bool is_nullable)
     {
         const auto & row_binary_data = binary_column.getDataAt(row_num);
         toJSONString(*checkAndGetColumn<ColumnString>(*keys.getNestedColumn()),
-            *fleece::Value::fromData(fleece::slice(row_binary_data.data, row_binary_data.size)), writer);
+            *fleece::Value::fromData(fleece::slice(row_binary_data.data, row_binary_data.size)), writer, is_nullable);
     }
 
     template <typename RapidWrite>
-    static void toJSONString(const ColumnString & keys, const fleece::Value & fleece_value, RapidWrite & writer)
+    static void toJSONString(const ColumnString & keys, const fleece::Value & fleece_value, RapidWrite & writer, bool is_nullable)
     {
         const auto & toJSONStringForDict = [&](const fleece::Value & dict_fleece_value)
         {
@@ -77,7 +77,7 @@ private:
                 const auto & key = dict_member_iterator.key();
                 const auto & string_key = keys.getDataAt(UInt64(key->asInt()) - UInt64(JSONBDataMark::End));
                 writer.Key(string_key.data, string_key.size);
-                toJSONString(keys, *dict_member_iterator.value(), writer);
+                toJSONString(keys, *dict_member_iterator.value(), writer, is_nullable);
             }
             writer.EndObject();
         };
@@ -107,8 +107,15 @@ private:
             case fleece::valueType::kString: toJSONStringForString(fleece_value); break;
             case fleece::valueType::kBoolean: writer.Bool(fleece_value.asBool()); break;
             case fleece::valueType::kNull:
+            {
+                if (!is_nullable)
+                    throw Exception("Cannot parse NULL, you can use Nullable(JSONB) instead of JSONB.", ErrorCodes::CANNOT_PARSE_JSON);
+
+                writer.Null();
+                break;
+            }
             case fleece::valueType::kData:
-            case fleece::valueType::kArray: throw Exception("", ErrorCodes::CANNOT_PARSE_JSON);
+            case fleece::valueType::kArray: throw Exception("Cannot support JSONArray.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 };

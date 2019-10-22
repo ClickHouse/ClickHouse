@@ -339,7 +339,7 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, std::vector<String> & full_types)
 {
     String function_name;
     AggregateFunctionPtr function;
@@ -383,7 +383,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             ErrorCodes::BAD_ARGUMENTS);
 
     for (size_t i = 1; i < arguments->children.size(); ++i)
-        argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
+        argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i], full_types));
 
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);

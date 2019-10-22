@@ -15,6 +15,7 @@
 #endif
 #include <Fleece/Encoder.hh>
 #include <Fleece/SharedKeys.hh>
+#include <Fleece/Dict.hh>
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif
@@ -48,13 +49,14 @@ class JSONBinaryConverter : JSONBinaryStructTracker
 public:
     typedef char Ch;
 
-    JSONBinaryConverter(IColumnUnique & key_unique_column, IColumnUnique & relations_unique_column);
+    JSONBinaryConverter(bool is_nullable_, IColumnUnique & key_unique_column, IColumnUnique & relations_unique_column);
 
     void finalizeRelations(IColumn & relations_data_column);
 
     void finalize(IColumn & relations_data_column, IColumn & binary_data_column);
 
 private:
+    bool is_nullable{false};
     fleece::Encoder encoder;
 
 public:

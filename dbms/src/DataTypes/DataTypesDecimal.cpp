@@ -223,7 +223,7 @@ DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
     return std::make_shared<DataTypeDecimal<Decimal128>>(precision_value, scale_value);
 }
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, std::vector<String> & /*full_types*/)
 {
     if (!arguments || arguments->children.size() != 2)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
@@ -243,7 +243,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 }
 
 template <typename T>
-static DataTypePtr createExact(const ASTPtr & arguments)
+static DataTypePtr createExact(const ASTPtr & arguments, std::vector<String> & /*full_types*/)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",

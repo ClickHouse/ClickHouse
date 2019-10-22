@@ -27,7 +27,7 @@ namespace
 {
 using UniqueValueAndPos = std::tuple<ColumnPtr, ColumnPtr>;
 
-size_t getMaxValue(const ColumnUInt64::Container &values)
+size_t getMaxValue(const ColumnUInt64::Container & values)
 {
     UInt64 max_value = values[0];
     for (size_t i = 1; i < values.size(); ++i)
@@ -76,7 +76,8 @@ UniqueValueAndPos collectUniqueValueAndMarkPos(const IColumn & column, size_t of
 }
 
 template<size_t skip_number>
-ColumnPtr indexAndBuildRelationsPositions(const ColumnPtr & relations_, const ColumnPtr & index_, const ColumnArray & origin_positions)
+ColumnPtr indexAndBuildRelationsPositions(
+    const ColumnPtr & relations_, const ColumnPtr & index_, const ColumnArray & origin_positions, size_t offset, size_t limit)
 {
     auto res = origin_positions.cloneEmpty();
     const auto & index = checkAndGetColumn<ColumnUInt64>(*index_);
@@ -111,7 +112,12 @@ ColumnPtr indexAndBuildRelationsPositions(const ColumnPtr & relations_, const Co
         if (!callForType(UInt8()) && !callForType(UInt16()) && !callForType(UInt32()) && !callForType(UInt64()))
             throw Exception("LOGICAL ERROR: cannot call for type.", ErrorCodes::LOGICAL_ERROR);
 
-        new_relations_positions->getOffsets().assign(origin_positions.getOffsets().begin(), origin_positions.getOffsets().end());
+        auto & offsets = new_relations_positions->getOffsets();
+
+        offsets.resize(limit);
+        const auto & first_offset = origin_positions.getOffsets()[offset - 1];
+        for (size_t i = 0; i < limit; ++i)
+            offsets[i] = origin_positions.getOffsets()[offset + i] - first_offset;
     }
 
     return std::move(res);
@@ -145,16 +151,16 @@ void ColumnJSONB::insertDefault()
 
 void ColumnJSONB::insert(const Field & field)
 {
-    const String &s = DB::get<const String &>(field);
+    const String & s = DB::get<const String &>(field);
     insertData(s.data(), s.size());
 }
 
 void ColumnJSONB::insertData(const char * pos, size_t length)
 {
+    /// TODO:
     FormatSettings settings{};
     ReadBufferFromMemory buffer(pos, length);
-    /// TODO:
-    JSONBSerialization::deserialize(*this, JSONBStreamFactory::from<FormatStyle::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
+    JSONBSerialization::deserialize(isNullable(), *this, JSONBStreamFactory::from<FormatStyle::ESCAPED>(static_cast<ReadBuffer *>(&buffer), settings));
 }
 
 void ColumnJSONB::popBack(size_t n)
@@ -166,16 +172,8 @@ void ColumnJSONB::popBack(size_t n)
 
 void ColumnJSONB::insertFrom(const IColumn & src, size_t row_num)
 {
+    /// TODO: native append insert
     insertRangeFrom(src, row_num, 1);
-//    const auto & source_column = typeid_cast<const ColumnJSONB *>(&src);
-//    const auto & relations_binary = checkAndGetColumn<ColumnArray>(source_column->getRelationsBinary());
-//
-//    size_t end = relations_binary->getOffsets()[row_num];
-//    size_t offset = relations_binary->getOffsets()[row_num - 1];
-//    struct_graph.insertRelationsFrom(source_column->getRelationsDictionary(), relations_binary->getData(), offset, end - offset);
-//
-//    if (isBinary() && source_column->isBinary())
-//        getDataBinary().insertFrom(source_column->getDataBinary(), row_num);
 }
 
 void ColumnJSONB::insertRangeFrom(const IColumn & src, size_t offset, size_t limit)
@@ -268,30 +266,28 @@ ColumnPtr ColumnJSONB::replicate(const IColumn::Offsets & offsets) const
         binary_data_columns, isMultipleColumn(), isNullable());
 }
 
-std::vector<MutableColumnPtr> ColumnJSONB::scatter(IColumn::ColumnIndex /*num_columns*/, const IColumn::Selector & /*selector*/) const
+std::vector<MutableColumnPtr> ColumnJSONB::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
 {
-    throw Exception("", ErrorCodes::NOT_IMPLEMENTED);
-//    ColumnJSONB::MutablePtr indexed_column = ColumnJSONB::create();
-//
-//    indexed_column->data_columns.reserve(data_columns.size());
-//    indexed_column->mark_columns.reserve(mark_columns.size());
-//    indexed_column->info = info->clone(indexed_column.get(), [&](IColumn * need_permute_column, bool is_mark)
-//    {
-//        if (is_mark)
-//        {
-//            ColumnPtr permuted_mark_column = need_permute_column->scatter(num_columns, selector);
-//            indexed_column->mark_columns.push_back(permuted_mark_column);
-//            return indexed_column->mark_columns.back().get();
-//        }
-//        else
-//        {
-//            ColumnPtr permuted_data_column = need_permute_column->scatter(num_columns, selector);
-//            indexed_column->data_columns.push_back(permuted_data_column);
-//            return indexed_column->data_columns.back().get();
-//        }
-//    });
-//
-//    return indexed_column;
+    const auto & data_columns = binary_json_data.getAllDataColumns();
+    std::vector<MutableColumns> scattered_tuple_elements(data_columns.size());
+
+    for (size_t index = 0; index < data_columns.size(); ++index)
+        scattered_tuple_elements[index] = data_columns[index]->scatter(num_columns, selector);
+
+    MutableColumns res(num_columns);
+    for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
+    {
+        Columns new_columns(data_columns.size());
+        for (size_t index = 0; index < data_columns.size(); ++index)
+            new_columns[index] = std::move(scattered_tuple_elements[index][scattered_idx]);
+
+        MutableColumnPtr key_dictionary = std::move(getKeysDictionary()).mutate();
+        MutableColumnPtr relation_dictionary = std::move(getRelationsDictionary()).mutate();
+        res[scattered_idx] = ColumnJSONB::create(
+            std::move(key_dictionary), std::move(relation_dictionary), new_columns, isMultipleColumn(), isNullable());
+    }
+
+    return res;
 }
 
 void ColumnJSONB::gather(ColumnGathererStream & /*gatherer_stream*/)
@@ -304,7 +300,7 @@ void ColumnJSONB::getExtremes(Field & /*min*/, Field & /*max*/) const
     throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-const char *ColumnJSONB::deserializeAndInsertFromArena(const char * /*pos*/)
+const char * ColumnJSONB::deserializeAndInsertFromArena(const char * /*pos*/)
 {
     throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -348,7 +344,7 @@ ColumnPtr ColumnJSONB::StructGraph::insertKeysDictionaryFrom(const IColumnUnique
 
     const auto & need_insert_keys = src.getNestedColumn()->index(*unique_positions, 0);
     auto new_keys_positions = getKeysAsUniqueColumn().uniqueInsertRangeFrom(*need_insert_keys, 0, need_insert_keys->size());
-    return indexAndBuildRelationsPositions<max_mark_size>(std::move(new_keys_positions), map_unique_positions, positions);
+    return indexAndBuildRelationsPositions<max_mark_size>(std::move(new_keys_positions), map_unique_positions, positions, 0, positions.size());
 }
 
 ColumnPtr ColumnJSONB::StructGraph::insertRelationsFrom(
@@ -362,7 +358,7 @@ ColumnPtr ColumnJSONB::StructGraph::insertRelationsFrom(
     const auto & need_insert_relations = relations_src.getNestedColumn()->index(*unique_positions, 0);
     auto new_relations_data = insertKeysDictionaryFrom(keys_src, *checkAndGetColumn<ColumnArray>(*need_insert_relations));
     auto new_relations_positions = getRelationsAsUniqueColumn().uniqueInsertRangeFrom(*new_relations_data, 0, new_relations_data->size());
-    return indexAndBuildRelationsPositions<0>(std::move(new_relations_positions), map_unique_positions, positions);
+    return indexAndBuildRelationsPositions<0>(std::move(new_relations_positions), map_unique_positions, positions, offset, limit);
 }
 
 IColumn & ColumnJSONB::BinaryJSONData::getBinaryColumn()

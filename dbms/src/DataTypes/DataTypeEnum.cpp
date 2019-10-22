@@ -364,7 +364,7 @@ static void checkASTStructure(const ASTPtr & child)
 }
 
 template <typename DataTypeEnum>
-static DataTypePtr createExact(const ASTPtr & arguments)
+static DataTypePtr createExact(const ASTPtr & arguments, std::vector<String> & /*full_types*/)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -403,7 +403,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
     return std::make_shared<DataTypeEnum>(values);
 }
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, std::vector<String> & full_types)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -424,10 +424,10 @@ static DataTypePtr create(const ASTPtr & arguments)
         Int64 value = value_literal->value.get<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
-            return createExact<DataTypeEnum16>(arguments);
+            return createExact<DataTypeEnum16>(arguments, full_types);
     }
 
-    return createExact<DataTypeEnum8>(arguments);
+    return createExact<DataTypeEnum8>(arguments, full_types);
 }
 
 void registerDataTypeEnum(DataTypeFactory & factory)

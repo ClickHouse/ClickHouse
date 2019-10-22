@@ -19,7 +19,9 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /** Creates a data type by name of data type family and parameters.
   */
-class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>
+using FullTypesStack = std::vector<String>;
+using DataTypeCreatorFunc = std::function<DataTypePtr(const ASTPtr &, FullTypesStack &)>;
+class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAliases<DataTypeCreatorFunc>
 {
 private:
     using SimpleCreator = std::function<DataTypePtr()>;
@@ -31,8 +33,9 @@ public:
     static DataTypeFactory & instance();
 
     DataTypePtr get(const String & full_name) const;
-    DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
+    DataTypePtr get(const String & family_name, const ASTPtr & parameters, std::vector<String> & full_types) const;
     DataTypePtr get(const ASTPtr & ast) const;
+    DataTypePtr get(const ASTPtr & ast, std::vector<String> & full_types) const;
 
     /// Register a type family by its name.
     void registerDataType(const String & family_name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);

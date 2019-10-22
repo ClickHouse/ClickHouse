@@ -279,7 +279,7 @@ bool DataTypeFixedString::equals(const IDataType & rhs) const
 }
 
 
-static DataTypePtr create(const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments, std::vector<String> & /*full_types*/)
 {
     if (!arguments || arguments->children.size() != 1)
         throw Exception("FixedString data type family must have exactly one argument - size in bytes", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
