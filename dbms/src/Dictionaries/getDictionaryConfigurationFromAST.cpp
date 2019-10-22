@@ -28,8 +28,11 @@ namespace ErrorCodes
 namespace
 {
 
-String unescapeString(const String & string)
+/// Get value from field and convert it to string.
+/// Also remove quotes from strings.
+String getUnescapedFieldString(const Field & field)
 {
+    String string = applyVisitor(FieldVisitorToString(), field);
     if (!string.empty() && string.front() == '\'' && string.back() == '\'')
         return string.substr(1, string.size() - 2);
     return string;
@@ -324,8 +327,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (auto literal = pair->second->as<const ASTLiteral>(); literal)
         {
-            String str_literal = applyVisitor(FieldVisitorToString(), literal->value);
-            AutoPtr<Text> value(doc->createTextNode(unescapeString(str_literal)));
+            AutoPtr<Text> value(doc->createTextNode(getUnescapedFieldString(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (auto list = pair->second->as<const ASTExpressionList>(); list)

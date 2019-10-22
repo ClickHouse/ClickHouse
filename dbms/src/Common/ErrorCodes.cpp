@@ -155,7 +155,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_FUNCTION_ELEMENT_FOR_AGGREGATE = 147;
     extern const int NOT_FOUND_RELATION_ELEMENT_FOR_CONDITION = 148;
     extern const int NOT_FOUND_RHS_ELEMENT_FOR_CONDITION = 149;
-    extern const int NO_ATTRIBUTES_LISTED = 150;
+    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED = 150;
     extern const int INDEX_OF_COLUMN_IN_SORT_CLAUSE_IS_OUT_OF_RANGE = 151;
     extern const int UNKNOWN_DIRECTION_OF_SORTING = 152;
     extern const int ILLEGAL_DIVISION = 153;
@@ -361,7 +361,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED = 384;
     extern const int MULTIPLE_STREAMS_REQUIRED = 385;
     extern const int NO_COMMON_TYPE = 386;
-    extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS = 387;
+    extern const int DICTIONARY_ALREADY_EXISTS = 387;
     extern const int CANNOT_ASSIGN_OPTIMIZE = 388;
     extern const int INSERT_WAS_DEDUPLICATED = 389;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY = 390;
@@ -460,10 +460,8 @@ namespace ErrorCodes
     extern const int TOO_MANY_REDIRECTS = 483;
     extern const int INTERNAL_REDIS_ERROR = 484;
     extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 485;
-    extern const int DICTIONARY_ALREADY_EXISTS = 486;
-    extern const int UNKNOWN_DICTIONARY = 487;
-    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED = 488;
-    extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
+    extern const int UNKNOWN_DICTIONARY = 486;
+    extern const int INCORRECT_DICTIONARY_DEFINITION = 487;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

@@ -192,7 +192,7 @@ struct ContextShared
     bool shutdown_called = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> table -> (mutex, counter), counter: how many threads are running a query on the table at the same time
+    /// database -> object -> (mutex, counter), counter: how many threads are running a query on the table at the same time
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
     /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.

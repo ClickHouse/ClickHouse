@@ -165,28 +165,35 @@ std::pair<String, StoragePtr> createTableFromAST(
 String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 {
     ASTPtr query_clone = query->clone();
-    auto & create = query_clone->as<ASTCreateQuery &>();
+    auto * create = query_clone->as<ASTCreateQuery>();
 
-    if (!create.is_dictionary)
-        create.attach = true;
+    if (!create)
+    {
+        std::ostringstream query_stream;
+        formatAST(*create, query_stream, true);
+        throw Exception("Query '" + query_stream.str() + "' is not CREATE query", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (!create->is_dictionary)
+        create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    create.database.clear();
-    create.as_database.clear();
-    create.as_table.clear();
-    create.if_not_exists = false;
-    create.is_populate = false;
-    create.replace_view = false;
+    create->database.clear();
+    create->as_database.clear();
+    create->as_table.clear();
+    create->if_not_exists = false;
+    create->is_populate = false;
+    create->replace_view = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!create.is_view && !create.is_materialized_view && !create.is_live_view)
-        create.select = nullptr;
+    if (!create->is_view && !create->is_materialized_view && !create->is_live_view)
+        create->select = nullptr;
 
-    create.format = nullptr;
-    create.out_file = nullptr;
+    create->format = nullptr;
+    create->out_file = nullptr;
 
     std::ostringstream statement_stream;
-    formatAST(create, statement_stream, false);
+    formatAST(*create, statement_stream, false);
     statement_stream << '\n';
     return statement_stream.str();
 }
@@ -260,18 +267,14 @@ void DatabaseOnDisk::createDictionary(
 {
     const auto & settings = context.getSettingsRef();
 
-    /// Create a file with metadata if necessary - if the query is not ATTACH.
-    /// Write the query of `ATTACH table` to it.
-
     /** The code is based on the assumption that all threads share the same order of operations
       * - creating the .sql.tmp file;
-      * - adding a table to `tables`;
+      * - adding a dictionary to `dictionaries`;
       * - rename .sql.tmp to .sql.
       */
 
-    /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
+    /// A race condition would be possible if a dictionary with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
-
     if (database.isDictionaryExist(context, dictionary_name))
         throw Exception("Dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
@@ -297,7 +300,7 @@ void DatabaseOnDisk::createDictionary(
 
     try
     {
-        /// Do not load it now
+        /// Do not load it now because we want more strict loading
         database.attachDictionary(dictionary_name, context, false);
         /// Load dictionary
         bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
@@ -305,7 +308,7 @@ void DatabaseOnDisk::createDictionary(
         context.getExternalDictionariesLoader().addDictionaryWithConfig(
             dict_name, database.getDatabaseName(), query->as<const ASTCreateQuery &>(), !lazy_load);
 
-        /// If it was ATTACH query and file with table metadata already exist
+        /// If it was ATTACH query and file with dictionary metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
         Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
 
@@ -354,7 +357,7 @@ void DatabaseOnDisk::removeDictionary(
     IDatabase & database,
     const Context & context,
     const String & dictionary_name,
-    Poco::Logger * log)
+    Poco::Logger * /*log*/)
 {
     database.detachDictionary(dictionary_name, context);
 
@@ -366,15 +369,7 @@ void DatabaseOnDisk::removeDictionary(
     }
     catch (...)
     {
-        try
-        {
-            Poco::File(dictionary_metadata_path + ".tmp_drop").remove();
-            return;
-        }
-        catch (...)
-        {
-            LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
-        }
+        /// If it's not possible for some reason
         database.attachDictionary(dictionary_name, context);
         throw;
     }
