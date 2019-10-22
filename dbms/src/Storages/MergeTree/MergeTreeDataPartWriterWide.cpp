@@ -89,7 +89,7 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     };
 }
 
-size_t MergeTreeDataPartWriterWide::write(const Block & block, 
+IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(const Block & block, 
     const IColumn::Permutation * permutation, size_t from_mark, size_t index_offset,
     const MergeTreeIndexGranularity & index_granularity,
     const Block & primary_key_block, const Block & skip_indexes_block)
@@ -109,7 +109,7 @@ size_t MergeTreeDataPartWriterWide::write(const Block & block,
     }
 
     WrittenOffsetColumns offset_columns;
-    size_t new_index_offset = 0;
+    MarkWithOffset result;
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -121,27 +121,27 @@ size_t MergeTreeDataPartWriterWide::write(const Block & block,
             if (primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, primary_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, primary_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
             }
             else if (skip_indexes_block.has(it->name))
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, index_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, index_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *permuted_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, *permuted_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
             }
         }
         else
         {
-            std::tie(std::ignore, new_index_offset) = writeColumn(column.name, *column.type, *column.column, index_granularity,  offset_columns, false, serialization_states[i], from_mark, index_offset);
+            result = writeColumn(column.name, *column.type, *column.column, index_granularity,  offset_columns, false, serialization_states[i], from_mark, index_offset);
         }
     }
 
-    return new_index_offset;
+    return result;
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(
@@ -287,7 +287,7 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     return std::make_pair(current_column_mark, current_row - total_rows);
 }
 
-void MergeTreeDataPartWriterWide::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark)
+void MergeTreeDataPartWriterWide::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
 {
     const auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -313,10 +313,13 @@ void MergeTreeDataPartWriterWide::finalize(IMergeTreeDataPart::Checksums & check
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
     {
         it->second->finalize();
+        if (sync)
+            it->second->sync();
         it->second->addToChecksums(checksums);
     }
 
     column_streams.clear();
+    serialization_states.clear();
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

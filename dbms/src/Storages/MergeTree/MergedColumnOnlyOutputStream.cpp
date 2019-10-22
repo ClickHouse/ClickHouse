@@ -22,23 +22,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     header(header_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns_)
 {
-    serialization_states.reserve(header.columns());
-    WrittenOffsetColumns tmp_offset_columns;
-    IDataType::SerializeBinaryBulkSettings settings;
-
-    for (const auto & column_name : header.getNames())
-    {
-        const auto & col = header.getByName(column_name);
-
-        const auto columns = storage.getColumns();
-        /// FIXME
-        // addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
-        serialization_states.emplace_back(nullptr);
-        /// FIXME
-        // settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
-        col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
-    }
-
+    writer = data_part_->getWriter(header.getNamesAndTypesList(), default_codec_, writer_settings);
     initSkipIndices();
 }
 
@@ -63,15 +47,11 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!rows)
         return;
 
-    size_t new_index_offset = 0;
-    size_t new_current_mark = 0;
-    WrittenOffsetColumns offset_columns = already_written_offset_columns;
-    for (size_t i = 0; i < header.columns(); ++i)
-    {
-        /// FIXME
-        // const ColumnWithTypeAndName & column = block.getByName(header.getByPosition(i).name);
-        // std::tie(new_current_mark, new_index_offset) = writeColumn(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_mark);
-    }
+    /// FIXME skip_offsets
+    UNUSED(skip_offsets);
+    UNUSED(already_written_offset_columns);
+
+    auto [new_index_offset, new_current_mark] = writer->write(block, nullptr, current_mark, index_offset, index_granularity);
 
     /// Should be written before index offset update, because we calculate,
     /// indices of currently written granules
@@ -112,23 +92,10 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 
     MergeTreeData::DataPart::Checksums checksums;
 
-    /// FIXME
+    bool write_final_mark = with_final_mark && (index_offset != 0 || current_mark != 0);
+    writer->finalize(checksums, write_final_mark, sync);
 
-    UNUSED(sync);
-
-    // for (auto & column_stream : column_streams)
-    // {
-    //     column_stream.second->finalize();
-    //     if (sync)
-    //         column_stream.second->sync();
-
-    //     column_stream.second->addToChecksums(checksums);
-    // }
-
-    // finishSkipIndicesSerialization(checksums);
-
-    // column_streams.clear();
-    // serialization_states.clear();
+    finishSkipIndicesSerialization(checksums);
 
     return checksums;
 }

@@ -19,6 +19,7 @@ class IMergeTreeDataPartWriter
 {
 public:
     using WrittenOffsetColumns = std::set<std::string>;
+    using MarkWithOffset = std::pair<size_t, size_t>;
 
     struct ColumnStream
     {
@@ -65,13 +66,13 @@ public:
         const CompressionCodecPtr & default_codec,
         const WriterSettings & settings);
 
-    virtual size_t write(
+    virtual MarkWithOffset write(
         const Block & block, const IColumn::Permutation * permutation,
         size_t from_mark, size_t offset, const MergeTreeIndexGranularity & index_granularity,
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
 
-    virtual void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark) = 0;
+    virtual void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) = 0;
 
     virtual ~IMergeTreeDataPartWriter();
 

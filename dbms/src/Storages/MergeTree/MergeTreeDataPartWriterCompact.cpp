@@ -32,7 +32,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         settings.aio_threshold);
 }
 
-size_t MergeTreeDataPartWriterCompact::write(
+IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     size_t from_mark, size_t index_offset,
     const MergeTreeIndexGranularity & index_granularity,
@@ -64,23 +64,30 @@ size_t MergeTreeDataPartWriterCompact::write(
 
     std::cerr << "(MergeTreeDataPartWriterCompact::write) total_rows: " << total_rows << "\n";
 
+    UNUSED(index_offset);
+
     while (current_row < total_rows)
     {
         std::cerr << "(MergeTreeDataPartWriterCompact::write) current_row: " << current_row << "\n";
+        
 
         bool write_marks = true;
-        size_t rows_to_write;
-        if (current_row == 0 && index_offset != 0)
-        {
-            rows_to_write = index_offset;
-            write_marks = false;
-        }
-        else
-        {
-            rows_to_write = index_granularity.getMarkRows(current_mark);
-        }
+        size_t rows_to_write = std::min(total_rows, index_granularity.getMarkRows(current_mark));
+        // if (current_row == 0 && index_offset != 0)
+        // {
+        //     rows_to_write = index_offset;
+        //     write_marks = false;
+        // }
+        // else
+        // {
+        //     rows_to_write = index_granularity.getMarkRows(current_mark);
+        // }
 
         std::cerr << "(MergeTreeDataPartWriterCompact::write) rows_to_write: " << rows_to_write << "\n";
+
+        /// There could already be enough data to compress into the new block.
+         if (stream->compressed.offset() >= settings.min_compress_block_size)
+             stream->compressed.next();
 
         if (write_marks)
         {
@@ -100,8 +107,7 @@ size_t MergeTreeDataPartWriterCompact::write(
         }
     }
 
-    /// We always write end granule for block in Compact parts.
-    return 0;
+    return {current_mark, total_rows - current_row};
 }
 
 size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows)
@@ -120,7 +126,7 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     return from_row + number_of_rows;
 }
 
-void MergeTreeDataPartWriterCompact::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark)
+void MergeTreeDataPartWriterCompact::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
 {
     if (write_final_mark)
     {
@@ -133,6 +139,8 @@ void MergeTreeDataPartWriterCompact::finalize(IMergeTreeDataPart::Checksums & ch
     }
 
     stream->finalize();
+    if (sync)
+        stream->sync();
     stream->addToChecksums(checksums);
     stream.reset();
 }
