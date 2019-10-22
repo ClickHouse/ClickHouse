@@ -604,41 +604,41 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
 
     if (new_ttl_table_ast)
     {
-        ASTPtr new_delete_ttl_table_ast;
+        bool seen_delete_ttl = false;
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
         {
             ASTTTLElement & ttl_element = static_cast<ASTTTLElement &>(*ttl_element_ptr);
             if (ttl_element.destination_type == ASTTTLElement::DELETE)
             {
-                if (new_delete_ttl_table_ast)
+                if (seen_delete_ttl)
                 {
                     throw Exception("Too many DELETE ttls", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
-                new_delete_ttl_table_ast = ttl_element.children[0];
+
+                auto new_ttl_table_entry = create_ttl_entry(ttl_element.children[0]);
+                if (!only_check)
+                {
+                    ttl_table_ast = ttl_element.children[0];
+                    ttl_table_entry = new_ttl_table_entry;
+                }
+
+                seen_delete_ttl = true;
             }
             else
             {
                 auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
                 if (!only_check)
                 {
-                    std::ostringstream expression_text_stream;
-                    IAST::FormatSettings settings(expression_text_stream, true);
-                    ttl_element.children[0]->format(settings);
-                    move_ttl_entries_by_name.emplace(expression_text_stream.str(), new_ttl_entry);
-                    /// FIXME: Save TTLElement type and destination somehow.
+                    MoveTTLEntry entry = { new_ttl_entry.expression, new_ttl_entry.result_column, ttl_element.destination_type, ttl_element.destination_name };
+                    move_ttl_entries_by_name.emplace(new_ttl_entry.result_column, entry);
                 }
             }
-        }
-
-        auto new_ttl_table_entry = create_ttl_entry(new_delete_ttl_table_ast);
-        if (!only_check)
-        {
-            ttl_table_ast = new_delete_ttl_table_ast;
-            ttl_table_entry = new_ttl_table_entry;
         }
     }
 
     // FIXME: In case of ALTER one need to clean up previous values to actually set expression but not merge them.
+    // TODO: Check if ALTER MODIFY replaces TTL
+    // TODO: Check if ALTER MODIFY COLUMN + TTL works well (changing of name works with ttl)
 }
 
 
