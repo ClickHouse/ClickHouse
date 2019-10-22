@@ -369,7 +369,7 @@ void DatabaseOnDisk::removeDictionary(
     }
     catch (...)
     {
-        /// If it's not possible for some reason
+        /// If remove was not possible for some reason
         database.attachDictionary(dictionary_name, context);
         throw;
     }
