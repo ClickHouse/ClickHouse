@@ -55,18 +55,6 @@ namespace
 {
 
 
-String createDictionaryFromAST(
-    ASTCreateQuery ast_create_query,
-    const String & database_name)
-{
-    ast_create_query.database = database_name;
-
-    if (!ast_create_query.dictionary_attributes_list)
-        throw Exception("Missing definition of dictionary attributes.", ErrorCodes::EMPTY_LIST_OF_ATTRIBUTES_PASSED);
-
-    return ast_create_query.table;
-}
-
 void loadObject(
     Context & context,
     const ASTCreateQuery & query,
@@ -78,7 +66,7 @@ try
 {
     if (query.is_dictionary)
     {
-        String dictionary_name = createDictionaryFromAST(query, database_name);
+        String dictionary_name = query.table;
         database.attachDictionary(dictionary_name, context, false);
     }
     else
@@ -130,7 +118,7 @@ void DatabaseOrdinary::loadStoredObjects(
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
-    using FileNames = std::map<std::string, ASTCreateQuery>;
+    using FileNames = std::map<std::string, ASTPtr>;
     FileNames file_names;
 
     size_t total_dictionaries = 0;
@@ -142,9 +130,9 @@ void DatabaseOrdinary::loadStoredObjects(
             auto ast = parseCreateQueryFromMetadataFile(full_path, log);
             if (ast)
             {
-                auto create_query = ast->as<const ASTCreateQuery &>();
-                file_names[file_name] = create_query;
-                total_dictionaries += create_query.is_dictionary;
+                auto * create_query = ast->as<ASTCreateQuery>();
+                file_names[file_name] = ast;
+                total_dictionaries += create_query->is_dictionary;
             }
         }
         catch (const Exception & e)
@@ -179,7 +167,7 @@ void DatabaseOrdinary::loadStoredObjects(
 
     for (const auto & name_with_query : file_names)
     {
-        pool.scheduleOrThrowOnError([&]() { loadOneObject(name_with_query.second); });
+        pool.scheduleOrThrowOnError([&]() { loadOneObject(name_with_query.second->as<const ASTCreateQuery &>()); });
     }
 
     pool.wait();
