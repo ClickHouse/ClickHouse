@@ -3,7 +3,6 @@
 #include <common/logger_useful.h>
 #include <memory>
 
-#include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <AggregateFunctions/IAggregateFunction.h>

@@ -1,6 +1,6 @@
 # MergeTree {#table_engines-mergetree}
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
+The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
 
 Engines in the `MergeTree` family are designed for inserting a very large amount of data into a table. The data is quickly written to the table part by part, then rules are applied for merging the parts in the background. This method is much more efficient than continually rewriting the data in storage during insert.
 
@@ -460,3 +460,135 @@ When ClickHouse see that data is expired, it performs an off-schedule merge. To 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query before `SELECT`.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+
+
+## Using multiple block devices for data storage {#table_engine-mergetree-multiple-volumes}
+
+### General
+
+Tables of the MergeTree family are able to store their data on multiple block devices, which may be useful when, for instance, the data of a certain table are implicitly split into "hot" and "cold". The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the "hot" data may be located on fast disks (NVMe SSDs or even in memory), while the "cold" data - on relatively slow ones (HDD).
+
+Part is the minimum movable unit for MergeTree tables. The data belonging to one part are stored on one disk. Parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](../../query_language/alter.md#alter_move-partition) queries. 
+
+### Terms
+* Disk — a block device mounted to the filesystem.
+* Default disk — a disk that contains the path specified in the `<path>` tag in `config.xml`.
+* Volume — an ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
+* Storage policy — a number of volumes together with the rules for moving data between them.
+
+The names given to the described entities can be found in the system tables, [system.storage_policies](../system_tables.md#system_tables-storage_policies) and [system.disks](../system_tables.md#system_tables-disks). Storage policy name can be used as a parameter for tables of the MergeTree family.
+
+### Configuration {#table_engine-mergetree-multiple-volumes_configure}
+
+Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory. This section in a configuration file has the following structure:
+
+```xml
+<disks>
+    <fast_disk> <!-- disk name -->
+        <path>/mnt/fast_ssd/clickhouse</path>
+    </fast_disk>
+    <disk1>
+        <path>/mnt/hdd1/clickhouse</path>
+        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
+    </disk1>
+    <disk2>
+        <path>/mnt/hdd2/clickhouse</path>
+        <keep_free_space_bytes>10485760</keep_free_space_bytes>_
+    </disk2>
+
+    ...
+</disks>
+```
+
+where
+
+* the disk name is given as a tag name.
+* `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with '/'.
+* `keep_free_space_bytes` — the amount of free disk space to be reserved.
+
+The order of the disk definition is not important.
+
+Storage policies configuration:
+
+```xml
+<policies>
+    <hdd_in_order> <!-- policy name -->
+        <volumes>
+            <single> <!-- volume name -->
+                <disk>disk1</disk>
+                <disk>disk2</disk>
+            </single>
+        </volumes>
+    </hdd_in_order>
+
+    <moving_from_ssd_to_hdd>
+        <volumes>
+            <hot>
+                <disk>fast_ssd</disk>
+                <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+            </hot>
+            <cold>
+                <disk>disk1</disk>
+            </cold>            
+        </volumes>
+        <move_factor>0.2</move_factor>
+    </moving_from_ssd_to_hdd>
+</policies>
+```
+
+where
+
+* volume and storage policy names are given as tag names.
+* `disk` — a disk within a volume.
+* `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks.
+* `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
+
+
+In the given example, the `hdd_in_order` policy implements the [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) approach. Since the policy defines only one volume (`single`), the data are stored on all its disks in circular order. Such a policy can be quite useful if there are several similar disks mounted to the system. If there are different disks, the policy `moving_from_ssd_to_hdd` can be used instead. 
+The volume `hot` consists of an SSD disk (`fast_ssd`), and the maximum size of a part that can be stored on this volume is 1GB. All the parts with the size larger than 1GB will be stored directly on the `cold` volume, which contains an HDD disk `disk1`. 
+Also, once the disk `fast_ssd` gets filled by more than 80%, data will be transferred to the `disk1` by a background process.
+
+The order of volume enumeration within a storage policy is important. Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns. 
+
+When creating a table, one can apply one of the configured storage policies to it: 
+
+```sql
+CREATE TABLE table_with_non_default_policy (
+    EventDate Date,
+    OrderID UInt64,
+    BannerID UInt64,
+    SearchPhrase String
+) ENGINE = MergeTree
+ORDER BY (OrderID, BannerID)
+PARTITION BY toYYYYMM(EventDate)
+SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
+```
+
+The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.  
+
+### Details
+
+In the case of MergeTree tables, data is getting to disk in different ways:
+
+* as a result of an insert (`INSERT` query).
+* during background merges and [mutations](../../query_language/alter.md#alter-mutations).
+* when downloading from another replica.
+* as a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](../../query_language/alter.md#alter_freeze-partition).
+
+In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
+
+1. The first volume (in the order of definition) that has enough disk space for storing a part (`unreserved_space > current_part_size`) and allows for storing parts of a given size (`max_data_part_size_bytes > current_part_size`) is chosen.
+2. Within this volume, that disk is chosen that follows the one, which was used for storing the previous chunk of data, and that has free space more than the part size (`unreserved_space - keep_free_space_bytes > current_part_size`). 
+
+Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones. 
+
+In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
+Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](../system_tables.md#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](../system_tables.md#system_tables-parts) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
+
+User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART|PARTITION ... TO VOLUME|DISK ...](../../query_language/alter.md#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
+
+Moving data does not interfere with data replication. Therefore, different storage policies can be specified for the same table on different replicas.
+
+After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
+During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
+

@@ -1,5 +1,7 @@
 #include <common/DateLUT.h>
 
+#include <Core/Field.h>
+
 #include <DataTypes/DataTypeDate.h>
 
 #include <Functions/IFunction.h>
@@ -50,6 +52,7 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
 private:
     DayNum day_value;
@@ -62,6 +65,9 @@ public:
     static constexpr auto name = "yesterday";
 
     String getName() const override { return name; }
+
+    bool isDeterministic() const override { return false; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
     static FunctionBuilderPtr create(const Context &) { return std::make_shared<FunctionBuilderYesterday>(); }

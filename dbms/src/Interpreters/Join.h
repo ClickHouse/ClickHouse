@@ -159,13 +159,16 @@ public:
     BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
-    size_t getTotalRowCount() const override;
+    size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const;
+
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && has_no_rows_in_maps; }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
     AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
     /// Different types of keys for maps.
@@ -299,12 +302,14 @@ private:
     BlockNullmapList blocks_nullmaps;
 
     MapsVariant maps;
+    bool has_no_rows_in_maps = true;
 
     /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
     Arena pool;
 
     Type type = Type::EMPTY;
     std::optional<AsofRowRefs::Type> asof_type;
+    ASOF::Inequality asof_inequality;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 

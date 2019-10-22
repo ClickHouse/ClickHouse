@@ -40,7 +40,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
-    format_settings.csv.null_as_default = settings.input_format_null_as_default;
+    format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
@@ -53,6 +53,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_format = settings.format_template_row;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
+    format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
 
     return format_settings;
 }

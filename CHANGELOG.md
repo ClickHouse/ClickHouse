@@ -252,7 +252,6 @@
 * Added a test for `RENAME` table race condition [#6752](https://github.com/ClickHouse/ClickHouse/pull/6752) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Avoid data race on Settings in `KILL QUERY`. [#6753](https://github.com/ClickHouse/ClickHouse/pull/6753) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Add integration test for handling errors by a cache dictionary. [#6755](https://github.com/ClickHouse/ClickHouse/pull/6755) ([Vitaly Baranov](https://github.com/vitlibar))
-* Move `input_format_defaults_for_omitted_fields` to incompatible changes [#6573](https://github.com/ClickHouse/ClickHouse/pull/6573) ([Artem Zuikov](https://github.com/4ertus2))
 * Disable parsing of ELF object files on Mac OS, because it makes no sense. [#6578](https://github.com/ClickHouse/ClickHouse/pull/6578) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Attempt to make changelog generator better. [#6327](https://github.com/ClickHouse/ClickHouse/pull/6327) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Adding `-Wshadow` switch to the GCC. [#6325](https://github.com/ClickHouse/ClickHouse/pull/6325) ([kreuzerkrieg](https://github.com/kreuzerkrieg))
