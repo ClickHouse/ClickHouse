@@ -5115,7 +5115,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             op_results = zookeeper->multi(ops);
 
-            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, src_data_parts_lock);
+            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, false, dest_data_parts_lock);
             transaction.commit(&dest_data_parts_lock);
         }
 
