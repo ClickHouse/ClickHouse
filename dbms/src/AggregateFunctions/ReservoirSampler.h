@@ -110,7 +110,7 @@ public:
     {
         if (samples.empty()) {
             if (DB::IsDecimalNumber<T>) {
-                return static_cast<T>(0);
+                return 0;
             }
             return onEmpty<double>();
         }
