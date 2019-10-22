@@ -126,6 +126,24 @@ namespace
         }
     };
 
+    template <typename Transform>
+    class DateTime64TransformWrapper
+    {
+    public:
+        DateTime64TransformWrapper(UInt32 scale_)
+            : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale_)),
+              fractional_divider(decimalFractionalDivider<DateTime64>(scale_))
+        {}
+
+        UInt32 execute(DateTime64 t, UInt64 v, const DateLUTImpl & time_zone) const
+        {
+            const auto components = decimalSplitWithScaleMultiplier(t, scale_multiplier);
+            return Transform::execute(static_cast<UInt32>(components.whole), v, time_zone);
+        }
+    private:
+        UInt32 scale_multiplier = 1;
+        UInt32 fractional_divider = 1;
+    };
 }
 
 
@@ -233,26 +251,34 @@ private:
     ColumnPtr dispatchForColumns(
         const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
     {
-        if (WhichDataType(time_column.type.get()).isDateTime())
+        const auto & from_datatype = *time_column.type.get();
+        const auto which_type = WhichDataType(from_datatype);
+        if (which_type.isDateTime())
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt32>(time_column.column.get());
             if (time_column_vec)
-                return dispatchForIntervalColumn(*time_column_vec, interval_column, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime&>(from_datatype), *time_column_vec, interval_column, time_zone);
         }
-        if (WhichDataType(time_column.type.get()).isDate())
+        if (which_type.isDate())
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnUInt16>(time_column.column.get());
             if (time_column_vec)
-                return dispatchForIntervalColumn(*time_column_vec, interval_column, time_zone);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDate&>(from_datatype), *time_column_vec, interval_column, time_zone);
+        }
+        if (which_type.isDateTime64())
+        {
+            const auto * time_column_vec = checkAndGetColumn<DataTypeDateTime64::ColumnType>(time_column.column.get());
+            if (time_column_vec)
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64&>(from_datatype), *time_column_vec, interval_column, time_zone);
         }
         throw Exception(
             "Illegal column for first argument of function " + getName() + ". Must contain dates or dates with time",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    template <typename FromType>
+    template <typename ColumnType, typename FromDataType>
     ColumnPtr dispatchForIntervalColumn(
-        const ColumnVector<FromType> & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
+        const FromDataType & from, const ColumnType & time_column, const ColumnWithTypeAndName & interval_column, const DateLUTImpl & time_zone)
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -270,36 +296,46 @@ private:
         switch (interval_type->getKind())
         {
             case DataTypeInterval::Second:
-                return execute<FromType, UInt32, DataTypeInterval::Second>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt32, DataTypeInterval::Second>(from, time_column, num_units, time_zone);
             case DataTypeInterval::Minute:
-                return execute<FromType, UInt32, DataTypeInterval::Minute>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt32, DataTypeInterval::Minute>(from, time_column, num_units, time_zone);
             case DataTypeInterval::Hour:
-                return execute<FromType, UInt32, DataTypeInterval::Hour>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt32, DataTypeInterval::Hour>(from, time_column, num_units, time_zone);
             case DataTypeInterval::Day:
-                return execute<FromType, UInt32, DataTypeInterval::Day>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt32, DataTypeInterval::Day>(from, time_column, num_units, time_zone);
             case DataTypeInterval::Week:
-                return execute<FromType, UInt16, DataTypeInterval::Week>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt16, DataTypeInterval::Week>(from, time_column, num_units, time_zone);
             case DataTypeInterval::Month:
-                return execute<FromType, UInt16, DataTypeInterval::Month>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt16, DataTypeInterval::Month>(from, time_column, num_units, time_zone);
             case DataTypeInterval::Quarter:
-                return execute<FromType, UInt16, DataTypeInterval::Quarter>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt16, DataTypeInterval::Quarter>(from, time_column, num_units, time_zone);
             case DataTypeInterval::Year:
-                return execute<FromType, UInt16, DataTypeInterval::Year>(time_column, num_units, time_zone);
+                return execute<FromDataType, UInt16, DataTypeInterval::Year>(from, time_column, num_units, time_zone);
         }
 
         __builtin_unreachable();
     }
 
-    template <typename FromType, typename ToType, DataTypeInterval::Kind unit>
-    ColumnPtr execute(const ColumnVector<FromType> & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
+    template <typename FromDataType, typename ToType, DataTypeInterval::Kind unit, typename ColumnType>
+    ColumnPtr execute(const FromDataType & from_datatype, const ColumnType & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
         auto result = ColumnVector<ToType>::create();
         auto & result_data = result->getData();
         result_data.resize(size);
-        for (size_t i = 0; i != size; ++i)
-            result_data[i] = Transform<unit>::execute(time_data[i], num_units, time_zone);
+
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+        {
+            const auto transform = DateTime64TransformWrapper<Transform<unit>>{from_datatype.getScale()};
+            for (size_t i = 0; i != size; ++i)
+                result_data[i] = transform.execute(time_data[i], num_units, time_zone);
+        }
+        else
+        {
+            for (size_t i = 0; i != size; ++i)
+                result_data[i] = Transform<unit>::execute(time_data[i], num_units, time_zone);
+        }
         return result;
     }
 };
