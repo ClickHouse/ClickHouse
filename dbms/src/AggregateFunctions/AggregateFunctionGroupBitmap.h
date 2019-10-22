@@ -35,6 +35,8 @@ public:
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        if (!rhs)
+            return;
         this->data(place).rbs.merge(this->data(rhs).rbs);
     }
 
@@ -88,6 +90,8 @@ public:
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        if (!rhs)
+            return;
         Data & data_lhs = this->data(place);
         const Data & data_rhs = this->data(rhs);
         if (!data_lhs.doneFirst)
