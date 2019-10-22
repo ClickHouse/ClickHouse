@@ -3,6 +3,35 @@
 namespace DB
 {
 
+namespace
+{
+    constexpr auto DATA_FILE_NAME = "data";
+    constexpr auto DATA_FILE_EXTENSION = ".bin";
+}
+
+
+MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
+    const String & part_path_,
+    const MergeTreeData & storage_,
+    const NamesAndTypesList & columns_list_,
+    const String & marks_file_extension_,
+    const CompressionCodecPtr & default_codec_,
+    const WriterSettings & settings_)
+: IMergeTreeDataPartWriter(part_path_,
+    storage_, columns_list_,
+    marks_file_extension_,
+    default_codec_, settings_)
+{
+    stream = std::make_unique<ColumnStream>(
+        DATA_FILE_NAME,
+        part_path + DATA_FILE_NAME, DATA_FILE_EXTENSION,
+        part_path + DATA_FILE_NAME, marks_file_extension,
+        default_codec,
+        settings.max_compress_block_size,
+        0,
+        settings.aio_threshold);
+}
+
 size_t MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     size_t from_mark, size_t index_offset,
@@ -33,8 +62,12 @@ size_t MergeTreeDataPartWriterCompact::write(
             columns_to_write[i] = block.getByName(it->name);
     }
 
+    std::cerr << "(MergeTreeDataPartWriterCompact::write) total_rows: " << total_rows << "\n";
+
     while (current_row < total_rows)
     {
+        std::cerr << "(MergeTreeDataPartWriterCompact::write) current_row: " << current_row << "\n";
+
         bool write_marks = true;
         size_t rows_to_write;
         if (current_row == 0 && index_offset != 0)
@@ -46,6 +79,8 @@ size_t MergeTreeDataPartWriterCompact::write(
         {
             rows_to_write = index_granularity.getMarkRows(current_mark);
         }
+
+        std::cerr << "(MergeTreeDataPartWriterCompact::write) rows_to_write: " << rows_to_write << "\n";
 
         if (write_marks)
         {
