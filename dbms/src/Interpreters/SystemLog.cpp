@@ -28,15 +28,20 @@ std::shared_ptr<TSystemLog> createSystemLog(
 {
     if (!config.has(config_prefix))
     {
-        std::cerr << "Not Enter" << std::endl;
+        std::cerr << "\n\n\nNot Enter in " << config_prefix << "\n\n\n";
         return {};
     }
+    std::cerr << "\n\n\nEnter in" << config_prefix << "\n\n";
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
     String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
     String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
 
+    std::cerr << "\n\n\n" << database << "\n" << table << "\n" << partition_by << "\n";
+
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds", DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
+
+    std::cerr << "\n" << flush_interval_milliseconds << "\n\n\n";
 
     return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
 }
