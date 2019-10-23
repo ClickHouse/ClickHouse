@@ -120,7 +120,7 @@ ColumnPtr indexAndBuildRelationsPositions(
             offsets[i] = origin_positions.getOffsets()[offset + i] - first_offset;
     }
 
-    return std::move(res);
+    return res;
 }
 }
 
@@ -290,14 +290,84 @@ std::vector<MutableColumnPtr> ColumnJSONB::scatter(IColumn::ColumnIndex num_colu
     return res;
 }
 
-void ColumnJSONB::gather(ColumnGathererStream & /*gatherer_stream*/)
+void ColumnJSONB::gather(ColumnGathererStream & gatherer_stream)
 {
-    throw Exception("", ErrorCodes::NOT_IMPLEMENTED);
+    gatherer_stream.gather(*this);
 }
 
-void ColumnJSONB::getExtremes(Field & /*min*/, Field & /*max*/) const
+void ColumnJSONB::getExtremes(Field & min, Field & max) const
 {
-    throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    min = Field("");
+    max = Field("");
+
+    if (size() == 0)
+        return;
+
+    size_t min_idx = 0;
+    size_t max_idx = 0;
+
+    for (size_t i = 1; i < size(); ++i)
+    {
+        if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
+            min_idx = i;
+        else if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
+            max_idx = i;
+    }
+
+    get(min_idx, min);
+    get(max_idx, max);
+}
+
+int ColumnJSONB::compareAt(size_t /*n*/, size_t /*m*/, const IColumn & /*rhs_*/, int /*nan_direction_hint*/) const
+{
+    /// Is very slow, But it should not be used often
+//    const ColumnJSONB & rhs = assert_cast<const ColumnJSONB &>(rhs_);
+//
+//    const auto & lhs_relations = checkAndGetColumn<ColumnArray>(getRelationsBinary());
+//    const auto & rhs_relations = checkAndGetColumn<ColumnArray>(rhs.getRelationsBinary());
+
+    /// Suboptimal
+//    size_t lhs_size = sizeAt(n);
+//    size_t rhs_size = rhs.sizeAt(m);
+//    size_t min_size = std::min(lhs_size, rhs_size);
+//    for (size_t i = 0; i < min_size; ++i)
+//        if (int res = getData().compareAt(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint))
+//            return res;
+//
+//    return lhs_size < rhs_size
+//           ? -1
+//           : (lhs_size == rhs_size
+//              ? 0
+//              : 1);
+    throw Exception("Method compareAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void ColumnJSONB::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & /*res*/) const
+{
+    /// TODO: is very slow, maybe use keys dictionary optimize
+//    size_t s = size();
+//    if (limit >= s)
+//        limit = 0;
+//
+//    res.resize(s);
+//    for (size_t i = 0; i < s; ++i)
+//        res[i] = i;
+//
+//    if (limit)
+//    {
+//        if (reverse)
+//            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<false>(*this, nan_direction_hint));
+//        else
+//            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less<true>(*this, nan_direction_hint));
+//    }
+//    else
+//    {
+//        if (reverse)
+//            std::sort(res.begin(), res.end(), less<false>(*this, nan_direction_hint));
+//        else
+//            std::sort(res.begin(), res.end(), less<true>(*this, nan_direction_hint));
+//    }
+    throw Exception("Method compareAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 const char * ColumnJSONB::deserializeAndInsertFromArena(const char * /*pos*/)
@@ -308,16 +378,6 @@ const char * ColumnJSONB::deserializeAndInsertFromArena(const char * /*pos*/)
 StringRef ColumnJSONB::serializeValueIntoArena(size_t /*n*/, Arena & /*arena*/, char const *& /*begin*/) const
 {
     throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-int ColumnJSONB::compareAt(size_t /*n*/, size_t /*m*/, const IColumn & /*rhs*/, int /*nan_direction_hint*/) const
-{
-    throw Exception("Method compareAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-void ColumnJSONB::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & /*res*/) const
-{
-    throw Exception("Method getPermutation is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 StringRef ColumnJSONB::getDataAt(size_t /*n*/) const

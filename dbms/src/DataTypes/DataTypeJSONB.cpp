@@ -245,16 +245,11 @@ DataTypeJSONB::DataTypeJSONB(bool is_nullable_, bool is_low_cardinality_)
 {
 }
 
-void DataTypeJSONB::enumerateStreams(const IDataType::StreamCallback & callback, IDataType::SubstreamPath & path) const
+void DataTypeJSONB::enumerateStreams(const IDataType::StreamCallback & /*callback*/, IDataType::SubstreamPath & /*path*/) const
 {
-    path.push_back(Substream::JSONInfo);
-    callback(path);
-    path.back() = Substream::JSONElements;
-    callback(path);
-    path.pop_back();
 }
 
-const char * DataTypeJSONB::getFamilyName() const
+String DataTypeJSONB::doGetName() const
 {
     if (isNullable())
         return "Nullable(JSONB)";

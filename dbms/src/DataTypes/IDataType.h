@@ -94,13 +94,10 @@ public:
             DictionaryKeys,
             DictionaryIndexes,
 
-            JSONBinaryMultipleData,
             JSONBinaryRelations,
+            JSONBinaryMultipleData,
             JSONDictionaryKeys,
             JSONDictionaryRelations,
-            JSONInfo,
-            JSONMask,
-            JSONElements,
         };
         Type type;
 

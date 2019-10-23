@@ -1195,12 +1195,12 @@ public:
         return std::make_shared<DataTypeJSONB>(false, false);
     }
 
-    void executeForString(const IColumn * source, ColumnJSONB::MutablePtr & smallest_column)
+    void executeForString(const IColumn & source, IColumn & converted_column)
     {
-        if (const ColumnString * string_column = static_cast<const ColumnString *>(source))
+        if (const auto & string_source_column = checkAndGetColumn<ColumnString>(source))
         {
-            const ColumnString::Chars & column_string_data = string_column->getChars();
-            const ColumnString::Offsets & column_offsets_data = string_column->getOffsets();
+            const ColumnString::Chars & column_string_data = string_source_column->getChars();
+            const ColumnString::Offsets & column_offsets_data = string_source_column->getOffsets();
 
             FormatSettings settings{};
             ReadBufferFromMemory buffer(reinterpret_cast<const char *>(column_string_data.data()), column_string_data.size());
@@ -1209,7 +1209,7 @@ public:
             {
                 const IColumn::Offset & offset = column_offsets_data[index - 1];
                 ReadBuffer limit_buffer = LimitReadBuffer(buffer, column_offsets_data[index] - offset, true, "Attempt to read after eof.");
-                JSONBSerialization::deserialize(true, *smallest_column.get(), JSONBStreamFactory::from<FormatStyle::ESCAPED>(&limit_buffer, settings));
+                JSONBSerialization::deserialize(false, converted_column, JSONBStreamFactory::from<FormatStyle::ESCAPED>(&limit_buffer, settings));
 
                 if (!limit_buffer.eof())
                 {
@@ -1222,52 +1222,33 @@ public:
     }
 
     template <typename FromType>
-    void executeForNumber(const IColumn * /*source*/, ColumnJSONB::MutablePtr & /*smallest_column*/, UInt8 /*mark_value*/)
+    void executeForNumber(const IColumn & source, IColumn & converted_column)
     {
-//        if (const ColumnVector<FromType> * number_column = static_cast<const ColumnVector<FromType> *>(source))
-//        {
-//            const typename ColumnVector<FromType>::Container & from_vec = number_column->getData();
-//
-//            auto mark_column = smallest_column->getStruct()->getOrCreateMarkColumn();
-//            auto data_column = smallest_column->getStruct()->getOrCreateDataColumn(std::make_shared<DataTypeUInt64>());
-//
-//            ColumnUInt8::Container & to_mark_vec = static_cast<ColumnUInt8 *>(mark_column)->getData();
-//            ColumnUInt64::Container & to_data_vec = static_cast<ColumnUInt64 *>(data_column)->getData();
-//
-//            to_mark_vec.resize_fill(from_vec.size(), mark_value);
-//
-//            if constexpr (std::is_same<FromType, UInt64>::value)
-//                to_data_vec.assign(from_vec.begin(), from_vec.end());
-//            else
-//            {
-//                to_data_vec.resize(from_vec.size());
-//                for (size_t index = 0; index < from_vec.size(); ++index)
-//                    to_data_vec[index] = ext::bit_cast<UInt64, FromType>(from_vec[index]);
-//            }
-//        }
+        JSONBSerialization::serialize<FromType>(
+            *checkAndGetColumn<ColumnVector<FromType>>(source), assert_cast<ColumnJSONB &>(converted_column));
     }
 
-    void executeImpl(Block & /*block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-//        const auto & type_and_column = block.getByPosition(arguments[0]);
-//
-//        WhichDataType which(type_and_column.type);
-//        ColumnJSONB::MutablePtr converted_column = ColumnJSONB::create();
-//
-//        if (which.isStringOrFixedString()) executeForString(type_and_column.column.get(), converted_column);
-//        else if (which.isInt8()) executeForNumber<Int8>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64Mark));
-//        else if (which.isInt16()) executeForNumber<Int16>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64Mark));
-//        else if (which.isInt32()) executeForNumber<Int32>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64Mark));
-//        else if (which.isInt64()) executeForNumber<Int64>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Int64Mark));
-//        else if (which.isUInt8()) executeForNumber<UInt8>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64Mark));
-//        else if (which.isUInt16()) executeForNumber<UInt16>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64Mark));
-//        else if (which.isUInt32()) executeForNumber<UInt32>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64Mark));
-//        else if (which.isUInt64()) executeForNumber<UInt64>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::UInt64Mark));
-//        else if (which.isFloat32()) executeForNumber<Float32>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Float64Mark));
-//        else if (which.isFloat64()) executeForNumber<Float64>(type_and_column.column.get(), converted_column, UInt8(JSONBDataMark::Float64Mark));
-//        else throw Exception("It is bug", ErrorCodes::ILLEGAL_COLUMN);
-//
-//        block.getByPosition(result).column = std::move(converted_column);
+        const auto & type_and_column = block.getByPosition(arguments[0]);
+
+        WhichDataType which(type_and_column.type);
+        MutableColumnPtr converted_column = DataTypeJSONB(which.isNullable(), false).createColumn();
+
+        if (which.isString()) executeForString(*type_and_column.column, *converted_column);
+        else if (which.isInt8()) executeForNumber<Int8>(*type_and_column.column, *converted_column);
+        else if (which.isInt16()) executeForNumber<Int16>(*type_and_column.column, *converted_column);
+        else if (which.isInt32()) executeForNumber<Int32>(*type_and_column.column, *converted_column);
+        else if (which.isInt64()) executeForNumber<Int64>(*type_and_column.column, *converted_column);
+        else if (which.isUInt8()) executeForNumber<UInt8>(*type_and_column.column, *converted_column);
+        else if (which.isUInt16()) executeForNumber<UInt16>(*type_and_column.column, *converted_column);
+        else if (which.isUInt32()) executeForNumber<UInt32>(*type_and_column.column, *converted_column);
+        else if (which.isUInt64()) executeForNumber<UInt64>(*type_and_column.column, *converted_column);
+        else if (which.isFloat32()) executeForNumber<Float32>(*type_and_column.column, *converted_column);
+        else if (which.isFloat64()) executeForNumber<Float64>(*type_and_column.column, *converted_column);
+        else throw Exception("Cannot convert " + type_and_column.type->getName() + " column to JSONB column", ErrorCodes::ILLEGAL_COLUMN);
+
+        block.getByPosition(result).column = std::move(converted_column);
     }
 };
 
