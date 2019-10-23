@@ -856,6 +856,10 @@ private:
             next_update_time = TimePoint::max();
         }
 
+        /// In synchronus mode we throw exception immediately
+        if (!async && new_exception)
+            std::rethrow_exception(new_exception);
+
         Info * info = getInfo(name);
 
         /// And again we should check if this is still the same loading as we were doing.
@@ -914,9 +918,6 @@ private:
             if (!new_object && !new_exception)
                 throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
 
-            /// In synchronus mode we throw exception immediately
-            if (!async && new_exception)
-                std::rethrow_exception(new_exception);
 
             processLoadResult(name, loading_id, info->object, new_object, new_exception, info->error_count, async);
             event.notify_all();
