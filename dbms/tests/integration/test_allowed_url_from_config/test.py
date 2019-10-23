@@ -1,6 +1,7 @@
 import time
 import pytest
 
+from helpers.hdfs_api import HDFSApi
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -10,6 +11,7 @@ node3 = cluster.add_instance('node3', main_configs=['configs/config_with_only_re
 node4 = cluster.add_instance('node4', main_configs=['configs/config_without_allowed_hosts.xml'])
 node5 = cluster.add_instance('node5', main_configs=['configs/config_without_block_of_allowed_hosts.xml'])
 node6 = cluster.add_instance('node6', main_configs=['configs/config_for_remote.xml'])
+node7 = cluster.add_instance('node7', main_configs=['configs/config_for_redirect.xml'], with_hdfs=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -88,3 +90,10 @@ def test_table_function_remote_on_config_for_remote(start_cluster):
     assert "not allowed" in node6.query_and_get_error("SELECT * FROM remoteSecure('example01-01-1,example01-03-1', system, events)")
     assert "not allowed" in node6.query_and_get_error("SELECT * FROM remote('example01-01-{1|3}', system, events)")
     assert "not allowed" in node6.query_and_get_error("SELECT * FROM remoteSecure('example01-0{1,3}-1', system, metrics)")
+
+def test_redirect(start_cluster):
+    hdfs_api = HDFSApi("root")
+    hdfs_api.write_data("/simple_storage", "1\t\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
+    node7.query("CREATE TABLE table_test_7 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)")
+    assert "not allowed" in node7.query_and_get_error("SET max_http_get_redirects=1; SELECT * from table_test_7")
