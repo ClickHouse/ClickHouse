@@ -62,9 +62,12 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
         {
             std::unique_lock lock(mutex);
 
+            blocks[current_unit_number].block.resize(0);
+            blocks[current_unit_number].block_missing_values.resize(0);
+
             if (is_last[current_unit_number] || buffers[current_unit_number]->position() == nullptr)
             {
-                blocks[current_unit_number].block = Block();
+                blocks[current_unit_number].block.push_back(Block());
                 status[current_unit_number] = READY_TO_READ;
                 reader_condvar.notify_all();
                 return;
@@ -72,11 +75,19 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
 
         }
 
-        blocks[current_unit_number].block = readers[current_unit_number]->read();
 
+        while (true)
         {
-            std::lock_guard missing_values_lock(missing_values_mutex);
-            blocks[current_unit_number].block_missing_values = readers[current_unit_number]->getMissingValues();
+            auto block = readers[current_unit_number]->read();
+
+            blocks[current_unit_number].block.push_back(block);
+            {
+                std::lock_guard missing_values_lock(missing_values_mutex);
+                blocks[current_unit_number].block_missing_values.push_back(readers[current_unit_number]->getMissingValues());
+            }
+
+            if (block == Block())
+                break;
         }
 
         {
@@ -103,11 +114,8 @@ Block ParallelParsingBlockInputStream::readImpl()
         return res;
 
     std::unique_lock lock(mutex);
-
-    ++reader_ticket_number;
-    const auto unit_number = reader_ticket_number % max_threads_to_use;
-
-    reader_condvar.wait(lock, [&](){ return status[unit_number] == READY_TO_READ || is_exception_occured || is_cancelled; });
+    const auto current_number = reader_ticket_number % max_threads_to_use;
+    reader_condvar.wait(lock, [&](){ return status[current_number] == READY_TO_READ || is_exception_occured || is_cancelled; });
 
     /// Check for an exception and rethrow it
     if (is_exception_occured)
@@ -118,16 +126,19 @@ Block ParallelParsingBlockInputStream::readImpl()
         rethrowFirstException(exceptions);
     }
 
-    res = std::move(blocks[unit_number].block);
-    last_block_missing_values = std::move(blocks[unit_number].block_missing_values);
+    res = std::move(blocks[current_number].block[internal_block_iter]);
+    last_block_missing_values = std::move(blocks[current_number].block_missing_values[internal_block_iter]);
 
-    if (is_last[unit_number])
-        is_cancelled = true;
-    else
+    if (++internal_block_iter == blocks[current_number].block.size())
     {
-        status[unit_number] = READY_TO_INSERT;
+        if (is_last[current_number])
+            is_cancelled = true;
+        internal_block_iter = 0;
+        ++reader_ticket_number;
+        status[current_number] = READY_TO_INSERT;
         segmentator_condvar.notify_all();
     }
+
     return res;
 }
 }

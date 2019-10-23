@@ -124,7 +124,8 @@ private:
     ReadBuffer & original_buffer;
 
     //Non-atomic because it is used in one thread.
-    size_t reader_ticket_number{0};
+    size_t reader_ticket_number{1};
+    size_t internal_block_iter{0};
     size_t segmentator_ticket_number{0};
 
     std::mutex mutex;
@@ -154,8 +155,8 @@ private:
 
     struct BlockExt
     {
-        Block block;
-        BlockMissingValues block_missing_values;
+        std::vector<Block> block;
+        std::vector<BlockMissingValues> block_missing_values;
     };
 
     using Blocks = std::vector<BlockExt>;
