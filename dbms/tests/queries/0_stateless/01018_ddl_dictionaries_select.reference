@@ -15,3 +15,5 @@ dict2	Dictionary
 table_for_dict	MergeTree
 database_for_dict	dict1	ComplexKeyCache
 database_for_dict	dict2	Hashed
+6
+6

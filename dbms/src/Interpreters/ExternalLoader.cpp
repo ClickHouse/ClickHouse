@@ -848,7 +848,11 @@ private:
             else
                 error_count = 0;
 
-            next_update_time = calculateNextUpdateTime(new_object, error_count);
+            LoadablePtr object = previous_version;
+            if (new_object)
+                object = new_object;
+
+            next_update_time = calculateNextUpdateTime(object, error_count);
         }
         catch (...)
         {
@@ -963,7 +967,8 @@ private:
     TimePoint calculateNextUpdateTime(const LoadablePtr & loaded_object, size_t error_count) const
     {
         static constexpr auto never = TimePoint::max();
-        if (!error_count)
+
+        if (loaded_object)
         {
             if (!loaded_object->supportUpdates())
                 return never;
@@ -973,8 +978,11 @@ private:
             if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
                 return never;
 
-            std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-            return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+            if (!error_count)
+            {
+                std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
+                return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+            }
         }
 
         return std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));

@@ -95,4 +95,24 @@ SELECT name, engine FROM system.tables WHERE database = 'database_for_dict' ORDE
 
 SELECT database, name, type FROM system.dictionaries WHERE database = 'database_for_dict' ORDER BY name;
 
+-- check dictionary will not update
+CREATE DICTIONARY database_for_dict.dict3
+(
+  key_column UInt64 DEFAULT 0,
+  some_column String EXPRESSION toString(fourth_column),
+  fourth_column Float64 DEFAULT 42.0
+)
+PRIMARY KEY key_column
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
+LIFETIME(0)
+LAYOUT(HASHED());
+
+SELECT dictGetString('database_for_dict.dict3', 'some_column', toUInt64(12));
+
+DROP TABLE database_for_dict.table_for_dict;
+
+SYSTEM RELOAD DICTIONARIES;
+
+SELECT dictGetString('database_for_dict.dict3', 'some_column', toUInt64(12));
+
 DROP DATABASE IF EXISTS database_for_dict;
