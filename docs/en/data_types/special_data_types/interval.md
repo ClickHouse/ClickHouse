@@ -1,6 +1,6 @@
 # Interval {#data-type-interval}
 
-Represents time and date intervals. Resulting type of the `INTERVAL` operator.
+Represents time and date intervals. The resulting type of the `INTERVAL` operator.
 
 !!!warning "Warning"
     You can't use the `Interval` data type for storing values in tables.
@@ -21,7 +21,7 @@ Supported interval types:
 - QUARTER
 - YEAR
 
-For each interval type there are the separated data type. For example, the DAY interval is expressed as the `IntervalDay` data type:
+For each interval type, there is the separated data type. For example, the DAY interval is expressed as the `IntervalDay` data type:
 
 ```sql
 SELECT toTypeName(INTERVAL 4 DAY)
@@ -34,7 +34,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 
 ## Usage Remarks {#data-type-interval-usage-remarks}
 
-You can use `Interval`-type values in arithmetical operations with [DateTime](../datetime.md) and [Date](../date.md)-type values. For example, you can add 4 days to current time:
+You can use `Interval`-type values in arithmetical operations with [Date](../../data_types/date.md) and [DateTime](../../data_types/datetime.md)-type values. For example, you can add 4 days to the current time:
 
 ```sql
 SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
@@ -45,9 +45,9 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 └─────────────────────┴───────────────────────────────┘
 ```
 
-Intervals of different type can't be combined in one `INTERVAL` operator. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`, so you need to express intervals in the minimal units. For example, `1 day and an hour` interval should be expressed as `INTERVAL 25 HOUR`.
+Intervals of different types can't be combined in one `INTERVAL` operator. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`, so you need to express intervals in the minimal units. For example, `1 day and an hour` interval should be expressed as `INTERVAL 25 HOUR`.
 
-You can't perform arithmetical operations with the `Interval`-type values, but you can add intervals of different types consequenly to some value. For example:
+You can't perform arithmetical operations with the `Interval`-type values, but you can add intervals of different types consequently to some value. For example:
 
 ```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
