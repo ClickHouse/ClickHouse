@@ -163,7 +163,10 @@ private:
     using Segments = std::vector<MemoryExt>;
     using Status = std::deque<std::atomic<ProcessingUnitStatus>>;
     using InputStreamFromInputFormats = std::vector<std::unique_ptr<InputStreamFromInputFormat>>;
-    using IsLastFlags = std::vector<bool>;
+
+    //We cannot use std::vector<bool> because it is equal to bitset (which stores 8 bool in one byte).
+    //That's why dataraces occured.
+    using IsLastFlags = std::vector<char>;
 
     Segments segments;
     ReadBuffers buffers;
