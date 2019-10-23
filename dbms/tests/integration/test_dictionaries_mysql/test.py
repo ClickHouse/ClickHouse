@@ -83,7 +83,7 @@ def prepare_mysql_table(table_name, index):
     mysql_connection.close()
     
     #Create CH Dictionary tables based on MySQL tables 
-    query(create_clickhouse_dictionary_table_template.format(table_name + str(index)), 'dict' + str(index))
+    query(create_clickhouse_dictionary_table_template.format(table_name + str(index), 'dict' + str(index)))
 
 def get_mysql_conn():
     conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
