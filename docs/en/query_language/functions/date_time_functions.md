@@ -66,8 +66,10 @@ Leap seconds are not accounted for.
 
 Converts a date with time to a Unix timestamp.
 
+**Syntax** 
+
 ```sql
-SELECT toUnixTimestamp(datetime[, timezone])
+toUnixTimestamp(datetime[, timezone])
 ```
 
 **Parameters**
