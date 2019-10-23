@@ -73,6 +73,7 @@ public:
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
+    String uuid;   /// For ATTACH TABLE query when db engine is Atomic
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }

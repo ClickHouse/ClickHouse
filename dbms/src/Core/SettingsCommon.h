@@ -268,6 +268,13 @@ enum class LogsLevel
 };
 using SettingLogsLevel = SettingEnum<LogsLevel>;
 
+enum class DefaultDatabaseEngine
+{
+    Ordinary,
+    Atomic,
+};
+using SettingDefaultDatabaseEngine = SettingEnum<DefaultDatabaseEngine>;
+
 
 namespace details
 {

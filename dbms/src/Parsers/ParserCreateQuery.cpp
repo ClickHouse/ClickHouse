@@ -336,10 +336,12 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
-    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_uuid("UUID");
+    ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -350,9 +352,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserSelectWithUnionQuery select_p;
     ParserFunction table_function_p;
     ParserNameList names_p;
+    ParserStringLiteral uuid_p;
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr uuid;
     ASTPtr columns_list;
     ASTPtr to_database;
     ASTPtr to_table;
@@ -395,7 +399,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (attach && s_uuid.ignore(pos, expected))
+    {
+        /// For CREATE query uuid will be generated
+        if (!uuid_p.parse(pos, uuid, expected))
+            return false;
+    }
+
+    if (s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -471,6 +482,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);
+    if (uuid)
+        query->uuid = uuid->as<ASTLiteral>()->value.get<String>();
     query->cluster = cluster_str;
 
     tryGetIdentifierNameInto(to_database, query->to_database);

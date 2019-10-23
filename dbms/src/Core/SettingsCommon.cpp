@@ -460,6 +460,12 @@ IMPLEMENT_SETTING_ENUM(FormatSettings::DateTimeInputFormat, DATE_TIME_INPUT_FORM
 IMPLEMENT_SETTING_ENUM(LogsLevel, LOGS_LEVEL_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
 
 
+#define DEFAULT_DATABASE_ENGINE_LIST_OF_NAMES(M) \
+    M(Ordinary, "Ordinary") \
+    M(Atomic, "Atomic")
+IMPLEMENT_SETTING_ENUM(DefaultDatabaseEngine , DEFAULT_DATABASE_ENGINE_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
+
+
 namespace details
 {
     String SettingsCollectionUtils::deserializeName(ReadBuffer & buf)

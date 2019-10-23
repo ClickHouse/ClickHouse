@@ -289,7 +289,7 @@ protected:
 };
 
 /** Query like this:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster]
   * (
   *     name1 type1,
   *     name2 type2,
@@ -299,10 +299,10 @@ protected:
   * ) ENGINE = engine
   *
   * Or:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS [db2.]name2 [ENGINE = engine]
   *
   * Or:
-  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS ENGINE = engine SELECT ...
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS ENGINE = engine SELECT ...
   *
   */
 class ParserCreateTableQuery : public IParserBase
