@@ -57,8 +57,6 @@ RUN apt-get update -y \
             rename \
             wget
 
-# Build and install tools for cross-linking to Darwin
-
 ENV CC=clang-8
 ENV CXX=clang++-8
 
@@ -66,11 +64,19 @@ ENV CXX=clang++-8
 RUN git clone https://github.com/tpoechtrager/apple-libtapi.git
 RUN cd apple-libtapi && INSTALLPREFIX=/cctools ./build.sh && ./install.sh
 
+# Build and install tools for cross-linking to Darwin
 RUN git clone https://github.com/tpoechtrager/cctools-port.git
 RUN cd cctools-port/cctools && ./configure --prefix=/cctools --with-libtapi=/cctools --target=x86_64-apple-darwin && make install
 
+# Download toolchain for Darwin
+RUN mkdir -p /build/cmake/toolchain/darwin-x86_64
 RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
-RUN tar xJf MacOSX10.14.sdk.tar.xz -C /cctools
+RUN tar --strip-components=1 xJf MacOSX10.14.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64
+
+# Download toolchain for ARM
+RUN mkdir -p /build/cmake/toolchain/linux-aarch64
+RUN wget https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
+RUN tar --strip-components=1 xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C /build/cmake/toolchain/linux-aarch64
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
