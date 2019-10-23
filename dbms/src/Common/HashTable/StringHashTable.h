@@ -3,9 +3,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTable.h>
 
-struct StringKey0
-{
-};
+#include <variant>
 
 using StringKey8 = UInt64;
 using StringKey16 = DB::UInt128;
@@ -125,11 +123,68 @@ public:
     }
 
     template <typename Key>
-    LookupResult ALWAYS_INLINE find(Key, size_t /* hash */)
+    LookupResult ALWAYS_INLINE find(const Key &, size_t /* hash */)
     {
         return hasZero() ? zeroValue() : nullptr;
     }
 
+
+    using Position = Cell *;
+    using ConstPosition = const Cell *;
+
+    Position startPos() { return nullptr; }
+    ConstPosition startPos() const { return nullptr; }
+
+    template <typename TSelf, typename Func, typename TPosition>
+    static bool forEachCell(TSelf & self, Func && func, TPosition & pos)
+    {
+        using TCell = decltype(*std::declval<TSelf>().zeroValue());
+        static constexpr bool with_key = std::is_invocable_v<Func, const StringRef &, TCell>;
+        auto loopee = loopeeGenerator<with_key>(std::forward<Func>(func));
+
+        if (pos == self.startPos())
+        {
+            if (self.hasZero() && loopee(StringRef(), *self.zeroValue()))
+            {
+                pos = self.zeroValue(); // next pos
+                return true;
+            }
+        }
+        pos = self.zeroValue(); // end pos
+        return false;
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, const Cell &); or (2)  void(const Cell &).
+    template <typename Func>
+    auto forEachCell(Func && func) const
+    {
+        ConstPosition pos = startPos();
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, Cell &); or (2)  void(const Cell &).
+    template <typename Func>
+    auto forEachCell(Func && func)
+    {
+        Position pos = nullptr;
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, ConstPosition & pos) const
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, Position & pos)
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
 
     void write(DB::WriteBuffer & wb) const { zeroValue()->write(wb); }
     void writeText(DB::WriteBuffer & wb) const { zeroValue()->writeText(wb); }
@@ -146,6 +201,25 @@ struct StringHashTableGrower : public HashTableGrower<initial_size_degree>
 {
     // Smooth growing for string maps
     void increaseSize() { this->size_degree += 1; }
+};
+
+template <typename Position>
+struct StringHashTableLookupResult
+{
+    Position pos;
+    StringHashTableLookupResult() {}
+    StringHashTableLookupResult(Position pos_) : pos(pos_) {}
+    StringHashTableLookupResult(std::nullptr_t) {}
+    auto & getMapped() { return *pos; }
+    auto & operator*() { return *this; }
+    auto & operator*() const { return *this; }
+    auto * operator->() { return this; }
+    auto * operator->() const { return this; }
+    operator bool() const { return pos; }
+    friend bool operator==(const StringHashTableLookupResult & a, const std::nullptr_t &) { return !a.pos; }
+    friend bool operator==(const std::nullptr_t &, const StringHashTableLookupResult & b) { return !b.pos; }
+    friend bool operator!=(const StringHashTableLookupResult & a, const std::nullptr_t &) { return a.pos; }
+    friend bool operator!=(const std::nullptr_t &, const StringHashTableLookupResult & b) { return b.pos; }
 };
 
 template <typename SubMaps>
@@ -177,8 +251,9 @@ protected:
 public:
     using Key = StringRef;
     using key_type = Key;
+    using mapped_type = typename Ts::mapped_type;
     using value_type = typename Ts::value_type;
-    using LookupResult = typename Ts::mapped_type *;
+    using cell_type = typename Ts::cell_type;
 
     StringHashTable() {}
 
@@ -206,9 +281,8 @@ public:
         const size_t sz = x.size;
         if (sz == 0)
         {
-            static constexpr StringKey0 key0{};
             keyHolderDiscardKey(key_holder);
-            return func(m0, key0, 0);
+            return func(m0, VoidKey{}, 0);
         }
 
         const char * p = x.data;
@@ -266,6 +340,86 @@ public:
         }
     }
 
+    using Position
+        = std::variant<typename T0::Position, typename T1::Position, typename T2::Position, typename T3::Position, typename Ts::Position>;
+
+    using ConstPosition = std::variant<
+        typename T0::ConstPosition,
+        typename T1::ConstPosition,
+        typename T2::ConstPosition,
+        typename T3::ConstPosition,
+        typename Ts::ConstPosition>;
+
+    Position startPos() { return Position{std::in_place_index<0>, m0.startPos()}; }
+    ConstPosition startPos() const { return Position{std::in_place_index<0>, m0.startPos()}; }
+
+    template <typename TSelf, typename Func, typename TPosition>
+    static bool forEachCell(TSelf & self, Func && func, TPosition & pos)
+    {
+        switch (pos.index())
+        {
+            case 0:
+                if (self.m0.forEachCell(self.m0, func, std::get<0>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<1>, self.m1.startPos()};
+                [[fallthrough]];
+            case 1:
+                if (self.m1.forEachCell(self.m1, func, std::get<1>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<2>, self.m2.startPos()};
+                [[fallthrough]];
+            case 2:
+                if (self.m2.forEachCell(self.m2, func, std::get<2>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<3>, self.m3.startPos()};
+                [[fallthrough]];
+            case 3:
+                if (self.m3.forEachCell(self.m3, func, std::get<3>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<4>, self.ms.startPos()};
+                [[fallthrough]];
+            case 4:
+                if (self.ms.forEachCell(self.ms, func, std::get<4>(pos)))
+                    return true;
+        }
+        return false;
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, const Cell &); or (2)  void(const Cell &).
+    template <typename Func>
+    void forEachCell(Func && func) const
+    {
+        ConstPosition pos = startPos();
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, Cell &); or (2)  void(Cell &).
+    template <typename Func>
+    void forEachCell(Func && func)
+    {
+        Position pos = startPos();
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    void forEachCell(Func && func, ConstPosition & pos) const
+    {
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    void forEachCell(Func && func, Position & pos)
+    {
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    using LookupResult = StringHashTableLookupResult<typename cell_type::mapped_type *>;
+    using ConstLookupResult = StringHashTableLookupResult<const typename cell_type::mapped_type *>;
+
     struct EmplaceCallable
     {
         LookupResult & mapped;
@@ -279,7 +433,7 @@ public:
         {
             typename Map::LookupResult result;
             map.emplace(key_holder, result, inserted, hash);
-            mapped = lookupResultGetMapped(result);
+            mapped = &result->getMapped();
         }
     };
 
@@ -297,7 +451,7 @@ public:
         template <typename Submap, typename SubmapKey>
         LookupResult ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
         {
-            return lookupResultGetMapped(map.find(key, hash));
+            return &map.find(key, hash)->getMapped();
         }
     };
 

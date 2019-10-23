@@ -69,6 +69,26 @@ public:
         }
     }
 
+    /// No positional variants for TwoLevelHashTable as it's only used for aggregations.
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature void(const Cell &).
+    template <typename Func>
+    void forEachCell(Func && func) const
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature void(Cell &).
+    template <typename Func>
+    void forEachCell(Func && func)
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
+
     // This function is mostly the same as StringHashTable::dispatch, but with
     // added bucket computation. See the comments there.
     template <typename Func, typename KeyHolder>
@@ -78,9 +98,8 @@ public:
         const size_t sz = x.size;
         if (sz == 0)
         {
-            static constexpr StringKey0 key0{};
             keyHolderDiscardKey(key_holder);
-            return func(impls[0].m0, key0, 0);
+            return func(impls[0].m0, VoidKey{}, 0);
         }
 
         const char * p = x.data;

@@ -14,12 +14,6 @@ struct ClearableHashMapCell : public ClearableHashTableCell<Key, HashMapCell<Key
         : Base::BaseCell(value_, state), Base::version(state.version) {}
 };
 
-template<typename Key, typename Mapped, typename Hash>
-ALWAYS_INLINE inline auto lookupResultGetKey(ClearableHashMapCell<Key, Mapped, Hash> * cell) { return &cell->getFirst(); }
-
-template<typename Key, typename Mapped, typename Hash>
-ALWAYS_INLINE inline auto lookupResultGetMapped(ClearableHashMapCell<Key, Mapped, Hash> * cell) { return &cell->getSecond(); }
-
 template
 <
     typename Key,
@@ -42,9 +36,9 @@ public:
         this->emplace(x, it, inserted);
 
         if (inserted)
-            new(lookupResultGetMapped(it)) mapped_type();
+            new (&it->getMapped()) mapped_type();
 
-        return *lookupResultGetMapped(it);
+        return it->getMapped();
     }
 
     void clear()

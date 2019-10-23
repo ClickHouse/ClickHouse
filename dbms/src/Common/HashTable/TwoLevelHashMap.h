@@ -39,9 +39,9 @@ public:
         this->emplace(x, it, inserted);
 
         if (inserted)
-            new(lookupResultGetMapped(it)) mapped_type();
+            new (&it->getMapped()) mapped_type();
 
-        return *lookupResultGetMapped(it);
+        return it->getMapped();
     }
 };
 

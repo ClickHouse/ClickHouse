@@ -3,29 +3,23 @@
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/FixedHashTable.h>
 
-
 template <typename Key>
 struct FixedClearableHashTableCell
 {
     using State = ClearableHashSetState;
 
     using value_type = Key;
-    using mapped_type = void;
+    using mapped_type = VoidMapped;
     UInt32 version;
 
     FixedClearableHashTableCell() {}
     FixedClearableHashTableCell(const Key &, const State & state) : version(state.version) {}
 
+    const VoidKey getKey() const { return VoidKey{}; }
+    VoidMapped & getMapped() const { return voidMapped; }
+
     bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
-    static constexpr bool need_zero_value_storage = false;
-
-    struct CellExt
-    {
-        Key key;
-        const value_type & getValue() const { return key; }
-        void update(Key && key_, FixedClearableHashTableCell *) { key = key_; }
-    };
 };
 
 

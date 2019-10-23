@@ -31,7 +31,7 @@ public:
         LookupResult it;
         emplace(x, it, inserted);
         if (inserted)
-            new (lookupResultGetMapped(it)) mapped_type();
-        return *lookupResultGetMapped(it);
+            new (&it->getMapped()) mapped_type();
+        return it->getMapped();
     }
 };

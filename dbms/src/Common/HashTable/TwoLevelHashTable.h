@@ -82,6 +82,7 @@ protected:
 
 public:
     using key_type = typename Impl::key_type;
+    using mapped_type = typename Impl::mapped_type;
     using value_type = typename Impl::value_type;
 
     using LookupResult = typename Impl::LookupResult;
@@ -93,6 +94,7 @@ public:
     TwoLevelHashTable() {}
 
     /// Copy the data from another (normal) hash table. It should have the same hash function.
+    /// TODO There is an old assumption that the zero key (stored separately) is first in iteration order. Is that still hold?
     template <typename Source>
     TwoLevelHashTable(const Source & src)
     {
@@ -208,6 +210,27 @@ public:
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
 
 
+    /// No positional variants for TwoLevelHashTable as it's only used for aggregations.
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature void(const Cell &).
+    template <typename Func>
+    void forEachCell(Func && func) const
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature void(Cell &).
+    template <typename Func>
+    void forEachCell(Func && func)
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
+
+
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
@@ -217,7 +240,7 @@ public:
         emplace(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
-            insertSetMapped(lookupResultGetMapped(res.first), x);
+            insertSetMapped(res.first->getMapped(), x);
 
         return res;
     }

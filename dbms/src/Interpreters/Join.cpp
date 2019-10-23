@@ -1225,30 +1225,28 @@ private:
     size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
     {
         using Mapped = typename Map::mapped_type;
-        using Iterator = typename Map::const_iterator;
 
         size_t rows_added = 0;
 
+        using Pos = typename Map::ConstPosition;
         if (!position.has_value())
-            position = std::make_any<Iterator>(map.begin());
+            position = std::make_any<Pos>(map.startPos());
 
-        Iterator & it = std::any_cast<Iterator &>(position);
-        auto end = map.end();
+        Pos & pos = std::any_cast<Pos &>(position);
 
-        for (; it != end; ++it)
+        map.forEachCell([&](const auto & cell)
         {
-            const Mapped & mapped = it->getSecond();
+            const Mapped & mapped = cell.getMapped();
             if (mapped.getUsed())
-                continue;
+                return false;
 
             AdderNonJoined<STRICTNESS, Mapped>::add(mapped, rows_added, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
-            {
-                ++it;
-                break;
-            }
-        }
+                return true;
+
+            return false;
+        }, pos);
 
         return rows_added;
     }

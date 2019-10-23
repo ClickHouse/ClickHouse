@@ -18,28 +18,12 @@ struct FixedClearableHashMapCell
     FixedClearableHashMapCell(const Key &, const State & state) : version(state.version) {}
     FixedClearableHashMapCell(const value_type & value_, const State & state) : version(state.version), mapped(value_.second) {}
 
-    Mapped & getSecond() { return mapped; }
-    const Mapped & getSecond() const { return mapped; }
+    const VoidKey getKey() const { return VoidKey{}; }
+    Mapped & getMapped() { return mapped; }
+    const Mapped & getMapped() const { return mapped; }
+
     bool isZero(const State & state) const { return version != state.version; }
     void setZero() { version = 0; }
-    static constexpr bool need_zero_value_storage = false;
-
-    struct CellExt
-    {
-        CellExt() {}
-        CellExt(Key && key_, FixedClearableHashMapCell * ptr_) : key(key_), ptr(ptr_) {}
-        void update(Key && key_, FixedClearableHashMapCell * ptr_)
-        {
-            key = key_;
-            ptr = ptr_;
-        }
-        Key key;
-        FixedClearableHashMapCell * ptr;
-        const Key & getFirst() const { return key; }
-        Mapped & getSecond() { return ptr->mapped; }
-        const Mapped & getSecond() const { return *ptr->mapped; }
-        const value_type getValue() const { return {key, *ptr->mapped}; }
-    };
 };
 
 
@@ -53,14 +37,14 @@ public:
 
     mapped_type & operator[](Key x)
     {
-        typename FixedClearableHashMap::iterator it;
+        typename FixedClearableHashMap::LookupResult it;
         bool inserted;
         this->emplace(x, it, inserted);
 
         if (inserted)
-            new (&it->second) mapped_type();
+            new (&it->getMapped()) mapped_type();
 
-        return it->second;
+        return it->getMapped();
     }
 
     void clear()
