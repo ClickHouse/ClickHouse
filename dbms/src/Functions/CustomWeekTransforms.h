@@ -3,6 +3,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Types.h>
+#include <Core/DecimalFunctions.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Common/Exception.h>
@@ -90,24 +91,33 @@ struct ToStartOfWeekImpl
 template <typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-    static void
-    vector(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone)
+    Transformer(Transform transform_)
+        : transform(std::move(transform_))
+    {}
+
+    template <typename FromVectorType, typename ToVectorType>
+    void
+    vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = Transform::execute(vec_from[i], week_mode, time_zone);
+            vec_to[i] = transform.execute(vec_from[i], week_mode, time_zone);
     }
+
+private:
+    const Transform transform;
 };
 
 
-template <typename FromType, typename ToType, typename Transform>
+template <typename FromDataType, typename ToDataType>
 struct CustomWeekTransformImpl
 {
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+    template <typename Transform>
+    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/, Transform transform = {})
     {
-        using Op = Transformer<FromType, ToType, Transform>;
+        const auto op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
 
         UInt8 week_mode = DEFAULT_WEEK_MODE;
         if (arguments.size() > 1)
@@ -118,10 +128,10 @@ struct CustomWeekTransformImpl
 
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-        if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
+        if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
-            auto col_to = ColumnVector<ToType>::create();
-            Op::vector(sources->getData(), col_to->getData(), week_mode, time_zone);
+            auto col_to = ToDataType::ColumnType::create();
+            op.vector(sources->getData(), col_to->getData(), week_mode, time_zone);
             block.getByPosition(result).column = std::move(col_to);
         }
         else

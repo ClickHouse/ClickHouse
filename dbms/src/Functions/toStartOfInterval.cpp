@@ -1,3 +1,4 @@
+#include <common/DateLUTImpl.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -124,25 +125,6 @@ namespace
         {
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
-    };
-
-    template <typename Transform>
-    class DateTime64TransformWrapper
-    {
-    public:
-        DateTime64TransformWrapper(UInt32 scale_)
-            : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale_)),
-              fractional_divider(decimalFractionalDivider<DateTime64>(scale_))
-        {}
-
-        UInt32 execute(DateTime64 t, UInt64 v, const DateLUTImpl & time_zone) const
-        {
-            const auto components = decimalSplitWithScaleMultiplier(t, scale_multiplier);
-            return Transform::execute(static_cast<UInt32>(components.whole), v, time_zone);
-        }
-    private:
-        UInt32 scale_multiplier = 1;
-        UInt32 fractional_divider = 1;
     };
 }
 
@@ -327,7 +309,7 @@ private:
 
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
         {
-            const auto transform = DateTime64TransformWrapper<Transform<unit>>{from_datatype.getScale()};
+            const auto transform = DateTime64BasicTransformWrapper<Transform<unit>>{from_datatype.getScale()};
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = transform.execute(time_data[i], num_units, time_zone);
         }
