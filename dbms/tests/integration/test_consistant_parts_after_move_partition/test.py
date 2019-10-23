@@ -12,17 +12,17 @@ CLICKHOUSE_DATABASE = os.environ["CLICKHOUSE_DATABASE"]
 
 def initialize_database(nodes, shard):
     for node in nodes:
-        node.query(f'''
-        CREATE DATABASE {CLICKHOUSE_DATABASE};
-        CREATE TABLE src (p UInt64, d UInt64)
-        ENGINE = ReplicatedMergeTree('/clickhouse/{CLICKHOUSE_DATABASE}/tables/test{shard}/replicated', '{replica}')
-        ORDER BY id PARTITION BY toYYYYMM(date)
-        SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0;
-        CREATE TABLE dest (p UInt64, d UInt64)
-        ENGINE = ReplicatedMergeTree('/clickhouse/{CLICKHOUSE_DATABASE}/tables/test{shard}/replicated', '{replica}')
-        ORDER BY id PARTITION BY toYYYYMM(date)
-        SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0;
-        '''.format(shard=shard, replica=node.name))
+        node.query('''
+            CREATE DATABASE {database} IF NOT EXISTS;
+            CREATE TABLE src (p UInt64, d UInt64)
+            ENGINE = ReplicatedMergeTree('/clickhouse/{database}/tables/test{shard}/replicated', '{replica}')
+            ORDER BY id PARTITION BY toYYYYMM(date)
+            SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0;
+            CREATE TABLE dest (p UInt64, d UInt64)
+            ENGINE = ReplicatedMergeTree('/clickhouse/{database}/tables/test{shard}/replicated', '{replica}')
+            ORDER BY id PARTITION BY toYYYYMM(date)
+            SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0;
+        '''.format(shard=shard, replica=node.name, database=CLICKHOUSE_DATABASE))
 
 
 cluster = ClickHouseCluster(__file__)
@@ -47,12 +47,12 @@ def test_consistent_part_after_move_partition(start_cluster):
     for i in range(100):
         node1.query('INSERT INTO `{database}`.src VALUE ({value} % 2, {value})'.format(database=CLICKHOUSE_DATABASE,
                                                                                          value=i))
-    query_source = f'SELECT COUNT(*) FROM `{CLICKHOUSE_DATABASE}`.src'
-    query_dest = f'SELECT COUNT(*) FROM `{CLICKHOUSE_DATABASE}`.dest'
+    query_source = 'SELECT COUNT(*) FROM `{database}`.src'.format(database=CLICKHOUSE_DATABASE)
+    query_dest = 'SELECT COUNT(*) FROM `{database}`.dest'.format(database=CLICKHOUSE_DATABASE)
     assert_eq_with_retry(node2, query_source, node1.query(query_source))
     assert_eq_with_retry(node2, query_dest, node1.query(query_dest))
 
-    node1.query(f'ALTER TABLE `{CLICKHOUSE_DATABASE}`.src MOVE PARTITION 1 TO TABLE `{CLICKHOUSE_DATABASE}`.dest')
+    node1.query('ALTER TABLE `{database}`.src MOVE PARTITION 1 TO TABLE `{database}`.dest'.format(database=CLICKHOUSE_DATABASE))
 
     assert_eq_with_retry(node2, query_source, node1.query(query_source))
     assert_eq_with_retry(node2, query_dest, node1.query(query_dest))
