@@ -99,7 +99,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     String database_engine_name;
     if (!create.storage)
     {
-        database_engine_name = "Ordinary"; /// Default database engine.
+        /// For new-style databases engine is explicitly specified in .sql
+        /// When attaching old-style database during server startup, we must always use Ordinary engine
+        // FIXME maybe throw an exception if it's an ATTACH DATABASE query from user (it's not server startup) and engine is not specified
+        bool old_style_database = create.attach ||
+                                  context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
+        database_engine_name = old_style_database ? "Ordinary" : "Atomic";
         auto engine = std::make_shared<ASTFunction>();
         engine->name = database_engine_name;
         auto storage = std::make_shared<ASTStorage>();
@@ -620,6 +625,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (!create.temporary || create.is_live_view)
         {
             database = context.getDatabase(database_name);
+            if (!create.uuid.empty() && database->getEngineName() != "Atomic")
+                throw Exception("Table UUID specified, but engine of database " + database_name + " is not Atomic",
+                                ErrorCodes::INCORRECT_QUERY);
             data_path = database->getDataPath();
 
             /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).

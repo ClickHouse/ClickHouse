@@ -124,7 +124,7 @@ public:
         const ConstraintsDescription & /*constraints*/,
         const ASTModifier & /*engine_modifier*/)
     {
-        throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(getEngineName() + ": alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.

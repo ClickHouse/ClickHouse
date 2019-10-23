@@ -1,3 +1,4 @@
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
@@ -43,6 +44,8 @@ DatabasePtr DatabaseFactory::get(
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
+    else if (engine_name == "Atomic")
+        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name);
     else if (engine_name == "Dictionary")
