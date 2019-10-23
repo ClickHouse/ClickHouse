@@ -6,7 +6,7 @@
 #include <Parsers/ASTExpressionList.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
