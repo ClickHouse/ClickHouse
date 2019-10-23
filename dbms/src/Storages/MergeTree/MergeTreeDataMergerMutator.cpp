@@ -683,7 +683,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// If merge is vertical we cannot calculate it
     bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
 
-    UInt64 merge_block_size = data_settings->default_merge_block_size;
+    UInt64 merge_block_size = data_settings->merge_max_block_size;
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
