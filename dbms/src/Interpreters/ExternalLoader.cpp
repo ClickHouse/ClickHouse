@@ -864,7 +864,7 @@ private:
         if (!info || !info->loading() || (info->loading_id != loading_id))
             return;
 
-        if (new_exception && async)
+        if (new_exception)
         {
             auto next_update_time_description = [next_update_time]
             {
