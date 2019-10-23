@@ -26,7 +26,9 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             bool has_data = file_segmentation_engine(original_buffer, segments[current_unit_number].memory, segments[current_unit_number].used_size, min_chunk_size);
 
             // Creating buffer from the segment of data.
-            auto new_buffer = BufferBase::Buffer(segments[current_unit_number].memory.data(), segments[current_unit_number].memory.data() + segments[current_unit_number].used_size);
+            auto new_buffer = BufferBase::Buffer(segments[current_unit_number].memory.data(),
+                                                 segments[current_unit_number].memory.data() + segments[current_unit_number].used_size);
+
             buffers[current_unit_number]->buffer().swap(new_buffer);
             buffers[current_unit_number]->position() = buffers[current_unit_number]->buffer().begin();
 
