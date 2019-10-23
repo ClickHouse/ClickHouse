@@ -488,6 +488,16 @@ ClickHouse использует этот параметр при чтении д
 
     log_queries=1
 
+## log_query_threads {#settings-log-query-threads}
+
+Установка логирования тредов запроса.
+
+Треды запросов, переданных в ClickHouse с этой установкой, логируются согласно правилам конфигурационного параметра сервера [query_thread_log](../server_settings/settings.md#server_settings-query-thread-log).
+
+**Пример** :
+
+    log_query_threads=1
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 Формировать блоки указанного размера, при вставке в таблицу.

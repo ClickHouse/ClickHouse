@@ -477,6 +477,76 @@ ClickHouse создаёт таблицу только в том случае, к
 
 Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query_log](server_settings/settings.md#server_settings-query-log)  (параметр `partition_by`).
 
+## system.query_thread_log {#system_tables-query-thread-log}
+
+Содержит информацию о каждом треде выполняемых запросов.
+
+ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
+
+Чтобы включить логирование, задайте значение параметра [log_query_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
+
+Столбцы:
+
+- `event_date` (Date) — дата события.
+- `event_time` (DateTime) — время события.
+- `query_start_time` (DateTime) — время начала обработки запроса.
+- `query_duration_ms` (UInt64) — длительность обработки запроса.
+- `read_rows` (UInt64) — количество прочитанных строк.
+- `read_bytes` (UInt64) — количество прочитанных байтов.
+- `written_rows` (UInt64) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `written_bytes` (UInt64) — объем записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+- `memory_usage` (Int64) — Потребление RAM тредом (?).
+- `peak_memory_usage` (Int64) — Максимальное потребление RAM тредом.
+- `thread_name` (String) — Имя функции треда.
+- `thread_number` (UInt32) — Внутренний ID треда.
+- `os_thread_id` (Int32) — Системный ID треда.
+- `master_thread_number` (UInt32) — Внутренний ID главного треда (?).
+- `master_os_thread_id` (Int32) — Системный ID главного треда (?).
+- `query` (String) — строка запроса.
+- `is_initial_query` (UInt8) — вид запроса. Возможные значения:
+    - 1 — запрос был инициирован клиентом.
+    - 0 — запрос был инициирован другим запросом при распределенном запросе.
+- `user` (String) — пользователь, запустивший текущий запрос.
+- `query_id` (String) — ID запроса.
+- `address` (FixedString(16)) — IP адрес, с которого пришел запрос.
+- `port` (UInt16) — порт, на котором сервер принял запрос.
+- `initial_user` (String) —  пользователь, запустивший первоначальный запрос (для распределенных запросов).
+- `initial_query_id` (String) — ID родительского запроса.
+- `initial_address` (FixedString(16)) — IP адрес, с которого пришел родительский запрос.
+- `initial_port` (UInt16) — порт, на котором сервер принял родительский запрос от клиента.
+- `interface` (UInt8) — интерфейс, с которого ушёл запрос. Возможные значения:
+    - 1 — TCP.
+    - 2 — HTTP.
+- `os_user` (String) — операционная система пользователя.
+- `client_hostname` (String) — имя сервера, к которому присоединился [clickhouse-client](../interfaces/cli.md).
+- `client_name` (String) — [clickhouse-client](../interfaces/cli.md).
+- `client_revision` (UInt32) — ревизия [clickhouse-client](../interfaces/cli.md).
+- `client_version_major` (UInt32) — старшая версия [clickhouse-client](../interfaces/cli.md).
+- `client_version_minor` (UInt32) — младшая версия [clickhouse-client](../interfaces/cli.md).
+- `client_version_patch` (UInt32) — патч [clickhouse-client](../interfaces/cli.md).
+- `http_method` (UInt8) — HTTP метод, инициировавший запрос. Возможные значения:
+    - 0 — запрос запущен с интерфейса TCP.
+    - 1 — `GET`.
+    - 2 — `POST`.
+- `http_user_agent` (String) — HTTP заголовок `UserAgent`.
+- `quota_key` (String) — идентификатор квоты из настроек [квот](quotas.md).
+- `revision` (UInt32) — ревизия ClickHouse.
+- `ProfileEvents.Names` (Array(String)) — Счетчики для изменения метрик:
+    - Время, потраченное на чтение и запись по сети.
+    - Время, потраченное на чтение и запись на диск.
+    - Количество сетевых ошибок.
+    - Время, потраченное на ожидание, когда пропускная способность сети ограничена.
+- `ProfileEvents.Values` (Array(UInt64)) — метрики, перечисленные в столбце `ProfileEvents.Names`.
+
+По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
+
+Если таблицу удалить вручную, она пересоздастся автоматически "на лету". При этом все логи на момент удаления таблицы будут удалены.
+
+!!! note "Примечание"
+    Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
+
+Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) (параметр `partition_by`).
+
 ## system.replicas {#system_tables-replicas}
 
 Содержит информацию и статус для реплицируемых таблиц, расположенных на локальном сервере.
