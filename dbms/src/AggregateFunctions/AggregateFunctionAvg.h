@@ -52,14 +52,12 @@ public:
     AggregateFunctionAvg(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types_, {})
         , scale(0)
-        , precision(0)
     {}
 
     /// ctor for Decimals
     AggregateFunctionAvg(const IDataType & data_type, const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types_, {})
         , scale(getDecimalScale(data_type))
-        , precision(getDecimalPrecision(data_type))
     {}
 
     String getName() const override { return "avg"; }
@@ -67,7 +65,7 @@ public:
     DataTypePtr getReturnType() const override
     {
         if constexpr (IsDecimalNumber<T>)
-            return std::make_shared<ResultDataType>(precision, scale);
+            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
         else
             return std::make_shared<ResultDataType>();
     }
@@ -107,7 +105,6 @@ public:
 
 private:
     UInt32 scale;
-    UInt32 precision;
 };
 
 
