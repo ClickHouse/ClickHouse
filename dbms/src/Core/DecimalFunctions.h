@@ -6,6 +6,8 @@
 
 #include <limits>
 
+class DateLUTImpl;
+
 namespace DB
 {
 
@@ -98,5 +100,39 @@ typename DecimalType::NativeType decimalFractionalPart(const DecimalType & decim
 
     return result % decimalScaleMultiplier<T>(scale);
 }
+
+/** Basic wrapper for Tansform-types for DateTime64.
+ *
+ * Allows reusing existing Transform (that takes DateTime-values as UInt32) with DateTime64-values,
+ * by discarding fractional part and producing SAME return type as original Transform.
+ *
+ * Such Transfotm-types are commonly used in Date/DateTime manipulation functions,
+ * and implement static execute fucntion with following signature:
+ *      R execute(UInt32, T, const DateLUTImpl &)
+ *
+ * Wehere R and T could be arbitrary types.
+*/
+template <typename Transform>
+class DateTime64BasicTransformWrapper : public Transform
+{
+public:
+    using Transform::execute;
+
+    explicit DateTime64BasicTransformWrapper(UInt32 scale_)
+        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale_))
+    {}
+
+    template <typename T>
+    auto execute(DateTime64 t, T v, const DateLUTImpl & time_zone) const
+        -> decltype(Transform::execute(UInt32{}, v, time_zone))
+    {
+        const auto components = decimalSplitWithScaleMultiplier(t, scale_multiplier);
+        return static_cast<const Transform *>(this)->execute(
+            static_cast<UInt32>(components.whole), v, time_zone);
+    }
+
+private:
+    UInt32 scale_multiplier = 1;
+};
 
 }
