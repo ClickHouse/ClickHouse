@@ -20,6 +20,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
         storage_, columns_list_,
         marks_file_extension_,
         default_codec_, settings_)
+    , can_use_adaptive_granularity(storage_.canUseAdaptiveGranularity())
 {
     size_t total_size = 0;
     if (settings.aio_threshold > 0 && !merged_column_to_size.empty())
