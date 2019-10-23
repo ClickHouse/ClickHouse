@@ -7,7 +7,7 @@ from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 
-CLICKHOUSE_DATABASE = os.environ["CLICKHOUSE_DATABASE"]
+CLICKHOUSE_DATABASE = 'test'
 
 
 def initialize_database(nodes, shard):
