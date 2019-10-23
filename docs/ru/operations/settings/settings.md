@@ -777,6 +777,7 @@ load_balancing = first_or_random
 
 - [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
 - [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+- [uniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
 - [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
 - [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
 
