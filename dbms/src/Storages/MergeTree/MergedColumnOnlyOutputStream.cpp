@@ -69,29 +69,7 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums()
 {
     /// Finish columns serialization.
-    auto & settings = storage.global_context.getSettingsRef();
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-
-    WrittenOffsetColumns offset_columns;
-    for (size_t i = 0, size = header.columns(); i < size; ++i)
-    {
-        auto & column = header.getByPosition(i);
-        /// FIXME
-        // serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
-        column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
-
-        UNUSED(skip_offsets);
-
-        /// FIXME
-        /// We wrote at least one row
-        // if (with_final_mark && (index_offset != 0 || current_mark != 0))
-        //     writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
-    }
-
     MergeTreeData::DataPart::Checksums checksums;
-
     bool write_final_mark = with_final_mark && (index_offset != 0 || current_mark != 0);
     writer->finalize(checksums, write_final_mark, sync);
 
