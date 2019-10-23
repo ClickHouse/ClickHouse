@@ -14,6 +14,7 @@ DEFAULT_URL = 'https://clickhouse-datasets.s3.yandex.net'
 AVAILABLE_DATASETS = {
     'hits': 'hits_v1.tar',
     'visits': 'visits_v1.tar',
+    'values_with_expressions': 'test_values.tar',
     'hits_100m_single': 'hits_100m_single.tar',
     'hits_1000m_single': 'hits_1000m_single.tar',
     'hits_10m_single': 'hits_10m_single.tar',

@@ -1,6 +1,11 @@
+#include "MutationsInterpreter.h"
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -14,7 +19,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
-#include "MutationsInterpreter.h"
 
 
 namespace DB
@@ -26,6 +30,67 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
 }
+
+namespace
+{
+struct FirstNonDeterministicFuncData
+{
+    using TypeToVisit = ASTFunction;
+
+    explicit FirstNonDeterministicFuncData(const Context & context_)
+        : context{context_}
+    {}
+
+    const Context & context;
+    std::optional<String> nondeterministic_function_name;
+
+    void visit(ASTFunction & function, ASTPtr &)
+    {
+        if (nondeterministic_function_name)
+            return;
+
+        const auto func = FunctionFactory::instance().get(function.name, context);
+        if (!func->isDeterministic())
+            nondeterministic_function_name = func->getName();
+    }
+};
+
+using FirstNonDeterministicFuncFinder =
+        InDepthNodeVisitor<OneTypeMatcher<FirstNonDeterministicFuncData>, true>;
+
+std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
+{
+    FirstNonDeterministicFuncData finder_data(context);
+
+    switch (command.type)
+    {
+        case MutationCommand::UPDATE:
+        {
+            auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
+            FirstNonDeterministicFuncFinder(finder_data).visit(update_assignments_ast);
+
+            if (finder_data.nondeterministic_function_name)
+                return finder_data.nondeterministic_function_name;
+
+            [[fallthrough]];
+        }
+
+        case MutationCommand::DELETE:
+        {
+            auto predicate_ast = command.predicate->clone();
+            FirstNonDeterministicFuncFinder(finder_data).visit(predicate_ast);
+
+            return finder_data.nondeterministic_function_name;
+        }
+
+        default:
+            break;
+    }
+
+    return {};
+}
+};
+
 
 bool MutationsInterpreter::isStorageTouchedByMutations() const
 {
@@ -440,6 +505,21 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
 
 void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
+    /// For Replicated* storages mutations cannot employ non-deterministic functions
+    /// because that produces inconsistencies between replicas
+    if (startsWith(storage->getName(), "Replicated"))
+    {
+        for (const auto & command : commands)
+        {
+            const auto nondeterministic_func_name = findFirstNonDeterministicFuncName(command, context);
+            if (nondeterministic_func_name)
+                throw Exception(
+                    "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions! "
+                    "Function '" + *nondeterministic_func_name + "' is non-deterministic",
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
     const auto & select_query = prepare(/* dry_run = */ true);
     InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ true).ignoreLimits()};
     /// Do not use getSampleBlock in order to check the whole pipeline.

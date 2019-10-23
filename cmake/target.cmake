@@ -54,7 +54,7 @@ if (LINKER_NAME)
 endif ()
 
 if (CMAKE_CROSSCOMPILING)
-    if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    if (OS_DARWIN)
         set (CMAKE_SYSTEM_PROCESSOR x86_64)
         set (CMAKE_C_COMPILER_TARGET x86_64-apple-darwin)
         set (CMAKE_CXX_COMPILER_TARGET x86_64-apple-darwin)
@@ -66,13 +66,17 @@ if (CMAKE_CROSSCOMPILING)
         set (HAS_POST_2038_EXITCODE__TRYRUN_OUTPUT "" CACHE STRING "Output from TRY_RUN" FORCE)
 
         # FIXME: broken dependencies
-        set (USE_SNAPPY OFF)
-        set (ENABLE_SSL OFF)
-        set (ENABLE_PROTOBUF OFF)
-        set (ENABLE_PARQUET OFF)
-        set (ENABLE_READLINE OFF)
-        set (ENABLE_ICU OFF)
-        set (ENABLE_FASTOPS OFF)
+        set (USE_SNAPPY OFF CACHE INTERNAL "")
+        set (ENABLE_SSL OFF CACHE INTERNAL "")
+        set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
+        set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+        set (ENABLE_READLINE OFF CACHE INTERNAL "")
+        set (ENABLE_ICU OFF CACHE INTERNAL "")
+        set (ENABLE_FASTOPS OFF CACHE INTERNAL "")
+
+        message (STATUS "Cross-compiling for Darwin")
+    else ()
+        message (FATAL_ERROR "Trying to cross-compile to unsupported target: ${CMAKE_SYSTEM_NAME}!")
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation

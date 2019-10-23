@@ -1,5 +1,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 
+#include <Core/Field.h>
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>

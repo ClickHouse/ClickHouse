@@ -77,7 +77,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            if (context.hasDatabaseAccessRights(database.first))
+            /// Lazy database can not contain MergeTree tables
+            /// and it's unnecessary to load all tables of Lazy database just to filter all of them.
+            if (context.hasDatabaseAccessRights(database.first) && database.second->getEngineName() != "Lazy")
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(

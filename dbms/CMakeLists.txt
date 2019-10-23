@@ -153,17 +153,16 @@ add_subdirectory(src/Common/Config)
 set (all_modules)
 macro(add_object_library name common_path)
     if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-        add_glob(dbms_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
-        add_glob(dbms_sources ${common_path}/*.cpp ${common_path}/*.c ${common_path}/*.h)
+        add_headers_and_sources(dbms ${common_path})
     else ()
         list (APPEND all_modules ${name})
-        add_glob(${name}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
-        add_glob(${name}_sources ${common_path}/*.cpp ${common_path}/*.c ${common_path}/*.h)
+        add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
         target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
     endif ()
 endmacro()
 
+add_object_library(clickhouse_access src/Access)
 add_object_library(clickhouse_core src/Core)
 add_object_library(clickhouse_compression src/Compression)
 add_object_library(clickhouse_datastreams src/DataStreams)
@@ -256,6 +255,7 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
+    ${Poco_XML_LIBRARY}
 )
 
 if(RE2_LIBRARY)
@@ -269,6 +269,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
     ${CITYHASH_LIBRARIES}
         PRIVATE
+    ${Poco_XML_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARIES}
         PUBLIC
@@ -329,7 +330,7 @@ dbms_target_include_directories(SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
-if (NOT USE_INTERNAL_LZ4_LIBRARY)
+if (NOT USE_INTERNAL_LZ4_LIBRARY AND LZ4_INCLUDE_DIR)
     dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
 

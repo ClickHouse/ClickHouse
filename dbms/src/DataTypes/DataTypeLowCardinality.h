@@ -69,7 +69,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override { return dictionary_type->getDefault(); }
+    Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;
 

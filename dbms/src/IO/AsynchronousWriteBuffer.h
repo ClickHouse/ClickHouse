@@ -41,7 +41,7 @@ private:
         swapBuffers();
 
         /// The data will be written in separate stream.
-        pool.schedule([this] { thread(); });
+        pool.scheduleOrThrowOnError([this] { thread(); });
     }
 
 public:

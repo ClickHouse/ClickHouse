@@ -35,6 +35,7 @@ nav:
 - 'Database Engines':
     - 'Introduction': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
+    - 'Lazy': 'database_engines/lazy.md'
 
 - 'Table Engines':
   - 'Introduction': 'operations/table_engines/index.md'
@@ -202,6 +203,10 @@ nav:
     - 'Overview': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
+
+- 'Guides':
+  - 'Overview': 'guides/index.md'
+  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
 
 - 'Development':
   - 'hidden': 'development/index.md'

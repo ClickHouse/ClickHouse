@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Common/PODArray.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
