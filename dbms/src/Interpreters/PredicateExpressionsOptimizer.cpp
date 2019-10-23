@@ -21,6 +21,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
@@ -411,6 +412,9 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};
     QueryAliasesVisitor(query_aliases_data).visit(ast);
+
+    MarkTableIdentifiersVisitor::Data mark_tables_data{aliases};
+    MarkTableIdentifiersVisitor(mark_tables_data).visit(ast);
 
     QueryNormalizer::Data normalizer_data(aliases, settings);
     QueryNormalizer(normalizer_data).visit(ast);
