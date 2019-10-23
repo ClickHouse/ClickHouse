@@ -4,8 +4,6 @@
 #include <memory>
 #include <functional>
 
-#include <Poco/TemporaryFile.h>
-
 #include <common/logger_useful.h>
 
 #include <common/StringRef.h>
@@ -13,11 +11,15 @@
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <Common/HashTable/StringHashMap.h>
+#include <Common/HashTable/TwoLevelStringHashMap.h>
+
 #include <Common/ThreadPool.h>
 #include <Common/UInt128.h>
 #include <Common/LRUCache.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
+#include <Common/filesystemHelpers.h>
 
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
@@ -70,12 +72,20 @@ using AggregatedDataWithUInt8Key = FixedHashMap<UInt8, AggregateDataPtr>;
 using AggregatedDataWithUInt16Key = FixedHashMap<UInt16, AggregateDataPtr>;
 
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+
+using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
+
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
+
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+
+using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
+
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
+
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
@@ -140,6 +150,8 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
 template <typename ... Types>
 using HashTableWithNullKey = AggregationDataWithNullKey<HashMapTable<Types ...>>;
+template <typename ... Types>
+using StringHashTableWithNullKey = AggregationDataWithNullKey<StringHashMap<Types ...>>;
 
 using AggregatedDataWithNullableUInt8Key = AggregationDataWithNullKey<AggregatedDataWithUInt8Key>;
 using AggregatedDataWithNullableUInt16Key = AggregationDataWithNullKey<AggregatedDataWithUInt16Key>;
@@ -150,6 +162,10 @@ using AggregatedDataWithNullableStringKey = AggregationDataWithNullKey<Aggregate
 using AggregatedDataWithNullableUInt64KeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
+
+using AggregatedDataWithNullableShortStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
+        TwoLevelStringHashMap<AggregateDataPtr, HashTableAllocator, StringHashTableWithNullKey>>;
+
 using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTwoLevel<
         TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr, DefaultHash<StringRef>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
@@ -217,6 +233,32 @@ struct AggregationMethodString
 };
 
 
+/// Same as above but without cache
+template <typename TData>
+struct AggregationMethodStringNoCache
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+
+    AggregationMethodStringNoCache() {}
+
+    template <typename Other>
+    AggregationMethodStringNoCache(const Other & other) : data(other.data) {}
+
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
+
+    static const bool low_cardinality_optimization = false;
+
+    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data, key.size);
+    }
+};
+
+
 /// For the case where there is one fixed-length string key.
 template <typename TData>
 struct AggregationMethodFixedString
@@ -241,6 +283,32 @@ struct AggregationMethodFixedString
         key_columns[0]->insertData(key.data, key.size);
     }
 };
+
+/// Same as above but without cache
+template <typename TData>
+struct AggregationMethodFixedStringNoCache
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+
+    AggregationMethodFixedStringNoCache() {}
+
+    template <typename Other>
+    AggregationMethodFixedStringNoCache(const Other & other) : data(other.data) {}
+
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
+
+    static const bool low_cardinality_optimization = false;
+
+    static void insertKeyIntoColumns(const StringRef & key, MutableColumns & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data, key.size);
+    }
+};
+
 
 /// Single low cardinality column.
 template <typename SingleColumnMethod>
@@ -435,16 +503,16 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>>         key32;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>         key64;
-    std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKey>>                    key_string;
-    std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKey>>               key_fixed_string;
+    std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKey>>               key_string;
+    std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKey>>          key_fixed_string;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
-    std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyTwoLevel>>            key_string_two_level;
-    std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>>       key_fixed_string_two_level;
+    std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>       key_string_two_level;
+    std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>  key_fixed_string_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;

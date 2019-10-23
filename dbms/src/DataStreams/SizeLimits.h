@@ -32,6 +32,11 @@ struct SizeLimits
 
     /// Check limits. If exceeded, return false or throw an exception, depending on overflow_mode.
     bool check(UInt64 rows, UInt64 bytes, const char * what, int exception_code) const;
+
+    /// Check limits. No exceptions.
+    bool softCheck(UInt64 rows, UInt64 bytes) const;
+
+    bool hasLimits() const { return max_rows || max_bytes; }
 };
 
 }

@@ -1,4 +1,4 @@
-# Functions for working with geographical coordinates
+# Functions for Working with Geographical Coordinates
 
 ## greatCircleDistance
 

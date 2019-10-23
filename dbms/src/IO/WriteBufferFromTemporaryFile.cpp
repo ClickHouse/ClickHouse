@@ -1,7 +1,6 @@
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/ReadBufferFromFile.h>
 
-#include <Poco/Path.h>
 #include <fcntl.h>
 
 
@@ -15,17 +14,14 @@ namespace ErrorCodes
 }
 
 
-WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(std::unique_ptr<Poco::TemporaryFile> && tmp_file_)
+WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(std::unique_ptr<TemporaryFile> && tmp_file_)
     : WriteBufferFromFile(tmp_file_->path(), DBMS_DEFAULT_BUFFER_SIZE, O_RDWR | O_TRUNC | O_CREAT, 0600), tmp_file(std::move(tmp_file_))
 {}
 
 
 WriteBufferFromTemporaryFile::Ptr WriteBufferFromTemporaryFile::create(const std::string & tmp_dir)
 {
-    Poco::File(tmp_dir).createDirectories();
-
-    /// NOTE: std::make_shared cannot use protected constructors
-    return Ptr{new WriteBufferFromTemporaryFile(std::make_unique<Poco::TemporaryFile>(tmp_dir))};
+    return Ptr{new WriteBufferFromTemporaryFile(createTemporaryFile(tmp_dir))};
 }
 
 
@@ -45,11 +41,11 @@ public:
         return std::make_shared<ReadBufferFromTemporaryWriteBuffer>(fd, file_name, std::move(origin->tmp_file));
     }
 
-    ReadBufferFromTemporaryWriteBuffer(int fd_, const std::string & file_name_, std::unique_ptr<Poco::TemporaryFile> && tmp_file_)
+    ReadBufferFromTemporaryWriteBuffer(int fd_, const std::string & file_name_, std::unique_ptr<TemporaryFile> && tmp_file_)
         : ReadBufferFromFile(fd_, file_name_), tmp_file(std::move(tmp_file_))
     {}
 
-    std::unique_ptr<Poco::TemporaryFile> tmp_file;
+    std::unique_ptr<TemporaryFile> tmp_file;
 };
 
 

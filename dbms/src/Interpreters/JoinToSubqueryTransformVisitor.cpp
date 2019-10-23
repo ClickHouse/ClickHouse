@@ -37,8 +37,6 @@ namespace
 class ExtractAsterisksMatcher
 {
 public:
-    using Visitor = InDepthNodeVisitor<ExtractAsterisksMatcher, true>;
-
     struct Data
     {
         std::unordered_map<String, NamesAndTypesList> table_columns;
@@ -76,30 +74,16 @@ public:
         }
     };
 
-    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return false; }
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return false; }
 
-    static void visit(ASTPtr & ast, Data & data)
+    static void visit(const ASTPtr & ast, Data & data)
     {
-        if (auto * t = ast->as<ASTSelectQuery>())
-            visit(*t, ast, data);
         if (auto * t = ast->as<ASTExpressionList>())
             visit(*t, ast, data);
     }
 
 private:
-    static void visit(ASTSelectQuery & node, ASTPtr &, Data & data)
-    {
-        if (data.table_columns.empty())
-            return;
-
-        Visitor(data).visit(node.refSelect());
-        if (!data.new_select_expression_list)
-            return;
-
-        node.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.new_select_expression_list));
-    }
-
-    static void visit(ASTExpressionList & node, ASTPtr &, Data & data)
+    static void visit(const ASTExpressionList & node, const ASTPtr &, Data & data)
     {
         bool has_asterisks = false;
         data.new_select_expression_list = std::make_shared<ASTExpressionList>();
@@ -375,7 +359,7 @@ using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
 using SetSubqueryAliasMatcher = OneTypeMatcher<SetSubqueryAliasVisitorData>;
 using SetSubqueryAliasVisitor = InDepthNodeVisitor<SetSubqueryAliasMatcher, true>;
-using ExtractAsterisksVisitor = ExtractAsterisksMatcher::Visitor;
+using ExtractAsterisksVisitor = ConstInDepthNodeVisitor<ExtractAsterisksMatcher, true>;
 using ColumnAliasesVisitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
 using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
@@ -389,7 +373,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
         visit(*t, ast, data);
 }
 
-void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
+void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
 {
     using RevertedAliases = AsteriskSemantic::RevertedAliases;
 
@@ -398,7 +382,12 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         return;
 
     ExtractAsterisksVisitor::Data asterisks_data(data.context, table_expressions);
-    ExtractAsterisksVisitor(asterisks_data).visit(ast);
+    if (!asterisks_data.table_columns.empty())
+    {
+        ExtractAsterisksVisitor(asterisks_data).visit(select.select());
+        if (asterisks_data.new_select_expression_list)
+            select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(asterisks_data.new_select_expression_list));
+    }
 
     ColumnAliasesVisitor::Data aliases_data(getDatabaseAndTables(select, ""));
     if (select.select())

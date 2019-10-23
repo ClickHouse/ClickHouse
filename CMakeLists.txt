@@ -118,16 +118,16 @@ endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
+if (ARCH_AMD64)
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
+endif ()
 
-    if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-        option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-    endif ()
+if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
+    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+endif ()
 
-    if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
-        message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
-    endif ()
+if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
+    message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
 endif ()
 
 # Make sure the final executable has symbols exported
@@ -205,6 +205,7 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
+option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
 
 option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
 if (UNBUNDLED)
@@ -373,7 +374,9 @@ endif ()
 
 include (cmake/print_flags.cmake)
 
-install (EXPORT global DESTINATION cmake)
+if (TARGET global-group)
+    install (EXPORT global DESTINATION cmake)
+endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 

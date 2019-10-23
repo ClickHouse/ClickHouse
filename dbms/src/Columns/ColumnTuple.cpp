@@ -6,6 +6,7 @@
 #include <ext/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -93,16 +94,17 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
 
 Field ColumnTuple::operator[](size_t n) const
 {
-    return Tuple{ext::map<TupleBackend>(columns, [n] (const auto & column) { return (*column)[n]; })};
+    return ext::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
 }
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
     const size_t tuple_size = columns.size();
-    res = Tuple(TupleBackend(tuple_size));
-    TupleBackend & res_arr = DB::get<Tuple &>(res).toUnderType();
+    Tuple tuple(tuple_size);
     for (const auto i : ext::range(0, tuple_size))
-        columns[i]->get(n, res_arr[i]);
+        columns[i]->get(n, tuple[i]);
+
+    res = tuple;
 }
 
 StringRef ColumnTuple::getDataAt(size_t) const
@@ -117,7 +119,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const TupleBackend & tuple = DB::get<const Tuple &>(x).toUnderType();
+    auto & tuple = DB::get<const Tuple &>(x);
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -351,14 +353,14 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
 
-    min = Tuple(TupleBackend(tuple_size));
-    max = Tuple(TupleBackend(tuple_size));
-
-    auto & min_backend = min.get<Tuple &>().toUnderType();
-    auto & max_backend = max.get<Tuple &>().toUnderType();
+    Tuple min_tuple(tuple_size);
+    Tuple max_tuple(tuple_size);
 
     for (const auto i : ext::range(0, tuple_size))
-        columns[i]->getExtremes(min_backend[i], max_backend[i]);
+        columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
+
+    min = min_tuple;
+    max = max_tuple;
 }
 
 void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
