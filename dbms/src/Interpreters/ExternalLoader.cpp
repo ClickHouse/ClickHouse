@@ -856,9 +856,6 @@ private:
             next_update_time = TimePoint::max();
         }
 
-        /// In synchronus mode we throw exception immediately
-        if (!async && new_exception)
-            std::rethrow_exception(new_exception);
 
         Info * info = getInfo(name);
 
@@ -867,7 +864,7 @@ private:
         if (!info || !info->loading() || (info->loading_id != loading_id))
             return;
 
-        if (new_exception)
+        if (new_exception && async)
         {
             auto next_update_time_description = [next_update_time]
             {
