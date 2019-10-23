@@ -24,7 +24,6 @@ create_table_mysql_template = """
 
 create_clickhouse_dictionary_table_template = """
     CREATE TABLE `test`.`dict_table_{}` (`id` Int32, `value` String) ENGINE = Dictionary({})
-    ORDER BY `id` DESC SETTINGS index_granularity = 8192
     """
 
 @pytest.fixture(scope="module")
