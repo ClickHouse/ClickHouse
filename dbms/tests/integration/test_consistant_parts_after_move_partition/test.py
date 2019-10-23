@@ -12,8 +12,7 @@ CLICKHOUSE_DATABASE = os.environ["CLICKHOUSE_DATABASE"]
 
 def initialize_database(nodes, shard):
     for node in nodes:
-        node.query((
-        f'''
+        node.query(f'''
         CREATE DATABASE {CLICKHOUSE_DATABASE};
         CREATE TABLE src (p UInt64, d UInt64)
         ENGINE = ReplicatedMergeTree('/clickhouse/{CLICKHOUSE_DATABASE}/tables/test{shard}/replicated', '{replica}')
