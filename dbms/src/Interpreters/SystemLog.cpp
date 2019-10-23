@@ -27,8 +27,10 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & config_prefix)
 {
     if (!config.has(config_prefix))
+    {
+        std::cerr << "Not Enter" << std::endl;
         return {};
-
+    }
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
     String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
