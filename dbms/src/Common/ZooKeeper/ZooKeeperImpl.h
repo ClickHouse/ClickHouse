@@ -210,7 +210,9 @@ private:
     Watches watches;
     std::mutex watches_mutex;
 
+    std::mutex send_thread_join_mutex;
     ThreadFromGlobalPool send_thread;
+    std::mutex receive_thread_join_mutex;
     ThreadFromGlobalPool receive_thread;
 
     void connect(

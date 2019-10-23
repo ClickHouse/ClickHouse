@@ -803,11 +803,17 @@ ZooKeeper::~ZooKeeper()
     {
         finalize(false, false);
 
-        if (send_thread.joinable())
-            send_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(send_thread_join_mutex);
+            if (send_thread.joinable())
+                send_thread.join();
+        }
 
-        if (receive_thread.joinable())
-            receive_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(receive_thread_join_mutex);
+            if (receive_thread.joinable())
+                receive_thread.join();
+        }
     }
     catch (...)
     {
@@ -1303,6 +1309,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
+            std::lock_guard<std::mutex> lock(send_thread_join_mutex);
             send_thread.join();
         }
 
@@ -1318,7 +1325,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
         }
 
         if (!error_receive)
+        {
+            std::lock_guard<std::mutex> lock(receive_thread_join_mutex);
             receive_thread.join();
+        }
 
         {
             std::lock_guard lock(operations_mutex);
