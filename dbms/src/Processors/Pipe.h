@@ -11,7 +11,11 @@ using Pipes = std::vector<Pipe>;
 class Pipe
 {
 public:
+    /// Create from source. It must have no input ports and single output.
     explicit Pipe(ProcessorPtr source);
+    /// Connect several pipes together with specified transform.
+    /// Transform must have the number of inputs equals to the number of pipes. And single output.
+    /// Will connect pipes outputs with transform inputs automatically.
     Pipe(Pipes && pipes, ProcessorPtr transform);
 
     Pipe(const Pipe & other) = delete;
