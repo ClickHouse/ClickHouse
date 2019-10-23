@@ -279,6 +279,7 @@ private:
 
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
+struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
 struct NameJSONLength { static constexpr auto name{"JSONLength"}; };
 struct NameJSONKey { static constexpr auto name{"JSONKey"}; };
 struct NameJSONType { static constexpr auto name{"JSONType"}; };
@@ -301,6 +302,36 @@ public:
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator &)
     {
+        ColumnVector<UInt8> & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
+        col_vec.insertValue(1);
+        return true;
+    }
+
+    static constexpr size_t num_extra_arguments = 0;
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
+};
+
+
+template <typename JSONParser>
+class IsValidJSONImpl
+{
+public:
+    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.size() != 1)
+        {
+            /// IsValidJSON() shouldn't get parameters other than JSON.
+            throw Exception{"Function " + String(function_name) + " needs exactly one argument",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        }
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    static bool addValueToColumn(IColumn & dest, const Iterator &)
+    {
+        /// This function is called only if JSON is valid.
+        /// If JSON isn't valid then `FunctionJSON::Executor::run()` adds default value (=zero) to `dest` without calling this function.
         ColumnVector<UInt8> & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
         col_vec.insertValue(1);
         return true;

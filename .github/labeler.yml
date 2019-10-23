@@ -1,7 +1,3 @@
-# Build changes
-pr-build:
-  - "**/CMakeLists.txt"
-
 # Documentation PRs
 documentation:
   - "**/*.md"
