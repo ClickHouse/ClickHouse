@@ -81,10 +81,7 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
             auto block = readers[current_unit_number]->read();
 
             blocks[current_unit_number].block.push_back(block);
-            {
-                std::lock_guard missing_values_lock(missing_values_mutex);
-                blocks[current_unit_number].block_missing_values.push_back(readers[current_unit_number]->getMissingValues());
-            }
+            blocks[current_unit_number].block_missing_values.push_back(readers[current_unit_number]->getMissingValues());
 
             if (block == Block())
                 break;

@@ -106,7 +106,6 @@ protected:
 
     const BlockMissingValues & getMissingValues() const override
     {
-        std::lock_guard missing_values_lock(missing_values_mutex);
         return last_block_missing_values;
     }
 
@@ -118,7 +117,6 @@ private:
     std::atomic<bool> is_exception_occured{false};
 
     BlockMissingValues last_block_missing_values;
-    mutable std::mutex missing_values_mutex;
 
     // Original ReadBuffer to read from.
     ReadBuffer & original_buffer;
