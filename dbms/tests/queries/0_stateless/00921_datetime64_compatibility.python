@@ -4,79 +4,80 @@
 import re
 import itertools
 import sys
+import argparse
 
 # Create SQL statement to verify dateTime64 is accepted as argument to functions taking DateTime.
-functions="""
-toTimeZone({datetime}, 'UTC')
-toYear({datetime})
-toQuarter({datetime})
-toMonth({datetime})
-toDayOfYear({datetime})
-toDayOfMonth({datetime})
-toDayOfWeek({datetime})
-toHour({datetime})
-toMinute({datetime})
-toSecond({datetime})
-toUnixTimestamp({datetime})
-toStartOfYear({datetime})
-toStartOfISOYear({datetime})
-toStartOfQuarter({datetime})
-toStartOfMonth({datetime})
-toMonday({datetime})
-toStartOfWeek({datetime})
-toStartOfDay({datetime})
-toStartOfHour({datetime})
-toStartOfMinute({datetime})
-toStartOfFiveMinute({datetime})
-toStartOfTenMinutes({datetime})
-toStartOfFifteenMinutes({datetime})
-toStartOfInterval({datetime}, INTERVAL 1 year)
-toStartOfInterval({datetime}, INTERVAL 1 month)
-toStartOfInterval({datetime}, INTERVAL 1 day)
-toStartOfInterval({datetime}, INTERVAL 15 minute)
-toTime({datetime})
-toRelativeYearNum({datetime})
-toRelativeQuarterNum({datetime})
-toRelativeMonthNum({datetime})
-toRelativeWeekNum({datetime})
-toRelativeDayNum({datetime})
-toRelativeHourNum({datetime})
-toRelativeMinuteNum({datetime})
-toRelativeSecondNum({datetime})
-toISOYear({datetime})
-toISOWeek({datetime})
-toWeek({datetime})
-toYearWeek({datetime})
-timeSlot({datetime})
-toYYYYMM({datetime})
-toYYYYMMDD({datetime})
-toYYYYMMDDhhmmss({datetime})
-addYears({datetime}, 1)
-addMonths({datetime}, 1)
-addWeeks({datetime}, 1)
-addDays({datetime}, 1)
-addHours({datetime}, 1)
-addMinutes({datetime}, 1)
-addSeconds({datetime}, 1)
-addQuarters({datetime}, 1)
-subtractYears({datetime}, 1)
-subtractMonths({datetime}, 1)
-subtractWeeks({datetime}, 1)
-subtractDays({datetime}, 1)
-subtractHours({datetime}, 1)
-subtractMinutes({datetime}, 1)
-subtractSeconds({datetime}, 1)
-subtractQuarters({datetime}, 1)
-CAST({datetime} as DateTime)
-CAST({datetime} as Date)
-CAST({datetime} as UInt64)
-CAST({datetime} as DateTime64(0))
-CAST({datetime} as DateTime64(3))
-CAST({datetime} as DateTime64(6))
-CAST({datetime} as DateTime64(9))
-CAST({datetime} as DateTime64(12))
-CAST({datetime} as DateTime64(18))
-formatDateTime({datetime}, '%C %d %D %e %F %H %I %j %m %M %n %p %R %S %t %T %u %V %w %y %Y %%')
+FUNCTIONS="""
+toTimeZone(N, 'UTC')
+toYear(N)
+toQuarter(N)
+toMonth(N)
+toDayOfYear(N)
+toDayOfMonth(N)
+toDayOfWeek(N)
+toHour(N)
+toMinute(N)
+toSecond(N)
+toUnixTimestamp(N)
+toStartOfYear(N)
+toStartOfISOYear(N)
+toStartOfQuarter(N)
+toStartOfMonth(N)
+toMonday(N)
+toStartOfWeek(N)
+toStartOfDay(N)
+toStartOfHour(N)
+toStartOfMinute(N)
+toStartOfFiveMinute(N)
+toStartOfTenMinutes(N)
+toStartOfFifteenMinutes(N)
+toStartOfInterval(N, INTERVAL 1 year)
+toStartOfInterval(N, INTERVAL 1 month)
+toStartOfInterval(N, INTERVAL 1 day)
+toStartOfInterval(N, INTERVAL 15 minute)
+toTime(N)
+toRelativeYearNum(N)
+toRelativeQuarterNum(N)
+toRelativeMonthNum(N)
+toRelativeWeekNum(N)
+toRelativeDayNum(N)
+toRelativeHourNum(N)
+toRelativeMinuteNum(N)
+toRelativeSecondNum(N)
+toISOYear(N)
+toISOWeek(N)
+toWeek(N)
+toYearWeek(N)
+timeSlot(N)
+toYYYYMM(N)
+toYYYYMMDD(N)
+toYYYYMMDDhhmmss(N)
+addYears(N, 1)
+addMonths(N, 1)
+addWeeks(N, 1)
+addDays(N, 1)
+addHours(N, 1)
+addMinutes(N, 1)
+addSeconds(N, 1)
+addQuarters(N, 1)
+subtractYears(N, 1)
+subtractMonths(N, 1)
+subtractWeeks(N, 1)
+subtractDays(N, 1)
+subtractHours(N, 1)
+subtractMinutes(N, 1)
+subtractSeconds(N, 1)
+subtractQuarters(N, 1)
+CAST(N as DateTime)
+CAST(N as Date)
+CAST(N as UInt64)
+CAST(N as DateTime64(0))
+CAST(N as DateTime64(3))
+CAST(N as DateTime64(6))
+CAST(N as DateTime64(9))
+CAST(N as DateTime64(12))
+CAST(N as DateTime64(18))
+formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %n %p %R %S %t %T %u %V %w %y %Y %%')
 """.splitlines()
 
 # Expanded later to cartesian product of all arguments.
@@ -158,11 +159,12 @@ for funcs, args in extra_ops:
     for args_vals in itertools.product(*args.values()):
         for func in funcs:
             result_func = func.format(**dict(zip(args_keys, args_vals)))
-            functions.append(result_func)
+            FUNCTIONS.append(result_func)
 
 # filter out empty lines and commented out lines
 COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
-functions = list(filter(lambda f: len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None, functions))
+FUNCTIONS = list(filter(lambda f: len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None, FUNCTIONS))
+TYPES = ['D', 'DT', 'DT64']
 
 if sys.version_info[0] > 2:
     escape_string_codec = 'unicode_escape'
@@ -172,15 +174,56 @@ else:
 def escape_string(s):
     return s.encode(escape_string_codec).decode('utf-8')
 
-# TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
-for func in functions:
-    func = func.format(datetime='N')
-    print("""SELECT 'SELECT {func}'""".format(func=escape_string(func)))    # for debug only
-    for dt in ['D', 'DT', 'DT64']:
-        prologue = """WITH toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, toDate('2019-09-16') as D, {X} as N""".format(X=dt)
-        # dt64 = func.format(datetime=dt)
-        # f = "'values match:', ({dt32}) == ({dt64}), 'types match:', toTypeName({dt32}) == toTypeName({dt64})".format(dt32=dt32, dt64=dt64)
-        print("""{prologue} SELECT toTypeName(r), {func} as r""".format(prologue=prologue, func=func))
-        # print("""SELECT toTypeName(r), {dt64} as r""".format(dt64=dt64)) # for debug only
-#        print("""SELECT {f};""".format(f=f))
-    print("""SELECT '------------------------------------------'""") # for debug only
+
+def execute_functions_for_types(functions, types):
+    # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
+    for func in functions:
+        print("""SELECT 'SELECT {func}'""".format(func=escape_string(func)))    # for debug only
+        for dt in types:
+            prologue = "\
+WITH \
+toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, \
+toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, \
+toDate('2019-09-16') as D, {X} as N".format(X=dt)
+            # dt64 = func.format(datetime=dt)
+            # f = "'values match:', ({dt32}) == ({dt64}), 'types match:', toTypeName({dt32}) == toTypeName({dt64})".format(dt32=dt32, dt64=dt64)
+            print("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV""".format(prologue=prologue, func=func))
+            # print("""SELECT toTypeName(r), {dt64} as r""".format(dt64=dt64)) # for debug only
+    #        print("""SELECT {f};""".format(f=f))
+        print("""SELECT '------------------------------------------'""") # for debug only
+
+def main():
+    def parse_args():
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--functions_re', type=re.compile, help="RE to enable functions", default=None)
+        parser.add_argument('--types_re',
+                type=lambda s: re.compile('^(' + s + ')$'),
+                help="RE to enable types, supported types: " + ",".join(TYPES), default=None)
+        parser.add_argument('--list_functions', action='store_true', help="List all functions to be tested and exit")
+        return parser.parse_args()
+
+    args = parse_args()
+
+    functions = FUNCTIONS
+    types = TYPES
+
+    if args.functions_re:
+        functions = list(filter(lambda f : args.functions_re.search(f), functions))
+        if len(functions) == 0:
+            print("functions list is empty")
+            return -1
+
+    if args.types_re:
+        types = list(filter(lambda t : args.types_re.match(t), types))
+        if len(types) == 0:
+            print("types list is empty")
+            return -1
+
+    if args.list_functions:
+        print("\n".join(functions))
+        return 0
+
+    execute_functions_for_types(functions, types)
+
+if __name__ == '__main__':
+    exit(main())
