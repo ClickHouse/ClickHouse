@@ -36,9 +36,9 @@ IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier,
     for (size_t i = 0; i < tables.size(); ++i)
     {
         auto match = IdentifierSemantic::canReferColumnToTable(identifier, extractTable(tables[i]));
-        if (value(match))
+        if (match != ColumnMatch::NoMatch)
         {
-            if (value(match) > value(best_match))
+            if (match > best_match)
             {
                 best_match = match;
                 best_table_pos = i;
@@ -49,7 +49,7 @@ IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier,
         }
     }
 
-    if (value(best_match) && same_match)
+    if ((best_match != ColumnMatch::NoMatch) && same_match)
     {
         if (!allow_ambiguous)
             throw Exception("Ambiguous column '" + identifier.name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
@@ -111,13 +111,15 @@ std::optional<size_t> IdentifierSemantic::getMembership(const ASTIdentifier & id
 bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<DatabaseAndTableWithAlias> & tables,
                                      size_t & best_table_pos, bool ambiguous)
 {
-    return value(tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, best_table_pos, ambiguous));
+    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
+    return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, best_table_pos, ambiguous) != no_match;
 }
 
 bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
                                      size_t & best_table_pos, bool ambiguous)
 {
-    return value(tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos, ambiguous));
+    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
+    return tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos, ambiguous) != no_match;
 }
 
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
