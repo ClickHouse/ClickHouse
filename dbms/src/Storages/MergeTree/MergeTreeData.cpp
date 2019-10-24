@@ -3043,7 +3043,7 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
     if (reservation)
         return reservation;
 
-    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enought space.",
+    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space.",
                     ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
