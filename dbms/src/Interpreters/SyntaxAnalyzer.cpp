@@ -112,7 +112,10 @@ void collectSourceColumns(const ColumnsDescription & columns, NamesAndTypesList 
     }
 }
 
-std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & select_query, const Context & context)
+std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & select_query, const Context & context,
+                                                       const ASTTablesInSelectQueryElement * table_join_node,
+                                                       NamesAndTypesList & columns_from_joined_table,
+                                                       std::function<Names()> get_column_names)
 {
     std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
 
@@ -123,6 +126,27 @@ std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & se
             if (pr.first.table.empty() && pr.first.alias.empty())
                 throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
                                 ErrorCodes::ALIAS_REQUIRED);
+    }
+
+    TableWithColumnNames joined_table;
+
+    if (table_join_node)
+    {
+        const auto & joined_expression = table_join_node->table_expression->as<ASTTableExpression &>();
+
+        columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
+
+        joined_table.first = DatabaseAndTableWithAlias(joined_expression, context.getCurrentDatabase());
+        for (const auto & column : columns_from_joined_table)
+            joined_table.second.push_back(column.name);
+    }
+
+    /// If empty make table(s) with list of source and joined columns
+    if (tables_with_columns.empty())
+    {
+        tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, get_column_names());
+        if (!joined_table.second.empty())
+            tables_with_columns.emplace_back(std::move(joined_table));
     }
 
     return tables_with_columns;
@@ -562,9 +586,14 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     }
 }
 
-void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
+void replaceJoinedTable(const ASTTablesInSelectQueryElement * join)
 {
     if (!join || !join->table_expression)
+        return;
+
+    /// TODO: Push down for CROSS JOIN is not OK [disabled]
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+    if (table_join.kind == ASTTableJoin::Kind::Cross)
         return;
 
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();
@@ -826,41 +855,34 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         if (remove_duplicates)
             renameDuplicatedColumns(select_query);
 
-        if (const ASTTablesInSelectQueryElement * node = select_query->join())
+        const ASTTablesInSelectQueryElement * table_join_node = select_query->join();
+        if (table_join_node)
         {
             if (!settings.any_join_distinct_right_table_keys)
-                checkJoin(node);
+                checkJoin(table_join_node);
 
             if (settings.enable_optimize_predicate_expression)
-                replaceJoinedTable(node);
-
-            const auto & joined_expression = node->table_expression->as<ASTTableExpression &>();
-            DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
-
-            result.analyzed_join->columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
-            result.analyzed_join->deduplicateAndQualifyColumnNames(source_columns_set, table.getQualifiedNamePrefix());
+                replaceJoinedTable(table_join_node);
         }
 
-        auto tables_with_columns = getTablesWithColumns(*select_query, context);
-
-        /// If empty make fake table with list of source and joined columns
-        if (tables_with_columns.empty())
+        auto get_column_names = [&]() -> Names
         {
-            Names columns_list;
             if (storage)
-                columns_list = storage->getColumns().getOrdinary().getNames();
-            else
-            {
-                columns_list.reserve(result.source_columns.size());
-                for (const auto & column : result.source_columns)
-                    columns_list.emplace_back(column.name);
-            }
+                return storage->getColumns().getOrdinary().getNames();
 
-            for (auto & column : result.analyzed_join->getQualifiedColumnsSet())
-                columns_list.emplace_back(column);
+            Names columns;
+            columns.reserve(result.source_columns.size());
+            for (const auto & column : result.source_columns)
+                columns.push_back(column.name);
+            return columns;
+        };
 
-            tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(columns_list));
-        }
+        auto tables_with_columns = getTablesWithColumns(*select_query, context, table_join_node,
+                                                        result.analyzed_join->columns_from_joined_table, get_column_names);
+
+        if (tables_with_columns.size() > 1)
+            result.analyzed_join->deduplicateAndQualifyColumnNames(
+                source_columns_set, tables_with_columns[1].first.getQualifiedNamePrefix());
 
         translateQualifiedNames(query, *select_query, source_columns_set, std::move(tables_with_columns));
 
