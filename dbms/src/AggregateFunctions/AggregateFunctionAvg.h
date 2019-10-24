@@ -31,9 +31,9 @@ struct AggregateFunctionAvgData
             if constexpr (std::numeric_limits<ResultT>::is_iec559)
                 return static_cast<ResultT>(sum) / count; /// allow division by zero
 
-        if (!count)
-            throw Exception("AggregateFunctionAvg with zero values", ErrorCodes::LOGICAL_ERROR);
-        return static_cast<ResultT>(sum) / count;
+        if (count == 0)
+            return static_cast<ResultT>(0);
+        return static_cast<ResultT>(sum / count);
     }
 };
 
@@ -43,10 +43,10 @@ template <typename T, typename Data>
 class AggregateFunctionAvg final : public IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>
 {
 public:
-    using ResultType = std::conditional_t<IsDecimalNumber<T>, Decimal128, Float64>;
-    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<Decimal128>, DataTypeNumber<Float64>>;
+    using ResultType = std::conditional_t<IsDecimalNumber<T>, T, Float64>;
+    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<T>, DataTypeNumber<Float64>>;
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<Decimal128>, ColumnVector<Float64>>;
+    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<Float64>>;
 
     /// ctor for native types
     AggregateFunctionAvg(const DataTypes & argument_types_)

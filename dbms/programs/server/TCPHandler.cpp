@@ -850,9 +850,10 @@ bool TCPHandler::receivePacket()
             return true;
 
         case Protocol::Client::Data:
+        case Protocol::Client::Scalar:
             if (state.empty())
                 receiveUnexpectedData();
-            return receiveData();
+            return receiveData(packet_type == Protocol::Client::Scalar);
 
         case Protocol::Client::Ping:
             writeVarUInt(Protocol::Server::Pong, *out);
@@ -957,39 +958,44 @@ void TCPHandler::receiveUnexpectedQuery()
     throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
 
-bool TCPHandler::receiveData()
+bool TCPHandler::receiveData(bool scalar)
 {
     initBlockInput();
 
     /// The name of the temporary table for writing data, default to empty string
-    String external_table_name;
-    readStringBinary(external_table_name, *in);
+    String name;
+    readStringBinary(name, *in);
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
     if (block)
     {
-        /// If there is an insert request, then the data should be written directly to `state.io.out`.
-        /// Otherwise, we write the blocks in the temporary `external_table_name` table.
-        if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
-        {
-            StoragePtr storage;
-            /// If such a table does not exist, create it.
-            if (!(storage = query_context->tryGetExternalTable(external_table_name)))
-            {
-                NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create("_external", external_table_name, ColumnsDescription{columns}, ConstraintsDescription{});
-                storage->startup();
-                query_context->addExternalTable(external_table_name, storage);
-            }
-            /// The data will be written directly to the table.
-            state.io.out = storage->write(ASTPtr(), *query_context);
-        }
-        if (state.need_receive_data_for_input)
-            state.block_for_input = block;
+        if (scalar)
+            query_context->addScalar(name, block);
         else
-            state.io.out->write(block);
+        {
+            /// If there is an insert request, then the data should be written directly to `state.io.out`.
+            /// Otherwise, we write the blocks in the temporary `external_table_name` table.
+            if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+            {
+                StoragePtr storage;
+                /// If such a table does not exist, create it.
+                if (!(storage = query_context->tryGetExternalTable(name)))
+                {
+                    NamesAndTypesList columns = block.getNamesAndTypesList();
+                    storage = StorageMemory::create("_external", name, ColumnsDescription{columns}, ConstraintsDescription{});
+                    storage->startup();
+                    query_context->addExternalTable(name, storage);
+                }
+                /// The data will be written directly to the table.
+                state.io.out = storage->write(ASTPtr(), *query_context);
+            }
+            if (state.need_receive_data_for_input)
+                state.block_for_input = block;
+            else
+                state.io.out->write(block);
+        }
         return true;
     }
     else
