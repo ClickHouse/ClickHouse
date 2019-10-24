@@ -2730,7 +2730,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
 
     if (parts.empty())
     {
-	throw Exception("All parts of partition " + partition_id + " are already on disk '" + disk->getName() + "'", ErrorCodes::UNKNOWN_DISK);
+        throw Exception("All parts of partition '" + partition_id + "' are already on disk '" + disk->getName() + "'", ErrorCodes::UNKNOWN_DISK);
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
@@ -2776,7 +2776,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
 
     if (parts.empty())
     {
-	throw Exception("All parts of partition " + partition_id + " are already on volume '" + volume->getName() + "'", ErrorCodes::UNKNOWN_DISK);
+        throw Exception("All parts of partition '" + partition_id + "' are already on volume '" + volume->getName() + "'", ErrorCodes::UNKNOWN_DISK);
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
