@@ -129,6 +129,38 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
         },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_zero_volume",
+            "volume_priority": "1",
+            "disks": ["default"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_default_volume",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_small_volume",
+            "volume_priority": "3",
+            "disks": ["jbod1"],
+            "max_data_part_size": "1024",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_big_volume",
+            "volume_priority": "4",
+            "disks": ["jbod2"],
+            "max_data_part_size": "1024000000",
+            "move_factor": 0.1,
+        },
     ]
 
     clickhouse_policies_data = json.loads(node1.query("SELECT * FROM system.storage_policies WHERE policy_name != 'default' FORMAT JSON"))["data"]
