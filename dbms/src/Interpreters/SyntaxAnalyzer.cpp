@@ -9,6 +9,7 @@
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
@@ -71,6 +72,26 @@ namespace
 {
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
+
+/// Select implementation of countDistinct based on settings.
+/// Important that it is done as query rewrite. It means rewritten query
+///  will be sent to remote servers during distributed query execution,
+///  and on all remote servers, function implementation will be same.
+struct CustomizeFunctionsData
+{
+    using TypeToVisit = ASTFunction;
+
+    const String & count_distinct;
+
+    void visit(ASTFunction & func, ASTPtr &)
+    {
+        if (Poco::toLower(func.name) == "countdistinct")
+            func.name = count_distinct;
+    }
+};
+
+using CustomizeFunctionsMatcher = OneTypeMatcher<CustomizeFunctionsData>;
+using CustomizeFunctionsVisitor = InDepthNodeVisitor<CustomizeFunctionsMatcher, true>;
 
 
 /// Add columns from storage to source_columns list.
@@ -244,10 +265,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth)
+void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -872,11 +893,22 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
     }
 
+    {
+        CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
+        CustomizeFunctionsVisitor(data).visit(query);
+    }
+
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
         LogAST log;
         QueryAliasesVisitor::Data query_aliases_data{result.aliases};
         QueryAliasesVisitor(query_aliases_data, log.stream()).visit(query);
+    }
+
+    /// Mark table ASTIdentifiers with not a column marker
+    {
+        MarkTableIdentifiersVisitor::Data data{result.aliases};
+        MarkTableIdentifiersVisitor(data).visit(query);
     }
 
     /// Common subexpression elimination. Rewrite rules.
@@ -893,7 +925,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth);
+    executeScalarSubqueries(query, context, subquery_depth, result.scalars);
 
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
