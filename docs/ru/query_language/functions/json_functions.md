@@ -57,6 +57,17 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 
 Следующие функции используют [simdjson](https://github.com/lemire/simdjson) который разработан по более сложны требования для разбора JSON. Упомянутое выше предположение 2 по-прежнему применимо.
 
+## isValidJSON(json)
+
+Проверяет, является ли переданная строка валидным json значением.
+
+Примеры:
+
+```sql
+SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
+SELECT isValidJSON('not a json') = 0
+```
+
 ## JSONHas(json[, indices_or_keys]...)
 
 Если значение существует в документе JSON, то возвращается `1`.

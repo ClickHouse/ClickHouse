@@ -757,4 +757,9 @@ If there were problems with mutating some parts, the following columns contain a
 
 **latest_fail_reason** - The exception message that caused the most recent part mutation failure.
 
+
+## system.disks {#system_tables-disks}
+
+## system.storage_policies {#system_tables-storage_policies}
+
 [Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->
