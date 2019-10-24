@@ -20,7 +20,6 @@ namespace DB
  * The number of chunks equals to max_threads_for_parallel_reading setting.
  * The size of chunk is equal to min_chunk_size_for_parallel_reading setting.
  */
-
 class ParallelParsingBlockInputStream : public IBlockInputStream
 {
 private:
