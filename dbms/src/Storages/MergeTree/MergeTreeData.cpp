@@ -2730,7 +2730,13 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
 
     if (parts.empty())
     {
-        throw Exception("All parts of partition '" + partition_id + "' are already on disk '" + disk->getName() + "'", ErrorCodes::UNKNOWN_DISK);
+        String no_parts_to_move_message;
+        if (moving_part)
+            no_parts_to_move_message = "Part '" + partition_id + "' is already on disk '" + disk->getName() + "'";
+        else
+            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on disk '" + disk->getName() + "'";
+
+        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
@@ -2776,7 +2782,13 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
 
     if (parts.empty())
     {
-        throw Exception("All parts of partition '" + partition_id + "' are already on volume '" + volume->getName() + "'", ErrorCodes::UNKNOWN_DISK);
+        String no_parts_to_move_message;
+        if (moving_part)
+            no_parts_to_move_message = "Part '" + partition_id + "' is already on volume '" + volume->getName() + "'";
+        else
+            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on volume '" + volume->getName() + "'";
+
+        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
