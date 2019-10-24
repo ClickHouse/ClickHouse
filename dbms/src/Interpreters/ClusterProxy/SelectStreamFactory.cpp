@@ -33,11 +33,13 @@ SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
     QueryProcessingStage::Enum processed_stage_,
     QualifiedTableName main_table_,
+    const Scalars & scalars_,
     const Tables & external_tables_)
     : header(header_),
     processed_stage{processed_stage_},
     main_table(std::move(main_table_)),
     table_func_ptr{nullptr},
+    scalars{scalars_},
     external_tables{external_tables_}
 {
 }
@@ -46,10 +48,12 @@ SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
     QueryProcessingStage::Enum processed_stage_,
     ASTPtr table_func_ptr_,
+    const Scalars & scalars_,
     const Tables & external_tables_)
     : header(header_),
     processed_stage{processed_stage_},
     table_func_ptr{table_func_ptr_},
+    scalars{scalars_},
     external_tables{external_tables_}
 {
 }
@@ -92,7 +96,8 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_remote_stream = [&]()
     {
-        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, header, context, nullptr, throttler, external_tables, processed_stage);
+        auto stream = std::make_shared<RemoteBlockInputStream>(
+            shard_info.pool, query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             stream->setMainTable(main_table);
@@ -190,8 +195,8 @@ void SelectStreamFactory::createForShard(
 
         auto lazily_create_stream = [
                 pool = shard_info.pool, shard_num = shard_info.shard_num, query, header = header, query_ast, context, throttler,
-                main_table = main_table, table_func_ptr = table_func_ptr, external_tables = external_tables, stage = processed_stage,
-                local_delay]()
+                main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
+                stage = processed_stage, local_delay]()
             -> BlockInputStreamPtr
         {
             auto current_settings = context.getSettingsRef();
@@ -233,7 +238,7 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 return std::make_shared<RemoteBlockInputStream>(
-                    std::move(connections), query, header, context, nullptr, throttler, external_tables, stage);
+                    std::move(connections), query, header, context, nullptr, throttler, scalars, external_tables, stage);
             }
         };
 

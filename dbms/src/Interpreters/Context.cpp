@@ -88,6 +88,8 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int SCALAR_ALREADY_EXISTS;
+    extern const int UNKNOWN_SCALAR;
 }
 
 
@@ -862,6 +864,21 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 }
 
 
+const Scalars & Context::getScalars() const
+{
+    return scalars;
+}
+
+
+const Block & Context::getScalar(const String & name) const
+{
+    auto it = scalars.find(name);
+    if (scalars.end() == it)
+        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::UNKNOWN_SCALAR);
+    return it->second;
+}
+
+
 Tables Context::getExternalTables() const
 {
     auto lock = getLock();
@@ -958,6 +975,19 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
 
     external_tables[table_name] = std::pair(storage, ast);
 }
+
+
+void Context::addScalar(const String & name, const Block & block)
+{
+    scalars[name] = block;
+}
+
+
+bool Context::hasScalar(const String & name) const
+{
+    return scalars.count(name);
+}
+
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {

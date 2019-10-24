@@ -153,7 +153,7 @@ private:
     void receiveHello();
     bool receivePacket();
     void receiveQuery();
-    bool receiveData();
+    bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & global_settings);
     std::tuple<size_t, int> getReadTimeouts(const Settings & global_settings);
