@@ -29,7 +29,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
