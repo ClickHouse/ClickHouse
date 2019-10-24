@@ -311,14 +311,14 @@ SELECT
 └──────────────────────────┴───────────────────────────────┘
 ```
 
-## dateDiff {#date-diff}
+## dateDiff {#datediff}
 
 Returns the difference between two time values.
 
 **Syntax**
 
 ```sql
-dateDiff('unit', t1, t2, [timezone]);
+dateDiff('unit', startdate, enddate, [timezone])
 ```
 
 **Parameters**
@@ -338,13 +338,15 @@ dateDiff('unit', t1, t2, [timezone]);
     |quarter |
     |year    |
 
-- `t1` — The first time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `t2` — The second time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
-- `timezone` — Optional parameter. If specified, it is applied to both `t1` and `t2`. If not specified, timezones of `t1` and `t2` are used. If they are not the same, the result is unspecified. [Time Zone](../../data_types/datetime.md#time-zones).
+- `startdate` — The first time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `enddate` — The second time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+- `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [Time Zone](../../data_types/datetime.md#time-zones).
 
 **Returned value**
 
-Difference between `t1` and `t2` expressed in `unit`.
+Difference between `startdate` and `enddate` expressed in `unit`.
+
+Type: `int`.
 
 **Example**
 
