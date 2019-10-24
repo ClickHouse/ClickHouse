@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -106,14 +107,17 @@ struct ConvertImpl
     {
         const ColumnWithTypeAndName & named_from = block.getByPosition(arguments[0]);
 
-        using ColVecFrom = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
-        using ColVecTo = std::conditional_t<IsDecimalNumber<ToFieldType>, ColumnDecimal<ToFieldType>, ColumnVector<ToFieldType>>;
+        using ColVecFrom = typename FromDataType::ColumnType;
+        using ColVecTo = typename ToDataType::ColumnType;
 
-        if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+        if constexpr ((IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+            && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>))
         {
             if constexpr (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>)
+            {
                 throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
                     ErrorCodes::ILLEGAL_COLUMN);
+            }
         }
 
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
@@ -492,7 +496,7 @@ struct ConvertThroughParsing
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count,
                         Additions additions [[maybe_unused]] = Additions())
     {
-        using ColVecTo = std::conditional_t<IsDecimalNumber<ToFieldType>, ColumnDecimal<ToFieldType>, ColumnVector<ToFieldType>>;
+        using ColVecTo = typename ToDataType::ColumnType;
 
         const DateLUTImpl * local_time_zone [[maybe_unused]] = nullptr;
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
@@ -1710,13 +1714,11 @@ private:
         };
     }
 
-    template <typename FieldType>
-    WrapperType createDecimalWrapper(const DataTypePtr & from_type, const DataTypeDecimal<FieldType> * to_type) const
+    template <typename ToDataType>
+    std::enable_if_t<IsDataTypeDecimal<ToDataType>, WrapperType>
+    createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type) const
     {
-        using ToDataType = DataTypeDecimal<FieldType>;
-
         TypeIndex type_index = from_type->getTypeId();
-        UInt32 precision = to_type->getPrecision();
         UInt32 scale = to_type->getScale();
 
         WhichDataType which(type_index);
@@ -1730,7 +1732,7 @@ private:
             throw Exception{"Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
                 ErrorCodes::CANNOT_CONVERT_TYPE};
 
-        return [type_index, precision, scale] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        return [type_index, scale, to_type] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             auto res = callOnIndexAndDataType<ToDataType>(type_index, [&](const auto & types) -> bool
             {
@@ -1745,8 +1747,7 @@ private:
             /// Additionally check if callOnIndexAndDataType wasn't called at all.
             if (!res)
             {
-                auto to = DataTypeDecimal<FieldType>(precision, scale);
-                throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to.getName() +
+                throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() +
                                 " is not supported", ErrorCodes::CANNOT_CONVERT_TYPE};
             }
         };
@@ -2211,7 +2212,8 @@ private:
             if constexpr (
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+                std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>||
+                std::is_same_v<ToDataType, DataTypeDateTime64>)
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
                 return true;
