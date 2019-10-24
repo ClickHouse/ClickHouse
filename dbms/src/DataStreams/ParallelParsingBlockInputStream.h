@@ -14,6 +14,12 @@
 namespace DB
 {
 
+/**
+ * ORDER-PRESERVING parallel parsing of data formats.
+ * It splits original data into chunks. Then each chunk is parsed by different thread.
+ * The number of chunks equals to max_threads_for_parallel_reading setting.
+ * The size of chunk is equal to min_chunk_size_for_parallel_reading setting.
+ */
 
 class ParallelParsingBlockInputStream : public IBlockInputStream
 {
@@ -61,7 +67,7 @@ public:
         blocks.resize(max_threads_to_use);
         exceptions.resize(max_threads_to_use);
         buffers.reserve(max_threads_to_use);
-        readers.resize(max_threads_to_use);
+        readers.reserve(max_threads_to_use);
         is_last.assign(max_threads_to_use, false);
 
         for (size_t i = 0; i < max_threads_to_use; ++i)
@@ -94,7 +100,8 @@ public:
             return;
 
         for (auto& reader: readers)
-            reader->cancel(kill);
+            if (!reader->isCancelled())
+                reader->cancel(kill);
 
         waitForAllThreads();
     }
