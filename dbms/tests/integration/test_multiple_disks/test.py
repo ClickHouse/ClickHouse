@@ -517,7 +517,7 @@ def test_alter_move(start_cluster, name, engine):
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-10'), 42)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-11'), 43)".format(name))
         used_disks = get_used_disks_for_table(node1, name)
-        assert all(d.startswith("jbod") for d in used_disks), "All writes shoud go to jbods"
+        assert all(d.startswith("jbod") for d in used_disks), "All writes should go to jbods"
 
         first_part = node1.query("SELECT name FROM system.parts WHERE table = '{}' and active = 1 ORDER BY modification_time LIMIT 1".format(name)).strip()
 
@@ -552,6 +552,91 @@ def test_alter_move(start_cluster, name, engine):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("volume_or_disk", [
+    "DISK",
+    "VOLUME"
+])
+def test_alter_move_half_of_partition(start_cluster, volume_or_disk):
+    name = "alter_move_half_of_partition"
+    engine = "MergeTree()"
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                EventDate Date,
+                number UInt64
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(EventDate)
+            SETTINGS storage_policy='jbods_with_external'
+        """.format(name=name, engine=engine))
+
+        node1.query("SYSTEM STOP MERGES {}".format(name))
+
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-15'), 65)".format(name))
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 42)".format(name))
+        used_disks = get_used_disks_for_table(node1, name)
+        assert all(d.startswith("jbod") for d in used_disks), "All writes should go to jbods"
+
+        time.sleep(1)
+        parts = node1.query("SELECT name FROM system.parts WHERE table = '{}' and active = 1".format(name)).splitlines()
+        assert len(parts) == 2
+
+        node1.query("ALTER TABLE {} MOVE PART '{}' TO VOLUME 'external'".format(name, parts[0]))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(name, parts[0])).splitlines()
+        assert disks == ["external"]
+
+        time.sleep(1)
+        node1.query("ALTER TABLE {} MOVE PARTITION 201903 TO {volume_or_disk} 'external'".format(name, volume_or_disk=volume_or_disk))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201903' and active = 1".format(name)).splitlines()
+        assert disks == ["external"]*2
+
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "2\n"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+@pytest.mark.parametrize("volume_or_disk", [
+    "DISK",
+    "VOLUME"
+])
+def test_alter_double_move_partition(start_cluster, volume_or_disk):
+    name = "alter_double_move_partition"
+    engine = "MergeTree()"
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                EventDate Date,
+                number UInt64
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            PARTITION BY toYYYYMM(EventDate)
+            SETTINGS storage_policy='jbods_with_external'
+        """.format(name=name, engine=engine))
+
+        node1.query("SYSTEM STOP MERGES {}".format(name))
+
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-15'), 65)".format(name))
+        node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 42)".format(name))
+        used_disks = get_used_disks_for_table(node1, name)
+        assert all(d.startswith("jbod") for d in used_disks), "All writes should go to jbods"
+
+        time.sleep(1)
+        node1.query("ALTER TABLE {} MOVE PARTITION 201903 TO {volume_or_disk} 'external'".format(name, volume_or_disk=volume_or_disk))
+        disks = node1.query("SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201903' and active = 1".format(name)).splitlines()
+        assert disks == ["external"]*2
+
+        assert node1.query("SELECT COUNT() FROM {}".format(name)) == "2\n"
+
+        time.sleep(1)
+        with pytest.raises(QueryRuntimeException):
+            node1.query("ALTER TABLE {} MOVE PARTITION 201903 TO {volume_or_disk} 'external'".format(name, volume_or_disk=volume_or_disk))
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
 
 def produce_alter_move(node, name):
     move_type = random.choice(["PART", "PARTITION"])
