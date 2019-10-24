@@ -487,7 +487,7 @@ You can specify an arbitrary partitioning key for the `system.query_log` table i
 
 ## system.query_thread_log {#system_tables-query-thread-log}
 
-The table contains information about each query execution threads.
+The table contains information about each query execution thread.
 
 ClickHouse creates this table only if the [query_thread_log](server_settings/settings.md#server_settings-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
