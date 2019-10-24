@@ -100,8 +100,8 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 }
 
 void validateArgumentType(const IFunction & func, const DataTypes & arguments,
-                                 size_t argument_index, bool (* validator_func)(const IDataType &),
-                                 const char * expected_type_description)
+                          size_t argument_index, bool (* validator_func)(const IDataType &),
+                          const char * expected_type_description)
 {
     if (arguments.size() <= argument_index)
         throw Exception("Incorrect number of arguments of function " + func.getName(),
@@ -118,7 +118,10 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
 
 namespace
 {
-void validateArgumentsImpl(const IFunction & func, const ColumnsWithTypeAndName & arguments, size_t argument_offset, const FunctionArgumentTypeValidators & validators)
+void validateArgumentsImpl(const IFunction & func,
+                           const ColumnsWithTypeAndName & arguments,
+                           size_t argument_offset,
+                           const FunctionArgumentTypeValidators & validators)
 {
     for (size_t i = 0; i < validators.size(); ++i)
     {
@@ -141,14 +144,39 @@ void validateArgumentsImpl(const IFunction & func, const ColumnsWithTypeAndName 
 
 }
 
-void validateFunctionArgumentTypes(const IFunction & func, const ColumnsWithTypeAndName & arguments, const FunctionArgumentTypeValidators & mandatory_args, const FunctionArgumentTypeValidators & optional_args)
+void validateFunctionArgumentTypes(const IFunction & func,
+                                   const ColumnsWithTypeAndName & arguments,
+                                   const FunctionArgumentTypeValidators & mandatory_args,
+                                   const FunctionArgumentTypeValidators & optional_args)
 {
     if (arguments.size() < mandatory_args.size())
+    {
+        auto joinArgumentTypes = [](const auto & args, const String sep = ", ") -> String
+        {
+            String result;
+            for (const auto & a : args)
+            {
+                using A = std::decay_t<decltype(a)>;
+                if constexpr (std::is_same_v<A, FunctionArgumentTypeValidator>)
+                    result += a.expected_type_description;
+                else if constexpr (std::is_same_v<A, ColumnWithTypeAndName>)
+                    result += a.type->getName();
+
+                result += sep;
+            }
+
+            if (args.size() != 0)
+                result.erase(result.end() - sep.length(), result.end());
+
+            return result;
+        };
+
         throw Exception("Incorrect number of arguments of function " + func.getName()
-                        + " provided: " + std::to_string(arguments.size())
-                        + " expected: " + std::to_string(mandatory_args.size())
-                        + (optional_args.size() ? " or " + std::to_string(mandatory_args.size() + optional_args.size()) : ""),
+                        + " provided " + std::to_string(arguments.size()) + " (" + joinArgumentTypes(arguments) + ")"
+                        + " expected " + std::to_string(mandatory_args.size()) + (optional_args.size() ? " or " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
+                        + " (" + joinArgumentTypes(mandatory_args) + (optional_args.size() ? ", [" + joinArgumentTypes(mandatory_args) + "]" : "") + ")",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);
     if (optional_args.size())
