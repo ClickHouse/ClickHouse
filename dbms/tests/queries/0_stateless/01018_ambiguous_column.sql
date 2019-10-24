@@ -22,3 +22,6 @@ SELECT * from one A
 JOIN system.one one ON A.dummy = one.dummy
 JOIN system.one two ON A.dummy = two.dummy
 FORMAT PrettyCompact;
+
+-- SELECT one.dummy FROM one AS A FULL JOIN (SELECT 0 AS dymmy) AS one USING dummy;
+SELECT one.dummy FROM one AS A JOIN (SELECT 0 AS dummy) B USING dummy;

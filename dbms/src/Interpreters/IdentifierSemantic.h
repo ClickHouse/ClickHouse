@@ -53,9 +53,4 @@ private:
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table);
 };
 
-inline UInt32 value(IdentifierSemantic::ColumnMatch match)
-{
-    return static_cast<UInt32>(match);
-}
-
 }
