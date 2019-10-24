@@ -1,8 +1,9 @@
-import time
+import json
 import pytest
 import random
+import re
 import string
-import json
+import time
 from multiprocessing.dummy import Pool
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -128,6 +129,38 @@ def test_system_tables(start_cluster):
             "max_data_part_size": "20971520",
             "move_factor": 0.1,
         },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_zero_volume",
+            "volume_priority": "1",
+            "disks": ["default"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_default_volume",
+            "volume_priority": "2",
+            "disks": ["external"],
+            "max_data_part_size": "0",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_small_volume",
+            "volume_priority": "3",
+            "disks": ["jbod1"],
+            "max_data_part_size": "1024",
+            "move_factor": 0.1,
+        },
+        {
+            "policy_name": "special_warning_policy",
+            "volume_name": "special_warning_big_volume",
+            "volume_priority": "4",
+            "disks": ["jbod2"],
+            "max_data_part_size": "1024000000",
+            "move_factor": 0.1,
+        },
     ]
 
     clickhouse_policies_data = json.loads(node1.query("SELECT * FROM system.storage_policies WHERE policy_name != 'default' FORMAT JSON"))["data"]
@@ -192,6 +225,28 @@ def get_random_string(length):
 
 def get_used_disks_for_table(node, table_name):
     return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
+
+def test_no_warning_about_zero_max_data_part_size(start_cluster):
+    def get_log(node):
+        return node.exec_in_container(["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"])
+
+    for node in (node1, node2):
+        node.query("""
+            CREATE TABLE default.test_warning_table (
+                s String
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy='small_jbod_with_external'
+        """)
+        node.query("""
+            DROP TABLE default.test_warning_table
+        """)
+        log = get_log(node)
+        assert not re.search("Warning.*Volume.*special_warning_zero_volume", log)
+        assert not re.search("Warning.*Volume.*special_warning_default_volume", log)
+        assert re.search("Warning.*Volume.*special_warning_small_volume", log)
+        assert not re.search("Warning.*Volume.*special_warning_big_volume", log)
+
 
 @pytest.mark.parametrize("name,engine", [
     ("mt_on_jbod","MergeTree()"),
