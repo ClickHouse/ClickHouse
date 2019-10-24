@@ -86,6 +86,7 @@ void DistributedBlockOutputStream::write(const Block & block)
     /* They are added by the AddingDefaultBlockOutputStream, and we will get
      * different number of columns eventually */
     for (const auto & col : storage.getColumns().getMaterialized())
+    {
         if (ordinary_block.has(col.name))
         {
             ordinary_block.erase(col.name);
@@ -93,6 +94,7 @@ void DistributedBlockOutputStream::write(const Block & block)
                 << ": column " + col.name + " will be removed, "
                 << "because it is MATERIALIZED");
         }
+    }
 
 
     if (insert_sync)
