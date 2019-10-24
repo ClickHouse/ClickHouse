@@ -11,7 +11,6 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
         while (!is_cancelled && !is_exception_occured)
         {
             ++segmentator_ticket_number;
-//            std::cout << "SEGMENATATING " << segmentator_ticket_number << std::endl;
             const auto current_unit_number = segmentator_ticket_number % max_threads_to_use;
 
             {
@@ -24,7 +23,6 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
 
             if (original_buffer.eof())
             {
-//                std::cout << "ORIGINAL BUFFER EOF" << std::endl;
                 is_last[current_unit_number] = true;
                 status[current_unit_number] = READY_TO_PARSE;
                 scheduleParserThreadForUnitWithNumber(current_unit_number);
@@ -44,14 +42,9 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             buffers[current_unit_number]->buffer().swap(new_buffer);
             buffers[current_unit_number]->position() = buffers[current_unit_number]->buffer().begin();
 
-//            std::cout << "current_unit_number  " << current_unit_number << std::endl;
-
-            readers[current_unit_number] = std::make_unique<InputStreamFromInputFormat>(input_processor_creator(
-                    *buffers[current_unit_number],
-                    header,
-                    context,
-                    row_input_format_params,
-                    format_settings));
+            readers[current_unit_number] = std::make_unique<InputStreamFromInputFormat> (
+                    input_processor_creator(*buffers[current_unit_number], header, context, row_input_format_params, format_settings)
+            );
 
             status[current_unit_number] = READY_TO_PARSE;
             scheduleParserThreadForUnitWithNumber(current_unit_number);
@@ -89,21 +82,16 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
 
         }
 
-
+        //We don't know how many blocks will be. So we have to read them all until an empty block occured.
         while (true)
         {
-//            std::cout << "CURRENT_UNIT_NUMBER " << current_unit_number << " " << blocks[current_unit_number].block.size() << std::endl;
             auto block = readers[current_unit_number]->read();
 
             if (block == Block())
-            {
-//                std::cout << "EMPTY BLOCK" << std::endl;
                 break;
-            }
 
             blocks[current_unit_number].block.emplace_back(block);
             blocks[current_unit_number].block_missing_values.emplace_back(readers[current_unit_number]->getMissingValues());
-//            std::cout << "rows " << blocks[current_unit_number].block[0].rows() << std::endl;
         }
 
         {
@@ -116,12 +104,12 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
     catch (...)
     {
         std::unique_lock lock(mutex);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
         exceptions[current_unit_number] = std::current_exception();
         is_exception_occured = true;
         reader_condvar.notify_all();
     }
 }
-
 
 Block ParallelParsingBlockInputStream::readImpl()
 {
@@ -142,11 +130,7 @@ Block ParallelParsingBlockInputStream::readImpl()
         rethrowFirstException(exceptions);
     }
 
-//    std::cout << "blocks size: " << blocks[current_number].block.size() << std::endl;
-//    std::cout << "number and iter " << current_number << " " << internal_block_iter << std::endl;
     res = std::move(blocks[current_number].block.at(internal_block_iter));
-
-//    std::cout << "missing values size: " << blocks[current_number].block_missing_values.size() << std::endl;
     last_block_missing_values = std::move(blocks[current_number].block_missing_values[internal_block_iter]);
 
     if (++internal_block_iter == blocks[current_number].block.size())
