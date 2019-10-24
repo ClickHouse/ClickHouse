@@ -9,6 +9,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -44,8 +45,13 @@ public:
         size_t min_chunk_size;
     };
 
-    ParallelParsingBlockInputStream(Builder builder)
-            : max_threads_to_use(builder.max_threads_to_use),
+    explicit ParallelParsingBlockInputStream(const Builder & builder)
+            : header(builder.input_creator_params.sample),
+              context(builder.input_creator_params.context),
+              row_input_format_params(builder.input_creator_params.row_input_format_params),
+              format_settings(builder.input_creator_params.settings),
+              input_processor_creator(builder.input_processor_creator),
+              max_threads_to_use(builder.max_threads_to_use),
               min_chunk_size(builder.min_chunk_size),
               original_buffer(builder.read_buffer),
               pool(builder.max_threads_to_use),
@@ -55,7 +61,7 @@ public:
         blocks.resize(max_threads_to_use);
         exceptions.resize(max_threads_to_use);
         buffers.reserve(max_threads_to_use);
-        readers.reserve(max_threads_to_use);
+        readers.resize(max_threads_to_use);
         is_last.assign(max_threads_to_use, false);
 
         for (size_t i = 0; i < max_threads_to_use; ++i)
@@ -95,7 +101,7 @@ public:
 
     Block getHeader() const override
     {
-        return readers.at(0)->getHeader();
+        return header;
     }
 
 protected:
@@ -110,6 +116,11 @@ protected:
     }
 
 private:
+    const Block header;
+    const Context context;
+    const RowInputFormatParams row_input_format_params;
+    const FormatSettings format_settings;
+    const InputProcessorCreator input_processor_creator;
 
     const std::atomic<size_t> max_threads_to_use;
     const size_t min_chunk_size;
