@@ -13,7 +13,7 @@ CLICKHOUSE_DATABASE = 'test'
 def initialize_database(nodes, shard):
     for node in nodes:
         node.query('''
-            CREATE DATABASE {database} IF NOT EXISTS;
+            CREATE DATABASE {database};
             CREATE TABLE src (p UInt64, d UInt64)
             ENGINE = ReplicatedMergeTree('/clickhouse/{database}/tables/test{shard}/replicated', '{replica}')
             ORDER BY id PARTITION BY toYYYYMM(date)
