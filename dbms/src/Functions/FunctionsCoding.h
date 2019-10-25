@@ -27,6 +27,7 @@
 #include <type_traits>
 #include <array>
 
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -1276,6 +1277,69 @@ public:
     }
 };
 
+class FunctionChar : public IFunction
+{
+public:
+    static constexpr auto name = "char";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionChar>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isVariadic() const override { return true; }
+    bool isInjective(const Block &) override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.empty())
+            throw Exception("Number of arguments for function " + getName() + " can't be " + toString(arguments.size())
+                    + ", should be at least 1", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        for (const auto & arg : arguments)
+        {
+            if (!isNumber(arg))
+                throw Exception("Illegal type " + arg->getName() + " of argument of function " + getName()
+                    + ", must be number",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+        return std::make_shared<DataTypeString>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        const IColumn * first_column = block.getByPosition(arguments[0]).column.get();
+
+        auto col_str = ColumnString::create();
+        ColumnString::Chars & out_vec = col_str->getChars();
+        ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+        const auto size_per_row = arguments.size() + 1;
+        out_vec.resize(size_per_row * first_column->size());
+        out_offsets.resize(first_column->size());
+
+        for (size_t row = 0; row < first_column->size(); ++row)
+        {
+            out_offsets[row] = size_per_row +  out_offsets[row - 1];
+            out_vec[row * size_per_row + size_per_row - 1] = '\0';
+        }
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const IColumn * column = block.getByPosition(i).column.get();
+            for (size_t row = 0; row < first_column->size(); row ++)
+            {
+                out_vec[row * size_per_row + i] = char(column->getInt(row));
+            }
+        }
+
+        block.getByPosition(result).column = std::move(col_str);
+    }
+};
 
 class FunctionBitmaskToArray : public IFunction
 {

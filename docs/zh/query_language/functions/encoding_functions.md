@@ -1,5 +1,8 @@
 # 编码函数
 
+#char
+接受多个 `Number` 类型参数。返回一个字符串，结果的每个字符对应输入的 ascii 字符表示。同 [MySQL char 函数](https://dev.mysql.com/doc/refman/8.0/en/string-functions.html#function_char)。
+
 ## hex
 
 接受`String`，`unsigned integer`，`Date`或`DateTime`类型的参数。返回包含参数的十六进制表示的字符串。使用大写字母`A-F`。不使用`0x`前缀或`h`后缀。对于字符串，所有字节都简单地编码为两个十六进制数字。数字转换为大端（“易阅读”）格式。对于数字，去除其中较旧的零，但仅限整个字节。例如，`hex（1）='01'`。 `Date`被编码为自Unix时间开始以来的天数。 `DateTime`编码为自Unix时间开始以来的秒数。

@@ -126,3 +126,7 @@ INSERT INTO addresses(addr) VALUES ('00000000000000000000FFFFC1FC110A'), ('00000
 SELECT cutIPv6(toFixedString(unhex(addr), 16), 0, 3) FROM addresses ORDER BY addr ASC;
 
 DROP TABLE addresses;
+
+/* char function */
+SELECT char(65, 66, 67, 68, 97, 98, 99, 100, 101.0, 102.0, 103.0);
+SELECT char(65 + number) from numbers(10);

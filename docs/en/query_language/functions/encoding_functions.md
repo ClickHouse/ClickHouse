@@ -1,5 +1,8 @@
 # Encoding functions
 
+## char
+Accepts multiple arguments of `Number` types. Returns a string, each char of the results corresponds to the ascii character of the input numbers. Same behavior as [MySQL char function](https://dev.mysql.com/doc/refman/8.0/en/string-functions.html#function_char);
+
 ## hex
 
 Accepts arguments of types: `String`, `unsigned integer`, `Date`, or `DateTime`. Returns a string containing the argument's hexadecimal representation. Uses uppercase letters `A-F`. Does not use `0x` prefixes or `h` suffixes. For strings, all bytes are simply encoded as two hexadecimal numbers. Numbers are converted to big endian ("human readable") format. For numbers, older zeros are trimmed, but only by entire bytes. For example, `hex (1) = '01'`. `Date` is encoded as the number of days since the beginning of the Unix epoch. `DateTime` is encoded as the number of seconds since the beginning of the Unix epoch.
