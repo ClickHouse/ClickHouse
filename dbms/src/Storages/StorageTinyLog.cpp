@@ -323,30 +323,30 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 
 StorageTinyLog::StorageTinyLog(
-    const std::string & path_,
+    const std::string & relative_path_,
     const std::string & database_name_,
     const std::string & table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     bool attach,
-    size_t max_compress_block_size_)
-    : path(path_), table_name(table_name_), database_name(database_name_),
+    size_t max_compress_block_size_,
+    const Context & context_)
+    : path(context_.getPath() + relative_path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
-    file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json"),
+    file_checker(path + "sizes.json"),
     log(&Logger::get("StorageTinyLog"))
 {
     setColumns(columns_);
     setConstraints(constraints_);
 
-    if (path.empty())
+    if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    String full_path = path + escapeForFileName(table_name) + '/';
     if (!attach)
     {
         /// create files if they do not exist
-        if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-            throwFromErrnoWithPath("Cannot create directory " + full_path, full_path,
+        if (0 != mkdir(path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
+            throwFromErrnoWithPath("Cannot create directory " + path, path,
                                    ErrorCodes::CANNOT_CREATE_DIRECTORY);
     }
 
@@ -369,7 +369,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
             ColumnData column_data;
             files.insert(std::make_pair(stream_name, column_data));
             files[stream_name].data_file = Poco::File(
-                path + escapeForFileName(table_name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+                path + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
         }
     };
 
@@ -383,15 +383,16 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
-    Poco::File(path + escapeForFileName(table_name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
+    String new_path = new_path_to_db + escapeForFileName(new_table_name) + "/";
+    Poco::File(path).renameTo(new_path);
 
-    path = new_path_to_db;
+    path = new_path;
     table_name = new_table_name;
     database_name = new_database_name;
-    file_checker.setPath(path + escapeForFileName(table_name) + "/" + "sizes.json");
+    file_checker.setPath(path + "sizes.json");
 
     for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-        it->second.data_file = Poco::File(path + escapeForFileName(table_name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
+        it->second.data_file = Poco::File(path + Poco::Path(it->second.data_file.path()).getFileName());
 }
 
 
@@ -431,12 +432,12 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    auto file = Poco::File(path + escapeForFileName(table_name));
+    auto file = Poco::File(path);
     file.remove(true);
     file.createDirectories();
 
     files.clear();
-    file_checker = FileChecker{path + escapeForFileName(table_name) + '/' + "sizes.json"};
+    file_checker = FileChecker{path + "sizes.json"};
 
     for (const auto &column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
@@ -453,8 +454,8 @@ void registerStorageTinyLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageTinyLog::create(
-            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
-            args.attach, args.context.getSettings().max_compress_block_size);
+            args.relative_data_path, args.database_name, args.table_name, args.columns, args.constraints,
+            args.attach, args.context.getSettings().max_compress_block_size, args.context);
     });
 }
 

@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 StorageJoin::StorageJoin(
-    const String & path_,
+    const String & relative_path_,
     const String & database_name_,
     const String & table_name_,
     const Names & key_names_,
@@ -38,8 +38,9 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    bool overwrite)
-    : StorageSetOrJoinBase{path_, database_name_, table_name_, columns_, constraints_}
+    bool overwrite,
+    const Context & context_)
+    : StorageSetOrJoinBase{relative_path_, database_name_, table_name_, columns_, constraints_, context_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
     , limits(limits_)
@@ -162,7 +163,7 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         return StorageJoin::create(
-            args.data_path,
+            args.relative_data_path,
             args.database_name,
             args.table_name,
             key_names,
@@ -172,7 +173,8 @@ void registerStorageJoin(StorageFactory & factory)
             strictness,
             args.columns,
             args.constraints,
-            join_any_take_last_row);
+            join_any_take_last_row,
+            args.context);
     });
 }
 
