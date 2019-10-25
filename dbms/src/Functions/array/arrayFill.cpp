@@ -7,7 +7,7 @@
 namespace DB
 {
 
-template <bool Reverse>
+template <bool reverse>
 struct ArrayFillImpl
 {
     static bool needBoolean() { return true; }
@@ -51,7 +51,7 @@ struct ArrayFillImpl
                             out_data.insertRangeFrom(in_data, begin, end + 1 - begin);
                         else
                         {
-                            if constexpr (Reverse)
+                            if constexpr (reverse)
                             {
                                 if (end == array_end)
                                     out_data.insertManyFrom(in_data, array_end, end + 1 - begin);
@@ -96,7 +96,7 @@ struct ArrayFillImpl
             {
                 array_end = in_offsets[i] - 1;
 
-                if constexpr (Reverse)
+                if constexpr (reverse)
                     out_data.insertManyFrom(in_data, array_end, array_end + 1 - array_begin);
                 else
                     out_data.insertManyFrom(in_data, array_begin, array_end + 1 - array_begin);
@@ -117,7 +117,7 @@ struct NameArrayReverseFill { static constexpr auto name = "arrayReverseFill"; }
 using FunctionArrayFill = FunctionArrayMapped<ArrayFillImpl<false>, NameArrayFill>;
 using FunctionArrayReverseFill = FunctionArrayMapped<ArrayFillImpl<true>, NameArrayReverseFill>;
 
-void registerFunctionArrayFill(FunctionFactory & factory)
+void registerFunctionsArrayFill(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayFill>();
     factory.registerFunction<FunctionArrayReverseFill>();
