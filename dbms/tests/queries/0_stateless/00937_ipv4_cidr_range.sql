@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS ipv4_range;
 CREATE TABLE ipv4_range(ip IPv4, cidr UInt8) ENGINE = Memory;
 
