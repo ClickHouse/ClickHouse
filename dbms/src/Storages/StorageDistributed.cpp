@@ -1,7 +1,6 @@
 #include <Storages/StorageDistributed.h>
 
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
 
 #include <Databases/IDatabase.h>
 
