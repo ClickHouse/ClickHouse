@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/QueryProcessingStage.h>
 #include <Core/SettingsCommon.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
-#include <DataStreams/IBlockStream_fwd.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/SizeLimits.h>
+#include <Interpreters/QueryCache.h>
 #include <IO/Progress.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Common/TypePromotion.h>
@@ -235,6 +237,14 @@ public:
     /// Enable calculation of minimums and maximums by the result columns.
     void enableExtremes() { enabled_extremes = true; }
 
+	void enableCache(const String query_, const UInt32 shard_num_, const QueryProcessingStage::Enum processed_stage_)
+	{
+		cache = true;
+		query = query_;
+		shard_num = shard_num_;
+		processed_stage = processed_stage_;
+	}
+
 protected:
     /// Order is important: `table_locks` must be destroyed after `children` so that tables from
     /// which child streams read are protected by the locks during the lifetime of the child streams.
@@ -272,6 +282,10 @@ protected:
 
 private:
     bool enabled_extremes = false;
+	bool cache = false;
+	UInt32 shard_num;
+    QueryProcessingStage::Enum processed_stage;
+	String query;
 
     /// The limit on the number of rows/bytes has been exceeded, and you need to stop execution on the next `read` call, as if the thread has run out.
     bool limit_exceeded_need_break = false;

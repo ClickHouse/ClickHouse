@@ -14,6 +14,7 @@
 #include <DataTypes/FieldToDataType.h>
 
 #include <DataStreams/LazyBlockInputStream.h>
+#include <DataStreams/CacheBlockInputStream.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -37,6 +38,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/QueryCache.h>
 
 namespace DB
 {
@@ -600,8 +602,24 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
         if (!subquery_for_set.source && data.no_storage_or_local)
         {
             auto interpreter = interpretSubquery(arg, data.context, data.subquery_depth, {});
-            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
+            bool use_cache = false;
+            if (data.context.getSettingsRef().use_experimental_query_cache)
+            {
+                QueryCacheItem c;
+                if (getQueryCache(0, set_id, QueryProcessingStage::FetchColumns, c))
+                {
+                    subquery_for_set.source = std::make_shared<CacheBlockInputStream>(c.getBlocks());
+                    use_cache = true;
+                }
+            }
+
+            if (use_cache == false)
+            {
+                subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
+                    interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
+                if (data.context.getSettingsRef().use_experimental_query_cache)
+                    subquery_for_set.source->enableCache(set_id, 0, QueryProcessingStage::FetchColumns);
+            }
 
             /** Why is LazyBlockInputStream used?
               *

@@ -72,6 +72,10 @@ Block IBlockInputStream::read()
 
         if (quota != nullptr)
             checkQuota(res);
+
+        // TODO: res modifications?
+        if (cache)
+            addQueryCache(shard_num, query, processed_stage, res);
     }
     else
     {

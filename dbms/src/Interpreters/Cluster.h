@@ -117,8 +117,7 @@ public:
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication = false;
-    };
-
+    }; 
     using ShardsInfo = std::vector<ShardInfo>;
 
     String getHashOfAddresses() const { return hash_of_addresses; }

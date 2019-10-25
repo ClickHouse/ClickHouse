@@ -1,6 +1,7 @@
 #include <Interpreters/Set.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/CacheBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <Storages/IStorage.h>
 #include <iomanip>

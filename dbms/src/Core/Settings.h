@@ -385,6 +385,7 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13") \
     M(SettingBool, compile, false, "Whether query compilation is enabled. Will be removed after 2020-03-13") \
+    M(SettingBool, use_experimental_query_cache, false, "Use experimental query cache") \
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 

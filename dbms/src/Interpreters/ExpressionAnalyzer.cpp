@@ -22,6 +22,7 @@
 
 #include <Columns/IColumn.h>
 
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -236,22 +237,56 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     if (prepared_sets.count(set_key))
         return; /// Already prepared.
 
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
-    BlockIO res = interpreter_subquery->execute();
+    auto subquery = queryToString(subquery_or_table_name);
 
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
-    set->setHeader(res.in->getHeader());
-
-    res.in->readPrefix();
-    while (Block block = res.in->read())
+    // Find Cache
+    SetPtr setInCache = nullptr;
+    QueryProcessingStage::Enum processed_stage = QueryProcessingStage::FetchColumns;
+    UInt32 shard_num = 0;
+    if (context.getSettingsRef().use_experimental_query_cache)
     {
-        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block))
-            return;
+        QueryCacheItem c;
+        if (getQueryCache(shard_num, subquery, processed_stage, c))
+            setInCache = c.getSet();
     }
-    res.in->readSuffix();
 
-    prepared_sets[set_key] = std::move(set);
+    if (setInCache == nullptr)
+    {
+        // TODO : check option
+        if (reserveQueryCache(shard_num, subquery, processed_stage))
+        {
+            auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+            BlockIO res = interpreter_subquery->execute();
+
+            SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
+            set->setHeader(res.in->getHeader());
+
+            res.in->readPrefix();
+            while (Block block = res.in->read())
+            {
+                /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+                if (!set->insertFromBlock(block))
+                    return;
+            }
+            res.in->readSuffix();
+
+            // Add Cache
+            if (context.getSettingsRef().use_experimental_query_cache)
+                addQueryCache(shard_num, subquery, processed_stage, set);
+
+            prepared_sets[set_key] = std::move(set);
+        }
+        else
+        {
+            QueryCacheItem c;
+            waitAndGetQueryCache(shard_num, subquery, processed_stage, c);
+            prepared_sets[set_key] = c.getSet();
+        }
+    }
+    else
+    {
+        prepared_sets[set_key] = std::move(setInCache);
+    }
 }
 
 
