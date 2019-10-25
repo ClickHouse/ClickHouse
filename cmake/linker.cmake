@@ -1,6 +1,13 @@
 option (LINKER_NAME "Linker name or full path")
 
-find_program (LLD_PATH NAMES "ld.lld" "lld")
+set (LLD_NAMES "ld.lld" "lld")
+
+if (CMAKE_CXX_COMPILER)
+    string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
+    list(APPEND LLD_NAMES "lld${COMPILER_POSTFIX}")
+endif ()
+
+find_program (LLD_PATH NAMES ${LLD_NAMES})
 find_program (GOLD_PATH NAMES "ld.gold" "gold")
 
 if (NOT LINKER_NAME)
