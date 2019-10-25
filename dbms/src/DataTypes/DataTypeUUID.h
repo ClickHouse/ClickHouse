@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UInt128.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/IDataType.h>
 

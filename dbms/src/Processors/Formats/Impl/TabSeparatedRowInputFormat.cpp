@@ -6,6 +6,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -117,9 +118,10 @@ void TabSeparatedRowInputFormat::fillUnreadColumnsWithDefaults(MutableColumns & 
     }
 
     for (const auto column_index : columns_to_fill_with_default_values)
+    {
         data_types[column_index]->insertDefaultInto(*columns[column_index]);
-
-    row_read_extension.read_columns = read_columns;
+        row_read_extension.read_columns[column_index] = false;
+    }
 }
 
 
@@ -174,12 +176,15 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
     updateDiagnosticInfo();
 
+    ext.read_columns.assign(read_columns.size(), true);
     for (size_t file_column = 0; file_column < column_indexes_for_input_fields.size(); ++file_column)
     {
         const auto & column_index = column_indexes_for_input_fields[file_column];
+        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
         if (column_index)
         {
-            data_types[*column_index]->deserializeAsTextEscaped(*columns[*column_index], in, format_settings);
+            const auto & type = data_types[*column_index];
+            ext.read_columns[*column_index] = readField(*columns[*column_index], type, is_last_file_column);
         }
         else
         {
@@ -203,6 +208,22 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 
     fillUnreadColumnsWithDefaults(columns, ext);
 
+    return true;
+}
+
+
+bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
+{
+    const bool at_delimiter = !is_last_file_column && !in.eof() && *in.position() == '\t';
+    const bool at_last_column_line_end = is_last_file_column && (in.eof() || *in.position() == '\n');
+    if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
+    {
+        column.insertDefault();
+        return false;
+    }
+    else if (format_settings.null_as_default && !type->isNullable())
+        return DataTypeNullable::deserializeTextEscaped(column, in, format_settings, type);
+    type->deserializeAsTextEscaped(column, in, format_settings);
     return true;
 }
 
@@ -303,7 +324,10 @@ void TabSeparatedRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, I
 {
     prev_pos = in.position();
     if (column_indexes_for_input_fields[file_column])
-        type->deserializeAsTextEscaped(column, in, format_settings);
+    {
+        const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
+        readField(column, type, is_last_file_column);
+    }
     else
     {
         NullSink null_sink;

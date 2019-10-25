@@ -10,7 +10,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
     这让你可以创建一个用于快速检索数据的小稀疏索引。
 
-- 允许使用分区，如果指定了 [主键](custom_partitioning_key.md) 的话。
+- 允许使用分区，如果指定了 [分区键](custom_partitioning_key.md) 的话。
 
     在相同数据集和相同结果集的情况下 ClickHouse 中某些带分区的操作会比普通操作更快。查询中指定了分区键时 ClickHouse 会自动截取分区数据。这也有效增加了查询性能。
 

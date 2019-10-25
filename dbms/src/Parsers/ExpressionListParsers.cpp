@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -78,7 +79,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
 
-    auto list = std::make_shared<ASTExpressionList>();
+    auto list = std::make_shared<ASTExpressionList>(result_separator);
     node = list;
 
     while (true)
@@ -627,5 +628,47 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     return true;
 }
 
+bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserLiteral literal_parser;
+
+    ASTPtr identifier;
+    ASTPtr value;
+    bool with_brackets = false;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    /// If it's not literal or identifier, than it's possible list of pairs
+    if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    {
+        ParserKeyValuePairsList kv_pairs_list;
+        ParserToken open(TokenType::OpeningRoundBracket);
+        ParserToken close(TokenType::ClosingRoundBracket);
+
+        if (!open.ignore(pos))
+            return false;
+
+        if (!kv_pairs_list.parse(pos, value, expected))
+            return false;
+
+        if (!close.ignore(pos))
+            return false;
+
+        with_brackets = true;
+    }
+
+    auto pair = std::make_shared<ASTPair>(with_brackets);
+    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    pair->second = value;
+    node = pair;
+    return true;
+}
+
+bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList parser(std::make_unique<ParserKeyValuePair>(), std::make_unique<ParserNothing>(), true, 0);
+    return parser.parse(pos, node, expected);
+}
 
 }

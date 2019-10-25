@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Common/PODArray.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -28,7 +29,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>

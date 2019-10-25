@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 
+#include <Core/Field.h>
 
 namespace DB
 {

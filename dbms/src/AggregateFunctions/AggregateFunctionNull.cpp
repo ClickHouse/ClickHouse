@@ -53,12 +53,7 @@ public:
         /// Special case for 'count' function. It could be called with Nullable arguments
         /// - that means - count number of calls, when all arguments are not NULL.
         if (nested_function && nested_function->getName() == "count")
-        {
-            if (arguments.size() == 1)
-                return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
-            else
-                return std::make_shared<AggregateFunctionCountNotNullVariadic>(arguments, params);
-        }
+            return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
 
         if (has_null_types)
             return std::make_shared<AggregateFunctionNothing>(arguments, params);

@@ -1,4 +1,5 @@
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

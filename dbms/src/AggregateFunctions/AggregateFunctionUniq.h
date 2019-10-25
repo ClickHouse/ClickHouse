@@ -171,7 +171,7 @@ struct OneAdder
         {
             if constexpr (!std::is_same_v<T, String>)
             {
-                const auto & value = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
+                const auto & value = assert_cast<const ColumnVector<T> &>(column).getElement(row_num);
                 data.set.insert(AggregateFunctionUniqTraits<T>::hash(value));
             }
             else
