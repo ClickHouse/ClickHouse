@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
+#include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <sstream>
@@ -57,7 +58,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 std::pair<String, StoragePtr> createTableFromDefinition(
     const String & definition,
     const String & database_name,
-    const String & database_data_path,
+    const String & relative_db_path,
     Context & context,
     bool has_force_restore_data_flag,
     const String & description_for_error_message)
@@ -90,7 +91,8 @@ std::pair<String, StoragePtr> createTableFromDefinition(
         ast_create_query.table,
         StorageFactory::instance().get(
             ast_create_query,
-            database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
+            relative_db_path + escapeForFileName(ast_create_query.table) + '/',
+            ast_create_query.table, database_name, context, context.getGlobalContext(),
             columns, constraints,
             true, has_force_restore_data_flag)
     };

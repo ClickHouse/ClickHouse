@@ -87,13 +87,13 @@ static void loadTable(
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context)
+DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context_)
     : DatabaseWithOwnTablesBase(std::move(name_))
     , metadata_path(metadata_path_)
-    , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
+    , data_path("data/" + escapeForFileName(name) + "/")
     , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
 {
-    Poco::File(getDataPath()).createDirectories();
+    Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
 
 
@@ -104,7 +104,7 @@ void DatabaseOrdinary::loadTables(
     using FileNames = std::vector<std::string>;
     FileNames file_names;
 
-    DatabaseOnDisk::iterateTableFiles(*this, log, [&file_names](const String & file_name)
+    DatabaseOnDisk::iterateTableFiles(*this, log, context, [&file_names](const String & file_name)
     {
         file_names.push_back(file_name);
     });
@@ -299,9 +299,9 @@ void DatabaseOrdinary::alterTable(
 }
 
 
-void DatabaseOrdinary::drop()
+void DatabaseOrdinary::drop(const Context & context)
 {
-    DatabaseOnDisk::drop(*this);
+    DatabaseOnDisk::drop(*this, context);
 }
 
 

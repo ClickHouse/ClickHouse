@@ -50,7 +50,7 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    std::string fullPath() const { return path + escapeForFileName(table_name) + '/';}
+    std::string fullPath() const { return path; }
 
     Strings getDataPaths() const override { return {fullPath()}; }
 
@@ -75,13 +75,14 @@ private:
 
 protected:
     StorageTinyLog(
-        const std::string & path_,
+        const std::string & relative_path_,
         const std::string & database_name_,
         const std::string & table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         bool attach,
-        size_t max_compress_block_size_);
+        size_t max_compress_block_size_,
+        const Context & context_);
 };
 
 }

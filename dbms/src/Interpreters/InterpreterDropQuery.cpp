@@ -119,7 +119,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             database_and_table.second->is_dropped = true;
 
-            String database_data_path = database_and_table.first->getDataPath();
+            String database_data_path = context.getPath() + database_and_table.first->getDataPath();
 
             /// If it is not virtual database like Dictionary then drop remaining data dir
             if (!database_data_path.empty())
@@ -206,7 +206,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
             database->shutdown();
 
             /// Delete the database.
-            database->drop();
+            database->drop(context);
 
             /// Old ClickHouse versions did not store database.sql files
             Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");

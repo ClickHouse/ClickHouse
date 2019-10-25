@@ -31,7 +31,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query);
 std::pair<String, StoragePtr> createTableFromDefinition(
     const String & definition,
     const String & database_name,
-    const String & database_data_path,
+    const String & relative_db_path,
     Context & context,
     bool has_force_restore_data_flag,
     const String & description_for_error_message);
