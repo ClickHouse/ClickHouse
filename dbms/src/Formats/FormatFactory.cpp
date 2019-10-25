@@ -108,7 +108,7 @@ BlockInputStreamPtr FormatFactory::getInput(
     const Settings & settings = context.getSettingsRef();
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
 
-    if (name != "Values" && settings.input_format_parallel_parsing && file_segmentation_engine)
+    if (settings.input_format_parallel_parsing && file_segmentation_engine)
     {
         const auto & input_getter = getCreators(name).input_processor_creator;
         if (!input_getter)
@@ -125,8 +125,6 @@ BlockInputStreamPtr FormatFactory::getInput(
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
         size_t max_threads_to_use = settings.max_threads_for_parallel_parsing;
-        if (!max_threads_to_use)
-            max_threads_to_use = settings.max_threads;
 
         auto params = ParallelParsingBlockInputStream::InputCreatorParams{sample, context, row_input_format_params, format_settings};
         ParallelParsingBlockInputStream::Builder builder{buf, input_getter, params, file_segmentation_engine, max_threads_to_use, settings.min_chunk_size_for_parallel_parsing};

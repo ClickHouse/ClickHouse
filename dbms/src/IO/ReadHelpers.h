@@ -916,6 +916,6 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
   * If there is no pending data in buffer or it was explicitly asked
   *  save current state to memory.
   */
-bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, size_t & used_size, char * & begin_pos, bool save_buffer_state = false);
+bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, size_t & used_size, char * & begin_pos, bool force_saving_buffer_state = false);
 
 }
