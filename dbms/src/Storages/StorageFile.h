@@ -54,7 +54,7 @@ protected:
     StorageFile(
         const std::string & table_path_,
         int table_fd_,
-        const std::string & db_dir_path,
+        const std::string & relative_table_dir_path,
         const std::string & database_name_,
         const std::string & table_name_,
         const std::string & format_name_,

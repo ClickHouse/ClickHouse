@@ -30,11 +30,12 @@ public:
 
 protected:
     StorageSetOrJoinBase(
-        const String & path_,
+        const String & relative_path_,
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_);
+        const ConstraintsDescription & constraints_,
+        const Context & context_);
 
     String path;
     String table_name;
@@ -82,11 +83,12 @@ private:
 
 protected:
     StorageSet(
-        const String & path_,
+        const String & relative_path_,
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_);
+        const ConstraintsDescription & constraints_,
+        const Context & context_);
 };
 
 }

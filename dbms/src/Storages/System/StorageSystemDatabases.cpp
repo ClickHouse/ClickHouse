@@ -9,6 +9,7 @@ namespace DB
 
 NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
 {
+    //FIXME data_path
     return {
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},

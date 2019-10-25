@@ -13,6 +13,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Common/typeid_cast.h>
+#include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Dictionaries/DictionaryFactory.h>
 
@@ -33,6 +34,7 @@ namespace ErrorCodes
 
 namespace
 {
+
 
 StoragePtr getDictionaryStorage(const Context & context, const String & table_name, const String & db_name)
 {

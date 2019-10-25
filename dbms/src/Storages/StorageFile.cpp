@@ -54,7 +54,7 @@ namespace
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+static std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -98,13 +98,13 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
     return result;
 }
 
-std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
+static std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
 {
-    return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
+    return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path)
+static void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
@@ -121,7 +121,7 @@ void checkCreationIsAllowed(Context & context_global, const std::string & db_dir
 StorageFile::StorageFile(
         const std::string & table_path_,
         int table_fd_,
-        const std::string & db_dir_path,
+        const std::string & relative_table_dir_path,
         const std::string & database_name_,
         const std::string & table_name_,
         const std::string & format_name_,
@@ -135,17 +135,17 @@ StorageFile::StorageFile(
     setColumns(columns_);
     setConstraints(constraints_);
 
-    std::string db_dir_path_abs = Poco::Path(db_dir_path).makeAbsolute().makeDirectory().toString();
-
     if (table_fd < 0) /// Will use file
     {
+        String table_dir_path = context_global.getPath() + relative_table_dir_path + "/";
         use_table_fd = false;
 
         if (!table_path_.empty()) /// Is user's file
         {
+            table_dir_path = Poco::Path(relative_table_dir_path).makeAbsolute().makeDirectory().toString();
             Poco::Path poco_path = Poco::Path(table_path_);
             if (poco_path.isRelative())
-                poco_path = Poco::Path(db_dir_path_abs, poco_path);
+                poco_path = Poco::Path(table_dir_path, poco_path);
 
             const std::string path = poco_path.absolute().toString();
             if (path.find_first_of("*?{") == std::string::npos)
@@ -155,15 +155,15 @@ StorageFile::StorageFile(
             else
                 paths = listFilesWithRegexpMatching("/", path);
             for (const auto & cur_path : paths)
-                checkCreationIsAllowed(context_global, db_dir_path_abs, cur_path);
+                checkCreationIsAllowed(context_global, table_dir_path, cur_path);
             is_db_table = false;
         }
         else /// Is DB's file
         {
-            if (db_dir_path_abs.empty())
+            if (relative_table_dir_path.empty())
                 throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-            paths = {getTablePath(db_dir_path_abs, table_name, format_name)};
+            paths = {getTablePath(table_dir_path, format_name)};
             is_db_table = true;
             Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
         }
@@ -363,7 +363,7 @@ void StorageFile::rename(const String & new_path_to_db, const String & new_datab
 
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
-    std::string path_new = getTablePath(new_path_to_db, new_table_name, format_name);
+    std::string path_new = getTablePath(new_path_to_db + escapeForFileName(new_table_name), format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();
     Poco::File(paths[0]).renameTo(path_new);
 
@@ -425,7 +425,7 @@ void registerStorageFile(StorageFactory & factory)
 
         return StorageFile::create(
             source_path, source_fd,
-            args.data_path,
+            args.relative_data_path,
             args.database_name, args.table_name, format_name, args.columns, args.constraints,
             args.context,
             compression_method);

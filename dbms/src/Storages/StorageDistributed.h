@@ -172,7 +172,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & data_path_,
+        const String & relative_data_path_,
         bool attach_);
 
     StorageDistributed(
@@ -184,7 +184,7 @@ protected:
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,
-        const String & data_path_,
+        const String & relative_data_path_,
         bool attach);
 
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
