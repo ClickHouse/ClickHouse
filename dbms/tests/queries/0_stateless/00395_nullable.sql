@@ -102,11 +102,11 @@ SELECT col1 FROM test1_00395 ORDER BY col1 ASC;
 SELECT '----- Insert. Source and target columns have same types up to nullability. -----';
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Nullable(UInt64), col2 UInt64) Engine=Memory;
-DROP TABLE IF EXISTS test2_00395;
-CREATE TABLE test2_00395(col1 UInt64, col2 Nullable(UInt64)) Engine=Memory;
+DROP TABLE IF EXISTS test2;
+CREATE TABLE test2(col1 UInt64, col2 Nullable(UInt64)) Engine=Memory;
 INSERT INTO test1_00395(col1,col2) VALUES (2,7)(6,9)(5,1)(4,3)(8,2);
-INSERT INTO test2_00395(col1,col2) SELECT col1,col2 FROM test1_00395;
-SELECT col1,col2 FROM test2_00395 ORDER BY col1,col2 ASC;
+INSERT INTO test2(col1,col2) SELECT col1,col2 FROM test1_00395;
+SELECT col1,col2 FROM test2 ORDER BY col1,col2 ASC;
 
 SELECT '----- Apply functions and aggregate functions on columns that may contain null values -----';
 
@@ -497,4 +497,4 @@ INSERT INTO test1_00395(col1,col2) VALUES([NULL], 'ACDEFBGH');
 SELECT col1, count() FROM test1_00395 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test1_00395;
-DROP TABLE test2_00395;
+DROP TABLE test2;
