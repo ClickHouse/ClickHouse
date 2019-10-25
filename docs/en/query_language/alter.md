@@ -389,7 +389,7 @@ Possible values: `0` – do not wait; `1` – only wait for own execution (defau
 
 Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table.
 
-The functionality is in beta stage and is available starting with the 1.1.54388 version. Currently `*MergeTree` table engines are supported (both replicated and unreplicated).
+Currently `*MergeTree` table engines are supported (both replicated and unreplicated).
 
 Existing tables are ready for mutations as-is (no conversion necessary), but after the first mutation is applied to a table, its metadata format becomes incompatible with previous server versions and falling back to a previous version becomes impossible.
 
@@ -405,7 +405,7 @@ The `filter_expr` must be of type UInt8. The query deletes rows in the table for
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
-The command is available starting with the 18.12.14 version. The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
+The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
 
 ```sql
 ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
