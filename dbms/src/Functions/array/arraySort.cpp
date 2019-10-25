@@ -63,7 +63,7 @@ struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; }
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false>, NameArrayReverseSort>;
 
-void registerFunctionArraySort(FunctionFactory & factory)
+void registerFunctionsArraySort(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArraySort>();
     factory.registerFunction<FunctionArrayReverseSort>();
