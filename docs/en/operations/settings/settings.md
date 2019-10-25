@@ -980,4 +980,25 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
 
 Default value: 0.
 
+## input_format_parallel_parsing
+
+- Type: bool
+- Default value: True
+
+Enable order-preserving parallel parsing of data formats such as JSONEachRow, TSV, TKSV and CSV. Reading will be single threaded and parsing will be multithreaded.
+
+## max_threads_for_parallel_parsing
+
+- Type: unsigned int
+- Default value: 10
+
+The maximum number of threads for order-preserving parallel parsing of data formats.
+
+## min_chunk_size_for_parallel_parsing
+
+- Type: unsigned int
+- Default value: 1024 * 1024
+
+The minimum chunk size in bytes, which each thread will parse in parallel. By default it equals to one megabyte.
+
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->

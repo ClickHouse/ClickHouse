@@ -16,8 +16,8 @@ namespace DB
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
  * It splits original data into chunks. Then each chunk is parsed by different thread.
- * The number of chunks equals to max_threads_for_parallel_reading setting.
- * The size of chunk is equal to min_chunk_size_for_parallel_reading setting.
+ * The number of chunks equals to max_threads_for_parallel_parsing setting.
+ * The size of chunk is equal to min_chunk_size_for_parallel_parsing setting.
  */
 class ParallelParsingBlockInputStream : public IBlockInputStream
 {

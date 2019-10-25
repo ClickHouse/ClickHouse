@@ -124,12 +124,12 @@ BlockInputStreamPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-        size_t max_threads_to_use = settings.max_threads_for_parallel_reading;
+        size_t max_threads_to_use = settings.max_threads_for_parallel_parsing;
         if (!max_threads_to_use)
             max_threads_to_use = settings.max_threads;
 
         auto params = ParallelParsingBlockInputStream::InputCreatorParams{sample, context, row_input_format_params, format_settings};
-        ParallelParsingBlockInputStream::Builder builder{buf, input_getter, params, file_segmentation_engine, max_threads_to_use, settings.min_chunk_size_for_parallel_reading};
+        ParallelParsingBlockInputStream::Builder builder{buf, input_getter, params, file_segmentation_engine, max_threads_to_use, settings.min_chunk_size_for_parallel_parsing};
         return std::make_shared<ParallelParsingBlockInputStream>(builder);
     }
 
