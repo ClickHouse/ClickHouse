@@ -53,11 +53,13 @@ DatabasePtr DatabaseFactory::get(
     else if (engine_name == "MySQL")
     {
         const ASTFunction * engine = engine_define->engine;
-        const auto & arguments = engine->arguments->children;
 
-        if (arguments.size() != 4)
-            throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
-                            ErrorCodes::BAD_ARGUMENTS);
+        if (!engine->arguments || engine->arguments->children.size() != 4)
+            throw Exception(
+                "MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
+                ErrorCodes::BAD_ARGUMENTS);
+
+        const auto & arguments = engine->arguments->children;
 
         const auto & mysql_host_name = arguments[0]->as<ASTLiteral>()->value.safeGet<String>();
         const auto & mysql_database_name = arguments[1]->as<ASTLiteral>()->value.safeGet<String>();
@@ -74,11 +76,11 @@ DatabasePtr DatabaseFactory::get(
     else if (engine_name == "Lazy")
     {
         const ASTFunction * engine = engine_define->engine;
-        const auto & arguments = engine->arguments->children;
 
-        if (arguments.size() != 1)
-            throw Exception("Lazy database require cache_expiration_time_seconds argument.",
-                            ErrorCodes::BAD_ARGUMENTS);
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception("Lazy database require cache_expiration_time_seconds argument", ErrorCodes::BAD_ARGUMENTS);
+
+        const auto & arguments = engine->arguments->children;
 
         const auto cache_expiration_time_seconds = arguments[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
