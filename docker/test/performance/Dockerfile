@@ -9,7 +9,7 @@ RUN apt-get update -y \
 COPY s3downloader /s3downloader
 COPY run.sh /run.sh
 
-ENV OPEN_DATASETS="hits"
+ENV OPEN_DATASETS="hits values_with_expressions"
 ENV PRIVATE_DATASETS="hits_100m_single hits_10m_single"
 ENV DOWNLOAD_DATASETS=1
 

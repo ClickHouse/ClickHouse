@@ -546,6 +546,7 @@ We recommend using this function in almost all scenarios.
 **See Also**
 
 - [uniqCombined](#agg_function-uniqcombined)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
@@ -557,7 +558,7 @@ Calculates the approximate number of different argument values.
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-The `uniqCombined` function is a good choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will be larger than the theoretical value due to the poor hash function choice.
+The `uniqCombined` function is a good choice for calculating the number of different values.
 
 **Parameters**
 
@@ -573,12 +574,15 @@ The function takes a variable number of parameters. Parameters can be `Tuple`, `
 
 Function:
 
-- Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+- Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
 - Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
 
     For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
 - Provides the result deterministically (it doesn't depend on the query processing order).
+
+!!! note "Note"
+    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
 
 Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
@@ -589,9 +593,13 @@ Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 **See Also**
 
 - [uniq](#agg_function-uniq)
+- [uniqCombined64](#agg_function-uniqcombined64)
 - [uniqHLL12](#agg_function-uniqhll12)
 - [uniqExact](#agg_function-uniqexact)
 
+## uniqCombined64 {#agg_function-uniqcombined64}
+
+Same as [uniqCombined](#agg_function-uniqcombined), but uses 64-bit hash for all data types.
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
@@ -873,7 +881,7 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-!! note "Note"
+!!! note "Note"
     For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#agg_function-quantile).
 
 **Returned value**
@@ -1163,6 +1171,141 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 - [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
 - [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+
+
+## groupBitmapAnd
+
+Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```sql
+groupBitmapAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapAnd(z)─┐
+│               3   │
+└───────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapAndState(z)))─┐
+│ [6,8,10]                                         │
+└──────────────────────────────────────────────────┘
+
+```
+
+
+## groupBitmapOr
+
+Calculations the OR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md). This is equivalent to `groupBitmapMerge`.
+
+```sql
+groupBitmapOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapOr(z)─┐
+│             15   │
+└──────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapOrState(z)))─┐
+│ [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]           │
+└─────────────────────────────────────────────────┘
+
+```
+
+
+## groupBitmapXor
+
+Calculations the XOR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```sql
+groupBitmapOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+```sql
+DROP TABLE IF EXISTS bitmap_column_expr_test2;
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] as Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] as Array(UInt32))));
+
+SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─groupBitmapXor(z)─┐
+│              10   │
+└───────────────────┘
+
+SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐
+│ [1,3,5,6,8,10,11,13,14,15]                       │
+└──────────────────────────────────────────────────┘
+
+```
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

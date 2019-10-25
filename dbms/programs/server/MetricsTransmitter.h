@@ -5,8 +5,10 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <Common/ProfileEvents.h>
+#include <optional>
+#include <Core/Types.h>
 #include <Common/ThreadPool.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace Poco
@@ -52,7 +54,7 @@ private:
     bool quit = false;
     std::mutex mutex;
     std::condition_variable cond;
-    ThreadFromGlobalPool thread{&MetricsTransmitter::run, this};
+    std::optional<ThreadFromGlobalPool> thread;
 
     static inline constexpr auto profile_events_path_prefix = "ClickHouse.ProfileEvents.";
     static inline constexpr auto profile_events_cumulative_path_prefix = "ClickHouse.ProfileEventsCumulative.";

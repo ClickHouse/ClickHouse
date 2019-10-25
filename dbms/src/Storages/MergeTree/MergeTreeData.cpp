@@ -802,7 +802,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (size_t i = 0; i < part_names_with_disks.size(); ++i)
     {
-        pool.schedule([&, i]
+        pool.scheduleOrThrowOnError([&, i]
         {
             const auto & part_name = part_names_with_disks[i].first;
             const auto part_disk_ptr = part_names_with_disks[i].second;
@@ -1155,7 +1155,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.schedule([&]
+            pool.scheduleOrThrowOnError([&]
             {
                 LOG_DEBUG(log, "Removing part from filesystem " << part->name);
                 part->remove();
@@ -2488,12 +2488,12 @@ void MergeTreeData::throwInsertIfNeeded() const
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/)
 {
-    auto committed_parts_range = getDataPartsStateRange(state);
+    auto current_state_parts_range = getDataPartsStateRange(state);
 
     /// The part can be covered only by the previous or the next one in data_parts.
     auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{state, part_info});
 
-    if (it != committed_parts_range.end())
+    if (it != current_state_parts_range.end())
     {
         if ((*it)->info == part_info)
             return *it;
@@ -2501,7 +2501,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
             return *it;
     }
 
-    if (it != committed_parts_range.begin())
+    if (it != current_state_parts_range.begin())
     {
         --it;
         if ((*it)->info.contains(part_info))
@@ -2723,10 +2723,20 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     if (!disk)
         throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
-    for (const auto & part : parts)
+    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
+        {
+            return part_ptr->disk->getName() == disk->getName();
+        }), parts.end());
+
+    if (parts.empty())
     {
-        if (part->disk->getName() == disk->getName())
-            throw Exception("Part " + part->name + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
+        String no_parts_to_move_message;
+        if (moving_part)
+            no_parts_to_move_message = "Part '" + partition_id + "' is already on disk '" + disk->getName() + "'";
+        else
+            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on disk '" + disk->getName() + "'";
+
+        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
@@ -2758,10 +2768,28 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     if (!volume)
         throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
-    for (const auto & part : parts)
-        for (const auto & disk : volume->disks)
-            if (part->disk->getName() == disk->getName())
-                throw Exception("Part " + part->name + " already on volume '" + name + "'", ErrorCodes::UNKNOWN_DISK);
+    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
+        {
+            for (const auto & disk : volume->disks)
+            {
+                if (part_ptr->disk->getName() == disk->getName())
+                {
+                    return true;
+                }
+            }
+            return false;
+        }), parts.end());
+
+    if (parts.empty())
+    {
+        String no_parts_to_move_message;
+        if (moving_part)
+            no_parts_to_move_message = "Part '" + partition_id + "' is already on volume '" + volume->getName() + "'";
+        else
+            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on volume '" + volume->getName() + "'";
+
+        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
+    }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
         throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
@@ -2967,6 +2995,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
         validateDetachedPartName(part_id);
         renamed_parts.addPart(part_id, "attaching_" + part_id);
+        if (MergeTreePartInfo::tryParsePartName(part_id, nullptr, format_version))
+            name_to_disk[part_id] = getDiskForPart(part_id, source_dir);
     }
     else
     {
@@ -3041,7 +3071,7 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
     if (reservation)
         return reservation;
 
-    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enought space.",
+    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space.",
                     ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
@@ -3357,7 +3387,7 @@ try
 
     part_log_elem.event_time = time(nullptr);
     /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-    part_log_elem.duration_ms = elapsed_ns / 10000000;
+    part_log_elem.duration_ms = elapsed_ns / 1000000;
 
     part_log_elem.database_name = database_name;
     part_log_elem.table_name = table_name;

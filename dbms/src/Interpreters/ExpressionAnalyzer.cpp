@@ -27,7 +27,7 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Join.h>
@@ -54,7 +54,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 
 #include <Interpreters/ActionsVisitor.h>
 
@@ -587,6 +587,19 @@ bool SelectQueryExpressionAnalyzer::appendPrewhere(
     }
 
     return true;
+}
+
+void SelectQueryExpressionAnalyzer::appendPreliminaryFilter(ExpressionActionsChain & chain, ExpressionActionsPtr actions, String column_name)
+{
+    initChain(chain, sourceColumns());
+    ExpressionActionsChain::Step & step = chain.steps.back();
+
+    // FIXME: assert(filter_info);
+    step.actions = std::move(actions);
+    step.required_output.push_back(std::move(column_name));
+    step.can_remove_required_output = {true};
+
+    chain.addStep();
 }
 
 bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)

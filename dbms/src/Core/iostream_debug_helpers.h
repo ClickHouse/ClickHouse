@@ -6,11 +6,18 @@
 
 namespace DB
 {
+
+// Used to disable implicit casting for certain overloaded types such as Field, which leads to
+// overload resolution ambiguity.
+template <typename T> struct Dumpable;
+template <typename T>
+std::ostream & operator<<(std::ostream & stream, const typename Dumpable<T>::Type & what);
+
 class IBlockInputStream;
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what);
 
 class Field;
-std::ostream & operator<<(std::ostream & stream, const Field & what);
+template <> struct Dumpable<Field> { using Type = Field; };
 
 struct NameAndTypePair;
 std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what);

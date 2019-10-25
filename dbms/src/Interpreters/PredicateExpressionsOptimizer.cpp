@@ -21,6 +21,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
@@ -406,11 +407,14 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     /// TODO: get tables from evaluateAsterisk instead of tablesOnly() to extract asterisks in general way
     std::vector<TableWithColumnNames> tables_with_columns = TranslateQualifiedNamesVisitor::Data::tablesOnly(tables);
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, tables_with_columns, false);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, std::move(tables_with_columns), false);
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};
     QueryAliasesVisitor(query_aliases_data).visit(ast);
+
+    MarkTableIdentifiersVisitor::Data mark_tables_data{aliases};
+    MarkTableIdentifiersVisitor(mark_tables_data).visit(ast);
 
     QueryNormalizer::Data normalizer_data(aliases, settings);
     QueryNormalizer(normalizer_data).visit(ast);

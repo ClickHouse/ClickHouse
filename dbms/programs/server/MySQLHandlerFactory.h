@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
-#if USE_POCO_NETSSL
+#if USE_POCO_NETSSL && USE_SSL
 
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <atomic>

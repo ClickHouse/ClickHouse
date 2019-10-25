@@ -20,8 +20,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-namespace
-{
 
 bool isParseError(int code)
 {
@@ -35,7 +33,6 @@ bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
 }
 
-}
 
 Chunk IRowInputFormat::generate()
 {
@@ -49,6 +46,7 @@ Chunk IRowInputFormat::generate()
     size_t prev_rows = total_rows;
 
     ///auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
+    block_missing_values.clear();
 
     try
     {

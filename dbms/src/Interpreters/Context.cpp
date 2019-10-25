@@ -25,12 +25,13 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/RuntimeComponentsFactory.h>
-#include <Interpreters/IUsersManager.h>
+#include <Interpreters/UsersManager.h>
 #include <Interpreters/Quota.h>
+#include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ExternalDictionaries.h>
-#include <Interpreters/ExternalModels.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
@@ -87,6 +88,8 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int SCALAR_ALREADY_EXISTS;
+    extern const int UNKNOWN_SCALAR;
 }
 
 
@@ -96,8 +99,6 @@ namespace ErrorCodes
 struct ContextShared
 {
     Logger * log = &Logger::get("Context");
-
-    std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     /// For access of most of shared objects. Recursive mutex.
     mutable std::recursive_mutex mutex;
@@ -124,11 +125,11 @@ struct ContextShared
 
     Databases databases;                                    /// List of databases and tables in them.
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
-    mutable std::optional<ExternalDictionaries> external_dictionaries;
-    mutable std::optional<ExternalModels> external_models;
+    mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
+    mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    std::unique_ptr<IUsersManager> users_manager;           /// Known users.
+    std::unique_ptr<UsersManager> users_manager;            /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -210,8 +211,8 @@ struct ContextShared
 
     Context::ConfigReloadCallback config_reload_callback;
 
-    ContextShared(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
-        : runtime_components_factory(std::move(runtime_components_factory_)), macros(std::make_unique<Macros>())
+    ContextShared()
+        : macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -282,8 +283,8 @@ struct ContextShared
 
         system_logs.reset();
         embedded_dictionaries.reset();
-        external_dictionaries.reset();
-        external_models.reset();
+        external_dictionaries_loader.reset();
+        external_models_loader.reset();
         background_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
@@ -308,7 +309,7 @@ struct ContextShared
 private:
     void initialize()
     {
-       users_manager = runtime_components_factory->createUsersManager();
+        users_manager = std::make_unique<UsersManager>();
     }
 };
 
@@ -318,17 +319,12 @@ Context::Context(const Context &) = default;
 Context & Context::operator=(const Context &) = default;
 
 
-Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory)
-{
-    Context res;
-    res.shared = std::make_shared<ContextShared>(std::move(runtime_components_factory));
-    res.quota = std::make_shared<QuotaForIntervals>();
-    return res;
-}
-
 Context Context::createGlobal()
 {
-    return createGlobal(std::make_unique<RuntimeComponentsFactory>());
+    Context res;
+    res.quota = std::make_shared<QuotaForIntervals>();
+    res.shared = std::make_shared<ContextShared>();
+    return res;
 }
 
 Context::~Context() = default;
@@ -868,6 +864,21 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 }
 
 
+const Scalars & Context::getScalars() const
+{
+    return scalars;
+}
+
+
+const Block & Context::getScalar(const String & name) const
+{
+    auto it = scalars.find(name);
+    if (scalars.end() == it)
+        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::UNKNOWN_SCALAR);
+    return it->second;
+}
+
+
 Tables Context::getExternalTables() const
 {
     auto lock = getLock();
@@ -964,6 +975,19 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
 
     external_tables[table_name] = std::pair(storage, ast);
 }
+
+
+void Context::addScalar(const String & name, const Block & block)
+{
+    scalars[name] = block;
+}
+
+
+bool Context::hasScalar(const String & name) const
+{
+    return scalars.count(name);
+}
+
 
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {
@@ -1312,50 +1336,50 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 }
 
 
-const ExternalDictionaries & Context::getExternalDictionaries() const
+const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() const
 {
     {
         std::lock_guard lock(shared->external_dictionaries_mutex);
-        if (shared->external_dictionaries)
-            return *shared->external_dictionaries;
+        if (shared->external_dictionaries_loader)
+            return *shared->external_dictionaries_loader;
     }
 
     const auto & config = getConfigRef();
     std::lock_guard lock(shared->external_dictionaries_mutex);
-    if (!shared->external_dictionaries)
+    if (!shared->external_dictionaries_loader)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = shared->runtime_components_factory->createExternalDictionariesConfigRepository();
-        shared->external_dictionaries.emplace(std::move(config_repository), config, *this->global_context);
+        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config");
+        shared->external_dictionaries_loader.emplace(std::move(config_repository), *this->global_context);
     }
-    return *shared->external_dictionaries;
+    return *shared->external_dictionaries_loader;
 }
 
-ExternalDictionaries & Context::getExternalDictionaries()
+ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 {
-    return const_cast<ExternalDictionaries &>(const_cast<const Context *>(this)->getExternalDictionaries());
+    return const_cast<ExternalDictionariesLoader &>(const_cast<const Context *>(this)->getExternalDictionariesLoader());
 }
 
 
-const ExternalModels & Context::getExternalModels() const
+const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
     std::lock_guard lock(shared->external_models_mutex);
-    if (!shared->external_models)
+    if (!shared->external_models_loader)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = shared->runtime_components_factory->createExternalModelsConfigRepository();
-        shared->external_models.emplace(std::move(config_repository), *this->global_context);
+        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(getConfigRef(), "models_config");
+        shared->external_models_loader.emplace(std::move(config_repository), *this->global_context);
     }
-    return *shared->external_models;
+    return *shared->external_models_loader;
 }
 
-ExternalModels & Context::getExternalModels()
+ExternalModelsLoader & Context::getExternalModelsLoader()
 {
-    return const_cast<ExternalModels &>(const_cast<const Context *>(this)->getExternalModels());
+    return const_cast<ExternalModelsLoader &>(const_cast<const Context *>(this)->getExternalModelsLoader());
 }
 
 
@@ -1365,7 +1389,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
     if (!shared->embedded_dictionaries)
     {
-        auto geo_dictionaries_loader = shared->runtime_components_factory->createGeoDictionariesLoader();
+        auto geo_dictionaries_loader = std::make_unique<GeoDictionariesLoader>();
 
         shared->embedded_dictionaries.emplace(
             std::move(geo_dictionaries_loader),
