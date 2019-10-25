@@ -1069,39 +1069,40 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
-1. Fitting
 
-    Such query may be used.
+**1.** Fitting
 
-    ```sql
-    CREATE TABLE IF NOT EXISTS train_data
-    (
-        param1 Float64,
-        param2 Float64,
-        target Float64
-    ) ENGINE = Memory;
+Such query may be used.
 
-    CREATE TABLE your_model ENGINE = Memory AS SELECT
-    stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
-    AS state FROM train_data;
+```sql
+CREATE TABLE IF NOT EXISTS train_data
+(
+    param1 Float64,
+    param2 Float64,
+    target Float64
+) ENGINE = Memory;
 
-    ```
+CREATE TABLE your_model ENGINE = Memory AS SELECT
+stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
+AS state FROM train_data;
 
-    Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-    Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+```
 
-2. Predicting
+Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
+Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
 
-    After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+**2.** Predicting
 
-    ```sql
-    WITH (SELECT state FROM your_model) AS model SELECT
-    evalMLMethod(model, param1, param2) FROM test_data
-    ```
+After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
 
-    The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+```sql
+WITH (SELECT state FROM your_model) AS model SELECT
+evalMLMethod(model, param1, param2) FROM test_data
+```
 
-    `test_data` is a table like `train_data` but may not contain target value.
+The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+
+`test_data` is a table like `train_data` but may not contain target value.
 
 ### Notes {#agg_functions-stochasticlinearregression-notes}
 
