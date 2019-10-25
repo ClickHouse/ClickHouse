@@ -215,12 +215,12 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & data_path_,
+    const String & relative_data_path_,
     bool attach_)
     : table_name(table_name_), database_name(database_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
-    path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
+    path(relative_data_path_.empty() ? "" : (context_.getPath() + relative_data_path_))
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -250,9 +250,9 @@ StorageDistributed::StorageDistributed(
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
-    const String & data_path_,
+    const String & relative_data_path_,
     bool attach)
-    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
+    : StorageDistributed(database_name_, table_name_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, relative_data_path_, attach)
 {
     remote_table_function_ptr = remote_table_function_ptr_;
 }
@@ -641,7 +641,7 @@ void registerStorageDistributed(StorageFactory & factory)
         return StorageDistributed::create(
             args.database_name, args.table_name, args.columns, args.constraints,
             remote_database, remote_table, cluster_name,
-            args.context, sharding_key, args.data_path,
+            args.context, sharding_key, args.relative_data_path,
             args.attach);
     });
 }

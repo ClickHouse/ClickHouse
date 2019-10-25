@@ -220,9 +220,9 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const IDatabase & database, const 
     return ast;
 }
 
-void DatabaseOnDisk::drop(const IDatabase & database)
+void DatabaseOnDisk::drop(const IDatabase & database, const Context & context)
 {
-    Poco::File(database.getDataPath()).remove(false);
+    Poco::File(context.getPath() + database.getDataPath()).remove(false);
     Poco::File(database.getMetadataPath()).remove(false);
 }
 
@@ -248,7 +248,7 @@ time_t DatabaseOnDisk::getTableMetadataModificationTime(
     }
 }
 
-void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function)
+void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger * log, const Context & context, const IteratingFunction & iterating_function)
 {
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(database.getMetadataPath()); dir_it != dir_end; ++dir_it)
@@ -266,7 +266,7 @@ void DatabaseOnDisk::iterateTableFiles(const IDatabase & database, Poco::Logger 
         if (endsWith(dir_it.name(), tmp_drop_ext))
         {
             const std::string table_name = dir_it.name().substr(0, dir_it.name().size() - strlen(tmp_drop_ext));
-            if (Poco::File(database.getDataPath() + '/' + table_name).exists())
+            if (Poco::File(context.getPath() + database.getDataPath() + '/' + table_name).exists())
             {
                 Poco::File(dir_it->path()).renameTo(table_name + ".sql");
                 LOG_WARNING(log, "Table " << backQuote(table_name) << " was not dropped previously");

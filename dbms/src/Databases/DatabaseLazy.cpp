@@ -32,22 +32,22 @@ namespace ErrorCodes
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 
-DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context)
+DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_)
     : name(name_)
     , metadata_path(metadata_path_)
-    , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
+    , data_path("data/" + escapeForFileName(name) + "/")
     , expiration_time(expiration_time_)
     , log(&Logger::get("DatabaseLazy (" + name + ")"))
 {
-    Poco::File(getDataPath()).createDirectories();
+    Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
 
 
 void DatabaseLazy::loadTables(
-    Context & /* context */,
+    Context & context,
     bool /* has_force_restore_data_flag */)
 {
-    DatabaseOnDisk::iterateTableFiles(*this, log, [this](const String & file_name)
+    DatabaseOnDisk::iterateTableFiles(*this, log, context, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
         attachTable(table_name, nullptr);
@@ -134,9 +134,9 @@ void DatabaseLazy::alterTable(
 }
 
 
-void DatabaseLazy::drop()
+void DatabaseLazy::drop(const Context & context)
 {
-    DatabaseOnDisk::drop(*this);
+    DatabaseOnDisk::drop(*this, context);
 }
 
 bool DatabaseLazy::isTableExist(

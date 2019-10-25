@@ -60,7 +60,7 @@ public:
         const IDatabase & database,
         const Context & context);
 
-    static void drop(const IDatabase & database);
+    static void drop(const IDatabase & database, const Context & context);
 
     static String getTableMetadataPath(
         const IDatabase & database,
@@ -72,7 +72,7 @@ public:
 
 
     using IteratingFunction = std::function<void(const String &)>;
-    static void iterateTableFiles(const IDatabase & database, Poco::Logger * log, const IteratingFunction & iterating_function);
+    static void iterateTableFiles(const IDatabase & database, Poco::Logger * log, const Context & context, const IteratingFunction & iterating_function);
 
 private:
     static ASTPtr getCreateTableQueryImpl(
