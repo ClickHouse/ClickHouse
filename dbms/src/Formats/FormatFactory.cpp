@@ -6,7 +6,6 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
-#include <IO/SharedReadBuffer.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
@@ -349,7 +348,6 @@ FormatFactory::FormatFactory()
 
     registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineTabSeparated(*this);
-    //registerFileSegmentationEngineValues(*this);
     registerFileSegmentationEngineCSV(*this);
     registerFileSegmentationEngineTSKV(*this);
 

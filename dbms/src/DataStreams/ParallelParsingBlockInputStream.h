@@ -5,7 +5,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/SharedReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
