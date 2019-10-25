@@ -62,7 +62,7 @@ struct CRC32ZLIBImpl
     static constexpr auto name = "CRC32";
 
     static UInt32 make_crc(const unsigned char *buf, size_t size)
-    { return crc32(0L, buf, size); }
+    { return crc32_z(0L, buf, size); }
 };
 
 } // \anonymous
