@@ -14,6 +14,7 @@
 #include <Storages/TableStructureLockHolder.h>
 
 #include <Processors/QueryPipeline.h>
+#include <Columns/FilterDescription.h>
 
 namespace Poco { class Logger; }
 
@@ -171,6 +172,8 @@ private:
         SubqueriesForSets subqueries_for_sets;
         PrewhereInfoPtr prewhere_info;
         FilterInfoPtr filter_info;
+        ConstantFilterDescription prewhere_constant_filter_description;
+        ConstantFilterDescription where_constant_filter_description;
     };
 
     static AnalysisResult analyzeExpressions(
@@ -181,7 +184,8 @@ private:
         const Context & context,
         const StoragePtr & storage,
         bool only_types,
-        const FilterInfoPtr & filter_info);
+        const FilterInfoPtr & filter_info,
+        const Block & source_header);
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */

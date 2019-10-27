@@ -57,7 +57,7 @@ void check(const std::string & query, const std::string & expected, const Contex
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 {
     check("SELECT column FROM test.table WHERE 1 IN (1)",
-          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1 IN (1)",
+          "SELECT \"column\" FROM \"test\".\"table\" WHERE 1",
           state().context, state().columns);
     check("SELECT column FROM test.table WHERE column IN (1, 2)",
           "SELECT \"column\" FROM \"test\".\"table\" WHERE \"column\" IN (1, 2)",
