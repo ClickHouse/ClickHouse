@@ -793,11 +793,67 @@ Takes the states of the aggregate function and returns a column with values, are
 For example, takes state of aggregate function (example runningAccumulate(uniqState(UserID))), and for each row of block, return result of aggregate function on merge of states of all previous rows and current row.
 So, result of function depends on partition of data to blocks and on order of data in block.
 
-## joinGet('join_storage_table_name', 'get_column', join_key) {#other_functions-joinget}
+## joinGet {#joinget}
 
-Gets data from [Join](../../operations/table_engines/join.md) tables using the specified join key.
+The function lets you extract data from the table the same way as from a [dictionary](https://clickhouse.yandex/docs/en/query_language/dicts/).
+
+Gets data from [Join](https://clickhouse.yandex/docs/en/operations/table_engines/join/) tables using the specified join key.
 
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+
+**Syntax** 
+
+```sql
+joinGet(`join_storage_table_name`, `value_column`, join_keys)
+```
+
+**Parameters** 
+
+- `join_storage_table_name` — name of the table where search will be performed.
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
+
+**Returned value**
+
+Returns list of values corresponded to list of keys.
+
+If certain doesn't exist in source table then `0` or `null` will be returned based on [join_use_nulls](https://clickhouse.yandex/docs/en/operations/settings/settings/#settings-join_use_nulls) setting. 
+
+Type: all [Data Types](https://clickhouse.yandex/docs/en/data_types/).
+
+**Example**
+
+Input table:
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id)
+INSERT INTO id_val VALUES (1,11)(2,12)(4,13)
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT joinGet('id_val','val',toUInt32(number)) from numbers(4)
+```
+
+Result:
+
+```text
+┌─joinGet('id_val', 'val', toUInt32(number))─┐
+│                                          0 │
+│                                         11 │
+│                                         12 │
+│                                          0 │
+└────────────────────────────────────────────┘
+```
 
 ## modelEvaluate(model_name, ...) {#function-modelevaluate}
 Evaluate external model.
