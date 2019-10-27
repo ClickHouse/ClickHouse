@@ -311,11 +311,36 @@ const std::unordered_set<String> possibly_injective_function_names
         "dictGetDateTime"
 };
 
+/** You can not completely remove GROUP BY. Because if there were no aggregate functions, then it turns out that there will be no aggregation.
+  * Instead, leave `GROUP BY const`.
+  * Next, see deleting the constants in the analyzeAggregation method.
+  */
+void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & source_columns)
+{
+    /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
+    UInt64 unused_column = 0;
+    String unused_column_name = toString(unused_column);
+
+    while (source_columns.count(unused_column_name))
+    {
+        ++unused_column;
+        unused_column_name = toString(unused_column);
+    }
+
+    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
+}
+
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
     if (!select_query->groupBy())
+    {
+        // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
+        if (select_query->having())
+            appendUnusedGroupByColumn(select_query, source_columns);
         return;
+    }
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
     {
@@ -390,25 +415,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     }
 
     if (group_exprs.empty())
-    {
-        /** You can not completely remove GROUP BY. Because if there were no aggregate functions, then it turns out that there will be no aggregation.
-          * Instead, leave `GROUP BY const`.
-          * Next, see deleting the constants in the analyzeAggregation method.
-          */
-
-        /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-        UInt64 unused_column = 0;
-        String unused_column_name = toString(unused_column);
-
-        while (source_columns.count(unused_column_name))
-        {
-            ++unused_column;
-            unused_column_name = toString(unused_column);
-        }
-
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-        select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
-    }
+        appendUnusedGroupByColumn(select_query, source_columns);
 }
 
 /// Remove duplicate items from ORDER BY.
