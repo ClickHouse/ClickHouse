@@ -127,11 +127,12 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
 {
     size_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: " << connection_id << ". Address: " << socket.peerAddress().toString());
-    return new MySQLHandler(server, socket,
-#if USE_SSL
-        *public_key, *private_key,
+#if USE_POCO_NETSSL && USE_SSL
+    return new MySQLHandlerSSL(server, socket, ssl_enabled, connection_id, *public_key, *private_key);
+#else
+    return new MySQLHandler(server, socket, ssl_enabled, connection_id);
 #endif
-        ssl_enabled, connection_id);
+
 }
 
 }
