@@ -112,6 +112,7 @@ namespace
 MergeTreeData::MergeTreeData(
     const String & database_,
     const String & table_,
+    const String & relative_data_path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     const ConstraintsDescription & constraints_,
@@ -134,6 +135,7 @@ MergeTreeData::MergeTreeData(
     , require_part_metadata(require_part_metadata_)
     , database_name(database_)
     , table_name(table_)
+    , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
     , log_name(database_name + "." + table_name)
     , log(&Logger::get(log_name))
@@ -1216,7 +1218,7 @@ void MergeTreeData::rename(
     const String & /*new_path_to_db*/, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder &)
 {
-    auto old_table_path = "data/" + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
+    auto old_table_path = relative_data_path;
     auto new_db_path = "data/" + escapeForFileName(new_database_name) + '/';
     auto new_table_path = new_db_path + escapeForFileName(new_table_name) + '/';
 
@@ -1231,7 +1233,6 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         disk->createDirectory(new_db_path);
-
         disk->moveFile(old_table_path, new_table_path);
     }
 
@@ -1239,6 +1240,7 @@ void MergeTreeData::rename(
 
     database_name = new_database_name;
     table_name = new_table_name;
+    relative_data_path = new_table_path;
 }
 
 void MergeTreeData::dropAllData()
@@ -3457,7 +3459,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
-    return disk->getPath() + "data/" + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
+    return disk->getPath() + relative_data_path;
 }
 
 
