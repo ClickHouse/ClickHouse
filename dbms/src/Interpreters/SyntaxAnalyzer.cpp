@@ -727,6 +727,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query, const NamesA
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
     {
+        maybe_optimize_trivial_count = true;
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.
         /// Because it is the column that is cheapest to read.
         struct ColumnSizeTuple

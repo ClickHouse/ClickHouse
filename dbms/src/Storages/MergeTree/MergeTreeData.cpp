@@ -2374,6 +2374,20 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 }
 
 
+size_t MergeTreeData::getTotalActiveSizeInRows() const
+{
+    size_t res = 0;
+    {
+        auto lock = lockParts();
+
+        for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+            res += part->rows_count;
+    }
+
+    return res;
+}
+
+
 size_t MergeTreeData::getPartsCount() const
 {
     auto lock = lockParts();
@@ -2486,7 +2500,7 @@ void MergeTreeData::throwInsertIfNeeded() const
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
-    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/)
+    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
 {
     auto current_state_parts_range = getDataPartsStateRange(state);
 
@@ -2534,13 +2548,13 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 }
 
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info) const
 {
     auto lock = lockParts();
     return getActiveContainingPart(part_info, DataPartState::Committed, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name) const
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     return getActiveContainingPart(part_info);
