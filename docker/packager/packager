@@ -107,6 +107,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     result = []
     cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
+    if "clang" in compiler:
+        cmake_flags = ['$CMAKE_FLAGS', '-DLINKER_NAME=lld']
+
     if compiler.endswith("-darwin"):
         cc = compiler[:-len("-darwin")]
     else:

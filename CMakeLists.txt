@@ -12,10 +12,9 @@ foreach(policy
     endif()
 endforeach()
 
-include (cmake/linker.cmake)
-
 project(ClickHouse)
 
+include (cmake/linker.cmake)
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
