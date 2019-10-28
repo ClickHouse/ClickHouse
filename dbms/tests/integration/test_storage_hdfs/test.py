@@ -134,3 +134,12 @@ def test_globs_in_read_table(started_cluster):
 
     for pattern, value in test_requests:
         assert node1.query("select * from hdfs('hdfs://hdfs1:9000" + globs_dir + pattern + "', 'TSV', 'id UInt64, text String, number Float64')") == value * some_data
+
+def test_read_write_gzip_table(started_cluster):
+    hdfs_api = HDFSApi("root")
+    data = "1\tHello Jessica\t555.222\n2\tI rolled a joint\t777.333\n"
+    hdfs_api.write_gzip_data("/simple_table_function.gz", data)
+
+    assert hdfs_api.read_gzip_data("/simple_table_function.gz") == data
+
+    assert node1.query("select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64')") == data

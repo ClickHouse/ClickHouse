@@ -40,8 +40,8 @@ try
     }
 
     {
-        DB::ReadBufferFromFile buf("test_zlib_buffers.gz");
-        DB::ZlibInflatingReadBuffer inflating_buf(buf, DB::CompressionMethod::Gzip);
+        auto buf = std::make_unique<DB::ReadBufferFromFile>("test_zlib_buffers.gz");
+        DB::ZlibInflatingReadBuffer inflating_buf(std::move(buf), DB::CompressionMethod::Gzip);
 
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)

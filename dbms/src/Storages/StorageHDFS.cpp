@@ -10,6 +10,7 @@
 #include <IO/ReadBufferFromHDFS.h>
 #include <IO/WriteBufferFromHDFS.h>
 #include <IO/HDFSCommon.h>
+#include <IO/ZlibInflatingReadBuffer.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -17,6 +18,7 @@
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
@@ -59,7 +61,15 @@ public:
         const Context & context,
         UInt64 max_block_size)
     {
-        std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
+        std::unique_ptr<ReadBuffer> read_buf;
+        if (boost::algorithm::ends_with(uri, ".gz")) {
+            auto hdfs_buf = std::make_unique<ReadBufferFromHDFS>(uri);
+            read_buf = std::make_unique<ZlibInflatingReadBuffer>(std::move(hdfs_buf), DB::CompressionMethod::Gzip);
+        } else {
+            read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
+        }
+        
+
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
     }

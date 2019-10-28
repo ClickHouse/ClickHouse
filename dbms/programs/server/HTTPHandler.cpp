@@ -407,11 +407,11 @@ void HTTPHandler::processQuery(
     {
         if (http_request_compression_method_str == "gzip")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Gzip);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Gzip);
         }
         else if (http_request_compression_method_str == "deflate")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Zlib);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(std::move(in_post_raw), CompressionMethod::Zlib);
         }
 #if USE_BROTLI
         else if (http_request_compression_method_str == "br")
