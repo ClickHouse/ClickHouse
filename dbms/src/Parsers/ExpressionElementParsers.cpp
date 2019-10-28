@@ -1429,15 +1429,15 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTTTLElement::DestinationType destination_type = ASTTTLElement::DestinationType::DELETE;
     String destination_name;
-    if (s_to_disk.ignore(pos)) {
+    if (s_to_disk.ignore(pos))
         destination_type = ASTTTLElement::DestinationType::DISK;
-    } else if (s_to_volume.ignore(pos)) {
+    else if (s_to_volume.ignore(pos))
         destination_type = ASTTTLElement::DestinationType::VOLUME;
-    } else {
+    else
         s_delete.ignore(pos);
-    }
 
-    if (destination_type == ASTTTLElement::DestinationType::DISK || destination_type == ASTTTLElement::DestinationType::VOLUME) {
+    if (destination_type == ASTTTLElement::DestinationType::DISK || destination_type == ASTTTLElement::DestinationType::VOLUME)
+    {
         ASTPtr ast_space_name;
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
