@@ -18,6 +18,7 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
+#include <Poco/NumberParser.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
@@ -62,6 +63,15 @@ namespace
                 return factory.get("String");
         }
     }
+
+    bool parseBool(const std::string & s, bool default_value = false)
+    {
+        bool result;
+        if (Poco::NumberParser::tryParseBool(s, result))
+            return result;
+
+        return default_value;
+    }
 }
 
 namespace ErrorCodes
@@ -95,6 +105,8 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     std::string schema_name = "";
     std::string table_name = params.get("table");
     std::string connection_string = params.get("connection_string");
+    const bool external_table_functions_use_nulls = parseBool(params.get("external_table_functions_use_nulls", "false"));
+
     if (params.has("schema"))
     {
         schema_name = params.get("schema");
@@ -160,13 +172,13 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             /// TODO Why 301?
             SQLCHAR column_name[301];
 
-            SQLSMALLINT nullable;
-            const auto result = POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, &nullable);
+            SQLSMALLINT is_nullable;
+            const auto result = POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, &is_nullable);
             if (POCO_SQL_ODBC_CLASS::Utility::isError(result))
                 throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
 
             auto column_type = getDataType(type);
-            if (nullable == SQL_NULLABLE)
+            if (external_table_functions_use_nulls && is_nullable == SQL_NULLABLE)
             {
                 column_type = std::make_shared<DataTypeNullable>(column_type);
             }
