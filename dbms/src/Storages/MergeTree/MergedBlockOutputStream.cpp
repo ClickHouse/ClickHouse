@@ -44,7 +44,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_,
-    const MergeTreeData::DataPart::ColumnToSize & /* merged_column_to_size_ */,
+    const MergeTreeData::DataPart::ColumnToSize & /* merged_column_to_size_ */, // FIXME
     size_t aio_threshold_,
     bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
@@ -55,7 +55,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
             aio_threshold_
         },
         blocks_are_granules_size_,
-        std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)), {})
+        std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)),
+        data_part_->storage.canUseAdaptiveGranularity())
     , columns_list(columns_list_)
 {
     init();
@@ -94,6 +95,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
 
+    if (additional_column_checksums)
+        checksums = std::move(*additional_column_checksums);
+
     /// Finish columns serialization.
     bool write_final_mark = (with_final_mark && rows_count != 0);
     writer->finalize(checksums, write_final_mark);
@@ -103,9 +107,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (!total_column_list)
         total_column_list = &columns_list;
-
-    if (additional_column_checksums)
-        checksums = std::move(*additional_column_checksums);
 
     if (index_stream)
     {
@@ -193,7 +194,6 @@ void MergedBlockOutputStream::init()
 
 void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
-    std::cerr << "(MergedBlockOutputStream::writeImpl) block.rows(): " << block.rows() << "\n";
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)
@@ -277,8 +277,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 for (size_t j = 0, size = primary_key_block.columns(); j < size; ++j)
                 {
                     const auto & primary_column = primary_key_block.getByPosition(j);
-                    std::cerr << "(writeImpl) primary_column: " << !!primary_column.column << "\n";
-                    std::cerr << "(writeImpl) index_column: " << !!index_columns[j] << "\n";
                     index_columns[j]->insertFrom(*primary_column.column, i);
                     primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
                 }

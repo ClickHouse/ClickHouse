@@ -36,8 +36,12 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     size_t from_mark, size_t index_offset,
     const MergeTreeIndexGranularity & index_granularity,
-    const Block & primary_key_block, const Block & skip_indexes_block)
+    const Block & primary_key_block, const Block & skip_indexes_block,
+    bool skip_offsets, const WrittenOffsetColumns & already_written_offset_columns)
 {
+    UNUSED(skip_offsets);
+    UNUSED(already_written_offset_columns);
+
     size_t total_rows = block.rows();  
     size_t current_mark = from_mark;
     size_t current_row = 0;

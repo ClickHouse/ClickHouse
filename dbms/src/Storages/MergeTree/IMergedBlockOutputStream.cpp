@@ -29,6 +29,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , part_path(data_part->getFullPath())
     , writer_settings(writer_settings_)
     , can_use_adaptive_granularity(can_use_adaptive_granularity_)
+    , marks_file_extension(data_part->getMarksFileExtension())
     , blocks_are_granules_size(blocks_are_granules_size_)
     , index_granularity(data_part->index_granularity)
     , compute_granularity(index_granularity.empty())

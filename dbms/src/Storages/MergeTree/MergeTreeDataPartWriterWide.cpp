@@ -93,7 +93,8 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
 IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(const Block & block, 
     const IColumn::Permutation * permutation, size_t from_mark, size_t index_offset,
     const MergeTreeIndexGranularity & index_granularity,
-    const Block & primary_key_block, const Block & skip_indexes_block)
+    const Block & primary_key_block, const Block & skip_indexes_block,
+    bool skip_offsets, const WrittenOffsetColumns & already_written_offset_columns)
 {
     if (serialization_states.empty())
     {
@@ -109,7 +110,7 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(cons
         }
     }
 
-    WrittenOffsetColumns offset_columns;
+    WrittenOffsetColumns offset_columns = already_written_offset_columns;
     MarkWithOffset result;
 
     auto it = columns_list.begin();
@@ -122,23 +123,23 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(cons
             if (primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                result = writeColumn(column.name, *column.type, primary_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, primary_column, index_granularity, offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
             }
             else if (skip_indexes_block.has(it->name))
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                result = writeColumn(column.name, *column.type, index_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, index_column, index_granularity, offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                result = writeColumn(column.name, *column.type, *permuted_column, index_granularity, offset_columns, false, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, *permuted_column, index_granularity, offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
             }
         }
         else
         {
-            result = writeColumn(column.name, *column.type, *column.column, index_granularity,  offset_columns, false, serialization_states[i], from_mark, index_offset);
+            result = writeColumn(column.name, *column.type, *column.column, index_granularity,  offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
         }
     }
 
