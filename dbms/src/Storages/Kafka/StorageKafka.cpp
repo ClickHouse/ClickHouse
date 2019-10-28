@@ -201,8 +201,7 @@ BufferPtr StorageKafka::createBuffer()
         batch_size = settings.max_block_size.value;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
-    return std::make_shared<DelimitedReadBuffer>(
-        std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit), row_delimiter);
+    return std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, row_delimiter, stream_cancelled);
 }
 
 BufferPtr StorageKafka::claimBuffer()
@@ -253,6 +252,9 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
 
     // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.commit", "false");
+
+    // Update offset automatically - to commit them all at once.
+    conf.set("enable.auto.offset.store", "false");
 
     // Ignore EOF messages
     conf.set("enable.partition.eof", "false");
@@ -352,7 +354,7 @@ bool StorageKafka::streamToViews()
         block_size = settings.max_block_size.value;
 
     // Create a stream for each consumer and join them in a union stream
-    InterpreterInsertQuery interpreter{insert, global_context};
+    InterpreterInsertQuery interpreter(insert, global_context, false, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -377,7 +379,8 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    copyData(*in, *block_io.out, &stream_cancelled);
+    std::atomic<bool> stub = {false};
+    copyData(*in, *block_io.out, &stub);
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;

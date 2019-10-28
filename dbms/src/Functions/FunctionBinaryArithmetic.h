@@ -553,14 +553,13 @@ class FunctionBinaryArithmetic : public IFunction
 
         AggregateFunctionPtr function = column.getAggregateFunction();
 
-        auto arena = std::make_shared<Arena>();
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function, Arenas(1, arena));
+        auto column_to = ColumnAggregateFunction::create(function);
         column_to->reserve(size);
 
-        auto column_from = ColumnAggregateFunction::create(function, Arenas(1, arena));
+        auto column_from = ColumnAggregateFunction::create(function);
         column_from->reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -573,6 +572,12 @@ class FunctionBinaryArithmetic : public IFunction
         auto & vec_from = column_from->getData();
 
         UInt64 m = typeid_cast<const ColumnConst *>(block.getByPosition(new_arguments[1]).column.get())->getValue<UInt64>();
+
+        // Since we merge the function states by ourselves, we have to have an
+        // Arena for this. Pass it to the resulting column so that the arena
+        // has a proper lifetime.
+        auto arena = std::make_shared<Arena>();
+        column_to->addArena(arena);
 
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring

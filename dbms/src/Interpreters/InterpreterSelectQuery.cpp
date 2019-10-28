@@ -43,9 +43,12 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageBlock.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -244,13 +247,26 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
         else
         {
-            /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
             String database_name;
             String table_name;
 
             getDatabaseAndTableNames(database_name, table_name);
 
-            storage = context.getTable(database_name, table_name);
+            if (auto view_source = context.getViewSource())
+            {
+                auto & storage_block = static_cast<const StorageBlock &>(*view_source);
+                if (storage_block.getDatabaseName() == database_name && storage_block.getTableName() == table_name)
+                {
+                    /// Read from view source.
+                    storage = context.getViewSource();
+                }
+            }
+
+            if (!storage)
+            {
+                /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
+                storage = context.getTable(database_name, table_name);
+            }
         }
     }
 
@@ -621,9 +637,17 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         if (expressions.prewhere_info)
+        {
             pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
                     pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
                     expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
+
+            // To remove additional columns in dry run
+            // For example, sample column which can be removed in this stage
+            if (expressions.prewhere_info->remove_columns_actions)
+                pipeline.streams.back() = std::make_shared<ExpressionBlockInputStream>(pipeline.streams.back(), expressions.prewhere_info->remove_columns_actions);
+
+        }
     }
     else
     {
@@ -1156,14 +1180,22 @@ void InterpreterSelectQuery::executeFetchColumns(
             pipeline.streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
             if (query_info.prewhere_info)
-                pipeline.transform([&](auto & stream)
+            {
+                pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
+                    pipeline.streams.back(),
+                    prewhere_info->prewhere_actions,
+                    prewhere_info->prewhere_column_name,
+                    prewhere_info->remove_prewhere_column);
+
+                // To remove additional columns
+                // In some cases, we did not read any marks so that the pipeline.streams is empty
+                // Thus, some columns in prewhere are not removed as expected
+                // This leads to mismatched header in distributed table
+                if (query_info.prewhere_info->remove_columns_actions)
                 {
-                    stream = std::make_shared<FilterBlockInputStream>(
-                        stream,
-                        prewhere_info->prewhere_actions,
-                        prewhere_info->prewhere_column_name,
-                        prewhere_info->remove_prewhere_column);
-                });
+                    pipeline.streams.back() = std::make_shared<ExpressionBlockInputStream>(pipeline.streams.back(), query_info.prewhere_info->remove_columns_actions);
+                }
+            }
         }
 
         pipeline.transform([&](auto & stream)

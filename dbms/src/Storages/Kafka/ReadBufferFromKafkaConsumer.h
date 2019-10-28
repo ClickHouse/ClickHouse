@@ -2,22 +2,31 @@
 
 #include <Core/Names.h>
 #include <Core/Types.h>
-#include <IO/DelimitedReadBuffer.h>
-#include <common/logger_useful.h>
+#include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
+
+namespace Poco
+{
+    class Logger;
+}
 
 namespace DB
 {
 
-using BufferPtr = std::shared_ptr<DelimitedReadBuffer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
     ReadBufferFromKafkaConsumer(
-        ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, bool intermediate_commit_);
+        ConsumerPtr consumer_,
+        Poco::Logger * log_,
+        size_t max_batch_size,
+        size_t poll_timeout_,
+        bool intermediate_commit_,
+        char delimiter_,
+        const std::atomic<bool> & stopped_);
     ~ReadBufferFromKafkaConsumer() override;
 
     void commit(); // Commit all processed messages.
@@ -41,10 +50,17 @@ private:
     bool stalled = false;
     bool intermediate_commit = true;
 
+    char delimiter;
+    bool put_delimiter = false;
+
+    const std::atomic<bool> & stopped;
+
     Messages messages;
     Messages::const_iterator current;
 
     bool nextImpl() override;
 };
+
+using BufferPtr = std::shared_ptr<ReadBufferFromKafkaConsumer>;
 
 }

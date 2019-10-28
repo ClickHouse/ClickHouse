@@ -970,6 +970,21 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 }
 
 
+void Context::addViewSource(const StoragePtr & storage)
+{
+    if (view_source)
+        throw Exception(
+            "Temporary view source storage " + backQuoteIfNeed(view_source->getName()) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    view_source = storage;
+}
+
+
+StoragePtr Context::getViewSource()
+{
+    return view_source;
+}
+
+
 DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
     : map(map_), guards_lock(std::move(guards_lock_))
 {

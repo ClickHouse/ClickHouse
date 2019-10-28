@@ -54,6 +54,13 @@ SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4, 'Nullable(
 SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8');
 SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)');
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(a Int, b Int)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(c Int, a Int)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(b Int, d Int)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(Int, Int)');
+SELECT JSONExtract('{"a":3}', 'Tuple(Int, Int)');
+SELECT JSONExtract('[3,5,7]', 'Tuple(Int, Int)');
+SELECT JSONExtract('[3]', 'Tuple(Int, Int)');
 
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
@@ -138,6 +145,13 @@ SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4, 'Nullable(
 SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8');
 SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)');
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(a Int, b Int)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(c Int, a Int)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(b Int, d Int)');
+SELECT JSONExtract('{"a":3,"b":5,"c":7}', 'Tuple(Int, Int)');
+SELECT JSONExtract('{"a":3}', 'Tuple(Int, Int)');
+SELECT JSONExtract('[3,5,7]', 'Tuple(Int, Int)');
+SELECT JSONExtract('[3]', 'Tuple(Int, Int)');
 
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');

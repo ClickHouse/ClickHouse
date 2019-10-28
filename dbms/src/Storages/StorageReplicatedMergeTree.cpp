@@ -2211,17 +2211,18 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
         /// and in the same time, many small parts could be created and won't be merged.
-        size_t merges_and_mutations_queued = queue.countMergesAndPartMutations();
-        if (merges_and_mutations_queued >= settings.max_replicated_merges_in_queue)
+        auto merges_and_mutations_queued = queue.countMergesAndPartMutations();
+        size_t merges_and_mutations_sum = merges_and_mutations_queued.first + merges_and_mutations_queued.second;
+        if (merges_and_mutations_sum >= settings.max_replicated_merges_in_queue)
         {
-            LOG_TRACE(log, "Number of queued merges and part mutations (" << merges_and_mutations_queued
-                << ") is greater than max_replicated_merges_in_queue ("
+            LOG_TRACE(log, "Number of queued merges (" << merges_and_mutations_queued.first << ") and part mutations ("
+                << merges_and_mutations_queued.second << ") is greater than max_replicated_merges_in_queue ("
                 << settings.max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
         }
         else
         {
             UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
-                settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
+                settings.max_replicated_merges_in_queue, merges_and_mutations_sum);
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             FutureMergedMutatedPart future_merged_part;
@@ -2230,7 +2231,9 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             {
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
             }
-            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0)
+            /// If there are many mutations in queue it may happen, that we cannot enqueue enough merges to merge all new parts
+            else if (max_source_part_size_for_mutation > 0 && queue.countMutations() > 0
+                     && merges_and_mutations_queued.second < settings.max_replicated_mutations_in_queue)
             {
                 /// Choose a part to mutate.
                 DataPartsVector data_parts = getDataPartsVector();
@@ -5076,38 +5079,29 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {
+    Stopwatch watch;
+
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeper());
 
-    Stopwatch watch;
-    Poco::Event event;
-    std::atomic<bool> cond_reached{false};
-
-    auto callback = [&event, &cond_reached, queue_size] (size_t new_queue_size)
+    Poco::Event target_size_event;
+    auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
     {
         if (new_queue_size <= queue_size)
-            cond_reached.store(true, std::memory_order_relaxed);
-
-        event.set();
+            target_size_event.set();
     };
+    const auto handler = queue.addSubscriber(std::move(callback));
 
-    auto handler = queue.addSubscriber(std::move(callback));
-
-    while (true)
+    while (!target_size_event.tryWait(50))
     {
-        event.tryWait(50);
-
         if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
-            break;
-
-        if (cond_reached)
-            break;
+            return false;
 
         if (partial_shutdown_called)
             throw Exception("Shutdown is called for table", ErrorCodes::ABORTED);
     }
 
-    return cond_reached.load(std::memory_order_relaxed);
+    return true;
 }
 
 

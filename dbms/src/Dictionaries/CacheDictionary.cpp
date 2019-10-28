@@ -62,15 +62,16 @@ inline size_t CacheDictionary::getCellIdx(const Key id) const
 
 CacheDictionary::CacheDictionary(
     const std::string & name,
-    const DictionaryStructure & dict_struct,
-    DictionarySourcePtr source_ptr,
-    const DictionaryLifetime dict_lifetime,
-    const size_t size)
+    const DictionaryStructure & dict_struct_,
+    DictionarySourcePtr source_ptr_,
+    const DictionaryLifetime dict_lifetime_,
+    const size_t size_)
     : name{name}
-    , dict_struct(dict_struct)
-    , source_ptr{std::move(source_ptr)}
-    , dict_lifetime(dict_lifetime)
-    , size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))}
+    , dict_struct(dict_struct_)
+    , source_ptr{std::move(source_ptr_)}
+    , dict_lifetime(dict_lifetime_)
+    , log(&Logger::get("ExternalDictionaries"))
+    , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
     , rnd_engine(randomSeed())
@@ -573,6 +574,12 @@ BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_na
 {
     using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
+}
+
+std::exception_ptr CacheDictionary::getLastException() const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+    return last_exception;
 }
 
 void registerDictionaryCache(DictionaryFactory & factory)

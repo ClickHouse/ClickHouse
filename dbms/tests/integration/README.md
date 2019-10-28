@@ -34,7 +34,8 @@ set the following environment variables:
 
 ### Running with runner script
 
-The only requirement is fresh docker configured docker.
+The only requirement is fresh configured docker and
+docker pull yandex/clickhouse-integration-tests-runner
 
 Notes:
 * If you want to run integration tests without `sudo` you have to add your user to docker group `sudo usermod -aG docker $USER`. [More information](https://docs.docker.com/install/linux/linux-postinstall/) about docker configuration.
