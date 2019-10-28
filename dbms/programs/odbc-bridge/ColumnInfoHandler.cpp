@@ -38,12 +38,16 @@ namespace
 
         switch (type)
         {
+            case SQL_TINYINT:
+                return factory.get("Int8");
             case SQL_INTEGER:
                 return factory.get("Int32");
             case SQL_SMALLINT:
                 return factory.get("Int16");
+            case SQL_BIGINT:
+                return factory.get("Int64");
             case SQL_FLOAT:
-                return factory.get("Float32");
+                return factory.get("Float64");
             case SQL_REAL:
                 return factory.get("Float32");
             case SQL_DOUBLE:
