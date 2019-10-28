@@ -99,6 +99,7 @@ namespace ErrorCodes
 MergeTreeData::MergeTreeData(
     const String & database_,
     const String & table_,
+    const String & relative_data_path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     const ConstraintsDescription & constraints_,
@@ -122,6 +123,7 @@ MergeTreeData::MergeTreeData(
     , require_part_metadata(require_part_metadata_)
     , database_name(database_)
     , table_name(table_)
+    , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
     , log_name(database_name + "." + table_name)
     , log(&Logger::get(log_name))
@@ -1195,7 +1197,7 @@ void MergeTreeData::rename(
 
     for (const auto & disk : disks)
     {
-        auto full_path = disk->getClickHouseDataPath() + old_file_db_name + '/' + old_file_table_name + '/';
+        auto full_path = disk->getPath() + relative_data_path;
         auto new_db_path = disk->getClickHouseDataPath() + new_file_db_name + '/';
 
         Poco::File db_file{new_db_path};
@@ -1210,6 +1212,7 @@ void MergeTreeData::rename(
 
     database_name = new_database_name;
     table_name = new_table_name;
+    relative_data_path = "data/" + old_file_db_name + '/' + old_file_table_name + '/';
 }
 
 void MergeTreeData::dropAllData()
@@ -3250,7 +3253,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
 
 String MergeTreeData::getFullPathOnDisk(const DiskSpace::DiskPtr & disk) const
 {
-    return disk->getClickHouseDataPath() + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
+    return disk->getPath() + relative_data_path;
 }
 
 

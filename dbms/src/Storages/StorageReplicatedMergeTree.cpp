@@ -192,6 +192,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool attach,
     const String & database_name_,
     const String & table_name_,
+    const String & relative_data_path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     const ConstraintsDescription & constraints_,
@@ -205,7 +206,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
     bool has_force_restore_data_flag)
-        : MergeTreeData(database_name_, table_name_,
+        : MergeTreeData(database_name_, table_name_, relative_data_path_,
             columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
