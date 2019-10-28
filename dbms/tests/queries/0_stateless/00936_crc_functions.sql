@@ -18,3 +18,8 @@ select CRC32(str1), CRC32(str2) from table1 order by CRC32(str1), CRC32(str2);
 select str1, str2, CRC32(str1), CRC32(str2) from table1 order by CRC32(str1), CRC32(str2);
 
 DROP TABLE table1;
+
+SELECT 'CRC32IEEE()';
+SELECT hex(CRC32IEEE('foo'));
+SELECT 'CRC64()';
+SELECT hex(CRC64('foo'));
