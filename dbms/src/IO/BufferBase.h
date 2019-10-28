@@ -2,7 +2,6 @@
 
 #include <Core/Defines.h>
 #include <algorithm>
-#include <iostream>
 
 
 namespace DB
