@@ -19,32 +19,24 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns)
 {
+    serialization_states.reserve(header.columns());
+    WrittenOffsetColumns tmp_offset_columns;
+    IDataType::SerializeBinaryBulkSettings settings;
+
+    for (const auto & column_name : header.getNames())
+    {
+        const auto & col = header.getByName(column_name);
+
+        const auto columns = storage.getColumns();
+        addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
+        serialization_states.emplace_back(nullptr);
+        settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
+        col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
+    }
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
 {
-    if (!initialized)
-    {
-        column_streams.clear();
-        serialization_states.clear();
-        serialization_states.reserve(block.columns());
-        WrittenOffsetColumns tmp_offset_columns;
-        IDataType::SerializeBinaryBulkSettings settings;
-
-        for (size_t i = 0; i < block.columns(); ++i)
-        {
-            const auto & col = block.safeGetByPosition(i);
-
-            const auto columns = storage.getColumns();
-            addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
-            serialization_states.emplace_back(nullptr);
-            settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
-            col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
-        }
-
-        initialized = true;
-    }
-
     size_t rows = block.rows();
     if (!rows)
         return;
@@ -83,7 +75,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
 
 
-        if (with_final_mark)
+        if (with_final_mark && (index_offset != 0 || current_mark != 0))
             writeFinalMark(column.name, column.type, offset_columns, skip_offsets, serialize_settings.path);
     }
 
@@ -100,7 +92,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
 
     column_streams.clear();
     serialization_states.clear();
-    initialized = false;
 
     return checksums;
 }
