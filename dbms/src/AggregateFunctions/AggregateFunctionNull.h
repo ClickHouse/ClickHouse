@@ -81,14 +81,14 @@ public:
     String getName() const override
     {
         /// This is just a wrapper. The function for Nullable arguments is named the same as the nested function itself.
-        return nested_function->getName();
+        return nested_function->getNameWithState();
     }
 
     DataTypePtr getReturnType() const override
     {
         return result_is_nullable
-            ? makeNullable(nested_function->getReturnType())
-            : nested_function->getReturnType();
+            ? makeNullable(nested_function->getReturnTypeWithState())
+            : nested_function->getReturnTypeWithState();
     }
 
     void create(AggregateDataPtr place) const override
@@ -153,7 +153,7 @@ public:
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             if (getFlag(place))
             {
-                nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn());
+                nested_function->insertResultIntoWithState(nestedPlace(place), to_concrete.getNestedColumn());
                 to_concrete.getNullMapData().push_back(0);
             }
             else
@@ -163,7 +163,7 @@ public:
         }
         else
         {
-            nested_function->insertResultInto(nestedPlace(place), to);
+            nested_function->insertResultIntoWithState(nestedPlace(place), to);
         }
     }
 
@@ -174,7 +174,7 @@ public:
 
     bool isState() const override
     {
-        return nested_function->isState();
+        return this->is_state || nested_function->isState();
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

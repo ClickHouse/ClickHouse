@@ -51,7 +51,7 @@ public:
     /// Get type which will be used for prediction result in case if function is an ML method.
     virtual DataTypePtr getReturnTypeToPredict() const
     {
-        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Prediction is not supported for " + getNameWithState(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual ~IAggregateFunction() {}
@@ -111,13 +111,22 @@ public:
         const ColumnNumbers & /*arguments*/,
         const Context & /*context*/) const
     {
-        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method predictValues is not supported for " + getNameWithState(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    std::shared_ptr<IAggregateFunction> getInstance() const;
 
     /** Returns true for aggregate functions of type -State.
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
       */
-    virtual bool isState() const { return false; }
+    virtual bool isState() const { return is_state; }
+    void setState(bool is_state_) { is_state = is_state_; }
+
+    String getNameWithState() const;
+
+    DataTypePtr getReturnTypeWithState() const;
+
+    void insertResultIntoWithState(ConstAggregateDataPtr place, IColumn & to) const;
 
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
@@ -149,6 +158,7 @@ public:
 protected:
     DataTypes argument_types;
     Array parameters;
+    bool is_state {false};
 };
 
 

@@ -99,7 +99,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
     }
 
-    return aggregate_function->getReturnType();
+    return aggregate_function->getReturnTypeWithState();
 }
 
 
@@ -154,7 +154,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     auto res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
 
     if (!res_col_aggregate_function && agg_func.isState())
-        throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
+        throw Exception("State function " + agg_func.getNameWithState() + " inserts results into non-state column "
                         + block.getByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     ColumnArray::Offset current_offset = 0;
@@ -169,7 +169,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
                 agg_func.add(place, aggregate_arguments, j, arena.get());
 
             if (!res_col_aggregate_function)
-                agg_func.insertResultInto(place, res_col);
+                agg_func.insertResultIntoWithState(place, res_col);
             else
                 res_col_aggregate_function->insertFrom(place);
         }

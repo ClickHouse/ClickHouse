@@ -205,7 +205,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
         {
             AggregateDescription & desc = aggregate_descriptions[i];
-            aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
+            aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnTypeWithState());
         }
     }
     else

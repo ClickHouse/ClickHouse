@@ -29,19 +29,19 @@ public:
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
 
-        if (!data_type || data_type->getFunctionName() != nested_func->getName())
+        if (!data_type || data_type->getFunctionName() != nested_func->getNameWithState())
             throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     String getName() const override
     {
-        return nested_func->getName() + "Merge";
+        return nested_func->getNameWithState() + "Merge";
     }
 
     DataTypePtr getReturnType() const override
     {
-        return nested_func->getReturnType();
+        return nested_func->getReturnTypeWithState();
     }
 
     void create(AggregateDataPtr place) const override
@@ -91,7 +91,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        nested_func->insertResultInto(place, to);
+        nested_func->insertResultIntoWithState(place, to);
     }
 
     bool allocatesMemoryInArena() const override

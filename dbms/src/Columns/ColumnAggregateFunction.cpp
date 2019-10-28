@@ -1,7 +1,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/assert_cast.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
@@ -11,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
@@ -68,19 +68,23 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         *   AggregateFunction(quantileTiming(0.5), UInt64)
         * into UInt16 - already finished result of `quantileTiming`.
         */
-    if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+
+    // We don't need this anymore as there are no nested -State.
+    if (func->isState())
     {
         auto res = createView();
-        res->set(function_state->getNestedFunction());
+        auto func_without_state = func->getInstance();
+        func_without_state->setState(false);
+        res->set(func_without_state);
         res->data.assign(data.begin(), data.end());
         return res;
     }
 
-    MutableColumnPtr res = func->getReturnType()->createColumn();
+    MutableColumnPtr res = func->getReturnTypeWithState()->createColumn();
     res->reserve(data.size());
 
     for (auto val : data)
-        func->insertResultInto(val, *res);
+        func->insertResultIntoWithState(val, *res);
 
     return res;
 }

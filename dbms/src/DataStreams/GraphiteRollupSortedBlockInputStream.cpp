@@ -311,7 +311,7 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
     if (aggregate_state_created)
     {
-        aggregation_pattern->function->insertResultInto(place_for_aggregate_state.data(), *merged_columns[value_column_num]);
+        aggregation_pattern->function->insertResultIntoWithState(place_for_aggregate_state.data(), *merged_columns[value_column_num]);
         aggregation_pattern->function->destroy(place_for_aggregate_state.data());
         aggregate_state_created = false;
     }

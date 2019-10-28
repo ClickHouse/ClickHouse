@@ -114,6 +114,7 @@ list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFact
 list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
 
 list (APPEND dbms_sources
+    src/AggregateFunctions/IAggregateFunction.cpp
     src/AggregateFunctions/AggregateFunctionFactory.cpp
     src/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     src/AggregateFunctions/AggregateFunctionState.cpp
@@ -124,7 +125,6 @@ list (APPEND dbms_headers
     src/AggregateFunctions/IAggregateFunctionCombinator.h
     src/AggregateFunctions/AggregateFunctionFactory.h
     src/AggregateFunctions/AggregateFunctionCombinatorFactory.h
-    src/AggregateFunctions/AggregateFunctionState.h
     src/AggregateFunctions/FactoryHelpers.h
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 

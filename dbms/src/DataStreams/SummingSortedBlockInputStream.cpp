@@ -211,7 +211,7 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
             {
                 try
                 {
-                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
+                    desc.function->insertResultIntoWithState(desc.state.data(), *desc.merged_column);
 
                     /// Update zero status of current row
                     if (desc.column_numbers.size() == 1)
@@ -274,7 +274,7 @@ Block SummingSortedBlockInputStream::readImpl()
     for (auto & desc : columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
+        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnTypeWithState()))
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
@@ -293,7 +293,7 @@ Block SummingSortedBlockInputStream::readImpl()
     /// Place aggregation results into block.
     for (auto & desc : columns_to_aggregate)
     {
-        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
+        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnTypeWithState()))
         {
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();

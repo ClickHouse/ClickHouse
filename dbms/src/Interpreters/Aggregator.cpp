@@ -110,7 +110,7 @@ Block Aggregator::getHeader(bool final) const
 
             DataTypePtr type;
             if (final)
-                type = params.aggregates[i].function->getReturnType();
+                type = params.aggregates[i].function->getReturnTypeWithState();
             else
                 type = std::make_shared<DataTypeAggregateFunction>(params.aggregates[i].function, argument_types, params.aggregates[i].parameters);
 
@@ -127,7 +127,7 @@ Block Aggregator::getHeader(bool final) const
             {
                 auto & elem = res.getByPosition(params.keys_size + i);
 
-                elem.type = params.aggregates[i].function->getReturnType();
+                elem.type = params.aggregates[i].function->getReturnTypeWithState();
                 elem.column = elem.type->createColumn();
             }
         }
@@ -922,7 +922,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             key_columns[0]->insertDefault();
 
             for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_functions[i]->insertResultInto(
+                aggregate_functions[i]->insertResultIntoWithState(
                     data.getNullKeyData() + offsets_of_aggregate_states[i],
                     *final_aggregate_columns[i]);
         }
@@ -933,7 +933,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         method.insertKeyIntoColumns(key, key_columns, key_sizes);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->insertResultInto(
+            aggregate_functions[i]->insertResultIntoWithState(
                 mapped + offsets_of_aggregate_states[i],
                 *final_aggregate_columns[i]);
     });
@@ -1009,7 +1009,7 @@ Block Aggregator::prepareBlockAndFill(
         }
         else
         {
-            final_aggregate_columns[i] = aggregate_functions[i]->getReturnType()->createColumn();
+            final_aggregate_columns[i] = aggregate_functions[i]->getReturnTypeWithState()->createColumn();
             final_aggregate_columns[i]->reserve(rows);
 
             if (aggregate_functions[i]->isState())
@@ -1067,7 +1067,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
                 if (!final_)
                     aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
                 else
-                    aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+                    aggregate_functions[i]->insertResultIntoWithState(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
             }
 
             if (!final_)

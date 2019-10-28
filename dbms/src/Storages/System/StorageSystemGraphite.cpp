@@ -95,7 +95,7 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
 
             if (pattern.function)
             {
-                function = pattern.function->getName();
+                function = pattern.function->getNameWithState();
             }
 
             if (!pattern.retentions.empty())

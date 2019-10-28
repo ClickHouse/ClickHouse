@@ -38,7 +38,7 @@ namespace ErrorCodes
 std::string DataTypeAggregateFunction::doGetName() const
 {
     std::stringstream stream;
-    stream << "AggregateFunction(" << function->getName();
+    stream << "AggregateFunction(" << function->getNameWithState();
 
     if (!parameters.empty())
     {

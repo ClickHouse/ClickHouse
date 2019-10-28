@@ -118,7 +118,7 @@ public:
       */
     MutableColumnPtr convertToValues() const;
 
-    std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
+    std::string getName() const override { return "AggregateFunction(" + func->getNameWithState() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
 
     bool tryFinalizeAggregateFunction(MutableColumnPtr* res_) const;

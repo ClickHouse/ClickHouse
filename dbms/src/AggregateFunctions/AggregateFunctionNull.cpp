@@ -52,13 +52,13 @@ public:
 
         /// Special case for 'count' function. It could be called with Nullable arguments
         /// - that means - count number of calls, when all arguments are not NULL.
-        if (nested_function && nested_function->getName() == "count")
+        if (nested_function && nested_function->getNameWithState() == "count")
             return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
 
         if (has_null_types)
             return std::make_shared<AggregateFunctionNothing>(arguments, params);
 
-        bool return_type_is_nullable = nested_function->getReturnType()->canBeInsideNullable();
+        bool return_type_is_nullable = nested_function->getReturnTypeWithState()->canBeInsideNullable();
 
         if (arguments.size() == 1)
         {

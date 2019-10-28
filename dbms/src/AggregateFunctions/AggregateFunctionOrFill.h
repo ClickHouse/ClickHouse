@@ -35,7 +35,7 @@ public:
         : IAggregateFunctionHelper<AggregateFunctionOrFill>{arguments, params}
         , nested_function{nested_function_}
         , size_of_data {nested_function->sizeOfData()}
-        , inner_type {nested_function->getReturnType()}
+        , inner_type {nested_function->getReturnTypeWithState()}
         , inner_nullable {inner_type->isNullable()}
     {
         // nothing
@@ -44,9 +44,9 @@ public:
     String getName() const override
     {
         if constexpr (UseNull)
-            return nested_function->getName() + "OrNull";
+            return nested_function->getNameWithState() + "OrNull";
         else
-            return nested_function->getName() + "OrDefault";
+            return nested_function->getNameWithState() + "OrDefault";
     }
 
     const char * getHeaderFilePath() const override
@@ -56,7 +56,7 @@ public:
 
     bool isState() const override
     {
-        return nested_function->isState();
+        return this->is_state || nested_function->isState();
     }
 
     bool allocatesMemoryInArena() const override
@@ -155,20 +155,20 @@ public:
                 // -OrNull
 
                 if (inner_nullable)
-                    nested_function->insertResultInto(place, to);
+                    nested_function->insertResultIntoWithState(place, to);
                 else
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    nested_function->insertResultInto(place, col.getNestedColumn());
+                    nested_function->insertResultIntoWithState(place, col.getNestedColumn());
                 }
             }
             else
             {
                 // -OrDefault
 
-                nested_function->insertResultInto(place, to);
+                nested_function->insertResultIntoWithState(place, to);
             }
         }
         else

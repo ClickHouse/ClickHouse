@@ -44,8 +44,9 @@ AggregateFunctionPtr createAggregateFunctionBitmapL2(const std::string & name, c
 
     const DataTypeAggregateFunction& datatype_aggfunc = dynamic_cast<const DataTypeAggregateFunction&>(*argument_type_ptr);
     AggregateFunctionPtr aggfunc = datatype_aggfunc.getFunction();
-    argument_type_ptr = aggfunc->getArgumentTypes()[0];
-    AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionTemplate, AggregateFunctionGroupBitmapData>(*argument_type_ptr, argument_type_ptr));
+    auto sub_argument_type_ptr = aggfunc->getArgumentTypes()[0];
+    AggregateFunctionPtr res(
+        createWithUnsignedIntegerType<AggregateFunctionTemplate, AggregateFunctionGroupBitmapData>(*sub_argument_type_ptr, argument_type_ptr));
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

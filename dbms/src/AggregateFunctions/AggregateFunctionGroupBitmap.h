@@ -64,7 +64,7 @@ public:
     AggregateFunctionBitmapL2(const DataTypePtr & type)
             : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {}){}
 
-    String getName() const override { return Data::name(); }
+    String getName() const override { return Policy::name; }
 
     DataTypePtr getReturnType() const override
     {
@@ -123,6 +123,8 @@ template <typename Data>
 class BitmapAndPolicy
 {
 public:
+    static constexpr const char * name = "groupBitmapAnd";
+
     static void apply(Data& lhs, const Data& rhs)
     {
         lhs.rbs.rb_and(rhs.rbs);
@@ -133,6 +135,8 @@ template <typename Data>
 class BitmapOrPolicy
 {
 public:
+    static constexpr const char * name = "groupBitmapOr";
+
     static void apply(Data& lhs, const Data& rhs)
     {
         lhs.rbs.rb_or(rhs.rbs);
@@ -143,6 +147,8 @@ template <typename Data>
 class BitmapXorPolicy
 {
 public:
+    static constexpr const char * name = "groupBitmapXor";
+
     static void apply(Data& lhs, const Data& rhs)
     {
         lhs.rbs.rb_xor(rhs.rbs);

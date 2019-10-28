@@ -41,12 +41,12 @@ public:
 
     String getName() const override
     {
-        return nested_func->getName() + "If";
+        return nested_func->getNameWithState() + "If";
     }
 
     DataTypePtr getReturnType() const override
     {
-        return nested_func->getReturnType();
+        return nested_func->getReturnTypeWithState();
     }
 
     void create(AggregateDataPtr place) const override
@@ -97,7 +97,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        nested_func->insertResultInto(place, to);
+        nested_func->insertResultIntoWithState(place, to);
     }
 
     bool allocatesMemoryInArena() const override
@@ -107,7 +107,7 @@ public:
 
     bool isState() const override
     {
-        return nested_func->isState();
+        return this->is_state || nested_func->isState();
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

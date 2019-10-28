@@ -42,9 +42,9 @@ public:
             throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function with " + getName() + " suffix"
                 + " must be AggregateFunction(...)", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (nested_function->getName() != function->getFunctionName())
+        if (nested_function->getNameWithState() != function->getFunctionName())
             throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function with " + getName() + " suffix"
-                + ", because it corresponds to different aggregate function: " + function->getFunctionName() + " instead of " + nested_function->getName(),
+                + ", because it corresponds to different aggregate function: " + function->getFunctionName() + " instead of " + nested_function->getNameWithState(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<AggregateFunctionMerge>(nested_function, argument);

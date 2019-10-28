@@ -36,7 +36,7 @@ static const std::vector<String> supported_functions{"any", "anyLast", "min", "m
 String DataTypeCustomSimpleAggregateFunction::getName() const
 {
     std::stringstream stream;
-    stream << "SimpleAggregateFunction(" << function->getName();
+    stream << "SimpleAggregateFunction(" << function->getNameWithState();
 
     if (!parameters.empty())
     {
@@ -110,17 +110,17 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
 
     // check function
-    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
+    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getNameWithState()) == std::end(supported_functions))
     {
-        throw Exception("Unsupported aggregate function " + function->getName() + ", supported functions are " + boost::algorithm::join(supported_functions, ","),
+        throw Exception("Unsupported aggregate function " + function->getNameWithState() + ", supported functions are " + boost::algorithm::join(supported_functions, ","),
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
     DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
 
-    if (!function->getReturnType()->equals(*removeLowCardinality(storage_type)))
+    if (!function->getReturnTypeWithState()->equals(*removeLowCardinality(storage_type)))
     {
-        throw Exception("Incompatible data types between aggregate function '" + function->getName() + "' which returns " + function->getReturnType()->getName() + " and column storage type " + storage_type->getName(),
+        throw Exception("Incompatible data types between aggregate function '" + function->getNameWithState() + "' which returns " + function->getReturnType()->getName() + " and column storage type " + storage_type->getName(),
                         ErrorCodes::BAD_ARGUMENTS);
     }
 

@@ -87,7 +87,7 @@ public:
 
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
-        auto result_column_ptr = agg_func.getReturnType()->createColumn();
+        auto result_column_ptr = agg_func.getReturnTypeWithState()->createColumn();
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 
@@ -96,7 +96,7 @@ public:
         {
             /// Will pass empty arena if agg_func does not allocate memory in arena
             agg_func.merge(place.data(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.data(), result_column);
+            agg_func.insertResultIntoWithState(place.data(), result_column);
         }
 
         block.getByPosition(result).column = std::move(result_column_ptr);

@@ -69,7 +69,7 @@ public:
 
     String getName() const override
     {
-        return nested_function->getName() + "Resample";
+        return nested_function->getNameWithState() + "Resample";
     }
 
     const char * getHeaderFilePath() const override
@@ -79,7 +79,7 @@ public:
 
     bool isState() const override
     {
-        return nested_function->isState();
+        return this->is_state || nested_function->isState();
     }
 
     bool allocatesMemoryInArena() const override
@@ -163,7 +163,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(nested_function->getReturnType());
+        return std::make_shared<DataTypeArray>(nested_function->getReturnTypeWithState());
     }
 
     void insertResultInto(
@@ -174,7 +174,7 @@ public:
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
-            nested_function->insertResultInto(place + i * size_of_data, col.getData());
+            nested_function->insertResultIntoWithState(place + i * size_of_data, col.getData());
 
         col_offsets.getData().push_back(col.getData().size());
     }

@@ -120,12 +120,12 @@ public:
 
     String getName() const override
     {
-        return nested_func->getName() + "ForEach";
+        return nested_func->getNameWithState() + "ForEach";
     }
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(nested_func->getReturnType());
+        return std::make_shared<DataTypeArray>(nested_func->getReturnTypeWithState());
     }
 
     void destroy(AggregateDataPtr place) const noexcept override
@@ -236,7 +236,7 @@ public:
         const char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->insertResultInto(nested_state, elems_to);
+            nested_func->insertResultIntoWithState(nested_state, elems_to);
             nested_state += nested_size_of_data;
         }
 

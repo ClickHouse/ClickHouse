@@ -39,12 +39,12 @@ public:
 
     String getName() const override
     {
-        return nested_func->getName() + "Array";
+        return nested_func->getNameWithState() + "Array";
     }
 
     DataTypePtr getReturnType() const override
     {
-        return nested_func->getReturnType();
+        return nested_func->getReturnTypeWithState();
     }
 
     void create(AggregateDataPtr place) const override
@@ -74,7 +74,7 @@ public:
 
     bool isState() const override
     {
-        return nested_func->isState();
+        return this->is_state || nested_func->isState();
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -121,7 +121,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        nested_func->insertResultInto(place, to);
+        nested_func->insertResultIntoWithState(place, to);
     }
 
     bool allocatesMemoryInArena() const override

@@ -238,7 +238,7 @@ void AggregatingSortedBlockInputStream::insertSimpleAggregationResult(MutableCol
 {
     for (auto & desc : columns_to_simple_aggregate)
     {
-        desc.function->insertResultInto(desc.state.data(), *merged_columns[desc.column_number]);
+        desc.function->insertResultIntoWithState(desc.state.data(), *merged_columns[desc.column_number]);
         desc.destroyState();
     }
 }

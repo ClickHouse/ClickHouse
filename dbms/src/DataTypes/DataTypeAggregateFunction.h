@@ -26,7 +26,7 @@ public:
     {
     }
 
-    std::string getFunctionName() const { return function->getName(); }
+    std::string getFunctionName() const { return function->getNameWithState(); }
     AggregateFunctionPtr getFunction() const { return function; }
 
     std::string doGetName() const override;
@@ -35,7 +35,7 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr getReturnType() const { return function->getReturnType(); }
+    DataTypePtr getReturnType() const { return function->getReturnTypeWithState(); }
     DataTypePtr getReturnTypeToPredict() const { return function->getReturnTypeToPredict(); }
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
