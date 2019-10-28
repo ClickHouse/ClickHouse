@@ -22,31 +22,33 @@ namespace DB
         {
             WhichDataType which(expression_return);
 
-            if (which.isNativeUInt())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+            if (which.isUInt8()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()); }
+            else if (which.isUInt16()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt16>()); }
+            else if (which.isUInt32()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()); }
+            else if (which.isUInt64()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()); }
+            else if (which.isInt8()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt8>()); }
+            else if (which.isInt16()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>()); }
+            else if (which.isInt32()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>()); }
+            else if (which.isInt64()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()); }
+            else if (which.isFloat32()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()); }
+            else if (which.isFloat64()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>()); }
 
-            if (which.isNativeInt())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
-
-            if (which.isFloat())
-                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
             throw Exception("arrayCompact cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-
-        template <typename Element, typename Result>
+        template <typename T>
         static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
         {
-            const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+            const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(&*mapped);
 
             if (!column)
                 return false;
 
             const IColumn::Offsets & offsets = array.getOffsets();
-            const typename ColumnVector<Element>::Container & data = column->getData();
-            auto column_data = ColumnVector<Result>::create(data.size());
-            typename ColumnVector<Result>::Container & res_values = column_data->getData();
+            const typename ColumnVector<T>::Container & data = column->getData();
+            auto column_data = ColumnVector<T>::create(data.size());
+            typename ColumnVector<T>::Container & res_values = column_data->getData();
             auto column_offsets = ColumnArray::ColumnOffsets::create(offsets.size());
             IColumn::Offsets & res_offsets = column_offsets->getData();
 
@@ -79,16 +81,16 @@ namespace DB
         {
             ColumnPtr res;
 
-            if (executeType< UInt8 , UInt64>(mapped, array, res) ||
-                executeType< UInt16, UInt64>(mapped, array, res) ||
-                executeType< UInt32, UInt64>(mapped, array, res) ||
-                executeType< UInt64, UInt64>(mapped, array, res) ||
-                executeType<  Int8 ,  Int64>(mapped, array, res) ||
-                executeType<  Int16,  Int64>(mapped, array, res) ||
-                executeType<  Int32,  Int64>(mapped, array, res) ||
-                executeType<  Int64,  Int64>(mapped, array, res) ||
-                executeType<Float32,Float64>(mapped, array, res) ||
-                executeType<Float64,Float64>(mapped, array, res))
+            if (executeType< UInt8 >(mapped, array, res) ||
+                executeType< UInt16>(mapped, array, res) ||
+                executeType< UInt32>(mapped, array, res) ||
+                executeType< UInt64>(mapped, array, res) ||
+                executeType< Int8  >(mapped, array, res) ||
+                executeType< Int16 >(mapped, array, res) ||
+                executeType< Int32 >(mapped, array, res) ||
+                executeType< Int64 >(mapped, array, res) ||
+                executeType<Float32>(mapped, array, res) ||
+                executeType<Float64>(mapped, array, res))
                 return res;
             else
                 throw Exception("Unexpected column for arrayCompact: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
