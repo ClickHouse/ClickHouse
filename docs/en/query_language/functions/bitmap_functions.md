@@ -82,30 +82,42 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,
 └───────────────────┘
 ```
 
-## bitmapSubsetLimit {#bitmap_functions-bitmapsubsetlimit}
+## bitmapSubsetLimit {#bitmapsubsetlimit}
 
-Return subset of the smallest `limit` values in set which is no less than `range_start`.
+Returns a subset of a bitmap. The subset values are sorted in ascending order and its cardinality and starting point do not exceed the corresponding input values.
 
-```
-bitmapSubsetLimit(bitmap, range_start, limit)
+**Syntax**
+
+```sql
+bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 ```
 
 **Parameters**
 
 - `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
-- `limit` – subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
+- `range_start` – The subset starting point. Type: [UInt32](../../data_types/int_uint.md).
+- `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
+
+**Returned value**
+
+The subset of a given bitmap.
+
+Type: `Bitmap object`.
 
 **Example**
 
+Query:
+
 ```sql
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([30, 20, 10, 1, 2, 3]), toUInt32(2), toUInt32(3))) AS res;
 ```
 
-```
-┌─res───────────────────────┐
-│ [30,31,32,33,100,200,500] │
-└───────────────────────────┘
+Result:
+
+```text
+┌─res──────┐
+│ [2,3,10] │
+└──────────┘
 ```
 
 ## bitmapContains {#bitmap_functions-bitmapcontains}

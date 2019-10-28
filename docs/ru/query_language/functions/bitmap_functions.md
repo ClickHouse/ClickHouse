@@ -48,6 +48,44 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapSubsetLimit {#bitmapsubsetlimit}
+
+Возвращает подмножество битового массива. Значения подмножества сортируются в порядке возрастания, а его верхний предел и начальная точка не превышают соответствующие входные значения.
+
+**Синтаксис**
+
+```sql
+bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
+```
+
+**Параметры**
+
+- `bitmap` – Битовый массив. [Bitmap object](#bitmap_functions-bitmapbuild).
+- `range_start` – Начальная точка подмножества. [UInt32](../../data_types/int_uint.md).
+- `cardinality_limit` – Верхний предел подмножества. [UInt32](../../data_types/int_uint.md).
+
+**Возвращаемое значение**
+
+Подмножество битового массива.
+
+Тип: `Bitmap object`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([30, 20, 10, 1, 2, 3]), toUInt32(2), toUInt32(3))) AS res;
+```
+
+Ответ:
+
+```text
+┌─res──────┐
+│ [2,3,10] │
+└──────────┘
+```
+
 ## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Проверяет вхождение элемента в битовый массив.

@@ -236,7 +236,6 @@ binary     decimal
 01101000 = 104
 ```
 
-
 ## groupBitmap
 
 Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
