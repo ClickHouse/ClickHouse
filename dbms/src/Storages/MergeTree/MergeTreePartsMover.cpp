@@ -113,16 +113,16 @@ bool MergeTreePartsMover::selectPartsForMove(
 
         const auto ttl_entries_end = part->storage.move_ttl_entries_by_name.end();
         auto best_ttl_entry_it = ttl_entries_end;
-        time_t max_max_ttl = 0;
+        time_t max_min_ttl = 0;
         for (auto & [name, ttl_info] : part->ttl_infos.moves_ttl)
         {
             auto move_ttl_entry_it = part->storage.move_ttl_entries_by_name.find(name);
             if (move_ttl_entry_it != part->storage.move_ttl_entries_by_name.end())
             {
-                if (ttl_info.max < current_time && max_max_ttl < ttl_info.max)
+                if (ttl_info.min > current_time && max_min_ttl < ttl_info.min)
                 {
                     best_ttl_entry_it = move_ttl_entry_it;
-                    max_max_ttl = ttl_info.max;
+                    max_min_ttl = ttl_info.min;
                 }
             }
         }
@@ -143,7 +143,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 }
                 else
                 {
-                    /// FIXME: log error
+                    /// FIXME: log warning?
                 }
             }
             else if (move_ttl_entry.destination_type == ASTTTLElement::DestinationType::DISK)
@@ -160,7 +160,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 }
                 else
                 {
-                    /// FIXME: log error
+                    /// FIXME: log warning?
                 }
             }
         }
