@@ -31,7 +31,7 @@ import kafka_pb2
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 config_dir='configs',
-                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml'],
+                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kafka=True,
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
@@ -557,7 +557,7 @@ def test_kafka_insert(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
 def test_kafka_produce_consume(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
