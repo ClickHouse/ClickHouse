@@ -14,11 +14,10 @@
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockInputStreamWithCompression.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
@@ -39,7 +38,7 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     Context & context_)
-    : uri(uri_)
+    : StorageWithCompression(uri_)
     , format_name(format_name_)
     , table_name(table_name_)
     , database_name(database_name_)
@@ -52,23 +51,17 @@ StorageHDFS::StorageHDFS(const String & uri_,
 namespace
 {
 
-class HDFSBlockInputStream : public IBlockInputStream
+class HDFSBlockInputStream : public IBlockInputStreamWithCompression
 {
 public:
     HDFSBlockInputStream(const String & uri,
         const String & format,
         const Block & sample_block,
         const Context & context,
-        UInt64 max_block_size)
+        UInt64 max_block_size,
+        CompressionMethod compression_method = DB::CompressionMethod::None)
     {
-        std::unique_ptr<ReadBuffer> read_buf;
-        if (boost::algorithm::ends_with(uri, ".gz")) {
-            auto hdfs_buf = std::make_unique<ReadBufferFromHDFS>(uri);
-            read_buf = std::make_unique<ZlibInflatingReadBuffer>(std::move(hdfs_buf), DB::CompressionMethod::Gzip);
-        } else {
-            read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
-        }
-        
+        auto read_buf = GetBuffer<ReadBufferFromHDFS>(uri, compression_method);        
 
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
@@ -213,7 +206,7 @@ BlockInputStreams StorageHDFS::read(
     for (const auto & res_path : res_paths)
     {
         result.push_back(std::make_shared<HDFSBlockInputStream>(uri_without_path + res_path, format_name, getSampleBlock(), context_,
-                                                               max_block_size));
+                                                               max_block_size, GetCompressionMethod()));
     }
 
     return result;

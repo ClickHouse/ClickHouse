@@ -2,7 +2,7 @@
 #include <Common/config.h>
 #if USE_HDFS
 
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCompression.h>
 #include <Poco/URI.h>
 #include <common/logger_useful.h>
 #include <ext/shared_ptr_helper.h>
@@ -13,7 +13,7 @@ namespace DB
  * This class represents table engine for external hdfs files.
  * Read method is supported for now.
  */
-class StorageHDFS : public ext::shared_ptr_helper<StorageHDFS>, public IStorage
+class StorageHDFS : public ext::shared_ptr_helper<StorageHDFS>, public StorageWithCompression
 {
     friend struct ext::shared_ptr_helper<StorageHDFS>;
 public:
@@ -42,7 +42,6 @@ protected:
         Context & context_);
 
 private:
-    String uri;
     String format_name;
     String table_name;
     String database_name;
