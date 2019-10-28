@@ -732,7 +732,7 @@ public:
         ExpressionActionsPtr expression;
         String result_column;
         ASTTTLElement::DestinationType destination_type;
-        String destination_name; 
+        String destination_name;
     };
 
     using MoveTTLEntriesByName = std::unordered_map<String, MoveTTLEntry>;
