@@ -28,17 +28,9 @@ void FindIdentifierBestTableData::visit(ASTIdentifier & identifier, ASTPtr &)
     }
     else
     {
-        // FIXME: make a better matcher using `names`?
-        size_t best_match = 0;
-        for (const auto & table_names : tables)
-        {
-            if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, table_names.first))
-                if (match > best_match)
-                {
-                    best_match = match;
-                    best_table = &table_names.first;
-                }
-        }
+        size_t best_table_pos = 0;
+        if (IdentifierSemantic::chooseTable(identifier, tables, best_table_pos))
+            best_table = &tables[best_table_pos].first;
     }
 
     identifier_table.emplace_back(&identifier, best_table);

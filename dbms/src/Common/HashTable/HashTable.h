@@ -358,6 +358,12 @@ protected:
     template <typename, typename, typename, typename, typename, typename, size_t>
     friend class TwoLevelHashTable;
 
+    template <typename, typename, size_t>
+    friend class TwoLevelStringHashTable;
+
+    template <typename SubMaps>
+    friend class StringHashTable;
+
     using HashValue = size_t;
     using Self = HashTable;
     using cell_type = Cell;
