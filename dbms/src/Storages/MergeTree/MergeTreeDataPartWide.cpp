@@ -271,8 +271,13 @@ void MergeTreeDataPartWide::remove() const
 #endif
         std::shared_lock<std::shared_mutex> lock(columns_lock);
 
+        std::cerr << "removing: " << name << "\n";
+        std::cerr << "checksums size: " << checksums.files.size() << "\n";
+
         for (const auto & [file, _] : checksums.files)
         {
+            std::cerr << "checksums file: " << file << "\n";
+
             String path_to_remove = to + "/" + file;
             if (0 != unlink(path_to_remove.c_str()))
                 throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove,

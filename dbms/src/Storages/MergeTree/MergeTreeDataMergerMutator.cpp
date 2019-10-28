@@ -831,6 +831,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
 
+            new_data_part->index_granularity = to.getIndexGranularity();
             MergedColumnOnlyOutputStream column_to(
                 new_data_part,
                 column_gathered_stream.getHeader(),

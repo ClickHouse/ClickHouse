@@ -21,7 +21,8 @@ public:
     MarkWithOffset write(const Block & block, const IColumn::Permutation * permutation,
         size_t from_mark, size_t index_offset, 
         const MergeTreeIndexGranularity & index_granularity,
-        const Block & primary_key_block, const Block & skip_indexes_block) override;
+        const Block & primary_key_block = {}, const Block & skip_indexes_block = {},
+        bool skip_offsets = false, const WrittenOffsetColumns & already_written_offset_columns = {}) override;
 
     void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) override;
 

@@ -22,6 +22,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     header(header_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns_)
 {
+    std::cerr << "(MergedColumnOnlyOutputStream) storage: " << storage.getTableName() << "\n";
+    std::cerr << "(MergedColumnOnlyOutputStream) can_use_adaptive_granularity: " << can_use_adaptive_granularity << "\n";
+    std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info: " << !!index_granularity_info_ << "\n";
+    if (index_granularity_info_)
+        std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info->isAdaptive(): " << index_granularity_info_->is_adaptive << "\n";
+
     writer = data_part_->getWriter(header.getNamesAndTypesList(), default_codec_, writer_settings);
     initSkipIndices();
 }
