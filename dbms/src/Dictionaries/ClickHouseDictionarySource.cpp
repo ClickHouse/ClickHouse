@@ -52,7 +52,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const Block & sample_block_,
-    Context & context_)
+    const Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , host{config.getString(config_prefix + ".host")}
@@ -206,7 +206,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 Context & context) -> DictionarySourcePtr
+                                 const Context & context) -> DictionarySourcePtr
     {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };

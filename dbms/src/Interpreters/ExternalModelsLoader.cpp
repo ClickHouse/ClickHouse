@@ -10,12 +10,10 @@ namespace ErrorCodes
 }
 
 
-ExternalModelsLoader::ExternalModelsLoader(
-    ExternalLoaderConfigRepositoryPtr config_repository, Context & context_)
+ExternalModelsLoader::ExternalModelsLoader(Context & context_)
     : ExternalLoader("external model", &Logger::get("ExternalModelsLoader"))
     , context(context_)
 {
-    addConfigRepository(std::move(config_repository), {"model", "name"});
     enablePeriodicUpdates(true);
 }
 
@@ -40,4 +38,8 @@ std::shared_ptr<const IExternalLoadable> ExternalModelsLoader::create(
     }
 }
 
+void ExternalModelsLoader::addConfigRepository(const String & name, std::unique_ptr<IExternalLoaderConfigRepository> config_repository)
+{
+    ExternalLoader::addConfigRepository(name, std::move(config_repository), {"models", "name"});
+}
 }
