@@ -1,13 +1,13 @@
 
 # 航班飞行数据
 
-+This dataset can be obtained in two ways:
-+
-+- import from raw data
-+- download of prepared partitions
-+
-+## Import From Raw Data
-+
+航班飞行数据有以下两个方式获取：
+
+- 从原始数据导入
+- 下载预处理好的分区数据
+
+## 从原始数据导入
+
 下载数据：
 
 ```bash
@@ -144,19 +144,19 @@ CREATE TABLE `ontime` (
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-+## Download of Prepared Partitions
-+
-+```bash
-+$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
-+$ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
-+$ # check permissions of unpacked data, fix if required
-+$ sudo service clickhouse-server restart
-+$ clickhouse-client --query "select count(*) from datasets.ontime"
- ```
-+!!!info
-+    If you will run queries described below, you have to use full table name,
-+    `datasets.ontime`.
-+
+## 下载预处理好的分区数据
+
+```bash
+$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+$ # check permissions of unpacked data, fix if required
+$ sudo service clickhouse-server restart
+$ clickhouse-client --query "select count(*) from datasets.ontime"
+```
+!!!info
+    如果要运行下面的SQL查询，必须使用完整的表名，
+    `datasets.ontime`。
+
 ## 查询：
 
 Q0.
