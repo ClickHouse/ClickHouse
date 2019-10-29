@@ -107,7 +107,12 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     result = []
     cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
-    if "clang" in compiler:
+    is_clang = "clang" in compiler
+    is_cross_compile = ("darwin" in compiler) or ("aarch64" in compiler)
+
+    # Explicitly use LLD with Clang by default.
+    # Don't force linker for cross-compilation.
+    if is_clang and not is_cross_compile:
         cmake_flags = ['$CMAKE_FLAGS', '-DLINKER_NAME=lld']
 
     if compiler.endswith("-darwin"):
