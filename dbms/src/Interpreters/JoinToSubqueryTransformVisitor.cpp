@@ -147,7 +147,13 @@ struct ColumnAliasesMatcher
                 auto it = rev_aliases.find(long_name);
                 if (it == rev_aliases.end())
                 {
-                    bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
+                    bool last_table = false;
+                    {
+                        size_t best_table_pos = 0;
+                        if (IdentifierSemantic::chooseTable(*identifier, tables, best_table_pos))
+                            last_table = (best_table_pos + 1 == tables.size());
+                    }
+
                     if (!last_table)
                     {
                         String alias = hide_prefix + long_name;
@@ -202,17 +208,15 @@ struct ColumnAliasesMatcher
 
         bool last_table = false;
         String long_name;
-        for (auto & table : data.tables)
+
+        size_t table_pos = 0;
+        if (IdentifierSemantic::chooseTable(node, data.tables, table_pos))
         {
-            if (IdentifierSemantic::canReferColumnToTable(node, table))
-            {
-                if (!long_name.empty())
-                    throw Exception("Cannot refer column '" + node.name + "' to one table", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-                IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
-                long_name = node.name;
-                if (&table == &data.tables.back())
-                    last_table = true;
-            }
+            auto & table = data.tables[table_pos];
+            IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
+            long_name = node.name;
+            if (&table == &data.tables.back())
+                last_table = true;
         }
 
         if (long_name.empty())
