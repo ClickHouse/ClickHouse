@@ -36,7 +36,7 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
         if (db.second->getEngineName() == "Lazy")
             continue;
 
-        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             auto & table = iterator->table();
 

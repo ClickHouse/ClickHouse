@@ -27,6 +27,8 @@ public:
         std::vector<IConnectionPool::Entry> && connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
+    /// Send all scalars to replicas.
+    void sendScalarsData(Scalars & data);
     /// Send all content of external tables to replicas.
     void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 

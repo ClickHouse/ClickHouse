@@ -11,6 +11,11 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'c');
 
+SELECT '--isValidJSON--';
+SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}');
+SELECT isValidJSON('not a json');
+SELECT isValidJSON('"HX-=');
+
 SELECT '--JSONKey--';
 SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1);
 SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2);
