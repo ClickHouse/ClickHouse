@@ -268,7 +268,10 @@ void SystemLog<LogElement>::threadFunction()
 
             if (data.empty())
             {
+                std::cerr << "data.empty()" << std::endl;
+                std::cerr << "data.size(), queue.size() -> " << data.size() << " " << queue.size() << " for " << table_name << "\n";
                 queue.pop(element);
+                std::cerr << "data.size(), queue.size() -> " << data.size() << " " << queue.size() << " for " << table_name << "\n";
                 has_element = true;
             }
             else
