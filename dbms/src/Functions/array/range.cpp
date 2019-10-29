@@ -135,14 +135,14 @@ private:
         // for start column, default to 0
         if (arguments.size() == 1)
         {
-            columns_holder[idx] = std::move(DataTypeUInt8().createColumnConst(rows, 0)->convertToFullColumnIfConst());
+            columns_holder[idx] = DataTypeUInt8().createColumnConst(rows, 0)->convertToFullColumnIfConst();
             columns[idx] = columns_holder[idx].get();
             idx ++;
         }
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            columns_holder[idx] = std::move(block.getByPosition(arguments[i]).column->convertToFullColumnIfConst());
+            columns_holder[idx] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
             columns[idx] = columns_holder[idx].get();
             idx ++;
         }
@@ -150,7 +150,7 @@ private:
         // for step column, defaults to 1
         if (arguments.size() <= 2)
         {
-            columns_holder[idx] = std::move(DataTypeUInt8().createColumnConst(rows, 1)->convertToFullColumnIfConst());
+            columns_holder[idx] = DataTypeUInt8().createColumnConst(rows, 1)->convertToFullColumnIfConst();
             columns[idx] = columns_holder[idx].get();
         }
 
