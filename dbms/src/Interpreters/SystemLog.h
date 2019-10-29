@@ -181,8 +181,9 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     database_name(database_name_), table_name(table_name_), storage_def(storage_def_),
     flush_interval_milliseconds(flush_interval_milliseconds_)
 {
+    std::cerr << "\nCreating " << table_name << "\n";
     log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
-
+    std::cerr << "Logger _ created" << std::endl;
     data.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
     saving_thread = ThreadFromGlobalPool([this] { threadFunction(); });
 }
@@ -242,6 +243,7 @@ SystemLog<LogElement>::~SystemLog()
 template <typename LogElement>
 void SystemLog<LogElement>::threadFunction()
 {
+    std::cerr << "\nEnter in threadFunction for " << table_name << "\n";
     setThreadName("SystemLogFlush");
 
     Stopwatch time_after_last_write;
@@ -304,6 +306,7 @@ void SystemLog<LogElement>::threadFunction()
         catch (...)
         {
             /// In case of exception we lost accumulated data - to avoid locking.
+            std::cerr << "Enter in catch for " << table_name << "\n";
             data.clear();
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
