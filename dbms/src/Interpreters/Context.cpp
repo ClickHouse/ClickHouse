@@ -30,6 +30,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -88,6 +89,8 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int SCALAR_ALREADY_EXISTS;
+    extern const int UNKNOWN_SCALAR;
 }
 
 
@@ -191,7 +194,7 @@ struct ContextShared
     bool shutdown_called = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> table -> (mutex, counter), counter: how many threads are running a query on the table at the same time
+    /// database -> object -> (mutex, counter), counter: how many threads are running a query on the table at the same time
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
     /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
@@ -792,6 +795,16 @@ bool Context::isTableExist(const String & database_name, const String & table_na
         && it->second->isTableExist(*this, table_name);
 }
 
+bool Context::isDictionaryExists(const String & database_name, const String & dictionary_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    checkDatabaseAccessRightsImpl(db);
+
+    Databases::const_iterator it = shared->databases.find(db);
+    return shared->databases.end() != it && it->second->isDictionaryExist(*this, dictionary_name);
+}
 
 bool Context::isDatabaseExist(const String & database_name) const
 {
@@ -804,22 +817,6 @@ bool Context::isDatabaseExist(const String & database_name) const
 bool Context::isExternalTableExist(const String & table_name) const
 {
     return external_tables.end() != external_tables.find(table_name);
-}
-
-
-void Context::assertTableExists(const String & database_name, const String & table_name) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRightsImpl(db);
-
-    Databases::const_iterator it = shared->databases.find(db);
-    if (shared->databases.end() == it)
-        throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-
-    if (!it->second->isTableExist(*this, table_name))
-        throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 
@@ -859,6 +856,21 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 
     if (shared->databases.end() != shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+}
+
+
+const Scalars & Context::getScalars() const
+{
+    return scalars;
+}
+
+
+const Block & Context::getScalar(const String & name) const
+{
+    auto it = scalars.find(name);
+    if (scalars.end() == it)
+        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::UNKNOWN_SCALAR);
+    return it->second;
 }
 
 
@@ -959,6 +971,19 @@ void Context::addExternalTable(const String & table_name, const StoragePtr & sto
     external_tables[table_name] = std::pair(storage, ast);
 }
 
+
+void Context::addScalar(const String & name, const Block & block)
+{
+    scalars[name] = block;
+}
+
+
+bool Context::hasScalar(const String & name) const
+{
+    return scalars.count(name);
+}
+
+
 StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {
     TableAndCreateASTs::const_iterator it = external_tables.find(table_name);
@@ -1046,9 +1071,10 @@ void Context::addDatabase(const String & database_name, const DatabasePtr & data
 DatabasePtr Context::detachDatabase(const String & database_name)
 {
     auto lock = getLock();
-
     auto res = getDatabase(database_name);
+    getExternalDictionariesLoader().removeConfigRepository(database_name);
     shared->databases.erase(database_name);
+
     return res;
 }
 
@@ -1061,6 +1087,17 @@ ASTPtr Context::getCreateTableQuery(const String & database_name, const String &
     assertDatabaseExists(db);
 
     return shared->databases[db]->getCreateTableQuery(*this, table_name);
+}
+
+
+ASTPtr Context::getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    assertDatabaseExists(db);
+
+    return shared->databases[db]->getCreateDictionaryQuery(*this, dictionary_name);
 }
 
 ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
@@ -1308,21 +1345,13 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 
 const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() const
 {
-    {
-        std::lock_guard lock(shared->external_dictionaries_mutex);
-        if (shared->external_dictionaries_loader)
-            return *shared->external_dictionaries_loader;
-    }
-
-    const auto & config = getConfigRef();
     std::lock_guard lock(shared->external_dictionaries_mutex);
     if (!shared->external_dictionaries_loader)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config");
-        shared->external_dictionaries_loader.emplace(std::move(config_repository), *this->global_context);
+        shared->external_dictionaries_loader.emplace(*this->global_context);
     }
     return *shared->external_dictionaries_loader;
 }
@@ -1341,8 +1370,7 @@ const ExternalModelsLoader & Context::getExternalModelsLoader() const
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = std::make_unique<ExternalLoaderXMLConfigRepository>(getConfigRef(), "models_config");
-        shared->external_models_loader.emplace(std::move(config_repository), *this->global_context);
+        shared->external_models_loader.emplace(*this->global_context);
     }
     return *shared->external_models_loader;
 }
@@ -2039,7 +2067,7 @@ void Context::dropCompiledExpressionCache() const
 #endif
 
 
-void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd)
+void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
 {
     auto lock = getLock();
     shared->bridge_commands.emplace_back(std::move(cmd));

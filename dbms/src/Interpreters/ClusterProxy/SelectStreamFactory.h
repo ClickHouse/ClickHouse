@@ -18,6 +18,7 @@ public:
         const Block & header_,
         QueryProcessingStage::Enum processed_stage_,
         QualifiedTableName main_table_,
+        const Scalars & scalars_,
         const Tables & external_tables);
 
     /// TableFunction in a query.
@@ -25,6 +26,7 @@ public:
         const Block & header_,
         QueryProcessingStage::Enum processed_stage_,
         ASTPtr table_func_ptr_,
+        const Scalars & scalars_,
         const Tables & external_tables_);
 
     void createForShard(
@@ -38,6 +40,7 @@ private:
     QueryProcessingStage::Enum processed_stage;
     QualifiedTableName main_table;
     ASTPtr table_func_ptr;
+    Scalars scalars;
     Tables external_tables;
 };
 

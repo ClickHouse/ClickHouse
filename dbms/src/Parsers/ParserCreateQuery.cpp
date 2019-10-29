@@ -823,6 +823,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
+    ParserKeyword s_attach("ATTACH");
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserIdentifier name_p;
@@ -840,8 +841,14 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ASTPtr attributes;
     ASTPtr dictionary;
 
+    bool attach = false;
     if (!s_create.ignore(pos, expected))
-        return false;
+    {
+        if (s_attach.ignore(pos, expected))
+            attach = true;
+        else
+            return false;
+    }
 
     if (s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
@@ -859,21 +866,25 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
             return false;
     }
 
-    if (!s_left_paren.ignore(pos, expected))
-        return false;
+    if (!attach)
+    {
+        if (!s_left_paren.ignore(pos, expected))
+            return false;
 
-    if (!attributes_p.parse(pos, attributes, expected))
-        return false;
+        if (!attributes_p.parse(pos, attributes, expected))
+            return false;
 
-    if (!s_right_paren.ignore(pos, expected))
-        return false;
+        if (!s_right_paren.ignore(pos, expected))
+            return false;
 
-    if (!dictionary_p.parse(pos, dictionary, expected))
-        return false;
+        if (!dictionary_p.parse(pos, dictionary, expected))
+            return false;
+    }
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
     query->is_dictionary = true;
+    query->attach = attach;
 
     if (database)
         query->database = typeid_cast<const ASTIdentifier &>(*database).name;

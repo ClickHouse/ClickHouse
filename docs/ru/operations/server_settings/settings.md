@@ -366,11 +366,14 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## mark_cache_size
+## mark_cache_size {#server-mark-cache-size}
 
 Приблизительный размер (в байтах) кеша "засечек", используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
 Кеш общий для сервера, память выделяется по мере необходимости. Кеш не может быть меньше, чем 5368709120.
+
+!!! note ВАЖНО
+    Этот параметр может быть превышен при большом значении настройки пользователя [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime).
 
 **Пример**
 
