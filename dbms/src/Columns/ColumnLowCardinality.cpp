@@ -35,7 +35,7 @@ namespace
 
         data.resize(hash_map.size());
         for (const auto & val : hash_map)
-            data[val.getSecond()] = val.getFirst();
+            data[val.getMapped()] = val.getKey();
 
         for (auto & ind : index)
             ind = hash_map[ind];
