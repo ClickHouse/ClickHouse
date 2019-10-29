@@ -24,8 +24,7 @@ void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
                   << "("
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
-                  << (settings.hilite ? hilite_none : "")
-                  << min_attr_name << ", "
+                  << min_attr_name << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
                   << (settings.hilite ? hilite_none : "")
@@ -54,8 +53,7 @@ void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
                   << "("
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
-                  << (settings.hilite ? hilite_none : "")
-                  << min_sec << ", "
+                  << min_sec << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
                   << (settings.hilite ? hilite_none : "")
@@ -133,14 +131,17 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
     if (primary_key)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "PRIMARY KEY "
-                      << (settings.hilite ? hilite_none : "");
+            << (settings.hilite ? hilite_none : "");
         primary_key->formatImpl(settings, state, frame);
     }
 
     if (source)
-        settings.ostr << settings.nl_or_ws;
-
-    source->formatImpl(settings, state, frame);
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SOURCE("
+            << (settings.hilite ? hilite_none : "");
+        source->formatImpl(settings, state, frame);
+        settings.ostr << ")";
+    }
 
     if (lifetime)
     {
