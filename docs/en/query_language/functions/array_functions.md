@@ -34,10 +34,11 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range([start,] end)
-
-Returns an array of numbers from start to end-1.
-If the argument `start` is not specified, defaults to 0. 
+## range(end) or  range(start, end [, step])
+Returns an array of numbers from start to end-1 by step.
+If the argument `start` is not specified, defaults to 0.
+If the argument `step` is not specified, default to 1.
+It behaviors almost like pythonic `range`. But the difference is that all the arguments type must be `UInt` numbers.
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ## array(x1, ...), operator \[x1, ...\]
