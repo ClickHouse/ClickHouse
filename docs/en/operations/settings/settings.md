@@ -570,6 +570,12 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 
 There usually isn't any reason to change this setting.
 
+## mark_cache_min_lifetime {#settings-mark_cache_min_lifetime}
+
+If the value of [mark_cache_size](../server_settings/settings.md#server-mark-cache-size) setting is exceeded, delete only records older than mark_cache_min_lifetime seconds. If your hosts have low amount of RAM, it makes sense to lower this parameter.
+
+Default value: 10000 seconds.
+
 ## max_query_size {#settings-max_query_size}
 
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
