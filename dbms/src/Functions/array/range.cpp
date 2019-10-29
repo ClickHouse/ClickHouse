@@ -7,8 +7,6 @@
 #include <Columns/ColumnVector.h>
 #include <numeric>
 
-#include <common/logger_useful.h>
-
 
 namespace DB
 {
@@ -63,7 +61,6 @@ private:
 
         if (!start_column || !end_column)
         {
-            LOG_TRACE(&Logger::get("range function"),  "some column is null-----"); 
             return false;
         }
 
@@ -87,15 +84,9 @@ private:
         auto & out_data = data_col->getData();
         auto & out_offsets = offsets_col->getData();
 
-        for (const auto & data : in_start_data)
-        {
-            LOG_TRACE(&Logger::get("range function"),  "Test--" << UInt32(data) << std::endl);
-        }
-
         IColumn::Offset offset{};
         for (size_t row_idx = 0, rows = end_column->size(); row_idx < rows; ++row_idx)
         {
-            LOG_TRACE(&Logger::get("range function"),  "DEBUG--" << UInt64(start_col->getUInt(row_idx)) << "---" << UInt64(in_end_data[row_idx]) << "--" << UInt64(offset)); 
             for (size_t st = in_start_data[row_idx], ed = in_end_data[row_idx]; st < ed; ++st)
                 out_data[offset++] = st;
 
@@ -117,16 +108,31 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {   
-        const auto end_col = block.getByPosition(arguments[arguments.size() == 1 ? 0 : 1]).column.get();
-        const auto start_col = arguments.size() == 1? ColumnVector<UInt8>::create(end_col->size(), 0).get()
-                            : block.getByPosition(arguments[0]).column.get();
+        Columns columns_holder(2);
+        ColumnRawPtrs columns(2);
+        size_t idx = 0;
+        size_t rows =  block.getByPosition(arguments[0]).column.get()->size();
 
-        if (!executeStartInternal<UInt8>(block, start_col, end_col, result) &&
-            !executeStartInternal<UInt16>(block, start_col, end_col, result) &&
-            !executeStartInternal<UInt32>(block, start_col, end_col, result) &&
-            !executeStartInternal<UInt64>(block, start_col, end_col, result))
+        if (arguments.size() == 1)
         {
-            throw Exception{"Illegal column " + start_col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            columns_holder[idx] = std::move(DataTypeUInt8().createColumnConst(rows, 0)->convertToFullColumnIfConst());
+            columns[idx] = columns_holder[idx].get();
+            idx ++;
+        }
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            columns_holder[idx] = std::move(block.getByPosition(arguments[i]).column->convertToFullColumnIfConst());
+            columns[idx] = columns_holder[idx].get();
+            idx ++;
+        }
+
+        if (!executeStartInternal<UInt8>(block, columns[0], columns[1], result) &&
+            !executeStartInternal<UInt16>(block, columns[0], columns[1], result) &&
+            !executeStartInternal<UInt32>(block, columns[0], columns[1], result) &&
+            !executeStartInternal<UInt64>(block, columns[0], columns[1], result))
+        {
+            throw Exception{"Illegal column " + columns[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 
