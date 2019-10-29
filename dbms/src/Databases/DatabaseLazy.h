@@ -2,10 +2,12 @@
 
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
 {
+
 
 class DatabaseLazyIterator;
 
@@ -20,7 +22,7 @@ public:
 
     String getEngineName() const override { return "Lazy"; }
 
-    void loadTables(
+    void loadStoredObjects(
         Context & context,
         bool has_force_restore_data_flag) override;
 
@@ -30,7 +32,16 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
+    void createDictionary(
+        const Context & context,
+        const String & dictionary_name,
+        const ASTPtr & query) override;
+
     void removeTable(
+        const Context & context,
+        const String & table_name) override;
+
+    void removeDictionary(
         const Context & context,
         const String & table_name) override;
 
@@ -49,7 +60,7 @@ public:
         const ConstraintsDescription & constraints,
         const ASTModifier & engine_modifier) override;
 
-    time_t getTableMetadataModificationTime(
+    time_t getObjectMetadataModificationTime(
         const Context & context,
         const String & table_name) override;
 
@@ -61,16 +72,28 @@ public:
         const Context & context,
         const String & table_name) const override;
 
+    ASTPtr getCreateDictionaryQuery(
+        const Context & context,
+        const String & dictionary_name) const override;
+
+    ASTPtr tryGetCreateDictionaryQuery(
+        const Context & context,
+        const String & dictionary_name) const override;
+
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     String getDataPath() const override;
     String getDatabaseName() const override;
     String getMetadataPath() const override;
-    String getTableMetadataPath(const String & table_name) const override;
+    String getObjectMetadataPath(const String & table_name) const override;
 
     void drop(const Context & context) override;
 
     bool isTableExist(
+        const Context & context,
+        const String & table_name) const override;
+
+    bool isDictionaryExist(
         const Context & context,
         const String & table_name) const override;
 
@@ -80,11 +103,17 @@ public:
 
     bool empty(const Context & context) const override;
 
-    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+
+    DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) override;
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
 
     StoragePtr detachTable(const String & table_name) override;
+
+    void attachDictionary(const String & dictionary_name, const Context & context, bool reload) override;
+
+    void detachDictionary(const String & dictionary_name, const Context & context, bool reload) override;
 
     void shutdown() override;
 
@@ -138,10 +167,13 @@ private:
 };
 
 
-class DatabaseLazyIterator final : public IDatabaseIterator
+class DatabaseLazyIterator final : public IDatabaseTablesIterator
 {
 public:
-    DatabaseLazyIterator(DatabaseLazy & database_, const Context & context_, Strings && table_names_);
+    DatabaseLazyIterator(
+        DatabaseLazy & database_,
+        const Context & context_,
+        Strings && table_names_);
 
     void next() override;
     bool isValid() const override;
@@ -155,5 +187,4 @@ private:
     Strings::const_iterator iterator;
     mutable StoragePtr current_storage;
 };
-
 }

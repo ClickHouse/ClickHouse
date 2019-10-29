@@ -64,7 +64,7 @@ bool DatabaseMySQL::empty(const Context &) const
     return local_tables_cache.empty();
 }
 
-DatabaseIteratorPtr DatabaseMySQL::getIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
@@ -75,7 +75,7 @@ DatabaseIteratorPtr DatabaseMySQL::getIterator(const Context &, const FilterByNa
         if (!filter_by_table_name || filter_by_table_name(local_table.first))
             tables[local_table.first] = local_table.second.storage;
 
-    return std::make_unique<DatabaseSnapshotIterator>(tables);
+    return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
 }
 
 bool DatabaseMySQL::isTableExist(const Context & context, const String & name) const
@@ -107,7 +107,7 @@ ASTPtr DatabaseMySQL::tryGetCreateTableQuery(const Context &, const String & tab
     return local_tables_cache[table_name].create_table_query;
 }
 
-time_t DatabaseMySQL::getTableMetadataModificationTime(const Context &, const String & table_name)
+time_t DatabaseMySQL::getObjectMetadataModificationTime(const Context &, const String & table_name)
 {
     std::lock_guard<std::mutex> lock(mutex);
 

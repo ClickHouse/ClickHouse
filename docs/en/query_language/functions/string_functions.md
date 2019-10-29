@@ -195,7 +195,20 @@ Returns a string that removes the whitespace characters on either side.
 
 ## CRC32(s)
 
-Returns the CRC32 checksum of a string
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
+
 The result type is UInt32.
+
+## CRC32IEEE(s)
+
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
+
+The result type is UInt32.
+
+## CRC64(s)
+
+Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
+
+The result type is UInt64.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->
