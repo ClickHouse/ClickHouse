@@ -579,7 +579,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
 
                 if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
@@ -593,7 +593,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -625,7 +625,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -641,7 +641,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.getSecond();
+                Histogram & histogram = elem.getMapped();
                 if (!histogram.total)
                     continue;
 
@@ -676,7 +676,7 @@ public:
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (it && lookupResultGetMapped(it)->total + lookupResultGetMapped(it)->count_end != 0)
+                if (it && it->getMapped().total + it->getMapped().count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -710,7 +710,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = lookupResultGetMapped(it)->sample(determinator, end_probability_multiplier);
+            CodePoint code = it->getMapped().sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;

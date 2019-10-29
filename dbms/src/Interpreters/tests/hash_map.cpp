@@ -162,8 +162,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(lookupResultGetMapped(it)) Value;
-                std::swap(*lookupResultGetMapped(it), value);
+                new (&it->getMapped()) Value;
+                std::swap(it->getMapped(), value);
                 INIT
             }
         }
@@ -193,8 +193,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(lookupResultGetMapped(it)) Value;
-                std::swap(*lookupResultGetMapped(it), value);
+                new (&it->getMapped()) Value;
+                std::swap(it->getMapped(), value);
                 INIT
             }
         }
@@ -225,8 +225,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(lookupResultGetMapped(it)) Value;
-                std::swap(*lookupResultGetMapped(it), value);
+                new (&it->getMapped()) Value;
+                std::swap(it->getMapped(), value);
                 INIT
             }
         }
