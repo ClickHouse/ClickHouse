@@ -6,6 +6,7 @@
 #include <mysqlxx/Pool.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
+#include <memory>
 
 
 namespace DB
@@ -29,17 +30,32 @@ public:
 
     bool empty(const Context & context) const override;
 
-    DatabaseIteratorPtr getIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+
+    DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context &, const FilterByNameFunction & = {}) override
+    {
+        return std::make_unique<DatabaseDictionariesSnapshotIterator>();
+    }
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     bool isTableExist(const Context & context, const String & name) const override;
 
+    bool isDictionaryExist(const Context &, const String &) const override { return false; }
+
     StoragePtr tryGetTable(const Context & context, const String & name) const override;
 
     ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const override;
 
-    time_t getTableMetadataModificationTime(const Context & context, const String & name) override;
+    ASTPtr getCreateDictionaryQuery(const Context &, const String &) const override
+    {
+        throw Exception("MySQL database engine does not support dictionaries.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    ASTPtr tryGetCreateDictionaryQuery(const Context &, const String &) const override { return nullptr; }
+
+
+    time_t getObjectMetadataModificationTime(const Context & context, const String & name) override;
 
     void shutdown() override;
 
@@ -48,7 +64,12 @@ public:
         throw Exception("MySQL database engine does not support detach table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void loadTables(Context &, bool) override
+    void detachDictionary(const String &, const Context &, bool) override
+    {
+        throw Exception("MySQL database engine does not support detach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void loadStoredObjects(Context &, bool) override
     {
         /// do nothing
     }
@@ -58,15 +79,32 @@ public:
         throw Exception("MySQL database engine does not support remove table.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void removeDictionary(const Context &, const String &) override
+    {
+        throw Exception("MySQL database engine does not support remove dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+
     void attachTable(const String &, const StoragePtr &) override
     {
         throw Exception("MySQL database engine does not support attach table.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void attachDictionary(const String &, const Context &, bool) override
+    {
+        throw Exception("MySQL database engine does not support attach dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void createTable(const Context &, const String &, const StoragePtr &, const ASTPtr &) override
     {
         throw Exception("MySQL database engine does not support create table.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    void createDictionary(const Context &, const String &, const ASTPtr &) override
+    {
+        throw Exception("MySQL database engine does not support create dictionary.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
 
 private:
     struct MySQLStorageInfo
