@@ -33,7 +33,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 
     {
         auto database = context.getDatabase(source_database);
-        auto iterator = database->getIterator(context, table_name_match);
+        auto iterator = database->getTablesIterator(context, table_name_match);
 
         if (iterator->isValid())
             any_table = iterator->table();
