@@ -9,12 +9,8 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-
 namespace DB
 {
-
-//namespace MySQLProtocol { class HandshakeResponse; }
-
 
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
 class MySQLHandler : public Poco::Net::TCPServerConnection
@@ -59,11 +55,9 @@ private:
 protected:
     std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
 
-//private:
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
-//protected:
     bool secure_connection = false;
 };
 

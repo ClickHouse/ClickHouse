@@ -23,18 +23,15 @@
 #include <Poco/Crypto/RSAKey.h>
 #endif
 
-
 namespace DB
 {
 
 using namespace MySQLProtocol;
 
-
 #if USE_POCO_NETSSL
 using Poco::Net::SecureStreamSocket;
 using Poco::Net::SSLManager;
 #endif
-
 
 namespace ErrorCodes
 {
@@ -56,8 +53,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     if (ssl_enabled)
         server_capability_flags |= CLIENT_SSL;
 }
-
-
 
 void MySQLHandler::run()
 {
