@@ -105,6 +105,9 @@ using InputInitializer = std::function<void(Context &, const StoragePtr &)>;
 /// Callback for reading blocks of data from client for function input()
 using InputBlocksReader = std::function<Block(Context &)>;
 
+/// Scalar results of sub queries
+using Scalars = std::map<String, Block>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -144,6 +147,7 @@ private:
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TableAndCreateASTs external_tables;     /// Temporary tables.
+    Scalars scalars;
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
@@ -248,9 +252,9 @@ public:
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
+    bool isDictionaryExists(const String & database_name, const String & dictionary_name) const;
     bool isExternalTableExist(const String & table_name) const;
     bool hasDatabaseAccessRights(const String & database_name) const;
-    void assertTableExists(const String & database_name, const String & table_name) const;
 
     bool hasDictionaryAccessRights(const String & dictionary_name) const;
 
@@ -264,11 +268,15 @@ public:
     void assertDatabaseDoesntExist(const String & database_name) const;
     void checkDatabaseAccessRights(const std::string & database_name) const;
 
+    const Scalars & getScalars() const;
+    const Block & getScalar(const String & name) const;
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
     void addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast = {});
+    void addScalar(const String & name, const Block & block);
+    bool hasScalar(const String & name) const;
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
@@ -355,6 +363,7 @@ public:
     ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
     ASTPtr getCreateDatabaseQuery(const String & database_name) const;
+    ASTPtr getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
     DatabasePtr getDatabase(const String & database_name);
@@ -544,7 +553,7 @@ public:
 #endif
 
     /// Add started bridge command. It will be killed after context destruction
-    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd);
+    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
