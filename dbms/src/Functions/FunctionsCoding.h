@@ -1327,22 +1327,25 @@ public:
             out_vec[row * size_per_row + size_per_row - 1] = '\0';
         }
 
-        for (const size_t & column_idx : arguments)
-        {   
+        Columns columns_holder(arguments.size());
+        for (size_t idx = 0; idx < arguments.size(); ++idx)
+        {
             //partial const column 
-            const IColumn * column = block.getByPosition(column_idx).column->convertToFullColumnIfConst().get();
-            if (!(executeNumber<UInt8>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<UInt16>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<UInt32>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<UInt64>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<Int8>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<Int16>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<Int32>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<Int64>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<Float32>(*column, out_vec, column_idx, rows, size_per_row)
-                || executeNumber<Float64>(*column, out_vec, column_idx, rows, size_per_row)))
+            columns_holder[idx] = std::move(block.getByPosition(arguments[idx]).column->convertToFullColumnIfConst());
+            const IColumn * column = columns_holder[idx].get();
+
+            if (!(executeNumber<UInt8>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<UInt16>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<UInt32>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<UInt64>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<Int8>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<Int16>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<Int32>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<Int64>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<Float32>(*column, out_vec, idx, rows, size_per_row)
+                || executeNumber<Float64>(*column, out_vec, idx, rows, size_per_row)))
             {
-                throw Exception{"Illegal column " + block.getByPosition(column_idx).column->getName()
+                throw Exception{"Illegal column " + block.getByPosition(arguments[idx]).column->getName()
                                 + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
             }
         }
