@@ -9,6 +9,7 @@
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
@@ -72,6 +73,26 @@ namespace
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
+/// Select implementation of countDistinct based on settings.
+/// Important that it is done as query rewrite. It means rewritten query
+///  will be sent to remote servers during distributed query execution,
+///  and on all remote servers, function implementation will be same.
+struct CustomizeFunctionsData
+{
+    using TypeToVisit = ASTFunction;
+
+    const String & count_distinct;
+
+    void visit(ASTFunction & func, ASTPtr &)
+    {
+        if (Poco::toLower(func.name) == "countdistinct")
+            func.name = count_distinct;
+    }
+};
+
+using CustomizeFunctionsMatcher = OneTypeMatcher<CustomizeFunctionsData>;
+using CustomizeFunctionsVisitor = InDepthNodeVisitor<CustomizeFunctionsMatcher, true>;
+
 
 /// Add columns from storage to source_columns list.
 void collectSourceColumns(const ColumnsDescription & columns, NamesAndTypesList & source_columns, bool add_virtuals)
@@ -91,7 +112,10 @@ void collectSourceColumns(const ColumnsDescription & columns, NamesAndTypesList 
     }
 }
 
-std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & select_query, const Context & context)
+std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & select_query, const Context & context,
+                                                       const ASTTablesInSelectQueryElement * table_join_node,
+                                                       NamesAndTypesList & columns_from_joined_table,
+                                                       std::function<Names()> get_column_names)
 {
     std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
 
@@ -102,6 +126,27 @@ std::vector<TableWithColumnNames> getTablesWithColumns(const ASTSelectQuery & se
             if (pr.first.table.empty() && pr.first.alias.empty())
                 throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
                                 ErrorCodes::ALIAS_REQUIRED);
+    }
+
+    TableWithColumnNames joined_table;
+
+    if (table_join_node)
+    {
+        const auto & joined_expression = table_join_node->table_expression->as<ASTTableExpression &>();
+
+        columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
+
+        joined_table.first = DatabaseAndTableWithAlias(joined_expression, context.getCurrentDatabase());
+        for (const auto & column : columns_from_joined_table)
+            joined_table.second.push_back(column.name);
+    }
+
+    /// If empty make table(s) with list of source and joined columns
+    if (tables_with_columns.empty())
+    {
+        tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, get_column_names());
+        if (!joined_table.second.empty())
+            tables_with_columns.emplace_back(std::move(joined_table));
     }
 
     return tables_with_columns;
@@ -220,10 +265,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth)
+void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -266,11 +311,36 @@ const std::unordered_set<String> possibly_injective_function_names
         "dictGetDateTime"
 };
 
+/** You can not completely remove GROUP BY. Because if there were no aggregate functions, then it turns out that there will be no aggregation.
+  * Instead, leave `GROUP BY const`.
+  * Next, see deleting the constants in the analyzeAggregation method.
+  */
+void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & source_columns)
+{
+    /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
+    UInt64 unused_column = 0;
+    String unused_column_name = toString(unused_column);
+
+    while (source_columns.count(unused_column_name))
+    {
+        ++unused_column;
+        unused_column_name = toString(unused_column);
+    }
+
+    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
+}
+
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
     if (!select_query->groupBy())
+    {
+        // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
+        if (select_query->having())
+            appendUnusedGroupByColumn(select_query, source_columns);
         return;
+    }
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
     {
@@ -345,25 +415,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     }
 
     if (group_exprs.empty())
-    {
-        /** You can not completely remove GROUP BY. Because if there were no aggregate functions, then it turns out that there will be no aggregation.
-          * Instead, leave `GROUP BY const`.
-          * Next, see deleting the constants in the analyzeAggregation method.
-          */
-
-        /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-        UInt64 unused_column = 0;
-        String unused_column_name = toString(unused_column);
-
-        while (source_columns.count(unused_column_name))
-        {
-            ++unused_column;
-            unused_column_name = toString(unused_column);
-        }
-
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-        select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
-    }
+        appendUnusedGroupByColumn(select_query, source_columns);
 }
 
 /// Remove duplicate items from ORDER BY.
@@ -541,9 +593,14 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     }
 }
 
-void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
+void replaceJoinedTable(const ASTTablesInSelectQueryElement * join)
 {
     if (!join || !join->table_expression)
+        return;
+
+    /// TODO: Push down for CROSS JOIN is not OK [disabled]
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+    if (table_join.kind == ASTTableJoin::Kind::Cross)
         return;
 
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();
@@ -805,41 +862,34 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         if (remove_duplicates)
             renameDuplicatedColumns(select_query);
 
-        if (const ASTTablesInSelectQueryElement * node = select_query->join())
+        const ASTTablesInSelectQueryElement * table_join_node = select_query->join();
+        if (table_join_node)
         {
             if (!settings.any_join_distinct_right_table_keys)
-                checkJoin(node);
+                checkJoin(table_join_node);
 
             if (settings.enable_optimize_predicate_expression)
-                replaceJoinedTable(node);
-
-            const auto & joined_expression = node->table_expression->as<ASTTableExpression &>();
-            DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
-
-            result.analyzed_join->columns_from_joined_table = getNamesAndTypeListFromTableExpression(joined_expression, context);
-            result.analyzed_join->deduplicateAndQualifyColumnNames(source_columns_set, table.getQualifiedNamePrefix());
+                replaceJoinedTable(table_join_node);
         }
 
-        auto tables_with_columns = getTablesWithColumns(*select_query, context);
-
-        /// If empty make fake table with list of source and joined columns
-        if (tables_with_columns.empty())
+        auto get_column_names = [&]() -> Names
         {
-            Names columns_list;
             if (storage)
-                columns_list = storage->getColumns().getOrdinary().getNames();
-            else
-            {
-                columns_list.reserve(result.source_columns.size());
-                for (const auto & column : result.source_columns)
-                    columns_list.emplace_back(column.name);
-            }
+                return storage->getColumns().getOrdinary().getNames();
 
-            for (auto & column : result.analyzed_join->getQualifiedColumnsSet())
-                columns_list.emplace_back(column);
+            Names columns;
+            columns.reserve(result.source_columns.size());
+            for (const auto & column : result.source_columns)
+                columns.push_back(column.name);
+            return columns;
+        };
 
-            tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(columns_list));
-        }
+        auto tables_with_columns = getTablesWithColumns(*select_query, context, table_join_node,
+                                                        result.analyzed_join->columns_from_joined_table, get_column_names);
+
+        if (tables_with_columns.size() > 1)
+            result.analyzed_join->deduplicateAndQualifyColumnNames(
+                source_columns_set, tables_with_columns[1].first.getQualifiedNamePrefix());
 
         translateQualifiedNames(query, *select_query, source_columns_set, std::move(tables_with_columns));
 
@@ -850,11 +900,22 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
     }
 
+    {
+        CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
+        CustomizeFunctionsVisitor(data).visit(query);
+    }
+
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
         LogAST log;
         QueryAliasesVisitor::Data query_aliases_data{result.aliases};
         QueryAliasesVisitor(query_aliases_data, log.stream()).visit(query);
+    }
+
+    /// Mark table ASTIdentifiers with not a column marker
+    {
+        MarkTableIdentifiersVisitor::Data data{result.aliases};
+        MarkTableIdentifiersVisitor(data).visit(query);
     }
 
     /// Common subexpression elimination. Rewrite rules.
@@ -871,7 +932,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth);
+    executeScalarSubqueries(query, context, subquery_depth, result.scalars);
 
     /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
