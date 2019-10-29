@@ -61,6 +61,4 @@ private:
     bool nextImpl() override;
 };
 
-using ConsumerBufferPtr = std::shared_ptr<ReadBufferFromKafkaConsumer>;
-
 }

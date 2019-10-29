@@ -71,7 +71,7 @@ BlockInputStreams StorageSystemReplicas::read(
             continue;
         if (context.hasDatabaseAccessRights(db.first))
         {
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
                 if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                     replicated_tables[db.first][iterator->name()] = iterator->table();
         }
