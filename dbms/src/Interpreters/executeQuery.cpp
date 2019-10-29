@@ -192,8 +192,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     time_t current_time = time(nullptr);
 
-    context.makeQueryContext();
-    CurrentThread::attachQueryContext(context);
+    /// If we already executing query and it requires to execute internal query, than
+    /// don't replace thread context with given (it can be temporary). Otherwise, attach context to thread.
+    if (!internal)
+    {
+        context.makeQueryContext();
+        CurrentThread::attachQueryContext(context);
+    }
 
     const Settings & settings = context.getSettingsRef();
 
