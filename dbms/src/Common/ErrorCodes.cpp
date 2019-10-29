@@ -466,6 +466,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
     extern const int UNACCEPTABLE_URL = 490;
 
+
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
