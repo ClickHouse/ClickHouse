@@ -119,7 +119,7 @@ class FunctionGreatCircleDistance : public IFunction
 public:
 
     static constexpr auto name = "greatCircleDistance";
-    static FunctionPtr create(const Context &) {  return std::make_shared<FunctionGreatCircleDistance>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGreatCircleDistance>(); }
 
 private:
 
