@@ -18,23 +18,9 @@ namespace DB
         static bool needExpression() { return false; }
         static bool needOneArray() { return false; }
 
-        static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
+        static DataTypePtr getReturnType(const DataTypePtr & nested_type, const DataTypePtr & /*nested_type*/)
         {
-            WhichDataType which(expression_return);
-
-            if (which.isUInt8()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()); }
-            else if (which.isUInt16()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt16>()); }
-            else if (which.isUInt32()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()); }
-            else if (which.isUInt64()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()); }
-            else if (which.isInt8()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt8>()); }
-            else if (which.isInt16()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>()); }
-            else if (which.isInt32()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>()); }
-            else if (which.isInt64()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()); }
-            else if (which.isFloat32()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()); }
-            else if (which.isFloat64()) { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>()); }
-
-
-            throw Exception("arrayCompact cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            return std::make_shared<DataTypeArray>(nested_type);
         }
 
         template <typename T>

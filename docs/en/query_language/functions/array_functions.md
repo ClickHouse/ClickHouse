@@ -793,7 +793,7 @@ Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
 ## arrayCompact(arr) {#array_functions-arraycompact}
 
-Takes an array, returns an array with elements that are different between two adjacent elements.
+Takes an array, returns an array with consecutive duplicate elements removed.
 
 Example:
 
@@ -802,7 +802,7 @@ SELECT arrayCompact([1, 2, 2, 3, 2, 3, 3])
 ```
 
 ```text
-┌─arrayDistinct([1, 2, 2, 3, 2, 3, 3])─┐
+┌─arrayCompact([1, 2, 2, 3, 2, 3, 3])──┐
 │ [1,2,3,2,3]                          │
 └──────────────────────────────────────┘
 ```
