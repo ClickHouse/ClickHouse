@@ -32,6 +32,8 @@ private:
 
     BlockIO executeToTable(String & database_name, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock);
 
+    BlockIO executeToDictionary(String & database_name, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock);
+
     DatabasePtr tryGetDatabase(String & database_name, bool exists);
 
     DatabaseAndTable tryGetDatabaseAndTable(String & database_name, String & table_name, bool if_exists);

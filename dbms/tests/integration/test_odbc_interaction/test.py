@@ -18,6 +18,7 @@ create_table_sql_template =   """
     `name` varchar(50) NOT NULL,
     `age` int  NOT NULL default 0,
     `money` int NOT NULL default 0,
+    `column_x` int default NULL,
     PRIMARY KEY (`id`)) ENGINE=InnoDB;
     """
 def get_mysql_conn():
@@ -86,12 +87,21 @@ def test_mysql_simple_select_works(started_cluster):
     conn = get_mysql_conn()
     create_mysql_table(conn, table_name)
 
+    # Check that NULL-values are handled correctly by the ODBC-bridge
+    with conn.cursor() as cursor:
+        cursor.execute("INSERT INTO clickhouse.{} VALUES(50, 'null-guy', 127, 255, NULL), (100, 'non-null-guy', 127, 255, 511);".format(table_name))
+        conn.commit()
+    assert node1.query("SELECT column_x FROM odbc('DSN={}', '{}')".format(mysql_setup["DSN"], table_name)) == '\\N\n511\n'
+
     node1.query('''
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse');
 '''.format(table_name, table_name))
 
-    node1.query("INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(100) ".format(table_name))
+    node1.query("INSERT INTO {}(id, name, money, column_x) select number, concat('name_', toString(number)), 3, NULL from numbers(49) ".format(table_name))
+    node1.query("INSERT INTO {}(id, name, money, column_x) select number, concat('name_', toString(number)), 3, 42 from numbers(51, 49) ".format(table_name))
 
+    assert node1.query("SELECT COUNT () FROM {} WHERE column_x IS NOT NULL".format(table_name)) == '50\n'
+    assert node1.query("SELECT COUNT () FROM {} WHERE column_x IS NULL".format(table_name)) == '50\n'
     assert node1.query("SELECT count(*) FROM odbc('DSN={}', '{}')".format(mysql_setup["DSN"], table_name)) == '100\n'
 
     # previously this test fails with segfault

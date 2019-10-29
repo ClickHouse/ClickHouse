@@ -4,7 +4,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
