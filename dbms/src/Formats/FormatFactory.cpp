@@ -7,7 +7,6 @@
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
-#include <DataStreams/UnionBlockInputStream.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
