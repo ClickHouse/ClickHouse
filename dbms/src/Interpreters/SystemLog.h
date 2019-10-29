@@ -244,6 +244,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::threadFunction()
 {
     std::cerr << "\nEnter in threadFunction for " << table_name << "\n";
+    std::cerr << "data.size(), queue.size() -> " << data.size() << " " << queue.size() << " for " << table_name << "\n";
     setThreadName("SystemLogFlush");
 
     Stopwatch time_after_last_write;
@@ -281,24 +282,30 @@ void SystemLog<LogElement>::threadFunction()
             {
                 if (element.first == EntryType::SHUTDOWN)
                 {
+                    std::cerr << "SHUT_DOWN for " << table_name << "\n";
                     /// NOTE: MergeTree engine can write data even it is already in shutdown state.
                     flushImpl(element.first);
                     break;
                 }
                 else if (element.first == EntryType::FORCE_FLUSH)
                 {
+                    std::cerr << "FORCE_FLUSH for " << table_name << "\n";
                     flushImpl(element.first);
                     time_after_last_write.restart();
                     continue;
                 }
                 else
+                {
+                    std::cerr << "push_back for " << table_name << "\n";
                     data.push_back(element.second);
+                }
             }
 
             size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
             if (milliseconds_elapsed >= flush_interval_milliseconds)
             {
                 /// Write data to a table.
+                std::cerr << "AUTO_FLUSH for " << table_name << "\n";
                 flushImpl(EntryType::AUTO_FLUSH);
                 time_after_last_write.restart();
             }
