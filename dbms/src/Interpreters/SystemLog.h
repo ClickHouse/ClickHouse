@@ -330,7 +330,10 @@ void SystemLog<LogElement>::flushImpl(EntryType reason)
     try
     {
         if ((reason == EntryType::AUTO_FLUSH || reason == EntryType::SHUTDOWN) && data.empty())
+        {
+            std::cerr << "Exit flushImpl for " << table_name << "\n";
             return;
+        }
 
         LOG_TRACE(log, "Flushing system log");
 
@@ -380,6 +383,8 @@ void SystemLog<LogElement>::flushImpl(EntryType reason)
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
+    std::cerr << "prepareTable for " << table_name << "\n";
+
     String description = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name);
 
     table = context.tryGetTable(database_name, table_name);
