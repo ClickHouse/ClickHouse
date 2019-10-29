@@ -252,8 +252,9 @@ void StorageMergeTree::alter(
         ASTPtr new_primary_key_ast = primary_key_ast;
         ASTPtr new_ttl_table_ast = ttl_table_ast;
         SettingsChanges new_changes;
+        ASTPtr new_as_select_query;
 
-        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
+        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes, new_as_select_query);
 
         changeSettings(new_changes, table_lock_holder);
 
@@ -277,7 +278,8 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     SettingsChanges new_changes;
-    params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
+    ASTPtr new_as_select_query;
+    params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes, new_as_select_query);
 
     auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
@@ -868,9 +870,10 @@ void StorageMergeTree::clearColumnOrIndexInPartition(const ASTPtr & partition, c
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
     SettingsChanges ignored_settings_changes;
+    ASTPtr ignored_as_select_query;
 
     alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast,
-        ignored_primary_key_ast, ignored_ttl_table_ast, ignored_settings_changes);
+        ignored_primary_key_ast, ignored_ttl_table_ast, ignored_settings_changes, ignored_as_select_query);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)

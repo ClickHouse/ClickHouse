@@ -1474,7 +1474,8 @@ void StorageReplicatedMergeTree::executeClearColumnOrIndexInPartition(const LogE
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
     SettingsChanges ignored_changes;
-    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast, ignored_changes);
+    ASTPtr ignore_as_select_query;
+    alter_command.apply(new_columns, new_indices, new_constraints, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast, ignored_changes, ignore_as_select_query);
 
     size_t modified_parts = 0;
     auto parts = getDataParts();
@@ -3179,7 +3180,8 @@ void StorageReplicatedMergeTree::alter(
         ASTPtr new_primary_key_ast = primary_key_ast;
         ASTPtr new_ttl_table_ast = ttl_table_ast;
         SettingsChanges new_changes;
-        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
+        ASTPtr new_as_select_query;
+        params.apply(new_columns, new_indices, new_constraints, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes, new_as_select_query);
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != getColumns().toString())

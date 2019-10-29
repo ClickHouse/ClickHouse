@@ -33,6 +33,7 @@ struct AlterCommand
         MODIFY_TTL,
         UKNOWN_TYPE,
         MODIFY_SETTING,
+        MODIFY_QUERY,
     };
 
     Type type = UKNOWN_TYPE;
@@ -86,6 +87,9 @@ struct AlterCommand
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
 
+    /// FOR MODIFY_QUERY
+    ASTPtr select;
+
     AlterCommand() = default;
     AlterCommand(const Type type_, const String & column_name_, const DataTypePtr & data_type_,
                  const ColumnDefaultKind default_kind_, const ASTPtr & default_expression_,
@@ -100,7 +104,7 @@ struct AlterCommand
 
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
         ConstraintsDescription & constraints_description, ASTPtr & order_by_ast,
-        ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
+        ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast, SettingsChanges & changes, ASTPtr & new_as_select_query) const;
 
     /// Checks that not only metadata touched by that command
     bool isMutable() const;
@@ -118,7 +122,7 @@ public:
     void applyForColumnsOnly(ColumnsDescription & columns_description) const;
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
         ConstraintsDescription & constraints_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast,
-        ASTPtr & ttl_table_ast, SettingsChanges & changes) const;
+        ASTPtr & ttl_table_ast, SettingsChanges & changes, ASTPtr & new_as_select_query) const;
 
     /// Apply alter commands only for settings. Exception will be thrown if any other part of table structure will be modified.
     void applyForSettingsOnly(SettingsChanges & changes) const;

@@ -208,6 +208,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_QUERY;
+        command.select = command_ast->select;
+        return command;
+    }
     else
         return {};
 }
@@ -215,7 +222,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
 void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
     ConstraintsDescription & constraints_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast,
-    ASTPtr & ttl_table_ast, SettingsChanges & changes) const
+    ASTPtr & ttl_table_ast, SettingsChanges & changes, ASTPtr & as_select_query) const
 {
     if (type == ADD_COLUMN)
     {
@@ -386,6 +393,10 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     {
         changes.insert(changes.end(), settings_changes.begin(), settings_changes.end());
     }
+    else if (type == MODIFY_QUERY)
+    {
+        as_select_query = select;
+    }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
@@ -406,7 +417,7 @@ bool AlterCommand::isSettingsAlter() const
 
 void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
     ConstraintsDescription & constraints_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast,
-    ASTPtr & ttl_table_ast, SettingsChanges & changes) const
+    ASTPtr & ttl_table_ast, SettingsChanges & changes, ASTPtr & as_select_query) const
 {
     auto new_columns_description = columns_description;
     auto new_indices_description = indices_description;
@@ -415,10 +426,11 @@ void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescr
     auto new_primary_key_ast = primary_key_ast;
     auto new_ttl_table_ast = ttl_table_ast;
     auto new_changes = changes;
+    auto new_as_select_query = as_select_query;
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(new_columns_description, new_indices_description, new_constraints_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes);
+            command.apply(new_columns_description, new_indices_description, new_constraints_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast, new_changes, new_as_select_query);
 
     columns_description = std::move(new_columns_description);
     indices_description = std::move(new_indices_description);
@@ -427,6 +439,7 @@ void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescr
     primary_key_ast = std::move(new_primary_key_ast);
     ttl_table_ast = std::move(new_ttl_table_ast);
     changes = std::move(new_changes);
+    as_select_query = std::move(new_as_select_query);
 }
 
 void AlterCommands::validate(const IStorage & table, const Context & context)
@@ -619,8 +632,9 @@ void AlterCommands::applyForColumnsOnly(ColumnsDescription & columns_description
     ASTPtr out_primary_key;
     ASTPtr out_ttl_table;
     SettingsChanges out_changes;
+    ASTPtr as_select_query;
     apply(out_columns_description, indices_description, constraints_description,
-        out_order_by, out_primary_key, out_ttl_table, out_changes);
+        out_order_by, out_primary_key, out_ttl_table, out_changes, as_select_query);
 
     if (out_order_by)
         throw Exception("Storage doesn't support modifying ORDER BY expression", ErrorCodes::NOT_IMPLEMENTED);
@@ -634,6 +648,9 @@ void AlterCommands::applyForColumnsOnly(ColumnsDescription & columns_description
         throw Exception("Storage doesn't support modifying TTL expression", ErrorCodes::NOT_IMPLEMENTED);
     if (!out_changes.empty())
         throw Exception("Storage doesn't support modifying settings", ErrorCodes::NOT_IMPLEMENTED);
+    if (as_select_query)
+        throw Exception("Storage doesn't support modifying query", ErrorCodes::NOT_IMPLEMENTED);
+
 
 
     columns_description = std::move(out_columns_description);
@@ -649,8 +666,9 @@ void AlterCommands::applyForSettingsOnly(SettingsChanges & changes) const
     ASTPtr out_primary_key;
     ASTPtr out_ttl_table;
     SettingsChanges out_changes;
+    ASTPtr new_as_select_query;
     apply(out_columns_description, indices_description, constraints_description, out_order_by,
-        out_primary_key, out_ttl_table, out_changes);
+        out_primary_key, out_ttl_table, out_changes, new_as_select_query);
 
     if (out_columns_description.begin() != out_columns_description.end())
         throw Exception("Alter modifying columns, but only settings change applied.", ErrorCodes::LOGICAL_ERROR);

@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Storages/AlterCommands.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -17,6 +18,8 @@
 #include <Storages/StorageFactory.h>
 
 #include <Common/typeid_cast.h>
+
+#include <Parsers/formatAST.h>
 
 
 namespace DB
@@ -38,6 +41,9 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
 {
     auto db_and_table = getDatabaseAndTable(query, 0);
     ASTPtr subquery = extractTableExpression(query, 0);
+
+    std::cout <<  db_and_table->table << std::endl;
+    std::cout <<  db_and_table->database << std::endl;
 
     if (!db_and_table && !subquery)
         return;
@@ -260,6 +266,64 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
 {
     checkStatementCanBeForwarded();
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
+}
+
+
+void StorageMaterializedView::alter(
+    const AlterCommands & params,
+    const Context & context,
+    TableStructureWriteLockHolder & table_lock_holder)
+{
+    auto new_columns = getColumns();
+    auto new_indices = getIndices();
+    auto new_constraints = getConstraints();
+
+    ASTPtr out_order_by;
+    ASTPtr out_primary_key;
+    ASTPtr out_ttl_table;
+    SettingsChanges out_changes;
+
+    ASTPtr new_as_select_query;
+
+    params.apply(new_columns, new_indices, new_constraints, out_order_by, out_primary_key, out_ttl_table, out_changes, new_as_select_query);
+    // allow altering only query
+
+    if (new_as_select_query)
+    {
+        auto & new_query = new_as_select_query->as<ASTSelectWithUnionQuery &>();
+        // more locks
+
+        /// Default value, if only table name exist in the query
+        select_database_name = context.getCurrentDatabase();
+        if (new_query.list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+        auto & new_inner_query = new_query.list_of_selects->children.at(0);
+        auto & select_query = new_inner_query->as<ASTSelectQuery &>();
+
+        String new_select_database_name;
+        String new_select_table_name;
+
+        extractDependentTable(select_query, new_select_database_name, new_select_table_name);
+        checkAllowedQueries(select_query);
+
+        LOG_ERROR((&Logger::get("MV")), new_select_database_name);
+        LOG_ERROR((&Logger::get("MV")), new_select_table_name);
+
+        auto context_lock = global_context.getLock();
+
+        global_context.removeDependency(
+            DatabaseAndTableName(select_database_name, select_table_name),
+            DatabaseAndTableName(database_name, table_name));
+
+        global_context.addDependency(
+            DatabaseAndTableName(new_select_database_name, new_select_table_name),
+            DatabaseAndTableName(database_name, table_name));
+    }
+
+    UNUSED(params);
+    UNUSED(context);
+    UNUSED(table_lock_holder);
 }
 
 void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
