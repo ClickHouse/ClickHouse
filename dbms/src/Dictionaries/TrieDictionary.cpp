@@ -767,7 +767,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         // This is specialised trie for storing IPv4 and IPv6 prefixes.
         return std::make_unique<TrieDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
-    factory.registerLayout("ip_trie", create_layout);
+    factory.registerLayout("ip_trie", create_layout, true);
 }
 
 }

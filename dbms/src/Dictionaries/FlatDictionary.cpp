@@ -724,7 +724,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         return std::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
-    factory.registerLayout("flat", create_layout);
+    factory.registerLayout("flat", create_layout, false);
 }
 
 
