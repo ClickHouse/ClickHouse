@@ -34,9 +34,10 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(N)
+## range([start,] end)
 
-Returns an array of numbers from 0 to N-1.
+Returns an array of numbers from start to end-1.
+If the argument `start` is not specified, defaults to 0. 
 Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ## array(x1, ...), operator \[x1, ...\]
