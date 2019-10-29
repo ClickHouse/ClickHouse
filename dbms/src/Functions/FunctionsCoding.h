@@ -1328,8 +1328,9 @@ public:
         }
 
         for (const size_t & column_idx : arguments)
-        {
-            const IColumn * column = block.getByPosition(column_idx).column.get();
+        {   
+            //partial const column 
+            const IColumn * column = block.getByPosition(column_idx).column->convertToFullColumnIfConst().get();
             if (!(executeNumber<UInt8>(*column, out_vec, column_idx, rows, size_per_row)
                 || executeNumber<UInt16>(*column, out_vec, column_idx, rows, size_per_row)
                 || executeNumber<UInt32>(*column, out_vec, column_idx, rows, size_per_row)
