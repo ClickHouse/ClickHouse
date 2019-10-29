@@ -449,37 +449,22 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                 if (rpn.size() >= 3 && rpn.back().function == RPNElement::FUNCTION_AND)
                 {
                     const size_t to_modify = rpn.size() - 3;
-                    const auto rhs = rpn[to_modify + 1];
-                    const auto lhs = rpn[to_modify];
-                    if (
-                            lhs.function == RPNElement::FUNCTION_IN_RANGE &&
-                            rhs.function == RPNElement::FUNCTION_IN_RANGE &&
-                            lhs.key_column == rhs.key_column &&
-                            lhs.monotonic_functions_chain == rhs.monotonic_functions_chain)
+                    const auto & rhs = rpn[to_modify + 1];
+                    const auto & lhs = rpn[to_modify];
+                    if (lhs.function == RPNElement::FUNCTION_IN_RANGE &&
+                        rhs.function == RPNElement::FUNCTION_IN_RANGE &&
+                        lhs.key_column == rhs.key_column &&
+                        lhs.monotonic_functions_chain == rhs.monotonic_functions_chain)
                     {
-                        bool merged = false;
-                        if (!lhs.range.right_bounded && !rhs.range.left_bounded)
-                        {
-                            rpn[to_modify].range.right = rhs.range.right;
-                            rpn[to_modify].range.right_bounded = rhs.range.right_bounded;
-                            rpn[to_modify].range.right_included = rhs.range.right_included;
-                            merged = true;
-                        }
-                        else if (!lhs.range.left_bounded && !rhs.range.right_bounded)
-                        {
-                            rpn[to_modify].range.left = rhs.range.left;
-                            rpn[to_modify].range.left_included = rhs.range.left_included;
-                            rpn[to_modify].range.left_bounded = rhs.range.left_bounded;
-                            merged = true;
-                        }
-                        if (merged)
+                        std::optional<Range> intersection = lhs.range.intersectsRange(rhs.range);
+                        if (intersection)
                         {
                             rpn.pop_back();
                             rpn.pop_back();
-                            if (rpn.back().range.empty())
-                            {
-                                rpn.back().function = RPNElement::ALWAYS_FALSE;
-                            }
+                            rpn.pop_back();
+                            rpn.emplace_back(intersection->empty() ?
+                            RPNElement(RPNElement::ALWAYS_FALSE, lhs.key_column) :
+                            RPNElement(RPNElement::FUNCTION_IN_RANGE, lhs.key_column, intersection.value()));
                         }
                     }
                 }
@@ -1114,7 +1099,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
                 key_range = &transformed_range;
             }
 
-            bool intersects = element.range.intersectsRange(*key_range);
+            bool intersects = element.range.intersectsRange(*key_range).has_value();
             bool contains = element.range.containsRange(*key_range);
 
             rpn_stack.emplace_back(intersects, !contains);

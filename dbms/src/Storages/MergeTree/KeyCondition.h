@@ -35,7 +35,7 @@ public:
     bool left_included = false;       /// includes the left border, if any
     bool right_included = false;      /// includes the right border, if any
 
-    /// The whole unversum.
+    /// The whole universum.
     Range() {}
 
     /// One point.
@@ -134,7 +134,7 @@ public:
             : false);
     }
 
-    bool intersectsRange(const Range & r) const
+    std::optional<Range> intersectsRange(const Range & r) const
     {
         /// r to the left of me.
         if (r.right_bounded
@@ -142,7 +142,7 @@ public:
             && (less(r.right, left)
                 || ((!left_included || !r.right_included)
                     && equals(r.right, left))))
-            return false;
+            return std::nullopt;
 
         /// r to the right of me.
         if (r.left_bounded
@@ -150,9 +150,37 @@ public:
             && (less(right, r.left)                          /// ...} {...
                 || ((!right_included || !r.left_included)    /// ...) [... or ...] (...
                     && equals(r.left, right))))
-            return false;
+            return std::nullopt;
 
-        return true;
+        Range intersection;
+        if (left_bounded || r.left_bounded)
+        {
+            intersection.left_bounded = true;
+            if (left_bounded && r.left_bounded)
+            {
+                intersection.left = less(left, r.left) ? r.left : left;
+                intersection.left_included = less(left, r.left) ? r.left_included : (equals(left, r.left) ? left_included && right_included : left_included);
+            } else
+            {
+                intersection.left = left_bounded ? r.left : left;
+                intersection.left_included = left_bounded ? r.left_included : left_included;
+            }
+        }
+        if (right_bounded || r.right_bounded)
+        {
+            intersection.right_bounded = true;
+            if (right_bounded && r.right_bounded)
+            {
+                intersection.right = less(right, r.right) ? right : r.right;
+                intersection.right_included = less(right, r.right) ? right_included : (equals(right, r.right) ? right_included && left_included : r.right_included);
+            } else
+            {
+                intersection.right = right_bounded ? right : r.right;
+                intersection.right_included = right_bounded ? right_included : r.right_included;
+            }
+        }
+
+        return intersection;
     }
 
     bool containsRange(const Range & r) const
