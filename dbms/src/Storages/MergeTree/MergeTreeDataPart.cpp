@@ -46,7 +46,8 @@ static ReadBufferFromFile openForReading(const String & path)
 static String getFileNameForColumn(const NameAndTypePair & column)
 {
     String filename;
-    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path) {
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column.name, substream_path);
     });
