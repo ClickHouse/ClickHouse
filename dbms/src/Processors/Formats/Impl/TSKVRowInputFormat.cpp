@@ -212,6 +212,9 @@ void registerInputFormatProcessorTSKV(FormatFactory & factory)
 
 bool fileSegmentationEngineTSKVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t & used_size, size_t min_chunk_size)
 {
+    if (in.eof())
+        return false;
+
     char * begin_pos = in.position();
     bool need_more_data = true;
     memory.resize(min_chunk_size);

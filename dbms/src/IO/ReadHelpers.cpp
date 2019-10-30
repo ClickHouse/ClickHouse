@@ -1053,12 +1053,15 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, size_t & used_size, char * & begin_pos, bool save_buffer_state)
+bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, size_t & used_size, char * & begin_pos, bool force_saving_buffer_state)
 {
-    if (save_buffer_state || !buf.hasPendingData())
+    /// If there is some pending data - no need to copy data from buffer to memory.
+    if (force_saving_buffer_state || !buf.hasPendingData())
     {
-        const size_t capacity = memory.size();
-        const size_t block_size = static_cast<size_t>(buf.position() - begin_pos);
+        const auto capacity = memory.size();
+        const auto block_size = static_cast<size_t>(buf.position() - begin_pos);
+
+        /// To avoid calling a function when not needed.
         if (capacity <= block_size + used_size)
         {
             memory.resize(used_size + block_size);

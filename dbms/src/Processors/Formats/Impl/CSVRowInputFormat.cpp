@@ -424,6 +424,9 @@ void registerInputFormatProcessorCSV(FormatFactory & factory)
 
 bool fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t & used_size, size_t min_chunk_size)
 {
+    if (in.eof())
+        return false;
+
     skipWhitespacesAndTabs(in);
     char * begin_pos = in.position();
     bool quotes = false;

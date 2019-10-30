@@ -21,19 +21,19 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
             if (is_exception_occured)
                 break;
 
-            if (original_buffer.eof())
+            // Segmentating the original input.
+            segments[current_unit_number].used_size = 0;
+
+            //It returns bool, but it is useless
+            const auto res = file_segmentation_engine(original_buffer, segments[current_unit_number].memory, segments[current_unit_number].used_size, min_chunk_size);
+
+            if (!res)
             {
                 is_last[current_unit_number] = true;
                 status[current_unit_number] = READY_TO_PARSE;
                 scheduleParserThreadForUnitWithNumber(current_unit_number);
                 break;
             }
-
-            // Segmentating the original input.
-            segments[current_unit_number].used_size = 0;
-
-            //It returns bool, but it is useless
-            file_segmentation_engine(original_buffer, segments[current_unit_number].memory, segments[current_unit_number].used_size, min_chunk_size);
 
             // Creating buffer from the segment of data.
             auto new_buffer = BufferBase::Buffer(segments[current_unit_number].memory.data(),

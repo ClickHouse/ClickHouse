@@ -272,6 +272,9 @@ void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
 
 bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t & used_size, size_t min_chunk_size)
 {
+    if (in.eof())
+        return false;
+
     skipWhitespaceIfAny(in);
     char * begin_pos = in.position();
     size_t balance = 0;
