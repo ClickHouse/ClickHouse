@@ -124,7 +124,6 @@ public:
 
     template <typename T>
     auto execute(DateTime64 t, T v, const DateLUTImpl & time_zone) const
-        -> decltype(Transform::execute(UInt32{}, v, time_zone))
     {
         const auto components = decimalSplitWithScaleMultiplier(t, scale_multiplier);
         return static_cast<const Transform *>(this)->execute(

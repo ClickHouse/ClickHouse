@@ -639,7 +639,8 @@ struct ToYYYYMMDDhhmmssImpl
 template <typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-    static void vector(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
+    template <typename FromTypeVector, typename ToTypeVector>
+    static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform)
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -650,21 +651,24 @@ struct Transformer
 };
 
 
-template <typename FromType, typename ToType, typename Transform>
+template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeTransformImpl
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/, const Transform & transform = {})
     {
-        using Op = Transformer<typename FromType::FieldType, typename ToType::FieldType, Transform>;
+        using Op = Transformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>;
 
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-        if (const auto * sources = checkAndGetColumn<typename FromType::ColumnType>(source_col.get()))
+        if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
-            auto col_to = ColumnVector<typename ToType::FieldType>::create();
+            auto mutable_result_col = block.getByPosition(result).type->createColumn();
+            auto * col_to = assert_cast<typename ToDataType::ColumnType *>(mutable_result_col.get());
+
             Op::vector(sources->getData(), col_to->getData(), time_zone, transform);
-            block.getByPosition(result).column = std::move(col_to);
+
+            block.getByPosition(result).column = std::move(mutable_result_col);
         }
         else
         {
