@@ -160,6 +160,15 @@ struct ConvertImpl
 };
 
 
+/** Conversion of DateTime to Date: throw off time component.
+  */
+template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
+    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, ToDateImpl> {};
+
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name>
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, ToDateImpl> {};
+
+
 /** Conversion of Date to DateTime: adding 00:00:00 time component.
   */
 struct ToDateTimeImpl
@@ -170,11 +179,18 @@ struct ToDateTimeImpl
     {
         return time_zone.fromDayNum(DayNum(d));
     }
+
+    static inline UInt32 execute(DateTime64::NativeType d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.fromDayNum(DayNum(d));
+    }
 };
 
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, ToDateTimeImpl> {};
 
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, ToDateTimeImpl> {};
 
 /// Implementation of toDate function.
 
@@ -188,14 +204,6 @@ struct ToDateTransform32Or64
         return (from < 0xFFFF) ? from : time_zone.toDayNum(from);
     }
 };
-
-/** Conversion of DateTime to Date: throw off time component.
-  */
-template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
-    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, ToDateImpl> {};
-
-template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, ToDateImpl> {};
 
 /** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
   * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
@@ -216,6 +224,37 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64<Float32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64<Float64, UInt16>> {};
+
+
+/** Conversion of Date or DateTime to DateTime64: add zero sub-second part.
+  */
+struct ToDateTime64Transform
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier = 1;
+
+    ToDateTime64Transform(UInt32 scale = 0)
+        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    inline DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
+    {
+        const auto dt = ToDateTimeImpl::execute(d, time_zone);
+        return execute(dt, time_zone);
+    }
+
+    inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
+    {
+        return decimalFromComponentsWithMultipliers<DateTime64>(dt, 0, scale_multiplier, 1);
+    }
+};
+
+template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
+
+template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name>
+    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
@@ -253,10 +292,10 @@ struct FormatImpl<DataTypeDateTime>
 template <>
 struct FormatImpl<DataTypeDateTime64>
 {
-    static void execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 *, const DateLUTImpl * time_zone)
+    static void execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
     {
         std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDateTime64> v=" << x << " tz=" << time_zone << std::endl;
-        writeDateTimeText(DateTime64(x), wb, *time_zone);
+        writeDateTimeText(DateTime64(x), type->getScale(), wb, *time_zone);
     }
 };
 
@@ -2212,7 +2251,7 @@ private:
             if constexpr (
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
                 std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
-                std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>||
+                std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>> ||
                 std::is_same_v<ToDataType, DataTypeDateTime64>)
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));

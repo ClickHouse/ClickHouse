@@ -225,8 +225,7 @@ struct SubtractIntervalImpl : public Transform
     using Transform::Transform;
 
     template <typename T>
-    inline decltype(std::declval<Transform>().execute(T{}, Int64{}, DateLUTImpl{""})) // to preserve return type of Transfor::execute and allow promoting/denoting types.
-    execute(T t, Int64 delta, const DateLUTImpl & time_zone) const
+    inline auto execute(T t, Int64 delta, const DateLUTImpl & time_zone) const
     {
         return Transform::execute(t, -delta, time_zone);
     }
