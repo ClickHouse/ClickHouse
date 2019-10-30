@@ -24,6 +24,17 @@ const Type * checkAndGetDataType(const IDataType * data_type)
 }
 
 template <typename Type>
+std::shared_ptr<const Type> checkAndGetDataTypePtr(const DataTypePtr & data_type)
+{
+    if (typeid_cast<const Type *>(data_type.get()))
+    {
+        return std::static_pointer_cast<const Type>(data_type);
+    }
+
+    return std::shared_ptr<const Type>();
+}
+
+template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
     if (!column || !isColumnConst(*column))

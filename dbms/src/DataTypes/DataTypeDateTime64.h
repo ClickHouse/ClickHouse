@@ -17,13 +17,14 @@ class DataTypeDateTime64 final : public DataTypeDecimalBase<DateTime64>, public 
 {
 public:
     static constexpr UInt8 default_scale = 3;
+    static constexpr auto familyName = "DateTime64";
 
     explicit DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name = "");
 
     // reuse timezone from other DateTime/DateTime64
     DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info);
 
-    const char * getFamilyName() const override { return "DateTime64"; }
+    const char * getFamilyName() const override { return familyName; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime64; }
 
@@ -45,6 +46,7 @@ public:
 };
 
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
 
 }
 
