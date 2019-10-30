@@ -92,7 +92,6 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
-#include <IO/MemoryReadWriteBuffer.h>
 
 
 namespace DB
@@ -1313,10 +1312,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             agg_count.create(place);
             SCOPE_EXIT(agg_count.destroy(place));
 
-            MemoryWriteBuffer out;
-            writeVarUInt(*num_rows, out);
-            auto in = out.tryGetReadBuffer();
-            agg_count.deserialize(place, *in, nullptr);
+            agg_count.set(place, *num_rows);
 
             auto column = ColumnAggregateFunction::create(func);
             column->insertFrom(place);
