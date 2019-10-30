@@ -64,6 +64,12 @@ public:
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+
+    /// Reset the state to specified value. This function is not the part of common interface.
+    void set(AggregateDataPtr place, UInt64 new_count)
+    {
+        data(place).count = new_count;
+    }
 };
 
 
