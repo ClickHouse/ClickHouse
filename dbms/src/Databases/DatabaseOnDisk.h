@@ -24,7 +24,7 @@ ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
-    const String & database_data_path,
+    const String & database_data_path_relative,
     Context & context,
     bool has_force_restore_data_flag);
 

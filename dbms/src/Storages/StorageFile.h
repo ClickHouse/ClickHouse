@@ -42,32 +42,36 @@ public:
 
     Strings getDataPaths() const override;
 
+    struct CommonArguments
+    {
+        const std::string & database_name;
+        const std::string & table_name;
+        const std::string & format_name;
+        const std::string & compression_method;
+        const ColumnsDescription & columns;
+        const ConstraintsDescription & constraints;
+        const Context & context;
+    };
+
 protected:
     friend class StorageFileBlockInputStream;
     friend class StorageFileBlockOutputStream;
 
-    /** there are three options (ordered by priority):
-    - use specified file descriptor if (fd >= 0)
-    - use specified table_path if it isn't empty
-    - create own table inside data/db/table/
-    */
-    StorageFile(
-        const std::string & table_path_,
-        int table_fd_,
-        const std::string & relative_table_dir_path,
-        const std::string & database_name_,
-        const std::string & table_name_,
-        const std::string & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        Context & context_,
-        const String & compression_method_);
+    /// From file descriptor
+    StorageFile(int table_fd_, CommonArguments args);
+
+    /// From user's file
+    StorageFile(const std::string & table_path_, const std::string & user_files_absolute_path, CommonArguments args);
+
+    /// From table in database
+    StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
 
 private:
+    explicit StorageFile(CommonArguments args);
+
     std::string table_name;
     std::string database_name;
     std::string format_name;
-    Context & context_global;
 
     int table_fd = -1;
     String compression_method;
