@@ -94,7 +94,7 @@ public:
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
-    bool hasOn() const { return !hasUsing(); }
+    bool hasOn() const { return table_join.on_expression != nullptr; }
 
     NameSet getQualifiedColumnsSet() const;
     NameSet getOriginalColumnsSet() const;

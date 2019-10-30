@@ -7,17 +7,14 @@
 namespace DB
 {
 
-// Used to disable implicit casting for certain overloaded types such as Field, which leads to
-// overload resolution ambiguity.
-template <typename T> struct Dumpable;
-template <typename T>
-std::ostream & operator<<(std::ostream & stream, const typename Dumpable<T>::Type & what);
+// Use template to disable implicit casting for certain overloaded types such as Field, which leads
+// to overload resolution ambiguity.
+class Field;
+template <typename T, typename U = std::enable_if_t<std::is_same_v<T, Field>>>
+std::ostream & operator<<(std::ostream & stream, const T & what);
 
 class IBlockInputStream;
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what);
-
-class Field;
-template <> struct Dumpable<Field> { using Type = Field; };
 
 struct NameAndTypePair;
 std::ostream & operator<<(std::ostream & stream, const NameAndTypePair & what);
@@ -42,9 +39,6 @@ std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & w
 
 class IColumn;
 std::ostream & operator<<(std::ostream & stream, const IColumn & what);
-
-class IAST;
-std::ostream & operator<<(std::ostream & stream, const IAST & what);
 
 std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what);
 

@@ -107,6 +107,14 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     result = []
     cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
 
+    is_clang = "clang" in compiler
+    is_cross_compile = ("darwin" in compiler) or ("aarch64" in compiler)
+
+    # Explicitly use LLD with Clang by default.
+    # Don't force linker for cross-compilation.
+    if is_clang and not is_cross_compile:
+        cmake_flags = ['$CMAKE_FLAGS', '-DLINKER_NAME=lld']
+
     if compiler.endswith("-darwin"):
         cc = compiler[:-len("-darwin")]
     else:
@@ -124,9 +132,11 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     if "darwin" in compiler:
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar")
         cmake_flags.append("-DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib")
-        cmake_flags.append("-DCMAKE_SYSTEM_NAME=Darwin")
-        cmake_flags.append("-DSDK_PATH=/cctools/MacOSX10.14.sdk")
         cmake_flags.append("-DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld")
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake")
+
+    if "aarch64" in compiler:
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
@@ -181,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument("--clickhouse-repo-path", default="../../")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "clang-8", "clang-8-darwin", "gcc-8", "gcc-9"), default="gcc-7")
+    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "clang-8", "clang-8-darwin", "clang-8-aarch64", "gcc-8", "gcc-9"), default="gcc-7")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
