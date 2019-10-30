@@ -56,7 +56,7 @@ static void loadDatabase(
     bool force_restore_data)
 {
     /// There may exist .sql file with database creation statement.
-    /// Or, if it is absent, then database with default engine is created.
+    /// Or, if it is absent, then database with Ordinary engine is created.
 
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
@@ -67,7 +67,8 @@ static void loadDatabase(
         readStringUntilEOF(database_attach_query, in);
     }
     else
-        database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database);
+        //FIXME
+        database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Atomic";
 
     executeCreateQuery(database_attach_query, context, database,
                        database_metadata_file, force_restore_data);
