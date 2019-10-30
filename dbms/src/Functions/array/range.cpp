@@ -74,6 +74,10 @@ private:
 
         for (size_t row_idx = 0, rows = end_column->size(); row_idx < rows; ++row_idx)
         {
+            if (step_data[row_idx] == 0)
+                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
+                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+
             pre_values += start_data[row_idx] >= end_start[row_idx] ? 0
                             : (end_start[row_idx] -start_data[row_idx] - 1) / (step_data[row_idx]) + 1;
 
