@@ -406,6 +406,13 @@ public:
     /// Returns storage policy if storage supports it
     virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
 
+    /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
+     */
+    virtual std::optional<UInt64> totalRows() const
+    {
+        return {};
+    }
+
 private:
     /// You always need to take the next three locks in this order.
 

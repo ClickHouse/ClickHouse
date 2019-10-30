@@ -171,13 +171,13 @@ void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
     current_zookeeper = zookeeper;
 }
 
-zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper()
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper() const
 {
     std::lock_guard lock(current_zookeeper_mutex);
     return current_zookeeper;
 }
 
-zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper()
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
 {
     auto res = tryGetZooKeeper();
     if (!res)
@@ -2920,6 +2920,58 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 }
 
 
+ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMergeTree::getMaxAddedBlocks() const
+{
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
+
+    for (const auto & data_part : getDataParts())
+    {
+        max_added_blocks[data_part->info.partition_id]
+            = std::max(max_added_blocks[data_part->info.partition_id], data_part->info.max_block);
+    }
+
+    auto zookeeper = getZooKeeper();
+
+    const String quorum_status_path = zookeeper_path + "/quorum/status";
+
+    String value;
+    Coordination::Stat stat;
+
+    if (zookeeper->tryGet(quorum_status_path, value, &stat))
+    {
+        ReplicatedMergeTreeQuorumEntry quorum_entry;
+        quorum_entry.fromString(value);
+
+        auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, format_version);
+
+        max_added_blocks[part_info.partition_id] = part_info.max_block - 1;
+    }
+
+    String added_parts_str;
+    if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str))
+    {
+        if (!added_parts_str.empty())
+        {
+            ReplicatedMergeTreeQuorumAddedParts part_with_quorum(format_version);
+            part_with_quorum.fromString(added_parts_str);
+
+            auto added_parts = part_with_quorum.added_parts;
+
+            for (const auto & added_part : added_parts)
+                if (!getActiveContainingPart(added_part.second))
+                    throw Exception(
+                        "Replica doesn't have part " + added_part.second
+                            + " which was successfully written to quorum of other replicas."
+                              " Send query to another replica or disable 'select_sequential_consistency' setting.",
+                        ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+
+            for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
+                max_added_blocks[max_block.first] = max_block.second;
+        }
+    }
+    return max_added_blocks;
+}
+
 BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
@@ -2937,54 +2989,31 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     */
     if (settings_.select_sequential_consistency)
     {
-        ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
-
-        for (const auto & data_part : getDataParts())
-        {
-            max_added_blocks[data_part->info.partition_id] = std::max(max_added_blocks[data_part->info.partition_id], data_part->info.max_block);
-        }
-
-        auto zookeeper = getZooKeeper();
-
-        const String quorum_status_path = zookeeper_path + "/quorum/status";
-
-        String value;
-        Coordination::Stat stat;
-
-        if (zookeeper->tryGet(quorum_status_path, value, &stat))
-        {
-            ReplicatedMergeTreeQuorumEntry quorum_entry;
-            quorum_entry.fromString(value);
-
-            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, format_version);
-
-            max_added_blocks[part_info.partition_id] = part_info.max_block - 1;
-        }
-
-        String added_parts_str;
-        if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str))
-        {
-            if (!added_parts_str.empty())
-            {
-                ReplicatedMergeTreeQuorumAddedParts part_with_quorum(format_version);
-                part_with_quorum.fromString(added_parts_str);
-
-                auto added_parts = part_with_quorum.added_parts;
-
-                for (const auto & added_part : added_parts)
-                    if (!getActiveContainingPart(added_part.second))
-                        throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
-                            " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
-
-                for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
-                        max_added_blocks[max_block.first] = max_block.second;
-            }
-        }
-
+        auto max_added_blocks = getMaxAddedBlocks();
         return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
     }
 
     return reader.read(column_names, query_info, context, max_block_size, num_streams);
+}
+
+
+std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
+{
+    size_t res = 0;
+    auto max_added_blocks = getMaxAddedBlocks();
+    auto lock = lockParts();
+    for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (part->isEmpty())
+            continue;
+
+        auto blocks_iterator = max_added_blocks.find(part->info.partition_id);
+        if (blocks_iterator == max_added_blocks.end() || part->info.max_block > blocks_iterator->second)
+            continue;
+
+        res += part->rows_count;
+    }
+    return res;
 }
 
 

@@ -26,6 +26,7 @@
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -65,6 +66,7 @@
 #include <Common/checkStackSize.h>
 #include <Parsers/queryToString.h>
 #include <ext/map.h>
+#include <ext/scope_guard.h>
 #include <memory>
 
 #include <Processors/Sources/NullSource.h>
@@ -90,6 +92,7 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
+#include <IO/MemoryReadWriteBuffer.h>
 
 
 namespace DB
@@ -1272,6 +1275,65 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
+
+    /// Optimization for trivial query like SELECT count() FROM table.
+    auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
+    {
+        if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
+            || query.sample_size() || query.sample_offset() || query.final() || query.prewhere() || query.where()
+            || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
+            return {};
+
+        Names key_names;
+        AggregateDescriptions aggregates;
+        query_analyzer->getAggregateInfo(key_names, aggregates);
+
+        if (aggregates.size() != 1)
+            return {};
+
+        const AggregateDescription & desc = aggregates[0];
+        if (typeid_cast<AggregateFunctionCount *>(desc.function.get()))
+            return desc;
+
+        return {};
+    };
+
+    if (auto desc = check_trivial_count_query())
+    {
+        auto func = desc->function;
+        std::optional<UInt64> num_rows = storage->totalRows();
+        if (num_rows)
+        {
+            AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
+
+            /// We will process it up to "WithMergeableState".
+            std::vector<char> state(agg_count.sizeOfData());
+            AggregateDataPtr place = state.data();
+
+            agg_count.create(place);
+            SCOPE_EXIT(agg_count.destroy(place));
+
+            MemoryWriteBuffer out;
+            writeVarUInt(*num_rows, out);
+            auto in = out.tryGetReadBuffer();
+            agg_count.deserialize(place, *in, nullptr);
+
+            auto column = ColumnAggregateFunction::create(func);
+            column->insertFrom(place);
+
+            Block block_with_count{
+                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, DataTypes(), Array()), desc->column_name}};
+
+            auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
+            if constexpr (pipeline_with_processors)
+                pipeline.init({std::make_shared<SourceFromInputStream>(istream)});
+            else
+                pipeline.streams.emplace_back(istream);
+            from_stage = QueryProcessingStage::WithMergeableState;
+            analysis_result.first_stage = false;
+            return;
+        }
+    }
 
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
