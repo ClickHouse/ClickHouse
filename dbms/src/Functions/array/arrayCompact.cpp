@@ -5,7 +5,7 @@
 
 namespace DB
 {
-/// arrayCompact(['a', 'a', 'b', 'b', 'a']) = ['a', 'b', 'a'] - compact arrays
+    /// arrayCompact(['a', 'a', 'b', 'b', 'a']) = ['a', 'b', 'a'] - compact arrays
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
