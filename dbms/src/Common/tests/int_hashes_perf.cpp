@@ -31,7 +31,7 @@ void setAffinity()
 
 static inline ALWAYS_INLINE UInt64 rdtsc()
 {
-#if __x86_64__
+#if defined(__x86_64__)
     UInt32 a, d;
     __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
     return static_cast<UInt64>(a) | (static_cast<UInt64>(d) << 32);
@@ -109,7 +109,7 @@ static inline size_t murmurMix(UInt64 x)
 }
 
 
-#if __x86_64__
+#if defined(__x86_64__)
 static inline size_t crc32Hash(UInt64 x)
 {
     UInt64 crc = -1ULL;
@@ -309,7 +309,7 @@ int main(int argc, char ** argv)
     if (!method || method == 8) test<mulShift>  (n, data.data(), "7: mulShift");
     if (!method || method == 9) test<tabulation>(n, data.data(), "8: tabulation");
 
-#if __x86_64__
+#if defined(__x86_64__)
     if (!method || method == 10) test<crc32Hash> (n, data.data(), "9: crc32");
 #endif
 
