@@ -1180,9 +1180,7 @@ void MergeTreeData::rename(
     const String & /*new_path_to_db*/, const String & new_database_name,
     const String & new_table_name, TableStructureWriteLockHolder &)
 {
-    auto old_file_db_name = escapeForFileName(database_name);
     auto new_file_db_name = escapeForFileName(new_database_name);
-    auto old_file_table_name = escapeForFileName(table_name);
     auto new_file_table_name = escapeForFileName(new_table_name);
 
     auto disks = storage_policy->getDisks();
@@ -1212,7 +1210,7 @@ void MergeTreeData::rename(
 
     database_name = new_database_name;
     table_name = new_table_name;
-    relative_data_path = "data/" + old_file_db_name + '/' + old_file_table_name + '/';
+    relative_data_path = "data/" + new_file_db_name + '/' + new_file_table_name + '/';
 }
 
 void MergeTreeData::dropAllData()
