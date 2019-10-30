@@ -960,6 +960,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
         setJoinStrictness(*select_query, settings.join_default_strictness, result.analyzed_join->table_join);
         collectJoinedColumns(*result.analyzed_join, *select_query, source_columns_set, result.aliases);
+
+        result.with_state = select_query->group_by_with_state;
     }
 
     result.aggregates = getAggregates(query);

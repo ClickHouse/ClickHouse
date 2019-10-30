@@ -41,6 +41,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_by("BY");
     ParserKeyword s_rollup("ROLLUP");
     ParserKeyword s_cube("CUBE");
+    ParserKeyword s_state("STATE");
     ParserKeyword s_top("TOP");
     ParserKeyword s_with_ties("WITH TIES");
     ParserKeyword s_offset("OFFSET");
@@ -159,17 +160,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->group_by_with_cube = true;
         else if (s_totals.ignore(pos, expected))
             select_query->group_by_with_totals = true;
+        else if (s_state.ignore(pos, expected))
+            select_query->group_by_with_state = true;
         else
             return false;
     }
 
-    /// WITH TOTALS
-    if (s_with.ignore(pos, expected))
+    /// WITH TOTALS after other WITH phrases
+    if (!select_query->group_by_with_totals && !select_query->group_by_with_state)
     {
-        if (select_query->group_by_with_totals || !s_totals.ignore(pos, expected))
-            return false;
+        if (s_with.ignore(pos, expected))
+        {
+            if (!s_totals.ignore(pos, expected))
+                return false;
 
-        select_query->group_by_with_totals = true;
+            select_query->group_by_with_totals = true;
+        }
     }
 
     /// HAVING expr

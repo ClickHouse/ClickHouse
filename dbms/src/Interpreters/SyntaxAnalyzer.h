@@ -50,6 +50,8 @@ struct SyntaxAnalyzerResult
 
     bool maybe_optimize_trivial_count = false;
 
+    bool with_state = false;
+
     void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Scalars & getScalars() const { return scalars; }

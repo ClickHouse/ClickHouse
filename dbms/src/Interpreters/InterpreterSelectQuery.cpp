@@ -1032,7 +1032,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         bool aggregate_final =
             expressions.need_aggregate &&
             options.to_stage > QueryProcessingStage::WithMergeableState &&
-            !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
+            !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube && !query.group_by_with_state;
 
         if (expressions.first_stage)
         {
@@ -1194,8 +1194,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
             }
-            else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
-                throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::LOGICAL_ERROR);
+            else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_state)
+                throw Exception("WITH TOTALS, ROLLUP, CUBE OR STATE are not supported without aggregation", ErrorCodes::LOGICAL_ERROR);
 
             need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
 

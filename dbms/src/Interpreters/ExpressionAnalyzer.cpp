@@ -61,6 +61,7 @@
 #include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
 {
@@ -205,7 +206,18 @@ void ExpressionAnalyzer::analyzeAggregation()
         for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
         {
             AggregateDescription & desc = aggregate_descriptions[i];
-            aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
+            if (syntax->with_state)
+            {
+                size_t arguments_size = desc.argument_names.size();
+                DataTypes argument_types(arguments_size);
+                for (size_t j = 0; j < arguments_size; ++j)
+                    argument_types[j] = temp_actions->getSampleBlock().getByName(desc.argument_names[j]).type;
+
+                DataTypePtr type = std::make_shared<DataTypeAggregateFunction>(desc.function, argument_types, desc.parameters);
+                aggregated_columns.emplace_back(desc.column_name, type);
+            }
+            else
+                aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
         }
     }
     else
