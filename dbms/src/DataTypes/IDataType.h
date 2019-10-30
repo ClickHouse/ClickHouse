@@ -632,6 +632,11 @@ inline bool isCompilableType(const DataTypePtr & data_type)
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
 
+template <typename DataType> constexpr bool IsDataTypeDecimal = false;
+template <typename DataType> constexpr bool IsDataTypeNumber = false;
+template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+
+template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
 }
 

@@ -33,7 +33,9 @@ public:
     using typename Base::ColumnType;
     using Base::Base;
 
-    const char * getFamilyName() const override { return "Decimal"; }
+    static constexpr auto familyName = "Decimal";
+
+    const char * getFamilyName() const override { return familyName; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeId<T>::value; }
     bool canBePromoted() const override { return true; }
@@ -98,7 +100,8 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
     {
         converted_value = DataTypeDecimal<MaxFieldType>::getScaleMultiplier(scale_to - scale_from);
         if (common::mulOverflow(static_cast<MaxNativeType>(value), converted_value, converted_value))
-            throw Exception("Decimal convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(std::string(ToDataType::familyName) + " convert overflow",
+                            ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
         converted_value = value / DataTypeDecimal<MaxFieldType>::getScaleMultiplier(scale_from - scale_to);
@@ -107,14 +110,15 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
     {
         if (converted_value < std::numeric_limits<typename ToFieldType::NativeType>::min() ||
             converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
-            throw Exception("Decimal convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(std::string(ToDataType::familyName) + " convert overflow",
+                            ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     return converted_value;
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>, typename ToDataType::FieldType>
+inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsNumber<typename ToDataType::FieldType>, typename ToDataType::FieldType>
 convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -132,7 +136,8 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             {
                 if (converted_value < std::numeric_limits<ToFieldType>::min() ||
                     converted_value > std::numeric_limits<ToFieldType>::max())
-                    throw Exception("Decimal convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(std::string(FromDataType::familyName) + " convert overflow",
+                                    ErrorCodes::DECIMAL_OVERFLOW);
             }
             else
             {
@@ -140,7 +145,8 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 
                 if (converted_value < 0 ||
                     converted_value > static_cast<CastIntType>(std::numeric_limits<ToFieldType>::max()))
-                    throw Exception("Decimal convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(std::string(FromDataType::familyName) + " convert overflow",
+                                    ErrorCodes::DECIMAL_OVERFLOW);
             }
         }
         return converted_value;
@@ -148,7 +154,7 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>, typename ToDataType::FieldType>
+inline std::enable_if_t<IsNumber<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, typename ToDataType::FieldType>
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -157,7 +163,8 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
         if (!std::isfinite(value))
-            throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(std::string(ToDataType::familyName) + " convert overflow. Cannot convert infinity or NaN to decimal",
+                            ErrorCodes::DECIMAL_OVERFLOW);
 
         auto out = value * ToDataType::getScaleMultiplier(scale);
         if constexpr (std::is_same_v<ToNativeType, Int128>)
@@ -165,20 +172,26 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
             static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
             if (out <= static_cast<ToNativeType>(min_int128) || out >= static_cast<ToNativeType>(max_int128))
-                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(std::string(ToDataType::familyName) + " convert overflow. Float is out of Decimal range",
+                                ErrorCodes::DECIMAL_OVERFLOW);
         }
         else
         {
             if (out <= std::numeric_limits<ToNativeType>::min() || out >= std::numeric_limits<ToNativeType>::max())
-                throw Exception("Decimal convert overflow. Float is out of Decimal range", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(std::string(ToDataType::familyName) + " convert overflow. Float is out of Decimal range",
+                                ErrorCodes::DECIMAL_OVERFLOW);
         }
         return out;
     }
     else
     {
         if constexpr (std::is_same_v<FromFieldType, UInt64>)
+        {
             if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            {
                 return convertDecimals<DataTypeDecimal<Decimal128>, ToDataType>(value, 0, scale);
+            }
+        }
         return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(value, 0, scale);
     }
 }

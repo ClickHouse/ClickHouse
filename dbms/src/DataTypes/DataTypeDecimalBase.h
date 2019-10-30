@@ -207,11 +207,6 @@ const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalT
     return DecimalType<U>(maxDecimalPrecision<U>(), ty.getScale());
 }
 
-
-///
-template <typename DataType> constexpr bool IsDataTypeDecimal = false;
-template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
-
 template <template <typename> typename DecimalType>
 DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
