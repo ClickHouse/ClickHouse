@@ -78,6 +78,7 @@ static bool castBothTypes(const IDataType * left, const IDataType * right, F && 
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
+//bitHammingDistance function: (Integer, Integer) -> UInt8
 class FunctionBitHammingDistance : public IFunction
 {
 public:
@@ -87,7 +88,7 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; };
+    size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -121,6 +122,7 @@ public:
             {
                 if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
                 {
+                    //constant integer - constant integer
                     auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>());
                     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
                     return true;
@@ -137,6 +139,7 @@ public:
             {
                 if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                 {
+                    // constant integer - non-constant integer
                     OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
                 }
                 else
@@ -145,8 +148,10 @@ public:
             else if (auto col_left = checkAndGetColumn<ColVecT0>(col_left_raw))
             {
                 if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
+                    //non-constant integer - non-constant integer
                     OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
                 else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                    //non-constant integer - constant integer
                     OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
                 else
                     return false;
@@ -158,7 +163,7 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

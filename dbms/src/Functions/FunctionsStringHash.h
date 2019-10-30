@@ -20,6 +20,9 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+//FunctionStringHash
+//Simhash: String -> UInt64
+//Minhash: String -> (UInt64, UInt64)
 template <typename Impl, typename Name, bool IsSimhash>
 class FunctionsStringHash : public IFunction
 {

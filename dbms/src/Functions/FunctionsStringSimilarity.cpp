@@ -1,21 +1,12 @@
 #include <Functions/FunctionsStringSimilarity.h>
 
+#include <Functions/ExtractString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>
-
-#include <common/unaligned.h>
-
-#include <algorithm>
-#include <climits>
-#include <cstring>
-#include <limits>
-#include <memory>
-#include <utility>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -36,15 +27,15 @@ template <size_t N, class CodePoint, bool UTF8, bool CaseInsensitive, bool Symme
 struct NgramDistanceImpl
 {
     using ResultType = Float32;
+    using StrOp = ExtractStringImpl<N, CaseInsensitive>;
+
+    static constexpr size_t default_padding = StrOp::default_padding;
 
     /// map_size for ngram difference.
     static constexpr size_t map_size = 1u << 16;
 
     /// If the haystack size is bigger than this, behaviour is unspecified for this function.
     static constexpr size_t max_string_size = 1u << 15;
-
-    /// Default padding to read safely.
-    static constexpr size_t default_padding = 16;
 
     /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
@@ -70,101 +61,6 @@ struct NgramDistanceImpl
 #endif
     }
 
-    template <size_t Offset, class Container, size_t... I>
-    static ALWAYS_INLINE inline void unrollLowering(Container & cont, const std::index_sequence<I...> &)
-    {
-        ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
-    }
-
-    static ALWAYS_INLINE size_t readASCIICodePoints(CodePoint * code_points, const char *& pos, const char * end)
-    {
-        /// Offset before which we copy some data.
-        constexpr size_t padding_offset = default_padding - N + 1;
-        /// We have an array like this for ASCII (N == 4, other cases are similar)
-        /// |a0|a1|a2|a3|a4|a5|a6|a7|a8|a9|a10|a11|a12|a13|a14|a15|a16|a17|a18|
-        /// And we copy                                ^^^^^^^^^^^^^^^ these bytes to the start
-        /// Actually it is enough to copy 3 bytes, but memcpy for 4 bytes translates into 1 instruction
-        memcpy(code_points, code_points + padding_offset, roundUpToPowerOfTwoOrZero(N - 1) * sizeof(CodePoint));
-        /// Now we have an array
-        /// |a13|a14|a15|a16|a4|a5|a6|a7|a8|a9|a10|a11|a12|a13|a14|a15|a16|a17|a18|
-        ///              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        /// Doing unaligned read of 16 bytes and copy them like above
-        /// 16 is also chosen to do two `movups`.
-        /// Such copying allow us to have 3 codepoints from the previous read to produce the 4-grams with them.
-        memcpy(code_points + (N - 1), pos, default_padding * sizeof(CodePoint));
-
-        if constexpr (CaseInsensitive)
-        {
-            /// We really need template lambdas with C++20 to do it inline
-            unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
-        }
-        pos += padding_offset;
-        if (pos > end)
-            return default_padding - (pos - end);
-        return default_padding;
-    }
-
-    static ALWAYS_INLINE size_t readUTF8CodePoints(CodePoint * code_points, const char *& pos, const char * end)
-    {
-        /// The same copying as described in the function above.
-        memcpy(code_points, code_points + default_padding - N + 1, roundUpToPowerOfTwoOrZero(N - 1) * sizeof(CodePoint));
-
-        size_t num = N - 1;
-        while (num < default_padding && pos < end)
-        {
-            size_t length = UTF8::seqLength(*pos);
-
-            if (pos + length > end)
-                length = end - pos;
-
-            CodePoint res;
-            /// This is faster than just memcpy because of compiler optimizations with moving bytes.
-            switch (length)
-            {
-                case 1:
-                    res = 0;
-                    memcpy(&res, pos, 1);
-                    break;
-                case 2:
-                    res = 0;
-                    memcpy(&res, pos, 2);
-                    break;
-                case 3:
-                    res = 0;
-                    memcpy(&res, pos, 3);
-                    break;
-                default:
-                    memcpy(&res, pos, 4);
-            }
-
-            /// This is not a really true case insensitive utf8. We zero the 5-th bit of every byte.
-            /// And first bit of first byte if there are two bytes.
-            /// For ASCII it works https://catonmat.net/ascii-case-conversion-trick. For most cyrrilic letters also does.
-            /// For others, we don't care now. Lowering UTF is not a cheap operation.
-            if constexpr (CaseInsensitive)
-            {
-                switch (length)
-                {
-                    case 4:
-                        res &= ~(1u << (5 + 3 * CHAR_BIT));
-                        [[fallthrough]];
-                    case 3:
-                        res &= ~(1u << (5 + 2 * CHAR_BIT));
-                        [[fallthrough]];
-                    case 2:
-                        res &= ~(1u);
-                        res &= ~(1u << (5 + CHAR_BIT));
-                        [[fallthrough]];
-                    default:
-                        res &= ~(1u << 5);
-                }
-            }
-
-            pos += length;
-            code_points[num++] = res;
-        }
-        return num;
-    }
 
     template <bool SaveNgrams>
     static ALWAYS_INLINE inline size_t calculateNeedleStats(
@@ -250,9 +146,9 @@ struct NgramDistanceImpl
     static inline auto dispatchSearcher(Callback callback, Args &&... args)
     {
         if constexpr (!UTF8)
-            return callback(std::forward<Args>(args)..., readASCIICodePoints, ASCIIHash);
+            return callback(std::forward<Args>(args)..., StrOp::readASCIICodePoints, ASCIIHash);
         else
-            return callback(std::forward<Args>(args)..., readUTF8CodePoints, UTF8Hash);
+            return callback(std::forward<Args>(args)..., StrOp::readUTF8CodePoints, UTF8Hash);
     }
 
     static void constant_constant(std::string data, std::string needle, Float32 & res)
@@ -269,7 +165,8 @@ struct NgramDistanceImpl
         size_t distance = second_size;
         if (data_size <= max_string_size)
         {
-            size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
+            size_t first_size
+                = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
             /// For !Symmetric version we should not use first_size.
             if constexpr (Symmetric)
                 res = distance * 1.f / std::max(first_size + second_size, size_t(1));
@@ -313,23 +210,14 @@ struct NgramDistanceImpl
             if (needle_size <= max_string_size && haystack_size <= max_string_size)
             {
                 /// Get needle stats.
-                const size_t needle_stats_size = dispatchSearcher(
-                    calculateNeedleStats<true>,
-                    needle,
-                    needle_size,
-                    common_stats,
-                    needle_ngram_storage.get());
+                const size_t needle_stats_size
+                    = dispatchSearcher(calculateNeedleStats<true>, needle, needle_size, common_stats, needle_ngram_storage.get());
 
                 size_t distance = needle_stats_size;
 
                 /// Combine with haystack stats, return to initial needle stats.
                 const size_t haystack_stats_size = dispatchSearcher(
-                    calculateHaystackStatsAndMetric<true>,
-                    haystack,
-                    haystack_size,
-                    common_stats,
-                    distance,
-                    haystack_ngram_storage.get());
+                    calculateHaystackStatsAndMetric<true>, haystack, haystack_size, common_stats, distance, haystack_ngram_storage.get());
 
                 /// Return to zero array stats.
                 for (size_t j = 0; j < needle_stats_size; ++j)
@@ -391,12 +279,8 @@ struct NgramDistanceImpl
 
                 if (needle_size <= max_string_size && haystack_size <= max_string_size)
                 {
-                    const size_t needle_stats_size = dispatchSearcher(
-                        calculateNeedleStats<true>,
-                        needle,
-                        needle_size,
-                        common_stats,
-                        needle_ngram_storage.get());
+                    const size_t needle_stats_size
+                        = dispatchSearcher(calculateNeedleStats<true>, needle, needle_size, common_stats, needle_ngram_storage.get());
 
                     size_t distance = needle_stats_size;
 
@@ -420,15 +304,11 @@ struct NgramDistanceImpl
 
                 prev_offset = needle_offsets[i];
             }
-
         }
     }
 
     static void vector_constant(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
-        std::string needle,
-        PaddedPODArray<Float32> & res)
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, std::string needle, PaddedPODArray<Float32> & res)
     {
         /// zeroing our map
         NgramStats common_stats = {};
@@ -454,7 +334,8 @@ struct NgramDistanceImpl
                 size_t haystack_stats_size = dispatchSearcher(
                     calculateHaystackStatsAndMetric<true>,
                     reinterpret_cast<const char *>(haystack),
-                    haystack_size, common_stats,
+                    haystack_size,
+                    common_stats,
                     distance,
                     ngram_storage.get());
                 /// For !Symmetric version we should not use haystack_stats_size.
@@ -516,14 +397,18 @@ struct NameNgramSearchUTF8CaseInsensitive
 };
 
 using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, true>, NameNgramDistance>;
-using FunctionNgramDistanceCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, true>, NameNgramDistanceCaseInsensitive>;
+using FunctionNgramDistanceCaseInsensitive
+    = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, true>, NameNgramDistanceCaseInsensitive>;
 using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, true>, NameNgramDistanceUTF8>;
-using FunctionNgramDistanceCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
+using FunctionNgramDistanceCaseInsensitiveUTF8
+    = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
 
 using FunctionNgramSearch = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false, false>, NameNgramSearch>;
-using FunctionNgramSearchCaseInsensitive = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramSearchCaseInsensitive>;
+using FunctionNgramSearchCaseInsensitive
+    = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true, false>, NameNgramSearchCaseInsensitive>;
 using FunctionNgramSearchUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false, false>, NameNgramSearchUTF8>;
-using FunctionNgramSearchCaseInsensitiveUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
+using FunctionNgramSearchCaseInsensitiveUTF8
+    = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true, false>, NameNgramSearchUTF8CaseInsensitive>;
 
 
 void registerFunctionsStringSimilarity(FunctionFactory & factory)

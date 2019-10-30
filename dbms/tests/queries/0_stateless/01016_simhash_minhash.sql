@@ -1,3 +1,4 @@
+SELECT ngramSimhash('');
 SELECT ngramSimhash('what a cute cat.');
 SELECT ngramSimhashCaseInsensitive('what a cute cat.');
 SELECT ngramSimhashUTF8('what a cute cat.');
@@ -7,6 +8,7 @@ SELECT wordShingleSimhashCaseInsensitive('what a cute cat.');
 SELECT wordShingleSimhashUTF8('what a cute cat.');
 SELECT wordShingleSimhashCaseInsensitiveUTF8('what a cute cat.');
 
+SELECT ngramMinhash('');
 SELECT ngramMinhash('what a cute cat.');
 SELECT ngramMinhashCaseInsensitive('what a cute cat.');
 SELECT ngramMinhashUTF8('what a cute cat.');

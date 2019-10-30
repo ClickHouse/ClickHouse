@@ -15,16 +15,16 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <typename A, typename B, typename C, typename D>
+template <typename A, typename B>
 struct TupleHammingDistanceImpl
 {
     using ResultType = UInt8;
 
     static void NO_INLINE vector_vector(
         const PaddedPODArray<A> & a1,
-        const PaddedPODArray<B> & b1,
-        const PaddedPODArray<C> & a2,
-        const PaddedPODArray<D> & b2,
+        const PaddedPODArray<A> & b1,
+        const PaddedPODArray<B> & a2,
+        const PaddedPODArray<B> & b2,
         PaddedPODArray<ResultType> & c)
     {
         size_t size = a1.size();
@@ -33,7 +33,7 @@ struct TupleHammingDistanceImpl
     }
 
     static void NO_INLINE
-    vector_constant(const PaddedPODArray<A> & a1, const PaddedPODArray<B> & b1, C a2, D b2, PaddedPODArray<ResultType> & c)
+    vector_constant(const PaddedPODArray<A> & a1, const PaddedPODArray<A> & b1, UInt64 a2, UInt64 b2, PaddedPODArray<ResultType> & c)
     {
         size_t size = a1.size();
         for (size_t i = 0; i < size; ++i)
@@ -41,14 +41,14 @@ struct TupleHammingDistanceImpl
     }
 
     static void NO_INLINE
-    constant_vector(A a1, B b1, const PaddedPODArray<C> & a2, const PaddedPODArray<D> & b2, PaddedPODArray<ResultType> & c)
+    constant_vector(UInt64 a1, UInt64 b1, const PaddedPODArray<B> & a2, const PaddedPODArray<B> & b2, PaddedPODArray<ResultType> & c)
     {
         size_t size = a2.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = apply(a1, a2[i]) + apply(b1, b2[i]);
     }
 
-    static ResultType constant_constant(A a1, B b1, C a2, D b2) { return apply(a1, a2) + apply(b1, b2); }
+    static ResultType constant_constant(UInt64 a1, UInt64 b1, UInt64 a2, UInt64 b2) { return apply(a1, a2) + apply(b1, b2); }
 
 private:
     static UInt8 pop_cnt(UInt64 res)
@@ -81,17 +81,15 @@ bool castType(const IDataType * type, F && f)
 }
 
 template <typename F>
-static bool castAllTypes(const IDataType * left1, const IDataType * right1, const IDataType * left2, const IDataType * right2, F && f)
+static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
 {
-    return castType(left1, [&](const auto & left1_) {
-        return castType(right1, [&](const auto & right1_) {
-            return castType(left2, [&](const auto & left2_) {
-                return castType(right2, [&](const auto & right2_) { return f(left1_, right1_, left2_, right2_); });
-            });
-        });
-    });
+    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
+//tupleHammingDistance function: (Tuple(Integer, Integer), Tuple(Integer, Integer))->UInt8
+//in order to avoid code bloating, for non-constant tuple, we make sure that the elements
+//in the tuple should have same data type, and for constant tuple, elements can be any integer
+//data type, we cast all of them into UInt64
 class FunctionTupleHammingDistance : public IFunction
 {
 public:
@@ -101,7 +99,7 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; };
+    size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -126,90 +124,80 @@ public:
             throw Exception(
                 "Illegal column of arguments of function " + getName() + ", tuple should have exactly two elements.",
                 ErrorCodes::ILLEGAL_COLUMN);
-        bool valid = castAllTypes(
-            left_elems[0].get(),
-            left_elems[1].get(),
-            right_elems[0].get(),
-            right_elems[1].get(),
-            [&](const auto & left1, const auto & left2, const auto & right1, const auto & right2) {
-                using LeftDataType1 = std::decay_t<decltype(left1)>;
-                using LeftDataType2 = std::decay_t<decltype(left2)>;
-                using RightDataType1 = std::decay_t<decltype(right1)>;
-                using RightDataType2 = std::decay_t<decltype(right2)>;
-                using T0 = typename LeftDataType1::FieldType;
-                using T1 = typename LeftDataType2::FieldType;
-                using T2 = typename RightDataType1::FieldType;
-                using T3 = typename RightDataType2::FieldType;
-                using ColVecResult = ColumnVector<ResultType>;
+        bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right) {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using T0 = typename LeftDataType::FieldType;
+            using T1 = typename RightDataType::FieldType;
+            using ColVecT0 = ColumnVector<T0>;
+            using ColVecT1 = ColumnVector<T1>;
+            using ColVecResult = ColumnVector<ResultType>;
 
-                using OpImpl = TupleHammingDistanceImpl<T0, T1, T2, T3>;
+            using OpImpl = TupleHammingDistanceImpl<T0, T1>;
 
-                // constant tuple - constant tuple
-                if (const ColumnConst * const_col_left = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
+            // constant tuple - constant tuple
+            if (const ColumnConst * const_col_left = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
+            {
+                if (const ColumnConst * const_col_right = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
                 {
-                    if (const ColumnConst * const_col_right = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
-                    {
-                        auto cols1 = convertConstTupleToConstantElements(*const_col_left);
-                        auto cols2 = convertConstTupleToConstantElements(*const_col_right);
-                        Field a1, b1, a2, b2;
-                        cols1[0]->get(0, a1);
-                        cols1[1]->get(0, b1);
-                        cols2[0]->get(0, a2);
-                        cols2[1]->get(0, b2);
-                        auto res = OpImpl::constant_constant(a1.get<T0>(), b1.get<T1>(), a2.get<T2>(), b2.get<T3>());
-                        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(const_col_left->size(), toField(res));
-                        return true;
-                    }
+                    auto cols1 = convertConstTupleToConstantElements(*const_col_left);
+                    auto cols2 = convertConstTupleToConstantElements(*const_col_right);
+                    Field a1, b1, a2, b2;
+                    cols1[0]->get(0, a1);
+                    cols1[1]->get(0, b1);
+                    cols2[0]->get(0, a2);
+                    cols2[1]->get(0, b2);
+                    auto res = OpImpl::constant_constant(a1.get<UInt64>(), b1.get<UInt64>(), a2.get<UInt64>(), b2.get<UInt64>());
+                    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(const_col_left->size(), toField(res));
+                    return true;
                 }
+            }
 
-                typename ColVecResult::MutablePtr col_res = nullptr;
-                col_res = ColVecResult::create();
-                auto & vec_res = col_res->getData();
-                vec_res.resize(block.rows());
-                // constant tuple - vector tuple
-                if (const ColumnConst * const_col_left = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
+            typename ColVecResult::MutablePtr col_res = nullptr;
+            col_res = ColVecResult::create();
+            auto & vec_res = col_res->getData();
+            vec_res.resize(block.rows());
+            // constant tuple - non-constant tuple
+            if (const ColumnConst * const_col_left = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
+            {
+                if (const ColumnTuple * col_right = typeid_cast<const ColumnTuple *>(arg2.column.get()))
                 {
-                    if (const ColumnTuple * col_right = typeid_cast<const ColumnTuple *>(arg2.column.get()))
-                    {
-                        auto const_cols = convertConstTupleToConstantElements(*const_col_left);
-                        Field a1, b1;
-                        const_cols[0]->get(0, a1);
-                        const_cols[1]->get(0, b1);
-                        auto col_r1 = checkAndGetColumn<ColumnVector<T2>>(&col_right->getColumn(0));
-                        auto col_r2 = checkAndGetColumn<ColumnVector<T3>>(&col_right->getColumn(1));
-                        if (col_r1 && col_r2)
-                            OpImpl::constant_vector(a1.get<T0>(), b1.get<T1>(), col_r1->getData(), col_r2->getData(), vec_res);
-                        else
-                            return false;
-                    }
+                    auto const_cols = convertConstTupleToConstantElements(*const_col_left);
+                    Field a1, b1;
+                    const_cols[0]->get(0, a1);
+                    const_cols[1]->get(0, b1);
+                    auto col_r1 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(0));
+                    auto col_r2 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(1));
+                    if (col_r1 && col_r2)
+                        OpImpl::constant_vector(a1.get<UInt64>(), b1.get<UInt64>(), col_r1->getData(), col_r2->getData(), vec_res);
                     else
                         return false;
                 }
-                else if (const ColumnTuple * col_left = typeid_cast<const ColumnTuple *>(arg1.column.get()))
+                else
+                    return false;
+            }
+            else if (const ColumnTuple * col_left = typeid_cast<const ColumnTuple *>(arg1.column.get()))
+            {
+                auto col_l1 = checkAndGetColumn<ColVecT0>(&col_left->getColumn(0));
+                auto col_l2 = checkAndGetColumn<ColVecT0>(&col_left->getColumn(1));
+                if (col_l1 && col_l2)
                 {
-                    auto col_l1 = checkAndGetColumn<ColumnVector<T0>>(&col_left->getColumn(0));
-                    auto col_l2 = checkAndGetColumn<ColumnVector<T1>>(&col_left->getColumn(1));
-                    if (col_l1 && col_l2)
+                    // non-constant tuple - constant tuple
+                    if (const ColumnConst * const_col_right = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
                     {
-                        // vector tuple - constant tuple
-                        if (const ColumnConst * const_col_right = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
-                        {
-                            auto const_cols = convertConstTupleToConstantElements(*const_col_right);
-                            Field a2, b2;
-                            const_cols[0]->get(0, a2);
-                            const_cols[1]->get(0, b2);
-                            OpImpl::vector_constant(col_l1->getData(), col_l2->getData(), a2.get<T2>(), a2.get<T3>(), vec_res);
-                        }
-                        // vector tuple - vector tuple
-                        else if (const ColumnTuple * col_right = typeid_cast<const ColumnTuple *>(arg2.column.get()))
-                        {
-                            auto col_r1 = checkAndGetColumn<ColumnVector<T2>>(&col_right->getColumn(0));
-                            auto col_r2 = checkAndGetColumn<ColumnVector<T3>>(&col_right->getColumn(1));
-                            if (col_r1 && col_r2)
-                                OpImpl::vector_vector(col_l1->getData(), col_l2->getData(), col_r1->getData(), col_r2->getData(), vec_res);
-                            else
-                                return false;
-                        }
+                        auto const_cols = convertConstTupleToConstantElements(*const_col_right);
+                        Field a2, b2;
+                        const_cols[0]->get(0, a2);
+                        const_cols[1]->get(0, b2);
+                        OpImpl::vector_constant(col_l1->getData(), col_l2->getData(), a2.get<UInt64>(), a2.get<UInt64>(), vec_res);
+                    }
+                    // non-constant tuple - non-constant tuple
+                    else if (const ColumnTuple * col_right = typeid_cast<const ColumnTuple *>(arg2.column.get()))
+                    {
+                        auto col_r1 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(0));
+                        auto col_r2 = checkAndGetColumn<ColVecT1>(&col_right->getColumn(1));
+                        if (col_r1 && col_r2)
+                            OpImpl::vector_vector(col_l1->getData(), col_l2->getData(), col_r1->getData(), col_r2->getData(), vec_res);
                         else
                             return false;
                     }
@@ -218,11 +206,14 @@ public:
                 }
                 else
                     return false;
-                block.getByPosition(result).column = std::move(col_res);
-                return true;
-            });
+            }
+            else
+                return false;
+            block.getByPosition(result).column = std::move(col_res);
+            return true;
+        });
         if (!valid)
-            throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

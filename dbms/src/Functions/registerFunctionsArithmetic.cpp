@@ -32,6 +32,8 @@ void registerFunctionIntExp10(FunctionFactory & factory);
 void registerFunctionRoundToExp2(FunctionFactory & factory);
 void registerFunctionRoundDuration(FunctionFactory & factory);
 void registerFunctionRoundAge(FunctionFactory & factory);
+void registerFunctionBitHammingDistance(FunctionFactory & factory);
+void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 
 void registerFunctionBitBoolMaskOr(FunctionFactory & factory);
 void registerFunctionBitBoolMaskAnd(FunctionFactory & factory);
@@ -69,6 +71,8 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     registerFunctionRoundToExp2(factory);
     registerFunctionRoundDuration(factory);
     registerFunctionRoundAge(factory);
+    registerFunctionBitHammingDistance(factory);
+    registerFunctionTupleHammingDistance(factory);
 
     /// Not for external use.
     registerFunctionBitBoolMaskOr(factory);
