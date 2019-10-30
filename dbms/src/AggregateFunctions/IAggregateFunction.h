@@ -170,8 +170,18 @@ public:
 
     void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
     {
-        for (size_t i = 0; i < batch_size; ++i)
-            static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+        // Unrolling by two to break possible data dependencies
+        for (size_t i = 0; i < batch_size / 2; ++i)
+        {
+            auto ii = i * 2;
+            static_cast<const Derived *>(this)->add(places[ii] + place_offset, columns, ii, arena);
+            if (places[ii] == places[ii + 1])
+                static_cast<const Derived *>(this)->add(places[ii] + place_offset, columns, ii + 1, arena);
+            else
+                static_cast<const Derived *>(this)->add(places[ii + 1] + place_offset, columns, ii + 1, arena);
+        }
+        if (batch_size & 1)
+            static_cast<const Derived *>(this)->add(places[batch_size - 1] + place_offset, columns, batch_size - 1, arena);
     }
 
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
