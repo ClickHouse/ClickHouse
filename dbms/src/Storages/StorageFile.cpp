@@ -26,7 +26,6 @@
 #include <Poco/File.h>
 
 #include <re2/re2.h>
-#include <re2/stringpiece.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -118,63 +117,52 @@ static void checkCreationIsAllowed(Context & context_global, const std::string &
 }
 }
 
-StorageFile::StorageFile(
-        const std::string & table_path_,
-        int table_fd_,
-        const std::string & relative_table_dir_path,
-        const std::string & database_name_,
-        const std::string & table_name_,
-        const std::string & format_name_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        Context & context_)
-    :
-    table_name(table_name_), database_name(database_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
+StorageFile::StorageFile(int table_fd_, CommonArguments args)
+    : StorageFile(args)
 {
-    setColumns(columns_);
-    setConstraints(constraints_);
+    if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    if (table_fd < 0) /// Will use file
-    {
-        String table_dir_path = context_global.getPath() + relative_table_dir_path + "/";
-        use_table_fd = false;
+    is_db_table = false;
+    use_table_fd = true;
+    table_fd = table_fd_;
 
-        if (!table_path_.empty()) /// Is user's file
-        {
-            Poco::Path poco_path = Poco::Path(table_path_);
-            if (poco_path.isRelative())
-                poco_path = Poco::Path(table_dir_path, poco_path);
-
-            const std::string path = poco_path.absolute().toString();
-            paths = listFilesWithRegexpMatching("/", path);
-            for (const auto & cur_path : paths)
-                checkCreationIsAllowed(context_global, table_dir_path, cur_path);
-            is_db_table = false;
-        }
-        else /// Is DB's file
-        {
-            if (relative_table_dir_path.empty())
-                throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
-
-            paths = {getTablePath(table_dir_path, format_name)};
-            is_db_table = true;
-            Poco::File(Poco::Path(paths.back()).parent()).createDirectories();
-        }
-    }
-    else /// Will use FD
-    {
-        if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
-            throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
-
-        is_db_table = false;
-        use_table_fd = true;
-
-        /// Save initial offset, it will be used for repeating SELECTs
-        /// If FD isn't seekable (lseek returns -1), then the second and subsequent SELECTs will fail.
-        table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
-    }
+    /// Save initial offset, it will be used for repeating SELECTs
+    /// If FD isn't seekable (lseek returns -1), then the second and subsequent SELECTs will fail.
+    table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
 }
 
+StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_absolute_path, CommonArguments args)
+    : StorageFile(args)
+{
+    is_db_table = false;
+    Poco::Path poco_path = Poco::Path(table_path_);
+    if (poco_path.isRelative())
+        poco_path = Poco::Path(user_files_absolute_path, poco_path);
+
+    const std::string path = poco_path.absolute().toString();
+    paths = listFilesWithRegexpMatching("/", path);
+    for (const auto & cur_path : paths)
+        checkCreationIsAllowed(context_global, user_files_absolute_path, cur_path);
+}
+
+StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArguments args)
+    : StorageFile(args)
+{
+    if (relative_table_dir_path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    String table_dir_path = context_global.getPath() + relative_table_dir_path + "/";
+    Poco::File(table_dir_path).createDirectories();
+    paths = {getTablePath(table_dir_path, format_name)};
+}
+
+StorageFile::StorageFile(CommonArguments args)
+    : table_name(args.table_name), database_name(args.database_name), format_name(args.format_name), context_global(args.context)
+{
+    setColumns(args.columns);
+    setConstraints(args.constraints);
+}
 
 class StorageFileBlockInputStream : public IBlockInputStream
 {
@@ -369,41 +357,44 @@ void registerStorageFile(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
+        StorageFile::CommonArguments common_args{args.database_name, args.table_name, format_name,
+                                                 args.columns, args.constraints,args.context};
+
+        if (engine_args.size() == 1)    /// Table in database
+            return StorageFile::create(args.relative_data_path, common_args);
+
+        /// Will use FD if engine_args[1] is int literal or identifier with std* name
         int source_fd = -1;
         String source_path;
-        if (engine_args.size() >= 2)
+        if (auto opt_name = tryGetIdentifierName(engine_args[1]))
         {
-            /// Will use FD if engine_args[1] is int literal or identifier with std* name
-
-            if (auto opt_name = tryGetIdentifierName(engine_args[1]))
-            {
-                if (*opt_name == "stdin")
-                    source_fd = STDIN_FILENO;
-                else if (*opt_name == "stdout")
-                    source_fd = STDOUT_FILENO;
-                else if (*opt_name == "stderr")
-                    source_fd = STDERR_FILENO;
-                else
-                    throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
-                                    ErrorCodes::UNKNOWN_IDENTIFIER);
-            }
-            else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
-            {
-                auto type = literal->value.getType();
-                if (type == Field::Types::Int64)
-                    source_fd = static_cast<int>(literal->value.get<Int64>());
-                else if (type == Field::Types::UInt64)
-                    source_fd = static_cast<int>(literal->value.get<UInt64>());
-                else if (type == Field::Types::String)
-                    source_path = literal->value.get<String>();
-            }
+            if (*opt_name == "stdin")
+                source_fd = STDIN_FILENO;
+            else if (*opt_name == "stdout")
+                source_fd = STDOUT_FILENO;
+            else if (*opt_name == "stderr")
+                source_fd = STDERR_FILENO;
+            else
+                throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
+                                ErrorCodes::UNKNOWN_IDENTIFIER);
+        }
+        else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
+        {
+            auto type = literal->value.getType();
+            if (type == Field::Types::Int64)
+                source_fd = static_cast<int>(literal->value.get<Int64>());
+            else if (type == Field::Types::UInt64)
+                source_fd = static_cast<int>(literal->value.get<UInt64>());
+            else if (type == Field::Types::String)
+                source_path = literal->value.get<String>();
+            else
+                throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageFile::create(
-            source_path, source_fd,
-            args.relative_data_path,
-            args.database_name, args.table_name, format_name, args.columns, args.constraints,
-            args.context);
+        if (0 <= source_fd)     /// File descriptor
+            return StorageFile::create(source_fd, common_args);
+        else                    /// User's file
+            return StorageFile::create(source_path, args.context.getUserFilesPath(), common_args);
     });
 }
 
