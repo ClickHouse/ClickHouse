@@ -122,7 +122,8 @@ public:
         const ColumnsDescription & /*columns*/,
         const IndicesDescription & /*indices*/,
         const ConstraintsDescription & /*constraints*/,
-        const ASTModifier & /*engine_modifier*/)
+        const ASTModifier & /*engine_modifier*/,
+        const ASTPtr & /*select*/)
     {
         throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }

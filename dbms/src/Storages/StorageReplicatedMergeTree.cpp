@@ -483,7 +483,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         };
     }
 
-    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, new_constraints, storage_modifier);
+    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, new_constraints, storage_modifier, nullptr);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
@@ -3132,7 +3132,7 @@ void StorageReplicatedMergeTree::alter(
 
         IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
         global_context.getDatabase(current_database_name)->alterTable(
-            query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+            query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier, nullptr);
         return;
     }
 
@@ -3214,7 +3214,7 @@ void StorageReplicatedMergeTree::alter(
             changeSettings(new_changes, table_lock_holder);
 
             global_context.getDatabase(current_database_name)->alterTable(
-                query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+                query_context, current_table_name, getColumns(), getIndices(), getConstraints(), settings_modifier, nullptr);
 
         }
 

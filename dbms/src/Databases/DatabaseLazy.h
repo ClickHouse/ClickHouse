@@ -47,7 +47,8 @@ public:
         const ColumnsDescription & columns,
         const IndicesDescription & indices,
         const ConstraintsDescription & constraints,
-        const ASTModifier & engine_modifier) override;
+        const ASTModifier & engine_modifier,
+        const ASTPtr & select) override;
 
     time_t getTableMetadataModificationTime(
         const Context & context,

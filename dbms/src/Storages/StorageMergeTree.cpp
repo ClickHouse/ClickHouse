@@ -259,7 +259,7 @@ void StorageMergeTree::alter(
         changeSettings(new_changes, table_lock_holder);
 
         IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier);
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, settings_modifier, nullptr);
         setColumns(std::move(new_columns));
         return;
     }
@@ -307,7 +307,7 @@ void StorageMergeTree::alter(
 
     changeSettings(new_changes, table_lock_holder);
 
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier);
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, new_constraints, storage_modifier, nullptr);
 
 
     /// Reinitialize primary key because primary key column types might have changed.

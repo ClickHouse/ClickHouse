@@ -312,6 +312,9 @@ void StorageMaterializedView::alter(
 
         auto context_lock = global_context.getLock();
 
+        // more locks
+        inner_query = new_inner_query;
+
         global_context.removeDependency(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
@@ -319,6 +322,8 @@ void StorageMaterializedView::alter(
         global_context.addDependency(
             DatabaseAndTableName(new_select_database_name, new_select_table_name),
             DatabaseAndTableName(database_name, table_name));
+
+        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {}, new_as_select_query);
     }
 
     UNUSED(params);

@@ -410,7 +410,7 @@ void IStorage::alter(
         SettingsChanges new_changes;
         params.applyForSettingsOnly(new_changes);
         IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
+        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier, nullptr);
     }
     else
     {
@@ -419,7 +419,7 @@ void IStorage::alter(
         auto new_indices = getIndices();
         auto new_constraints = getConstraints();
         params.applyForColumnsOnly(new_columns);
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
+        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {}, nullptr);
         setColumns(std::move(new_columns));
     }
 }

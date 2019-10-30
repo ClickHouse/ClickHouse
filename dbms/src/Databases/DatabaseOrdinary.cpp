@@ -244,7 +244,8 @@ void DatabaseOrdinary::alterTable(
     const ColumnsDescription & columns,
     const IndicesDescription & indices,
     const ConstraintsDescription & constraints,
-    const ASTModifier & storage_modifier)
+    const ASTModifier & storage_modifier,
+    const ASTPtr & select)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
@@ -262,7 +263,7 @@ void DatabaseOrdinary::alterTable(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
-    const auto & ast_create_query = ast->as<ASTCreateQuery &>();
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
@@ -282,6 +283,10 @@ void DatabaseOrdinary::alterTable(
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
+
+
+    if (select)
+        ast_create_query.select = &select->as<ASTSelectWithUnionQuery &>();
 
     statement = getTableDefinitionFromCreateQuery(ast);
 
