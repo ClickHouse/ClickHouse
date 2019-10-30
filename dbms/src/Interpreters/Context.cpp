@@ -37,7 +37,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/SettingsConstraints.h>
+#include <Access/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -1168,17 +1168,6 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
         applySettingChange(change);
 }
 
-void Context::updateSettingsChanges(const SettingsChanges & changes)
-{
-    auto lock = getLock();
-    for (const SettingChange & change : changes)
-    {
-        if (change.name == "profile")
-            setProfile(change.value.safeGet<String>());
-        else
-            settings.applyChange(change);
-    }
-}
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
