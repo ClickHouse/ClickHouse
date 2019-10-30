@@ -37,7 +37,7 @@ private:
     {
         if (arguments.size() > 3 || arguments.empty())
         {
-            throw Exception{"Function " + getName() + " needs [1-3] argument; passed "
+            throw Exception{"Function " + getName() + " needs 1..3 arguments; passed "
                             + std::to_string(arguments.size()) + ".",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
         }
