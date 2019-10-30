@@ -59,7 +59,6 @@ namespace
         Context & context,
         const ASTCreateQuery & query,
         DatabaseOrdinary & database,
-        const String database_data_path,
         const String & database_name,
         bool has_force_restore_data_flag)
     {
@@ -69,7 +68,7 @@ namespace
             String table_name;
             StoragePtr table;
             std::tie(table_name, table)
-                = createTableFromAST(query, database_name, database_data_path, context, has_force_restore_data_flag);
+                = createTableFromAST(query, database_name, database.getDataPath(), context, has_force_restore_data_flag);
             database.attachTable(table_name, table);
         }
         catch (const Exception & e)
@@ -176,7 +175,7 @@ void DatabaseOrdinary::loadStoredObjects(
         if (!create_query.is_dictionary)
             pool.scheduleOrThrowOnError([&]()
             {
-                tryAttachTable(context, create_query, *this, getDataPath(), getDatabaseName(), has_force_restore_data_flag);
+                tryAttachTable(context, create_query, *this, getDatabaseName(), has_force_restore_data_flag);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
