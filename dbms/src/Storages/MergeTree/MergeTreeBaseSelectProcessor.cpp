@@ -212,8 +212,11 @@ Chunk MergeTreeBaseSelectProcessor::readFromPart()
 
 namespace
 {
+    /// Simple interfaces to insert virtual columns.
     struct VirtualColumnsInserter
     {
+        virtual ~VirtualColumnsInserter() = default;
+
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
     };
