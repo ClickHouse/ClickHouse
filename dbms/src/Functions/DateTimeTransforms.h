@@ -47,11 +47,12 @@ struct ToDateImpl
 {
     static constexpr auto name = "toDate";
 
-    static inline UInt16 execute(DateTime64::NativeType t, const DateLUTImpl & time_zone)
-    {
-        std::cout << "converting DateTime64 t=" << t << " " << name << std::endl;
-        return UInt16(time_zone.toDayNum(decimalWholePart(DateTime64(t), 9)));
-    }
+//    static inline UInt16 execute(DateTime64::NativeType t, const DateLUTImpl & time_zone)
+//    {
+//        std::cout << "converting DateTime64 t=" << t << " " << name << std::endl;
+//        throw Exception("!!!! INVALID TO DATE FROM DATETIME64 implementation", ErrorCodes::NOT_IMPLEMENTED);
+//        return UInt16(time_zone.toDayNum(decimalWholePart(DateTime64(t), 9)));
+//    }
 
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {

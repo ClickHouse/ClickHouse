@@ -159,14 +159,10 @@ struct ConvertImpl
     }
 };
 
-
 /** Conversion of DateTime to Date: throw off time component.
   */
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, ToDateImpl> {};
-
-template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, ToDateImpl> {};
 
 
 /** Conversion of Date to DateTime: adding 00:00:00 time component.
@@ -180,17 +176,15 @@ struct ToDateTimeImpl
         return time_zone.fromDayNum(DayNum(d));
     }
 
-    static inline UInt32 execute(DateTime64::NativeType d, const DateLUTImpl & time_zone)
+    // no-op conversion from DateTime to DateTime, used in DateTime64 to DateTime conversion.
+    static inline UInt32 execute(UInt32 d, const DateLUTImpl & /*time_zone*/)
     {
-        return time_zone.fromDayNum(DayNum(d));
+        return d;
     }
 };
 
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, ToDateTimeImpl> {};
-
-template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, ToDateTimeImpl> {};
 
 /// Implementation of toDate function.
 
@@ -252,9 +246,33 @@ struct ToDateTime64Transform
 
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
-
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
+
+/** Conversion of DateTime64 to Date or DateTime: discards fractional part.
+ */
+template <typename Transform>
+struct FromDateTime64Transform
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier = 1;
+
+    FromDateTime64Transform(UInt32 scale)
+        : scale_multiplier(decimalScaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    inline auto execute(DateTime64::NativeType dt, const DateLUTImpl & time_zone) const
+    {
+        const auto c = decimalSplitWithScaleMultiplier(DateTime64(dt), scale_multiplier);
+        return Transform::execute(static_cast<UInt32>(c.whole), time_zone);
+    }
+};
+
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name>
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, FromDateTime64Transform<ToDateImpl>> {};
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name>
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, FromDateTime64Transform<ToDateTimeImpl>> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
@@ -1012,6 +1030,11 @@ private:
                 UInt32 scale = extractToDecimalScale(scale_column);
 
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count, scale);
+            }
+            else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
+            {
+                const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(block.getByPosition(arguments[0]).type.get());
+                ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count, dt64->getScale());
             }
             else
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count);
