@@ -211,56 +211,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     else
         part_name = new_part_info.getPartName();
 
-    auto current_time = time(nullptr);
-    const MergeTreeData::MoveTTLEntry * best_ttl_entry = nullptr;
-    time_t max_min_ttl = 0;
+    /// Size of part would not be greater than block.bytes() + epsilon
+    size_t expected_size = block.bytes();
 
     DB::MergeTreeDataPart::TTLInfos move_ttl_infos;
     for (const auto & [expression, ttl_entry] : data.move_ttl_entries_by_name)
     {
-        auto & ttl_info = move_ttl_infos.moves_ttl[expression];
-        updateTTL(ttl_entry, move_ttl_infos, ttl_info, block);
-        if (ttl_info.min > current_time && max_min_ttl < ttl_info.min)
-        {
-            best_ttl_entry = &ttl_entry;
-            max_min_ttl = ttl_info.min;
-        }
+        updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[expression], block);
     }
 
-    DiskSpace::ReservationPtr reservation;
-    /// Size of part would not be greater than block.bytes() + epsilon
-    size_t expected_size = block.bytes();
-    if (best_ttl_entry != nullptr)
-    {
-        if (best_ttl_entry->destination_type == ASTTTLElement::DestinationType::VOLUME)
-        {
-            auto volume_ptr = data.getStoragePolicy()->getVolumeByName(best_ttl_entry->destination_name);
-            if (volume_ptr)
-            {
-                reservation = volume_ptr->reserve(expected_size);
-            }
-            else
-            {
-                /// FIXME: log warning
-            }
-        }
-        else if (best_ttl_entry->destination_type == ASTTTLElement::DestinationType::DISK)
-        {
-            auto disk_ptr = data.getStoragePolicy()->getDiskByName(best_ttl_entry->destination_name);
-            if (disk_ptr)
-            {
-                reservation = disk_ptr->reserve(expected_size);
-            }
-            else
-            {
-                /// FIXME: log warning
-            }
-        }
-    }
-    if (!reservation)
-    {
-        reservation = data.reserveSpace(expected_size);
-    }
+    DiskSpace::ReservationPtr reservation = data.reserveSpacePreferringMoveDestination(expected_size, move_ttl_infos, time(nullptr));
 
     MergeTreeData::MutableDataPartPtr new_data_part =
         std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name, new_part_info);

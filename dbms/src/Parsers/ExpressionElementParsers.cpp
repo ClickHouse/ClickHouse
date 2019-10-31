@@ -1490,16 +1490,16 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp.parse(pos, expr_elem, expected))
         return false;
 
-    ASTTTLElement::DestinationType destination_type = ASTTTLElement::DestinationType::DELETE;
+    TTLDestinationType destination_type = TTLDestinationType::DELETE;
     String destination_name;
     if (s_to_disk.ignore(pos))
-        destination_type = ASTTTLElement::DestinationType::DISK;
+        destination_type = TTLDestinationType::DISK;
     else if (s_to_volume.ignore(pos))
-        destination_type = ASTTTLElement::DestinationType::VOLUME;
+        destination_type = TTLDestinationType::VOLUME;
     else
         s_delete.ignore(pos);
 
-    if (destination_type == ASTTTLElement::DestinationType::DISK || destination_type == ASTTTLElement::DestinationType::VOLUME)
+    if (destination_type == TTLDestinationType::DISK || destination_type == TTLDestinationType::VOLUME)
     {
         ASTPtr ast_space_name;
         if (!parser_string_literal.parse(pos, ast_space_name, expected))

@@ -70,6 +70,12 @@ namespace CurrentMetrics
 }
 
 
+namespace
+{
+    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
+}
+
+
 namespace DB
 {
 
@@ -602,11 +608,11 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
         for (auto ttl_element_ptr : new_ttl_table_ast->children)
         {
             ASTTTLElement & ttl_element = static_cast<ASTTTLElement &>(*ttl_element_ptr);
-            if (ttl_element.destination_type == ASTTTLElement::DELETE)
+            if (ttl_element.destination_type == TTLDestinationType::DELETE)
             {
                 if (seen_delete_ttl)
                 {
-                    throw Exception("Too many DELETE ttls", ErrorCodes::BAD_TTL_EXPRESSION);
+                    throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
                 auto new_ttl_table_entry = create_ttl_entry(ttl_element.children[0]);
@@ -623,7 +629,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new
                 auto new_ttl_entry = create_ttl_entry(ttl_element.children[0]);
                 if (!only_check)
                 {
-                    MoveTTLEntry entry = { new_ttl_entry.expression, new_ttl_entry.result_column, ttl_element.destination_type, ttl_element.destination_name };
+                    TTLEntry entry{new_ttl_entry.expression, new_ttl_entry.result_column, ttl_element.destination_type, ttl_element.destination_name};
                     move_ttl_entries_by_name.emplace(new_ttl_entry.result_column, entry);
                 }
             }
@@ -3091,18 +3097,100 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     return loaded_parts;
 }
 
-DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
+namespace
 {
-    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
 
+inline DiskSpace::ReservationPtr throwNotEnoughSpace(UInt64 expected_size)
+{
+    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space",
+                    ErrorCodes::NOT_ENOUGH_SPACE);
+    return {};
+}
+
+}
+
+DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
+{
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
     auto reservation = storage_policy->reserve(expected_size);
     if (reservation)
         return reservation;
 
-    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space.",
-                    ErrorCodes::NOT_ENOUGH_SPACE);
+    return throwNotEnoughSpace(expected_size);
+}
+
+DiskSpace::ReservationPtr MergeTreeData::reserveSpacePreferringMoveDestination(UInt64 expected_size,
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t minimum_time) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    auto reservation = tryReserveSpaceOnMoveDestination(expected_size, ttl_infos, minimum_time);
+    if (reservation)
+        return reservation;
+    
+    reservation = storage_policy->reserve(expected_size);
+    if (reservation)
+        return reservation;
+
+    return throwNotEnoughSpace(expected_size);
+}
+
+DiskSpace::ReservationPtr MergeTreeData::tryReserveSpaceOnMoveDestination(UInt64 expected_size,
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t minimum_time) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    auto ttl_entry = selectMoveDestination(ttl_infos, minimum_time);
+    if (ttl_entry != nullptr)
+    {
+        DiskSpace::ReservationPtr reservation;
+        if (ttl_entry->destination_type == TTLDestinationType::VOLUME)
+        {
+            auto volume_ptr = storage_policy->getVolumeByName(ttl_entry->destination_name);
+            if (volume_ptr)
+            {
+                reservation = volume_ptr->reserve(expected_size);
+            }
+            else
+            {
+                LOG_WARNING(log, "Would like to reserve space on volume '"
+                        << ttl_entry->destination_name << "' by TTL rule of table '"
+                        << log_name << "' but volume was not found");
+            }
+        }
+        else if (ttl_entry->destination_type == TTLDestinationType::DISK)
+        {
+            auto disk_ptr = storage_policy->getDiskByName(ttl_entry->destination_name);
+            if (disk_ptr)
+            {
+                reservation = disk_ptr->reserve(expected_size);
+            }
+            else
+            {
+                LOG_WARNING(log, "Would like to reserve space on disk '"
+                        << ttl_entry->destination_name << "' by TTL rule of table '"
+                        << log_name << "' but disk was not found");
+            }
+        }
+        if (reservation)
+            return reservation;
+    }
+
+    return {};
+}
+
+DiskSpace::ReservationPtr MergeTreeData::reserveSpaceOnSpecificDisk(UInt64 expected_size, DiskSpace::DiskPtr disk) const
+{
+    expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
+
+    auto reservation = disk->reserve(expected_size);
+    if (reservation)
+        return reservation;
+
+    return throwNotEnoughSpace(expected_size);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -3284,12 +3372,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = src_part->disk->reserve(src_part->bytes_on_disk);
-    if (!reservation)
-    {
-        throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(src_part->bytes_on_disk) + ", not enough space",
-                    ErrorCodes::NOT_ENOUGH_SPACE);
-    }
+    auto reservation = reserveSpaceOnSpecificDisk(src_part->bytes_on_disk, src_part->disk);
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
@@ -3610,6 +3693,29 @@ bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
         }
     }
     return true;
+}
+
+const MergeTreeData::TTLEntry * MergeTreeData::selectMoveDestination(
+        const MergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t minimum_time) const
+{
+    const MergeTreeData::TTLEntry * result = nullptr;
+    /// Prefer TTL rule which went into action last.
+    time_t max_min_ttl = 0;
+
+    for (const auto & [expression, ttl_entry] : move_ttl_entries_by_name)
+    {
+        auto ttl_info_it = ttl_infos.moves_ttl.find(expression);
+        if (ttl_info_it != ttl_infos.moves_ttl.end()
+                && ttl_info_it->second.min >= minimum_time
+                && max_min_ttl <= ttl_info_it->second.min)
+        {
+            result = &ttl_entry;
+            max_min_ttl = ttl_info_it->second.min;
+        }
+    }
+
+    return result;
 }
 
 }

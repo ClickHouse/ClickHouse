@@ -237,9 +237,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->part = true;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = ASTTTLElement::DestinationType::DISK;
+                command->move_destination_type = TTLDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = ASTTTLElement::DestinationType::VOLUME;
+                command->move_destination_type = TTLDestinationType::VOLUME;
             else
                 return false;
 
@@ -259,9 +259,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->type = ASTAlterCommand::MOVE_PARTITION;
 
             if (s_to_disk.ignore(pos))
-                command->move_destination_type = ASTTTLElement::DestinationType::DISK;
+                command->move_destination_type = TTLDestinationType::DISK;
             else if (s_to_volume.ignore(pos))
-                command->move_destination_type = ASTTTLElement::DestinationType::VOLUME;
+                command->move_destination_type = TTLDestinationType::VOLUME;
             else
                 return false;
 
