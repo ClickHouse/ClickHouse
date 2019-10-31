@@ -811,6 +811,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             const auto & part_name = part_names_with_disks[i].first;
             const auto part_disk_ptr = part_names_with_disks[i].second;
+
+            std::cerr << "(loadDataParts) loading part: " << part_name << "\n";
+
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
                 return;

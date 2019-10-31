@@ -68,7 +68,7 @@ public:
 
     virtual MarkWithOffset write(
         const Block & block, const IColumn::Permutation * permutation,
-        size_t from_mark, size_t offset, const MergeTreeIndexGranularity & index_granularity,
+        size_t from_mark, size_t offset, MergeTreeIndexGranularity & index_granularity,
         /* Blocks with already sorted index columns */
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {},
         bool skip_offsets = false, const WrittenOffsetColumns & already_written_offset_columns = {}) = 0;

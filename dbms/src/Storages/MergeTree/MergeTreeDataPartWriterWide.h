@@ -20,7 +20,7 @@ public:
 
     MarkWithOffset write(const Block & block, const IColumn::Permutation * permutation,
         size_t from_mark, size_t index_offset, 
-        const MergeTreeIndexGranularity & index_granularity,
+        MergeTreeIndexGranularity & index_granularity,
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {},
         bool skip_offsets = false, const WrittenOffsetColumns & already_written_offset_columns = {}) override;
 
@@ -35,7 +35,7 @@ public:
         const String & name,
         const IDataType & type,
         const IColumn & column,
-        const MergeTreeIndexGranularity & index_granularity,
+        MergeTreeIndexGranularity & index_granularity,
         WrittenOffsetColumns & offset_columns,
         bool skip_offsets,
         IDataType::SerializeBinaryBulkStatePtr & serialization_state,

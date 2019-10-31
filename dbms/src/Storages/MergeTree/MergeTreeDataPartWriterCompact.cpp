@@ -35,7 +35,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
     size_t from_mark, size_t index_offset,
-    const MergeTreeIndexGranularity & index_granularity,
+    MergeTreeIndexGranularity & index_granularity,
     const Block & primary_key_block, const Block & skip_indexes_block,
     bool skip_offsets, const WrittenOffsetColumns & already_written_offset_columns)
 {
@@ -73,10 +73,11 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
     while (current_row < total_rows)
     {
         std::cerr << "(MergeTreeDataPartWriterCompact::write) current_row: " << current_row << "\n";
-        
 
         bool write_marks = true;
-        size_t rows_to_write = std::min(total_rows, index_granularity.getMarkRows(current_mark));
+        // size_t rows_to_write = std::min(total_rows, index_granularity.getMarkRows(current_mark));
+        size_t rows_to_write = total_rows;
+        index_granularity.appendMark(total_rows);
         // if (current_row == 0 && index_offset != 0)
         // {
         //     rows_to_write = index_offset;
@@ -87,11 +88,13 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
         //     rows_to_write = index_granularity.getMarkRows(current_mark);
         // }
 
-        std::cerr << "(MergeTreeDataPartWriterCompact::write) rows_to_write: " << rows_to_write << "\n";
+        // std::cerr << "(MergeTreeDataPartWriterCompact::write) rows_to_write: " << rows_to_write << "\n";
 
         /// There could already be enough data to compress into the new block.
-         if (stream->compressed.offset() >= settings.min_compress_block_size)
+        if (stream->compressed.offset() >= settings.min_compress_block_size)
              stream->compressed.next();
+        
+        size_t next_row = 0;
 
         if (write_marks)
         {
@@ -100,15 +103,16 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
             {
                 writeIntBinary(stream->plain_hashing.count(), stream->marks);
                 writeIntBinary(stream->compressed.offset(), stream->marks);
-                current_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
+                next_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
             }
             ++current_mark;
         }
         else
         {
             for (size_t i = 0; i < columns_to_write.size(); ++i)
-                current_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
+                next_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
         }
+        current_row = next_row;
     }
 
     return {current_mark, total_rows - current_row};
@@ -116,6 +120,10 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
 
 size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows)
 {
+
+    std::cerr << "(writeColumnSingleGranule) writing column: " << column.name << "\n";
+    std::cerr << "(writeColumnSingleGranule) from_row: " << from_row << "\n";
+    std::cerr << "(writeColumnSingleGranule) number_of_rows: " << number_of_rows << "\n";
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
@@ -134,7 +142,7 @@ void MergeTreeDataPartWriterCompact::finalize(IMergeTreeDataPart::Checksums & ch
 {
     if (write_final_mark)
     {
-        writeIntBinary(0, stream->marks);
+        writeIntBinary(0ULL, stream->marks);
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
             writeIntBinary(stream->plain_hashing.count(), stream->marks);

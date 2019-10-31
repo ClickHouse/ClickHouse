@@ -52,11 +52,6 @@ public:
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
-    // virtual BlockInputStreamPtr readAll() = 0;
-    // virtual BlockInputStreamPtr read() = 0;
-    // virtual BlockInputStreamPtr readWithThreadPool() = 0;
-    // virtual BlockInputStreamPtr readReverse() = 0;
-
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
         const MarkRanges & mark_ranges,
@@ -73,7 +68,7 @@ public:
      
     virtual bool isStoredOnDisk() const = 0;
 
-    virtual void remove() const = 0;
+    void remove() const;
 
     virtual bool supportsVerticalMerge() const { return false; }
 
@@ -84,13 +79,11 @@ public:
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
-    virtual void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency) = 0;
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     virtual String getColumnNameWithMinumumCompressedSize() const = 0;
-
-    // virtual void detach() = 0;
 
     // virtual Checksums check(
     //     bool require_checksums,
@@ -102,7 +95,6 @@ public:
     // }
 
     using ColumnToSize = std::map<std::string, UInt64>;
-
 
     // void accumulateColumnSizes(ColumnToSize & column_to_size) const
     // {
@@ -120,20 +112,7 @@ public:
 
     // virtual void renameTo() = 0;
 
-    static String typeToString(Type type)
-    {
-        switch(type)
-        {
-            case Type::WIDE:
-                return "Wide";
-            case Type::COMPACT:
-                return "Striped";
-            case Type::IN_MEMORY:
-                return "InMemory";
-        }
-
-        __builtin_unreachable();
-    }
+    static String typeToString(Type type);
 
     String getTypeName() { return typeToString(getType()); }
 
@@ -165,6 +144,9 @@ public:
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
     /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
     String getNewName(const MergeTreePartInfo & new_part_info) const;
+
+    // Block sample_block;
+    size_t getColumnPosition(const String & name) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -344,6 +326,27 @@ public:
     static UInt64 calculateTotalSizeOnDisk(const String & from);
 
 private:
+    /// Reads columns names and types from columns.txt
+    void loadColumns(bool require);
+
+    /// If checksums.txt exists, reads files' checksums (and sizes) from it
+    void loadChecksums(bool require);
+
+    /// Loads marks index granularity into memory
+    virtual void loadIndexGranularity();
+
+    /// Loads index file.
+    void loadIndex();
+
+    /// Load rows count for this part from disk (for the newer storage format version).
+    /// For the older format version calculates rows count from the size of a column with a fixed size.
+    void loadRowsCount();
+
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
+    void loadTTLInfos();
+
+    void loadPartitionAndMinMaxIndex();
+
     String getRelativePathForDetachedPart(const String & prefix) const;
 
     void checkConsistency(bool require_part_metadata);

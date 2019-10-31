@@ -231,6 +231,9 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows)
 
 void MergeTreeRangeReader::ReadResult::adjustLastGranule()
 {
+    std::cerr << "(adjustLastGranule) num_read_rows: " << num_read_rows << "\n";
+    std::cerr << "(adjustLastGranule) total_rows_per_granule: " << total_rows_per_granule << "\n";
+
     size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (rows_per_granule.empty())
@@ -588,6 +591,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             }
 
             auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());
+
+            std::cerr << "(startReadingChain) rows_to_read: " << rows_to_read << "\n";
+
             bool last = rows_to_read == space_left;
             result.addRows(stream.read(result.block, rows_to_read, !last));
             result.addGranule(rows_to_read);

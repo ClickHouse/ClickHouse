@@ -134,7 +134,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         throw;
     }
 
-    std::cerr << "(MergeTreeReaderWide::readRows) read_rows: " << read_rows << "\n";
+    // std::cerr << "(MergeTreeReaderWide::readRows) read_rows: " << read_rows << "\n";
 
     return read_rows;
 }
@@ -175,7 +175,7 @@ void MergeTreeReaderWide::readData(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     bool with_offsets)
 {
-    std::cerr << "(MergeTreeReaderWide::readData) max_rows_to_read: " << max_rows_to_read << "\n";
+    // std::cerr << "(MergeTreeReaderWide::readData) max_rows_to_read: " << max_rows_to_read << "\n";
     auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
         return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *

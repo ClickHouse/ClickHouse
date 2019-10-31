@@ -29,6 +29,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info->isAdaptive(): " << index_granularity_info_->is_adaptive << "\n";
 
     writer = data_part_->getWriter(header.getNamesAndTypesList(), default_codec_, writer_settings);
+
+    std::cerr << "(MergedColumnOnlyOutputStream) writer: " << !!writer << "\n";
     initSkipIndices();
 }
 
@@ -57,14 +59,14 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     UNUSED(skip_offsets);
     UNUSED(already_written_offset_columns);
 
-    auto [new_index_offset, new_current_mark] = writer->write(block, nullptr, current_mark, index_offset, index_granularity);
+    auto [new_current_mark, new_index_offset] = writer->write(block, nullptr, current_mark, index_offset, index_granularity);
 
     /// Should be written before index offset update, because we calculate,
     /// indices of currently written granules
     calculateAndSerializeSkipIndices(skip_indexes_columns, rows);
 
-    index_offset = new_index_offset;
     current_mark = new_current_mark;
+    index_offset = new_index_offset;
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()

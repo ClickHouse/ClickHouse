@@ -24,7 +24,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            "data.bin", uncompressed_cache, 0, settings.min_bytes_to_use_direct_io, buffer_size);
+            path + "data.bin", uncompressed_cache, 0, settings.min_bytes_to_use_direct_io, buffer_size);
 
         // if (profile_callback)
         //     buffer->setProfileCallback(profile_callback, clock_type);
@@ -35,7 +35,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(const MergeTreeData::DataPartPtr 
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            "data.bin", 0, settings.min_bytes_to_use_direct_io, buffer_size);
+            path + "data.bin", 0, settings.min_bytes_to_use_direct_io, buffer_size);
 
         // if (profile_callback)
         //     buffer->setProfileCallback(profile_callback, clock_type);
@@ -55,7 +55,6 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
     size_t read_rows = 0;
 
-    size_t ind = 0;
     for (const auto & it : columns)
     {
         bool append = res.has(it.name);
@@ -68,8 +67,9 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
         try
         {
             size_t column_size_before_reading = column->size();
+            size_t column_position = data_part->getColumnPosition(it.name);
 
-            readData(it.name, *it.type, *column, from_mark, ind++, rows_to_read);
+            readData(it.name, *it.type, *column, from_mark, column_position, rows_to_read);
 
             /// For elements of Nested, column_size_before_reading may be greater than column size
             ///  if offsets are not empty and were already read, but elements are empty.
@@ -97,6 +97,11 @@ void MergeTreeReaderCompact::readData(
     const String & name, const IDataType & type, IColumn & column,
     size_t from_mark, size_t column_position, size_t rows_to_read)
 {
+    std::cerr << "(MergeTreeReaderCompact::readData) from_mark: " << from_mark << "\n";
+    std::cerr << "(MergeTreeReaderCompact::readData) column_position: " << column_position << "\n";
+    std::cerr << "(MergeTreeReaderCompact::readData) rows_to_read: " << rows_to_read << "\n";
+    std::cerr << "(MergeTreeReaderCompact::readData) start reading column: " << name << "\n";
+
     seekToMark(from_mark, column_position);
     
     IDataType::DeserializeBinaryBulkSettings deserialize_settings;
@@ -108,9 +113,11 @@ void MergeTreeReaderCompact::readData(
     type.deserializeBinaryBulkStatePrefix(deserialize_settings, state);
     type.deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state);
 
-    if (column.size() != rows_to_read)
-        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: "+ toString(rows_to_read) + ".",
-            ErrorCodes::CANNOT_READ_ALL_DATA);
+    std::cerr << "(MergeTreeReaderCompact::readData) end reading column: " << name << "\n";
+
+    // if (column.size() != rows_to_read)
+    //     throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: "+ toString(rows_to_read) + ".",
+    //         ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 
@@ -118,11 +125,12 @@ void MergeTreeReaderCompact::loadMarks()
 {
     const auto & index_granularity_info = data_part->index_granularity_info;
     size_t marks_count = data_part->getMarksCount();
-    std::string mrk_path = index_granularity_info.getMarksFilePath(NAME_OF_FILE_WITH_DATA);
+    std::string mrk_path = index_granularity_info.getMarksFilePath(path + NAME_OF_FILE_WITH_DATA);
 
     auto load_func = [&]() -> MarkCache::MappedPtr
     {
         size_t file_size = Poco::File(mrk_path).getSize();
+
         size_t expected_file_size = index_granularity_info.mark_size_in_bytes * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
@@ -132,17 +140,26 @@ void MergeTreeReaderCompact::loadMarks()
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-        auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns.size());
+        size_t columns_num = data_part->columns.size();
+
+        auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_num);
+
+        std::cerr << "(MergeTreeReaderCompact::loadMarks) marks_count: " << marks_count << "\n";
 
         ReadBufferFromFile buffer(mrk_path, file_size);
         size_t i = 0;
 
         while (!buffer.eof())
         {
-            buffer.seek(sizeof(size_t));
-            buffer.read(marks.getRowAddress(i), marks.getRowSize());
+            buffer.seek(sizeof(size_t), SEEK_CUR);
+            buffer.readStrict(reinterpret_cast<char *>(res->data() + i * columns_num), sizeof(MarkInCompressedFile) * columns_num);
+            std::cerr << "(MergeTreeReaderCompact::loadMarks) i: " << i << "\n";
+            std::cerr << "(MergeTreeReaderCompact::loadMarks) buffer pos in file: " << buffer.getPositionInFile() << "\n";
             ++i;
         }
+
+        std::cerr << "(MergeTreeReaderCompact::loadMarks) file_size: " << file_size << "\n";
+        std::cerr << "(MergeTreeReaderCompact::loadMarks) correct file size: " << i * index_granularity_info.mark_size_in_bytes << "\n";
 
         if (i * index_granularity_info.mark_size_in_bytes != file_size)
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -151,8 +168,13 @@ void MergeTreeReaderCompact::loadMarks()
         return res;
     };
 
+    std::cerr << "(MergeTreeReaderCompact::loadMarks) table: " << storage.getTableName() << ", part: " << path << "\n";
+    std::cerr << "(MergeTreeReaderCompact::loadMarks) start marks load..." << "\n";
+
     auto marks_array = IMergeTreeReader::loadMarks(mrk_path, load_func);
     marks = MarksInCompressedFileCompact(marks_array, columns.size());
+
+    std::cerr << "(MergeTreeReaderCompact::loadMarks) end marks load..." << "\n";
 }
 
 const MarkInCompressedFile & MergeTreeReaderCompact::getMark(size_t row, size_t col)
@@ -165,6 +187,8 @@ const MarkInCompressedFile & MergeTreeReaderCompact::getMark(size_t row, size_t 
 void MergeTreeReaderCompact::seekToMark(size_t row, size_t col)
 {
     MarkInCompressedFile mark = getMark(row, col);
+
+    std::cerr << "(MergeTreeReaderCompact::seekToMark) mark: (" << mark.offset_in_compressed_file << ", " << mark.offset_in_decompressed_block << "\n";
 
     try
     {

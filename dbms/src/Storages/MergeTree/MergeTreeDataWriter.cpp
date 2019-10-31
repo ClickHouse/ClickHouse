@@ -168,7 +168,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
 {
     Block & block = block_with_partition.block;
-    std::cerr << "(MergeTreeDataWriter::writeTempPart) block.rows(): " << block.rows() << "\n";
+    // std::cerr << "(MergeTreeDataWriter::writeTempPart) block.rows(): " << block.rows() << "\n";
 
     static const String TMP_PREFIX = "tmp_insert_";
 
