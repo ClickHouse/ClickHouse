@@ -20,7 +20,7 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
     }
     else if (destination_type == TTLDestinationType::DELETE)
     {
-        settings.ostr << " DELETE";
+	/// It would be better to output "DELETE" here but that will break compatibility with earlier versions.
     }
 }
 
