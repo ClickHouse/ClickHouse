@@ -396,7 +396,7 @@ Columns:
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
 
-!!! note
+!!! note "Note"
     The table doesn't contain input data for `INSERT` queries.
 
 ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
@@ -410,11 +410,11 @@ The `system.query_log` table registers two kinds of queries:
 
 Columns:
 
-- `type` (UInt8) — Type of event that occurred when executing the query. Possible values:
-    - 1 — Successful start of query execution.
-    - 2 — Successful end of query execution.
-    - 3 — Exception before the start of query execution.
-    - 4 — Exception during the query execution.
+- `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
+    - `'QueryStart' = 1` — Successful start of query execution.
+    - `'QueryFinish' = 2` — Successful end of query execution.
+    - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+    - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `query_start_time` (DateTime) — Start time of query execution.
