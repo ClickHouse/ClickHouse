@@ -1310,18 +1310,17 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const size_t rows = block.getByPosition(arguments[0]).column.get()->size();
         auto col_str = ColumnString::create();
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
         const auto size_per_row = arguments.size() + 1;
-        out_vec.resize(size_per_row * rows);
-        out_offsets.resize(rows);
+        out_vec.resize(size_per_row * input_rows_count);
+        out_offsets.resize(input_rows_count);
 
-        for (size_t row = 0; row < rows; ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             out_offsets[row] = size_per_row + out_offsets[row - 1];
             out_vec[row * size_per_row + size_per_row - 1] = '\0';
@@ -1334,16 +1333,16 @@ public:
             columns_holder[idx] = block.getByPosition(arguments[idx]).column->convertToFullColumnIfConst();
             const IColumn * column = columns_holder[idx].get();
 
-            if (!(executeNumber<UInt8>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<UInt16>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<UInt32>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<UInt64>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<Int8>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<Int16>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<Int32>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<Int64>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<Float32>(*column, out_vec, idx, rows, size_per_row)
-                || executeNumber<Float64>(*column, out_vec, idx, rows, size_per_row)))
+            if (!(executeNumber<UInt8>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<UInt16>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<UInt32>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<UInt64>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<Int8>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<Int16>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<Int32>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<Int64>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<Float32>(*column, out_vec, idx, input_rows_count, size_per_row)
+                || executeNumber<Float64>(*column, out_vec, idx, input_rows_count, size_per_row)))
             {
                 throw Exception{"Illegal column " + block.getByPosition(arguments[idx]).column->getName()
                                 + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
