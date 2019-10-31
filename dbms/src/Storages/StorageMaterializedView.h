@@ -17,7 +17,7 @@ public:
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const override { return database_name; }
 
-    ASTPtr getInnerQuery() const { return inner_query->clone(); }
+    ASTPtr getInnerQuery() const { return std::atomic_load(&inner_query)->clone(); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;

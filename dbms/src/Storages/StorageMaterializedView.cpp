@@ -303,24 +303,31 @@ void StorageMaterializedView::alter(
         extractDependentTable(select_query, new_select_database_name, new_select_table_name);
         checkAllowedQueries(select_query);
 
-        auto context_lock = global_context.getLock();
+        {
+            auto context_lock = global_context.getLock();
 
-        // more locks
-        inner_query = new_inner_query;
+            global_context.removeDependency(
+                DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
 
-        global_context.removeDependency(
-            DatabaseAndTableName(select_database_name, select_table_name),
-            DatabaseAndTableName(database_name, table_name));
+            global_context.addDependency(
+                DatabaseAndTableName(new_select_database_name, new_select_table_name), DatabaseAndTableName(database_name, table_name));
 
-        global_context.addDependency(
-            DatabaseAndTableName(new_select_database_name, new_select_table_name),
-            DatabaseAndTableName(database_name, table_name));
+            // This seems to be wrong, and has a logic race. Query needs to be part
+            //
+            // -> PtVBOS: getDeps for table A
+            // -> SMV: replace inner to query to depend on table B
+            // -> PtVBOX: push data for table A to query intended for table B
+            //
+            // Options:
+            //  make it part of dependency
+            //  broader lock
+            //  do not allow changing source table
+            std::atomic_store(&inner_query, new_inner_query);
+        }
 
         context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {}, new_as_select_query);
     }
 
-    UNUSED(params);
-    UNUSED(context);
     UNUSED(table_lock_holder);
 }
 
