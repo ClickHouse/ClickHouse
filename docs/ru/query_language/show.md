@@ -6,7 +6,7 @@
 SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Возвращает один столбец statement типа `String`, содержащий одно значение - запрос `CREATE`, с помощью которого создана указанная таблица.
+Возвращает один столбец типа `String` с именем statement, содержащий одно значение — запрос `CREATE TABLE`, с помощью которого была создана указанная таблица.
 
 ## SHOW DATABASES {#show-databases}
 
