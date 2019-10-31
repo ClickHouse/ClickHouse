@@ -52,7 +52,7 @@ private:
     }
 
     template <typename Start, typename End, typename Step>
-    bool executeStartEndStep(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t result)
+    bool executeStartEndStep(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result)
     {
         static constexpr size_t max_elements = 100'000'000;
 
@@ -72,7 +72,7 @@ private:
         size_t total_values = 0;
         size_t pre_values = 0;
 
-        for (size_t row_idx = 0, rows = end_column->size(); row_idx < rows; ++row_idx)
+        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             if (start_data[row_idx] < end_start[row_idx] && step_data[row_idx] == 0)
                 throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
@@ -99,7 +99,7 @@ private:
         auto & out_offsets = offsets_col->getData();
 
         IColumn::Offset offset{};
-        for (size_t row_idx = 0, rows = end_column->size(); row_idx < rows; ++row_idx)
+        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             for (size_t st = start_data[row_idx], ed = end_start[row_idx]; st < ed; st += step_data[row_idx])
                 out_data[offset++] = st;
@@ -112,56 +112,55 @@ private:
     }
 
     template <typename Start, typename End>
-    bool executeStartEnd(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t result)
+    bool executeStartEnd(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result)
     {
-        return executeStartEndStep<Start, End, UInt8>(block, start_col, end_col, step_col,result)
-               || executeStartEndStep<Start, End, UInt16>(block, start_col, end_col, step_col,result)
-               || executeStartEndStep<Start, End, UInt32>(block, start_col, end_col, step_col,result)
-               || executeStartEndStep<Start, End, UInt64>(block, start_col, end_col, step_col,result);
+        return executeStartEndStep<Start, End, UInt8>(block, start_col, end_col, step_col, input_rows_count, result)
+               || executeStartEndStep<Start, End, UInt16>(block, start_col, end_col, step_col, input_rows_count, result)
+               || executeStartEndStep<Start, End, UInt32>(block, start_col, end_col, step_col, input_rows_count, result)
+               || executeStartEndStep<Start, End, UInt64>(block, start_col, end_col, step_col, input_rows_count, result);
     }
 
     template <typename Start>
-    bool executeStart(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t result)
+    bool executeStart(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result)
     {
-        return executeStartEnd<Start, UInt8>(block, start_col, end_col, step_col, result)
-               || executeStartEnd<Start, UInt16>(block, start_col, end_col, step_col, result)
-               || executeStartEnd<Start, UInt32>(block, start_col, end_col, step_col, result)
-               || executeStartEnd<Start, UInt64>(block, start_col, end_col, step_col, result);
+        return executeStartEnd<Start, UInt8>(block, start_col, end_col, step_col, input_rows_count, result)
+               || executeStartEnd<Start, UInt16>(block, start_col, end_col, step_col, input_rows_count, result)
+               || executeStartEnd<Start, UInt32>(block, start_col, end_col, step_col, input_rows_count, result)
+               || executeStartEnd<Start, UInt64>(block, start_col, end_col, step_col, input_rows_count, result);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         Columns columns_holder(3);
         ColumnRawPtrs columns(3);
         size_t idx = 0;
-        size_t rows =  block.getByPosition(arguments[0]).column.get()->size();
 
         // for start column, default to 0
         if (arguments.size() == 1)
         {
-            columns_holder[idx] = DataTypeUInt8().createColumnConst(rows, 0)->convertToFullColumnIfConst();
+            columns_holder[idx] = DataTypeUInt8().createColumnConst(input_rows_count, 0)->convertToFullColumnIfConst();
             columns[idx] = columns_holder[idx].get();
-            idx ++;
+            ++idx;
         }
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             columns_holder[idx] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
             columns[idx] = columns_holder[idx].get();
-            idx ++;
+            ++idx;
         }
 
         // for step column, defaults to 1
         if (arguments.size() <= 2)
         {
-            columns_holder[idx] = DataTypeUInt8().createColumnConst(rows, 1)->convertToFullColumnIfConst();
+            columns_holder[idx] = DataTypeUInt8().createColumnConst(input_rows_count, 1)->convertToFullColumnIfConst();
             columns[idx] = columns_holder[idx].get();
         }
 
-        if (!executeStart<UInt8>(block, columns[0], columns[1], columns[2], result) &&
-            !executeStart<UInt16>(block, columns[0], columns[1], columns[2], result) &&
-            !executeStart<UInt32>(block, columns[0], columns[1], columns[2], result) &&
-            !executeStart<UInt64>(block, columns[0], columns[1], columns[2], result))
+        if (!executeStart<UInt8 >(block, columns[0], columns[1], columns[2], input_rows_count, result) &&
+            !executeStart<UInt16>(block, columns[0], columns[1], columns[2], input_rows_count, result) &&
+            !executeStart<UInt32>(block, columns[0], columns[1], columns[2], input_rows_count, result) &&
+            !executeStart<UInt64>(block, columns[0], columns[1], columns[2], input_rows_count, result))
         {
             throw Exception{"Illegal columns " + columns[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
