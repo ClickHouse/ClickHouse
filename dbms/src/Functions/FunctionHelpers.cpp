@@ -77,11 +77,6 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
                 const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
                 res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});
             }
-            else if (auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(*col.column))
-            {
-                const auto & low_cardinality_col = low_cardinality->convertToFullColumnIfLowCardinality();
-                res.insert({low_cardinality_col, nested_type, col.name});
-            }
             else
                 throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
         }

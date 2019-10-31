@@ -36,9 +36,9 @@ PreparedSetKey getPreparedSetKey(const ASTPtr & node, const DataTypePtr & data_t
 ColumnWithTypeAndName getPreparedSetInfo(const SetPtr & prepared_set)
 {
     if (prepared_set->getDataTypes().size() == 1)
-        return {prepared_set->getSetElements()[0], prepared_set->getDataTypes()[0], "dummy"};
+        return {prepared_set->getSetElements()[0], prepared_set->getElementsTypes()[0], "dummy"};
 
-    return {ColumnTuple::create(prepared_set->getSetElements()), std::make_shared<DataTypeTuple>(prepared_set->getDataTypes()), "dummy"};
+    return {ColumnTuple::create(prepared_set->getSetElements()), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
 bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions)
@@ -242,7 +242,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
 bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
     const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out)
 {
-    const auto & prepared_info = getPreparedSetInfo(prepared_set);
+    const auto prepared_info = getPreparedSetInfo(prepared_set);
     return traverseASTIn(function_name, key_ast, prepared_info.type, prepared_info.column, out);
 }
 
