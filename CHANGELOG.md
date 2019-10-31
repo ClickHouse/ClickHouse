@@ -1,3 +1,248 @@
+## ClickHouse release v19.16.2.2, 30-10-2019
+
+### Backward Incompatible Change
+* Add missing arity validation for count/counIf.
+  [#7095](https://github.com/ClickHouse/ClickHouse/issues/7095)
+[#7298](https://github.com/ClickHouse/ClickHouse/pull/7298) ([Vdimir](https://github.com/Vdimir))
+* Remove legacy `asterisk_left_columns_only` setting (it was disabled by default).
+  [#7335](https://github.com/ClickHouse/ClickHouse/pull/7335) ([Artem
+Zuikov](https://github.com/4ertus2))
+
+### New Feature
+* Introduce uniqCombined64() to calculate cardinality greater than UINT_MAX.
+  [#7213](https://github.com/ClickHouse/ClickHouse/pull/7213),
+[#7222](https://github.com/ClickHouse/ClickHouse/pull/7222) ([Azat
+Khuzhin](https://github.com/azat))
+* Support Bloom filter indexes on Array columns.
+  [#6984](https://github.com/ClickHouse/ClickHouse/pull/6984)
+([achimbab](https://github.com/achimbab))
+* Add a function `getMacro(name)` that returns String with the value of corresponding `<macros>`
+  from server configuration.  [#7240](https://github.com/ClickHouse/ClickHouse/pull/7240)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Set two configuration options for a dictionary based on an HTTP source: `credentials` and
+  `http-headers`. [#7092](https://github.com/ClickHouse/ClickHouse/pull/7092) ([Guillaume
+Tassery](https://github.com/YiuRULE))
+* Add a new ProfileEvent `Merge` that counts the number of launched background merges.
+  [#7093](https://github.com/ClickHouse/ClickHouse/pull/7093) ([Mikhail
+Korotov](https://github.com/millb))
+* Add fullHostName function that returns a fully qualified domain name.
+  [#7263](https://github.com/ClickHouse/ClickHouse/issues/7263)
+[#7291](https://github.com/ClickHouse/ClickHouse/pull/7291) ([sundyli](https://github.com/sundy-li))
+* Add function `arraySplit` and `arrayReverseSplit` which split an array by "cut off"
+  conditions. They are useful in time sequence handling.
+[#7294](https://github.com/ClickHouse/ClickHouse/pull/7294) ([hcz](https://github.com/hczhcz))
+* Add new functions that return the Array of all matched indices in multiMatch family of functions.
+  [#7299](https://github.com/ClickHouse/ClickHouse/pull/7299) ([Danila
+Kutenin](https://github.com/danlark1))
+* Add a new database engine `Lazy` that is optimized for storing a large number of small -Log
+  tables.  [#7171](https://github.com/ClickHouse/ClickHouse/pull/7171) ([Nikita
+Vasilev](https://github.com/nikvas0))
+* Add AND, OR, XOR aggregate function for bitmap columns. [#7109](https://github.com/ClickHouse/ClickHouse/pull/7109) ([Zhichang
+Yu](https://github.com/yuzhichang))
+* Add aggregate function combinators which fill null or default value when there is nothing to
+  aggregate. [#7331](https://github.com/ClickHouse/ClickHouse/pull/7331)
+([hcz](https://github.com/hczhcz))
+
+### Bug Fix
+* Fix wrong query result if it has `WHERE IN (SELECT ...)` section and `optimize_read_in_order` is
+  used. [#7371](https://github.com/ClickHouse/ClickHouse/pull/7371) ([Anton
+Popov](https://github.com/CurtizJ))
+* Disabled MariaDB authentication plugin, which depends on files outside of project.
+  [#7140](https://github.com/ClickHouse/ClickHouse/pull/7140) ([Yuriy
+Baranov](https://github.com/yurriy))
+* Fix exception `Cannot convert column ... because it is constant but values of constants are
+  different in source and result` which could rarely happen when functions `now()`, `today()`,
+`yestarday()`, `randConstant()` are used.
+[#7156](https://github.com/ClickHouse/ClickHouse/pull/7156) ([Nikolai
+Kochetov](https://github.com/KochetovNicolai))
+* Fixed issue of using HTTP keep alive timeout instead of TCP keep alive timeout.
+  [#7351](https://github.com/ClickHouse/ClickHouse/pull/7351) ([Vasily
+Nemkov](https://github.com/Enmk))
+* Fixed [#7109](https://github.com/ClickHouse/ClickHouse/issues/7109) groupBitmapOr(31) segfault.
+  [#7289](https://github.com/ClickHouse/ClickHouse/pull/7289) ([Zhichang
+Yu](https://github.com/yuzhichang))
+* For materialized views the commit for Kafka is called after all data were written.
+  [#7175](https://github.com/ClickHouse/ClickHouse/pull/7175) ([Ivan](https://github.com/abyss7))
+* Fixed wrong `duration_ms` value in `system.part_log` table. It was ten times off.
+  [#7172](https://github.com/ClickHouse/ClickHouse/pull/7172) ([Vladimir
+Chebotarev](https://github.com/excitoon))
+* A quick fix to resolve crash in LIVE VIEW table and re-enabling all LIVE VIEW tests.
+  [#7201](https://github.com/ClickHouse/ClickHouse/pull/7201)
+([vzakaznikov](https://github.com/vzakaznikov))
+* Serialize NULL values correctly in min/max indexes of MergeTree parts.
+  [#7234](https://github.com/ClickHouse/ClickHouse/pull/7234) ([Alexander
+Kuzmenkov](https://github.com/akuzm))
+* Don't put virtual columns to .sql metadata when table is created as `CREATE TABLE AS`.
+  [#7183](https://github.com/ClickHouse/ClickHouse/pull/7183) ([Ivan](https://github.com/abyss7))
+* Fix segmentation fault in `ATTACH PART` query.
+  [#7185](https://github.com/ClickHouse/ClickHouse/pull/7185)
+([alesapin](https://github.com/alesapin))
+* Fix wrong result for some queries given by the optimization of empty IN subqueries and empty
+  INNER/RIGHT JOIN. [#7284](https://github.com/ClickHouse/ClickHouse/pull/7284) ([Nikolai
+Kochetov](https://github.com/KochetovNicolai))
+
+### Improvement
+* Add a message in case of queue_wait_max_ms wait takes place.
+  [#7390](https://github.com/ClickHouse/ClickHouse/pull/7390) ([Azat
+Khuzhin](https://github.com/azat))
+* Minor improvements of Template format. [#7118](https://github.com/ClickHouse/ClickHouse/pull/7118)
+  ([tavplubix](https://github.com/tavplubix))
+* Made setting `s3_min_upload_part_size` table-level.
+  [#7059](https://github.com/ClickHouse/ClickHouse/pull/7059) ([Vladimir
+Chebotarev](https://github.com/excitoon))
+* Check TTL in StorageFactory. [#7304](https://github.com/ClickHouse/ClickHouse/pull/7304)
+  ([sundyli](https://github.com/sundy-li))
+* Squash left-hand blocks in partial merge join (optimization).
+  [#7122](https://github.com/ClickHouse/ClickHouse/pull/7122) ([Artem
+Zuikov](https://github.com/4ertus2))
+* Do not allow non-deterministic functions in mutations of Replicated table engines, because this
+  can introduce inconsistencies between replicas.
+[#7247](https://github.com/ClickHouse/ClickHouse/pull/7247) ([Alexander
+Kazakov](https://github.com/Akazz))
+* Disable memory tracker while converting exception stack trace to string. It can prevent the loss
+  of error messages of type `Memory limit exceeded` on server, which caused the `Attempt to read
+after eof` exception on client. [#7264](https://github.com/ClickHouse/ClickHouse/pull/7264)
+([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Miscellaneous format improvements. Resolves
+  [#6033](https://github.com/ClickHouse/ClickHouse/issues/6033),
+[#2633](https://github.com/ClickHouse/ClickHouse/issues/2633),
+[#6611](https://github.com/ClickHouse/ClickHouse/issues/6611),
+[#6742](https://github.com/ClickHouse/ClickHouse/issues/6742)
+[#7215](https://github.com/ClickHouse/ClickHouse/pull/7215)
+([tavplubix](https://github.com/tavplubix))
+* ClickHouse ignores values on the right side of IN operator that are not convertible to the left
+  side type. Make it work properly for compound types -- Array and Tuple.
+[#7283](https://github.com/ClickHouse/ClickHouse/pull/7283) ([Alexander
+Kuzmenkov](https://github.com/akuzm))
+* Support missing inequalities for ASOF JOIN. It's possible to join less-or-equal variant and strict
+  greater and less variants for ASOF column in ON syntax.
+[#7282](https://github.com/ClickHouse/ClickHouse/pull/7282) ([Artem
+Zuikov](https://github.com/4ertus2))
+* Optimize partial merge join. [#7070](https://github.com/ClickHouse/ClickHouse/pull/7070)
+  ([Artem Zuikov](https://github.com/4ertus2))
+* Do not use more then 98K of memory in uniqCombined functions.
+  [#7236](https://github.com/ClickHouse/ClickHouse/pull/7236),
+[#7270](https://github.com/ClickHouse/ClickHouse/pull/7270) ([Azat
+Khuzhin](https://github.com/azat))
+* Flush parts of right-hand joining table on disk in PartialMergeJoin (if there is not enough
+  memory). Load data back when needed.  [#7186](https://github.com/ClickHouse/ClickHouse/pull/7186)
+([Artem Zuikov](https://github.com/4ertus2))
+
+### Performance Improvement
+* Speed up joinGet with const arguments by avoiding data duplication.
+  [#7359](https://github.com/ClickHouse/ClickHouse/pull/7359) ([Amos
+Bird](https://github.com/amosbird))
+* Return early if the subquery is empty.
+  [#7007](https://github.com/ClickHouse/ClickHouse/pull/7007) ([小路](https://github.com/nicelulu))
+* Optimize parsing of SQL expression in Values.
+  [#6781](https://github.com/ClickHouse/ClickHouse/pull/6781)
+([tavplubix](https://github.com/tavplubix))
+
+### Build/Testing/Packaging Improvement
+* Disable some contribs for cross-compilation.
+  [#7101](https://github.com/ClickHouse/ClickHouse/pull/7101) ([Ivan](https://github.com/abyss7))
+* Add missing linking with PocoXML for clickhouse_common_io.
+  [#7200](https://github.com/ClickHouse/ClickHouse/pull/7200) ([Azat
+Khuzhin](https://github.com/azat))
+* Accept multiple test filter arguments in clickhouse-test.
+  [#7226](https://github.com/ClickHouse/ClickHouse/pull/7226) ([Alexander
+Kuzmenkov](https://github.com/akuzm))
+* Enable musl and jemalloc for ARM.  [#7300](https://github.com/ClickHouse/ClickHouse/pull/7300)
+  ([Amos Bird](https://github.com/amosbird))
+* Added `--client-option` parameter to `clickhouse-test` to pass additional parameters to client.
+  [#7277](https://github.com/ClickHouse/ClickHouse/pull/7277) ([Nikolai
+Kochetov](https://github.com/KochetovNicolai))
+* Preserve existing configs on rpm package upgrade.
+  [#7103](https://github.com/ClickHouse/ClickHouse/pull/7103)
+([filimonov](https://github.com/filimonov))
+* Fix errors detected by PVS. [#7153](https://github.com/ClickHouse/ClickHouse/pull/7153) ([Artem
+  Zuikov](https://github.com/4ertus2))
+* Fix build for Darwin. [#7149](https://github.com/ClickHouse/ClickHouse/pull/7149)
+  ([Ivan](https://github.com/abyss7))
+* glibc 2.29 compatibility. [#7142](https://github.com/ClickHouse/ClickHouse/pull/7142) ([Amos
+  Bird](https://github.com/amosbird))
+* Make sure dh_clean does not touch potential source files.
+  [#7205](https://github.com/ClickHouse/ClickHouse/pull/7205) ([Amos
+Bird](https://github.com/amosbird))
+* Attempt to avoid conflict when updating from altinity rpm - it has config file packaged separately
+  in clickhouse-server-common.  [#7073](https://github.com/ClickHouse/ClickHouse/pull/7073)
+([filimonov](https://github.com/filimonov))
+* Optimize some header files for faster rebuilds.
+  [#7212](https://github.com/ClickHouse/ClickHouse/pull/7212),
+[#7231](https://github.com/ClickHouse/ClickHouse/pull/7231) ([Alexander
+Kuzmenkov](https://github.com/akuzm))
+* Add performance tests for Date and DateTime. [#7332](https://github.com/ClickHouse/ClickHouse/pull/7332) ([Vasily
+  Nemkov](https://github.com/Enmk))
+* Fix some tests that contained non-deterministic mutations.
+  [#7132](https://github.com/ClickHouse/ClickHouse/pull/7132) ([Alexander
+Kazakov](https://github.com/Akazz))
+* Add build with MemorySanitizer to CI.  [#7066](https://github.com/ClickHouse/ClickHouse/pull/7066)
+  ([Alexander Kuzmenkov](https://github.com/akuzm))
+* Avoid use of uninitialized values in MetricsTransmitter.
+  [#7158](https://github.com/ClickHouse/ClickHouse/pull/7158) ([Azat
+Khuzhin](https://github.com/azat))
+* Fix some issues in Fields found by MemorySanitizer.
+  [#7135](https://github.com/ClickHouse/ClickHouse/pull/7135),
+[#7179](https://github.com/ClickHouse/ClickHouse/pull/7179) ([Alexander
+Kuzmenkov](https://github.com/akuzm)), [#7376](https://github.com/ClickHouse/ClickHouse/pull/7376)
+([Amos Bird](https://github.com/amosbird))
+* Fix undefined behavior in murmurhash32. [#7388](https://github.com/ClickHouse/ClickHouse/pull/7388) ([Amos
+  Bird](https://github.com/amosbird))
+* Fix undefined behavior in StoragesInfoStream. [#7384](https://github.com/ClickHouse/ClickHouse/pull/7384)
+  ([tavplubix](https://github.com/tavplubix))
+* Fixed constant expressions folding for external database engines (MySQL, ODBC, JDBC). In previous
+  versions it wasn't working for multiple constant expressions and was not working at all for Date,
+DateTime and UUID. This fixes [#7245](https://github.com/ClickHouse/ClickHouse/issues/7245)
+[#7252](https://github.com/ClickHouse/ClickHouse/pull/7252)
+([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixing AddressSanitizer error in the LIVE VIEW getHeader() method.
+  [#7271](https://github.com/ClickHouse/ClickHouse/pull/7271)
+([vzakaznikov](https://github.com/vzakaznikov))
+* Wait for all scheduled jobs, which are using local objects, if `ThreadPool::schedule(...)` throws
+  an exception. Rename `ThreadPool::schedule(...)` to `ThreadPool::scheduleOrThrowOnError(...)` and
+fix comments to make obvious that it may throw.
+[#7350](https://github.com/ClickHouse/ClickHouse/pull/7350)
+([tavplubix](https://github.com/tavplubix))
+* Fixing ThreadSanitizer data race error in the LIVE VIEW when accessing no_users_thread variable.
+  [#7353](https://github.com/ClickHouse/ClickHouse/pull/7353)
+([vzakaznikov](https://github.com/vzakaznikov))
+* Get rid of malloc symbols in libcommon
+  [#7134](https://github.com/ClickHouse/ClickHouse/pull/7134),
+[#7065](https://github.com/ClickHouse/ClickHouse/pull/7065) ([Amos
+Bird](https://github.com/amosbird))
+* Add global flag ENABLE_LIBRARIES for disabling all libraries.
+  [#7063](https://github.com/ClickHouse/ClickHouse/pull/7063)
+([proller](https://github.com/proller))
+
+### Code cleanup
+* Generalize configuration repository to prepare for DDL for Dictionaries.  [#7155](https://github.com/ClickHouse/ClickHouse/pull/7155)
+  ([alesapin](https://github.com/alesapin))
+* Parser for dictionaries DDL without any semantic.
+  [#7209](https://github.com/ClickHouse/ClickHouse/pull/7209)
+([alesapin](https://github.com/alesapin))
+* Split ParserCreateQuery into different smaller parsers.
+  [#7253](https://github.com/ClickHouse/ClickHouse/pull/7253)
+([alesapin](https://github.com/alesapin))
+* Small refactoring and renaming near external dictionaries.
+  [#7111](https://github.com/ClickHouse/ClickHouse/pull/7111)
+([alesapin](https://github.com/alesapin))
+* Refactor some code to prepare for role-based access control. [#7235](https://github.com/ClickHouse/ClickHouse/pull/7235) ([Vitaly
+  Baranov](https://github.com/vitlibar))
+* Some improvements in DatabaseOrdinary code.
+  [#7086](https://github.com/ClickHouse/ClickHouse/pull/7086) ([Nikita
+Vasilev](https://github.com/nikvas0))
+* Do not use iterators in find() and emplace() methods of hash tables.
+[#7026](https://github.com/ClickHouse/ClickHouse/pull/7026) ([Alexander
+Kuzmenkov](https://github.com/akuzm))
+* Fix getMultipleValuesFromConfig in case when parameter root is not empty. [#7374](https://github.com/ClickHouse/ClickHouse/pull/7374)
+([Mikhail Korotov](https://github.com/millb))
+* Remove some copy-paste (TemporaryFile and TemporaryFileStream)
+  [#7166](https://github.com/ClickHouse/ClickHouse/pull/7166) ([Artem
+Zuikov](https://github.com/4ertus2))
+* Improved code readability a little bit (`MergeTreeData::getActiveContainingPart`).
+  [#7361](https://github.com/ClickHouse/ClickHouse/pull/7361) ([Vladimir
+Chebotarev](https://github.com/excitoon))
+
 ## ClickHouse release 19.15.2.2, 2019-10-01
 
 ### New Feature
