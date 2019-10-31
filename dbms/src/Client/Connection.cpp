@@ -30,6 +30,7 @@
 
 namespace CurrentMetrics
 {
+    extern const Metric SendScalars;
     extern const Metric SendExternalTables;
 }
 
@@ -441,7 +442,7 @@ void Connection::sendCancel()
 }
 
 
-void Connection::sendData(const Block & block, const String & name)
+void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
     //LOG_TRACE(log_wrapper.get(), "Sending data");
 
@@ -455,7 +456,10 @@ void Connection::sendData(const Block & block, const String & name)
         block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
-    writeVarUInt(Protocol::Client::Data, *out);
+    if (scalar)
+        writeVarUInt(Protocol::Client::Scalar, *out);
+    else
+        writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
     size_t prev_bytes = out->count();
@@ -481,6 +485,44 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     else
         copyData(input, *out, size);
     out->next();
+}
+
+
+void Connection::sendScalarsData(Scalars & data)
+{
+    if (data.empty())
+        return;
+
+    Stopwatch watch;
+    size_t out_bytes = out ? out->count() : 0;
+    size_t maybe_compressed_out_bytes = maybe_compressed_out ? maybe_compressed_out->count() : 0;
+    size_t rows = 0;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::SendScalars};
+
+    for (auto & elem : data)
+    {
+        rows += elem.second.rows();
+        sendData(elem.second, elem.first, true /* scalar */);
+    }
+
+    out_bytes = out->count() - out_bytes;
+    maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
+    double elapsed = watch.elapsedSeconds();
+
+    std::stringstream msg;
+    msg << std::fixed << std::setprecision(3);
+    msg << "Sent data for " << data.size() << " scalars, total " << rows << " rows in " << elapsed << " sec., "
+        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
+        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+
+    if (compression == Protocol::Compression::Enable)
+        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
+            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+    else
+        msg << ", no compression.";
+
+    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
 

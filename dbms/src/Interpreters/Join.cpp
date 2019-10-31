@@ -37,11 +37,52 @@ namespace ErrorCodes
 }
 
 
-/// Converts column to nullable if needed. No backward convertion.
+static ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false)
+{
+    ColumnPtr column = src_column->convertToFullColumnIfConst();
+    MutableColumnPtr mut_column = column->cloneEmpty();
+    mut_column->reserve(column->size());
+
+    if (inverse_filter)
+    {
+        for (size_t row = 0; row < filter.size(); ++row)
+        {
+            if (filter[row])
+                mut_column->insertDefault();
+            else
+                mut_column->insertFrom(*column, row);
+        }
+    }
+    else
+    {
+        for (size_t row = 0; row < filter.size(); ++row)
+        {
+            if (filter[row])
+                mut_column->insertFrom(*column, row);
+            else
+                mut_column->insertDefault();
+        }
+    }
+
+    return mut_column;
+}
+
 static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
 {
     if (nullable)
+    {
         JoinCommon::convertColumnToNullable(column);
+    }
+    else
+    {
+        /// We have to replace values masked by NULLs with defaults.
+        if (column.column)
+            if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column))
+                column.column = filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
+
+        JoinCommon::removeColumnNullability(column);
+    }
+
     return std::move(column);
 }
 
@@ -57,6 +98,9 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
             column.column = std::move(mutable_column);
         }
     }
+    else
+        JoinCommon::removeColumnNullability(column);
+
     return std::move(column);
 }
 
@@ -769,7 +813,7 @@ void Join::joinBlockImpl(
         for (size_t i = 0; i < existing_columns; ++i)
             block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(row_filter, -1);
 
-        /// Add join key columns from right block if they has different name.
+        /// Add join key columns from right block if needed.
         for (size_t i = 0; i < right_table_keys.columns(); ++i)
         {
             const auto & right_key = right_table_keys.getByPosition(i);
@@ -791,7 +835,7 @@ void Join::joinBlockImpl(
         null_map_filter.getData().swap(row_filter);
         const IColumn::Filter & filter = null_map_filter.getData();
 
-        /// Add join key columns from right block if they has different name.
+        /// Add join key columns from right block if needed.
         for (size_t i = 0; i < right_table_keys.columns(); ++i)
         {
             const auto & right_key = right_table_keys.getByPosition(i);
@@ -800,20 +844,10 @@ void Join::joinBlockImpl(
             if (required_right_keys.count(right_key.name) && !block.has(right_key.name))
             {
                 const auto & col = block.getByName(left_name);
-                ColumnPtr column = col.column->convertToFullColumnIfConst();
-                MutableColumnPtr mut_column = column->cloneEmpty();
-                mut_column->reserve(column->size());
-
-                for (size_t row = 0; row < filter.size(); ++row)
-                {
-                    if (filter[row])
-                        mut_column->insertFrom(*column, row);
-                    else
-                        mut_column->insertDefault();
-                }
-
                 bool is_nullable = nullable_right_side || right_key.type->isNullable();
-                block.insert(correctNullability({std::move(mut_column), col.type, right_key.name}, is_nullable, null_map_filter));
+
+                ColumnPtr thin_column = filterWithBlanks(col.column, filter);
+                block.insert(correctNullability({thin_column, col.type, right_key.name}, is_nullable, null_map_filter));
 
                 if constexpr (is_all_join)
                     right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));

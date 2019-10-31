@@ -366,11 +366,14 @@ For more information, see the section "[Creating replicated tables](../../operat
 ```
 
 
-## mark_cache_size
+## mark_cache_size {#server-mark-cache-size}
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md).
+Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../operations/table_engines/mergetree.md) family.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+
+!!! warning "Warning"
+    This parameter could be exceeded by the [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime) setting.
 
 **Example**
 

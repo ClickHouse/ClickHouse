@@ -97,6 +97,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    std::optional<UInt64> totalRows() const override;
+
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
@@ -175,6 +177,10 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
 private:
+
+    /// Get a sequential consistent view of current parts.
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
@@ -192,10 +198,10 @@ private:
     using LogEntryPtr = LogEntry::Ptr;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
-    std::mutex current_zookeeper_mutex;            /// To recreate the session in the background thread.
+    mutable std::mutex current_zookeeper_mutex;    /// To recreate the session in the background thread.
 
-    zkutil::ZooKeeperPtr tryGetZooKeeper();
-    zkutil::ZooKeeperPtr getZooKeeper();
+    zkutil::ZooKeeperPtr tryGetZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
 
     /// If true, the table is offline and can not be written to it.
