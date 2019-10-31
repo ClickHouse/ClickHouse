@@ -323,7 +323,7 @@ public:
     void checkSettingsConstraints(const SettingChange & change);
     void checkSettingsConstraints(const SettingsChanges & changes);
 
-    /// Returns the currently constraints (can returns null).
+    /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
