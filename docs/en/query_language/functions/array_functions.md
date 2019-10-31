@@ -34,7 +34,7 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
-## range(end) or  range(start, end [, step])
+## range(end), range(start, end [, step])
 Returns an array of numbers from start to end-1 by step.
 If the argument `start` is not specified, defaults to 0.
 If the argument `step` is not specified, defaults to 1.
