@@ -201,6 +201,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 {
     auto writePadding = [&]()
     {
+        if (pad_to_width < value_width)
+            return;
         for (size_t k = 0; k < pad_to_width - value_width; ++k)
             writeChar(' ', out);
     };
