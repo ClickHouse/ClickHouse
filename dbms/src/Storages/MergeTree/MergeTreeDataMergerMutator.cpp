@@ -1090,6 +1090,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         merge_entry->columns_written = all_columns.size() - updated_header.columns();
 
+        new_data_part->index_granularity = source_part->index_granularity;
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
             new_data_part,

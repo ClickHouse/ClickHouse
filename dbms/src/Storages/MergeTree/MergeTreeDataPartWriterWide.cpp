@@ -92,7 +92,7 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
 
 IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(const Block & block, 
     const IColumn::Permutation * permutation, size_t from_mark, size_t index_offset,
-    const MergeTreeIndexGranularity & index_granularity,
+    MergeTreeIndexGranularity & index_granularity,
     const Block & primary_key_block, const Block & skip_indexes_block,
     bool skip_offsets, const WrittenOffsetColumns & already_written_offset_columns)
 {
@@ -221,13 +221,17 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     const String & name,
     const IDataType & type,
     const IColumn & column,
-    const MergeTreeIndexGranularity & index_granularity,
+    MergeTreeIndexGranularity & index_granularity,
     WrittenOffsetColumns & offset_columns,
     bool skip_offsets,
     IDataType::SerializeBinaryBulkStatePtr & serialization_state,
     size_t from_mark,
     size_t index_offset)
 {
+    std::cerr << "(writeColumn) table: " << storage.getTableName() << "\n";
+    std::cerr << "(writeColumn) column: " << name << "\n";
+    std::cerr << "(writeColumn) from_mark: " << from_mark << "\n";
+    std::cerr << "(writeColumn) index_offset: " << index_offset << "\n";
     auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);

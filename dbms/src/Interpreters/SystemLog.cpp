@@ -26,7 +26,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
-    std::cerr << "config has prefix '" << config_prefix << "' :" << config.has(config_prefix) << "\n";
     if (!config.has(config_prefix))
         return {};
 
