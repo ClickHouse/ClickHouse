@@ -284,7 +284,6 @@ void DatabaseOrdinary::alterTable(
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
 
-
     if (select)
         ast_create_query.select = &select->as<ASTSelectWithUnionQuery &>();
 

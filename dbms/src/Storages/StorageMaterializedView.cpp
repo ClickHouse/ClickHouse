@@ -271,6 +271,35 @@ void StorageMaterializedView::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    TableStructureWriteLockHolder target_table_lock_holder;
+
+    if (has_inner_table)
+    {
+        target_table_lock_holder = getTargetTable()->lockAlterIntention(context.getCurrentQueryId());
+        AlterCommands target_params{};
+
+        std::copy_if(params.begin(), params.end(), std::back_inserter(target_params), [](const AlterCommand & cmd) {
+            return cmd.type != AlterCommand::Type::MODIFY_QUERY;
+        });
+
+        target_params.validate(*getTargetTable(), context);
+        getTargetTable()->alter(target_params, context, target_table_lock_holder);
+    }
+
+    /// For MV we're interested only in column and query changes.
+    AlterCommands mv_params{};
+    std::copy_if(params.begin(), params.end(), std::back_inserter(mv_params), [](const AlterCommand & cmd) {
+        return cmd.type == AlterCommand::Type::ADD_COLUMN || cmd.type == AlterCommand::Type::DROP_COLUMN
+            || cmd.type == AlterCommand::Type::MODIFY_COLUMN || cmd.type == AlterCommand::Type::COMMENT_COLUMN
+            || cmd.type == AlterCommand::Type::MODIFY_QUERY;
+    });
+
+    if (mv_params.empty())
+    {
+        return;
+    }
+
     auto new_columns = getColumns();
     auto new_indices = getIndices();
     auto new_constraints = getConstraints();
@@ -282,53 +311,48 @@ void StorageMaterializedView::alter(
 
     ASTPtr new_as_select_query;
 
-    params.apply(new_columns, new_indices, new_constraints, out_order_by, out_primary_key, out_ttl_table, out_changes, new_as_select_query);
+    mv_params.apply(new_columns, new_indices, new_constraints, out_order_by, out_primary_key, out_ttl_table, out_changes, new_as_select_query);
 
-    if (new_as_select_query)
+    auto & new_query = new_as_select_query->as<ASTSelectWithUnionQuery &>();
+    // more locks
+
+    /// Default value, if only table name exist in the query
+
+    if (new_query.list_of_selects->children.size() != 1)
+        throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    auto & new_inner_query = new_query.list_of_selects->children.at(0);
+    auto & select_query = new_inner_query->as<ASTSelectQuery &>();
+
+    String new_select_database_name = context.getCurrentDatabase();
+    String new_select_table_name;
+
+    extractDependentTable(select_query, new_select_database_name, new_select_table_name);
+    checkAllowedQueries(select_query);
+
     {
-        auto & new_query = new_as_select_query->as<ASTSelectWithUnionQuery &>();
-        // more locks
+        auto context_lock = global_context.getLock();
 
-        /// Default value, if only table name exist in the query
+        global_context.removeDependency(
+            DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
 
-        if (new_query.list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+        global_context.addDependency(
+            DatabaseAndTableName(new_select_database_name, new_select_table_name), DatabaseAndTableName(database_name, table_name));
 
-        auto & new_inner_query = new_query.list_of_selects->children.at(0);
-        auto & select_query = new_inner_query->as<ASTSelectQuery &>();
-
-        String new_select_database_name = context.getCurrentDatabase();
-        String new_select_table_name;
-
-        extractDependentTable(select_query, new_select_database_name, new_select_table_name);
-        checkAllowedQueries(select_query);
-
-        {
-            auto context_lock = global_context.getLock();
-
-            global_context.removeDependency(
-                DatabaseAndTableName(select_database_name, select_table_name), DatabaseAndTableName(database_name, table_name));
-
-            global_context.addDependency(
-                DatabaseAndTableName(new_select_database_name, new_select_table_name), DatabaseAndTableName(database_name, table_name));
-
-            // This seems to be wrong, and has a logic race. Query needs to be part
-            //
-            // -> PtVBOS: getDeps for table A
-            // -> SMV: replace inner to query to depend on table B
-            // -> PtVBOX: push data for table A to query intended for table B
-            //
-            // Options:
-            //  make it part of dependency
-            //  broader lock
-            //  do not allow changing source table
-            std::atomic_store(&inner_query, new_inner_query);
-        }
-
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {}, new_as_select_query);
+        // This seems to be wrong, and has a logic race. Query needs to be part
+        //
+        // -> PtVBOS: getDeps for table A
+        // -> SMV: replace inner to query to depend on table B
+        // -> PtVBOX: push data for table A to query intended for table B
+        //
+        // Options:
+        //  make it part of dependency
+        //  broader lock
+        //  do not allow changing source table
+        std::atomic_store(&inner_query, new_inner_query);
     }
 
-    UNUSED(table_lock_holder);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {}, new_as_select_query);
 }
 
 void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
