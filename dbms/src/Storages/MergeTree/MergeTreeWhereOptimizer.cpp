@@ -9,7 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
 #include <ext/map.h>

@@ -50,16 +50,15 @@ Features:
 
 ### Redash
 
-[Redash](https://github.com/getredash/redash) is an insights platform.
+[Redash](https://github.com/getredash/redash) is a platform for data visualization.
+
+Supports for multiple data sources including ClickHouse, Redash can join results of queries from different data sources into one final dataset.
 
 Features:
 
-- Connect with multiple sources (including ClickHouse).
-- Autocompletion query editor.
-- Schema/Database explorer.
-- Data plotting.
-- Create snippets for elements you frequently use.
-- Use query results as data sources to join different databases.
+- Powerful editor of queries.
+- Database explorer.
+- Visualization tools, that allow you to represent data in different forms.
 
 ### DBeaver
 

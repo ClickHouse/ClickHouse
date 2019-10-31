@@ -130,8 +130,8 @@ list (APPEND dbms_headers
 
 list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctions/TableFunctionFactory.h)
-list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
-list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
+list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp  src/Dictionaries/getDictionaryConfigurationFromAST.cpp)
+list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h src/Dictionaries/getDictionaryConfigurationFromAST.h)
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources src/Common/OpenSSLHelpers.cpp)
@@ -153,12 +153,10 @@ add_subdirectory(src/Common/Config)
 set (all_modules)
 macro(add_object_library name common_path)
     if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
-        add_glob(dbms_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
-        add_glob(dbms_sources ${common_path}/*.cpp ${common_path}/*.c ${common_path}/*.h)
+        add_headers_and_sources(dbms ${common_path})
     else ()
         list (APPEND all_modules ${name})
-        add_glob(${name}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
-        add_glob(${name}_sources ${common_path}/*.cpp ${common_path}/*.c ${common_path}/*.h)
+        add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
         target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
     endif ()
@@ -427,6 +425,11 @@ endif()
 if (USE_JEMALLOC)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
     target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
+
+    if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
+        # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
+        target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
+    endif()
 endif ()
 
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/Formats/include)

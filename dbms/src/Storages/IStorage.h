@@ -109,6 +109,9 @@ public:
     /// Returns true if the storage supports settings.
     virtual bool supportsSettings() const { return false; }
 
+    /// Returns true if the blocks shouldn't be pushed to associated views on insert.
+    virtual bool noPushingToViews() const { return false; }
+
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
@@ -421,6 +424,13 @@ public:
 
     /// Returns storage policy if storage supports it
     virtual DiskSpace::StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
+     */
+    virtual std::optional<UInt64> totalRows() const
+    {
+        return {};
+    }
 
 private:
     /// You always need to take the next three locks in this order.
