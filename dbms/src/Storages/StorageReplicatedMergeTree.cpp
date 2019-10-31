@@ -1140,7 +1140,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     /// Can throw an exception.
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
-    DiskSpace::ReservationPtr reserved_space = source_part->disk->reserveSpace(estimated_space_for_result);
+    DiskSpace::ReservationPtr reserved_space = source_part->disk->reserve(estimated_space_for_result);
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
