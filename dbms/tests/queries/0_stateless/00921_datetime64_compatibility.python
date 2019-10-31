@@ -77,7 +77,7 @@ CAST(N as DateTime64(6))
 CAST(N as DateTime64(9))
 CAST(N as DateTime64(12))
 CAST(N as DateTime64(18))
-formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %n %p %R %S %t %T %u %V %w %y %Y %%')
+formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%')
 """.splitlines()
 
 # Expanded later to cartesian product of all arguments.
