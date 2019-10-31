@@ -1,15 +1,16 @@
 #pragma once
 
 #include <Common/SimpleIncrement.h>
+#include <Common/DiskSpaceMonitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Parsers/ASTTTLElement.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/TTLDestinationType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -675,7 +676,14 @@ public:
     PathsWithDisks getDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB
-    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size);
+    DiskSpace::ReservationPtr reserveSpace(UInt64 expected_size) const;
+    DiskSpace::ReservationPtr reserveSpacePreferringMoveDestination(UInt64 expected_size,
+                                                                    const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                                    time_t minimum_time) const;
+    DiskSpace::ReservationPtr tryReserveSpaceOnMoveDestination(UInt64 expected_size,
+                                                               const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                               time_t minimum_time) const;
+    DiskSpace::ReservationPtr reserveSpaceOnSpecificDisk(UInt64 expected_size, DiskSpace::DiskPtr disk) const;
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
@@ -720,23 +728,17 @@ public:
     {
         ExpressionActionsPtr expression;
         String result_column;
+
+        /// Name and type of a destination are only valid in table-level context.
+        TTLDestinationType destination_type;
+        String destination_name;
     };
 
     using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
     TTLEntriesByName ttl_entries_by_name;
 
     TTLEntry ttl_table_entry;
-
-    struct MoveTTLEntry
-    {
-        ExpressionActionsPtr expression;
-        String result_column;
-        ASTTTLElement::DestinationType destination_type;
-        String destination_name;
-    };
-
-    using MoveTTLEntriesByName = std::unordered_map<String, MoveTTLEntry>;
-    MoveTTLEntriesByName move_ttl_entries_by_name;
+    TTLEntriesByName move_ttl_entries_by_name;
 
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
@@ -975,6 +977,9 @@ private:
 
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, DiskSpace::SpacePtr space);
+
+    const MergeTreeData::TTLEntry * selectMoveDestination(const MergeTreeDataPart::TTLInfos & ttl_infos,
+                                                          time_t minimum_time) const;
 };
 
 }
