@@ -52,11 +52,14 @@ public:
         elems.emplace(part);
         current_size_sum += part->bytes_on_disk;
 
-        while (!elems.empty() && (current_size_sum - (*elems.begin())->bytes_on_disk >= required_size_sum))
-        {
-            current_size_sum -= (*elems.begin())->bytes_on_disk;
-            elems.erase(elems.begin());
-        }
+        removeRedundantElements();
+    }
+
+    /// Weaken requirements on size
+    void decreaseRequiredSize(UInt64 size_decrease)
+    {
+        required_size_sum -= std::min(size_decrease, required_size_sum);
+        removeRedundantElements();
     }
 
     /// Returns parts ordered by size
@@ -66,6 +69,16 @@ public:
         for (const auto & elem : elems)
             res.push_back(elem);
         return res;
+    }
+
+private:
+    void removeRedundantElements()
+    {
+        while (!elems.empty() && (current_size_sum - (*elems.begin())->bytes_on_disk >= required_size_sum))
+        {
+            current_size_sum -= (*elems.begin())->bytes_on_disk;
+            elems.erase(elems.begin());
+        }
     }
 };
 
@@ -85,24 +98,21 @@ bool MergeTreePartsMover::selectPartsForMove(
     const auto & policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
-    /// Do not check if policy has one volume
-    if (volumes.size() == 1)
-        return false;
-
-    /// Do not check last volume
-    for (size_t i = 0; i != volumes.size() - 1; ++i)
+    if (volumes.size() > 0)
     {
-        for (const auto & disk : volumes[i]->disks)
+        /// Do not check last volume
+        for (size_t i = 0; i != volumes.size() - 1; ++i)
         {
-            UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
-            UInt64 unreserved_space = disk->getUnreservedSpace();
+            for (const auto & disk : volumes[i]->disks)
+            {
+                UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
+                UInt64 unreserved_space = disk->getUnreservedSpace();
 
-            if (unreserved_space < required_maximum_available_space)
-                need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
+                if (unreserved_space < required_maximum_available_space)
+                    need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
+            }
         }
     }
-
-    auto current_time = time(nullptr);
 
     for (const auto & part : data_parts)
     {
@@ -111,63 +121,24 @@ bool MergeTreePartsMover::selectPartsForMove(
         if (!can_move(part, &reason))
             continue;
 
-        const auto ttl_entries_end = part->storage.move_ttl_entries_by_name.end();
-        auto best_ttl_entry_it = ttl_entries_end;
-        time_t max_min_ttl = 0;
-        for (auto & [name, ttl_info] : part->ttl_infos.moves_ttl)
-        {
-            auto move_ttl_entry_it = part->storage.move_ttl_entries_by_name.find(name);
-            if (move_ttl_entry_it != part->storage.move_ttl_entries_by_name.end())
-            {
-                if (ttl_info.min > current_time && max_min_ttl < ttl_info.min)
-                {
-                    best_ttl_entry_it = move_ttl_entry_it;
-                    max_min_ttl = ttl_info.min;
-                }
-            }
-        }
-        if (best_ttl_entry_it != ttl_entries_end)
-        {
-            auto & move_ttl_entry = best_ttl_entry_it->second;
-            if (move_ttl_entry.destination_type == ASTTTLElement::DestinationType::VOLUME)
-            {
-                auto volume_ptr = policy->getVolumeByName(move_ttl_entry.destination_name);
-                if (volume_ptr)
-                {
-                    auto reservation = volume_ptr->reserve(part->bytes_on_disk);
-                    if (reservation)
-                    {
-                        parts_to_move.emplace_back(part, std::move(reservation));
-                        continue;
-                    }
-                }
-                else
-                {
-                    /// FIXME: log warning?
-                }
-            }
-            else if (move_ttl_entry.destination_type == ASTTTLElement::DestinationType::DISK)
-            {
-                auto disk_ptr = policy->getDiskByName(move_ttl_entry.destination_name);
-                if (disk_ptr)
-                {
-                    auto reservation = disk_ptr->reserve(part->bytes_on_disk);
-                    if (reservation)
-                    {
-                        parts_to_move.emplace_back(part, std::move(reservation));
-                        continue;
-                    }
-                }
-                else
-                {
-                    /// FIXME: log warning?
-                }
-            }
-        }
-
+        auto reservation = part->storage.tryReserveSpaceOnMoveDestination(part->bytes_on_disk, part->ttl_infos, time(nullptr));
         auto to_insert = need_to_move.find(part->disk);
-        if (to_insert != need_to_move.end())
-            to_insert->second.add(part);
+        if (reservation)
+        {
+            parts_to_move.emplace_back(part, std::move(reservation));
+            /// If table TTL rule satisfies on this part, won't apply policy rules on it.
+            /// In order to not over-move, we need to "release" required space on this disk,
+            /// possibly to zero.
+            if (to_insert != need_to_move.end())
+            {
+                to_insert->second.decreaseRequiredSize(part->bytes_on_disk);
+            }
+        }
+        else
+        {
+            if (to_insert != need_to_move.end())
+                to_insert->second.add(part);
+        }
     }
 
     for (auto && move : need_to_move)

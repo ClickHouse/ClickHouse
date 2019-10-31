@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Storages/MergeTree/TTLDestinationType.h>
 
 
 namespace DB
@@ -10,17 +11,10 @@ namespace DB
 class ASTTTLElement : public IAST
 {
 public:
-    enum DestinationType
-    {
-        DISK,
-        VOLUME,
-        DELETE,
-    };
-
-    DestinationType destination_type;
+    TTLDestinationType destination_type;
     String destination_name;
 
-    ASTTTLElement(DestinationType destination_type_, const String & destination_name_)
+    ASTTTLElement(TTLDestinationType destination_type_, const String & destination_name_)
         : destination_type(destination_type_)
         , destination_name(destination_name_)
     {
