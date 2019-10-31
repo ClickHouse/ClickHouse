@@ -1103,6 +1103,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
+    /// Converts pipes to BlockInputsStreams.
+    /// It is temporary, till not all merging streams are implemented as processors.
     auto streams_to_merge = [&pipes]()
     {
         size_t num_streams = pipes.size();

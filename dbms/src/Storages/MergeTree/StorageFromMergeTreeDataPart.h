@@ -32,6 +32,7 @@ public:
         auto pipes = MergeTreeDataSelectExecutor(part->storage).readFromParts(
                 {part}, column_names, query_info, context, max_block_size, num_streams);
 
+        /// Wrap processors to BlockInputStreams. It is temporary. Will be changed to processors interface later.
         BlockInputStreams streams;
         streams.reserve(pipes.size());
 

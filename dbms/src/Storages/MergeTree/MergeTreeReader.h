@@ -45,6 +45,7 @@ public:
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+    size_t numColumnsInResult() const { return columns.size(); }
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.

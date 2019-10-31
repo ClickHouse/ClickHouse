@@ -504,8 +504,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
         bool has_columns = false;
         for (auto & column : columns)
+        {
             if (column)
                 has_columns = true;
+        }
 
         bool should_evaluate_missing_defaults = false;
 
@@ -636,7 +638,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
         return columns;
     }
 
-    columns.resize(merge_tree_reader->getColumns().size());
+    columns.resize(merge_tree_reader->numColumnsInResult());
 
     auto & rows_per_granule = result.rowsPerGranule();
     auto & started_ranges = result.startedRanges();

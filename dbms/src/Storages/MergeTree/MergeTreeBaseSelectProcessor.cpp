@@ -210,8 +210,17 @@ Chunk MergeTreeBaseSelectProcessor::readFromPart()
 }
 
 
-template <typename InsertCallback>
-static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, MergeTreeReadTask * task, const Names & virtual_columns)
+namespace
+{
+    struct VirtualColumnsInserter
+    {
+        virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
+        virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
+    };
+}
+
+static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inserter,
+                                     MergeTreeReadTask * task, const Names & virtual_columns)
 {
     /// add virtual columns
     /// Except _sample_factor, which is added from the outside.
@@ -231,7 +240,7 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeString().createColumn();
 
-                callback.template operator()<DataTypeString>(column, virtual_column_name);
+                inserter.insertStringColumn(column, virtual_column_name);
             }
             else if (virtual_column_name == "_part_index")
             {
@@ -241,7 +250,7 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeUInt64().createColumn();
 
-                callback.template operator()<DataTypeUInt64>(column, virtual_column_name);
+                inserter.insertUInt64Column(column, virtual_column_name);
             }
             else if (virtual_column_name == "_partition_id")
             {
@@ -251,7 +260,7 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
                 else
                     column = DataTypeString().createColumn();
 
-                callback.template operator()<DataTypeString>(column, virtual_column_name);
+                inserter.insertStringColumn(column, virtual_column_name);
             }
         }
     }
@@ -259,21 +268,33 @@ static void injectVirtualColumnsImpl(size_t rows, InsertCallback & callback, Mer
 
 namespace
 {
-    struct InsertIntoBlockCallback
+    struct VirtualColumnsInserterIntoBlock : public VirtualColumnsInserter
     {
-        template <typename DataType>
-        void operator()(const ColumnPtr & column, const String & name)
+        explicit VirtualColumnsInserterIntoBlock(Block & block_) : block(block_) {}
+
+        void insertStringColumn(const ColumnPtr & column, const String & name) final
         {
-            block.insert({column, std::make_shared<DataType>(), name});
+            block.insert({column, std::make_shared<DataTypeString>(), name});
+        }
+
+        void insertUInt64Column(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeUInt64>(), name});
         }
 
         Block & block;
     };
 
-    struct InsertIntoColumnsCallback
+    struct VirtualColumnsInserterIntoColumns : public VirtualColumnsInserter
     {
-        template <typename>
-        void operator()(const ColumnPtr & column, const String &)
+        explicit VirtualColumnsInserterIntoColumns(Columns & columns_) : columns(columns_) {}
+
+        void insertStringColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
+
+        void insertUInt64Column(const ColumnPtr & column, const String &) final
         {
             columns.push_back(column);
         }
@@ -284,8 +305,8 @@ namespace
 
 void MergeTreeBaseSelectProcessor::injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns)
 {
-    InsertIntoBlockCallback callback { block };
-    injectVirtualColumnsImpl(block.rows(), callback, task, virtual_columns);
+    VirtualColumnsInserterIntoBlock inserter { block };
+    injectVirtualColumnsImpl(block.rows(), inserter, task, virtual_columns);
 }
 
 void MergeTreeBaseSelectProcessor::injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns)
@@ -293,8 +314,8 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(Chunk & chunk, MergeTree
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    InsertIntoColumnsCallback callback { columns };
-    injectVirtualColumnsImpl(num_rows, callback, task, virtual_columns);
+    VirtualColumnsInserterIntoColumns inserter { columns };
+    injectVirtualColumnsImpl(num_rows, inserter, task, virtual_columns);
 
     chunk.setColumns(columns, num_rows);
 }
