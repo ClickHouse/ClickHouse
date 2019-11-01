@@ -292,11 +292,11 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 }
 
 void MySQLHandler::authPluginSSL() {
-    throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
 void MySQLHandler::finishHandshakeSSL([[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos, [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::HandshakeResponse & packet) {
-    throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
 #if USE_SSL && USE_POCO_NETSSL
