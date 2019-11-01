@@ -24,7 +24,7 @@ ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
-    const String & database_data_path_relative,
+    const String & table_data_path_relative,
     Context & context,
     bool has_force_restore_data_flag);
 
@@ -74,26 +74,6 @@ public:
         const String & to_table_name,
         TableStructureWriteLockHolder & lock);
 
-    static ASTPtr getCreateTableQuery(
-        const IDatabase & database,
-        const Context & context,
-        const String & table_name);
-
-    static ASTPtr tryGetCreateTableQuery(
-        const IDatabase & database,
-        const Context & context,
-        const String & table_name);
-
-    static ASTPtr getCreateDictionaryQuery(
-        const IDatabase & database,
-        const Context & context,
-        const String & dictionary_name);
-
-    static ASTPtr tryGetCreateDictionaryQuery(
-        const IDatabase & database,
-        const Context & context,
-        const String & dictionary_name);
-
     static ASTPtr getCreateDatabaseQuery(
         const IDatabase & database,
         const Context & context);
@@ -112,7 +92,6 @@ public:
     using IteratingFunction = std::function<void(const String &)>;
     static void iterateMetadataFiles(const IDatabase & database, Poco::Logger * log, const Context & context, const IteratingFunction & iterating_function);
 
-private:
     static ASTPtr getCreateTableQueryImpl(
         const IDatabase & database,
         const Context & context,
