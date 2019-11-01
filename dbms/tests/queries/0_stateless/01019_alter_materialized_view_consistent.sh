@@ -11,19 +11,23 @@ DROP TABLE IF EXISTS src_b;
 
 DROP TABLE IF EXISTS mv;
 
-CREATE TABLE src_a(a UInt64) ENGINE = Null;
-CREATE TABLE src_b(b UInt64) ENGINE = Null;
+CREATE TABLE src_a(v UInt64) ENGINE = Null;
+CREATE TABLE src_b(v UInt64) ENGINE = Null;
 
-CREATE MATERIALIZED VIEW mv(v UInt64) Engine = MergeTree() ORDER BY v AS SELECT a as v FROM src_a;
+CREATE MATERIALIZED VIEW mv(test UInt8) Engine = MergeTree() ORDER BY test AS SELECT v == 1 as test FROM src_a;
 EOF
 
-# Useless test. Sometimes it catches a deadlock, other times it doesn't.
-seq 1 100 | sed -r -e "s/.+/INSERT INTO TABLE src_a VALUES (1);/" | $CLICKHOUSE_CLIENT -n 2>/dev/null &
-seq 1 100 | sed -r -e "s/.+/INSERT INTO TABLE src_b VALUES (2);/" | $CLICKHOUSE_CLIENT -n 2>/dev/null &
-seq 1 100 | sed -r -e "s/.+/ALTER TABLE mv MODIFY QUERY SELECT a == 1 as v FROM src_a;/" | $CLICKHOUSE_CLIENT -n 2>/dev/null &
-seq 1 100 | sed -r -e "s/.+/ALTER TABLE mv MODIFY QUERY SELECT b == 2 as v FROM src_b;/" | $CLICKHOUSE_CLIENT -n 2>/dev/null &
+INSERT[0]="INSERT INTO TABLE src_a VALUES (1);"
+INSERT[1]="INSERT INTO TABLE src_b VALUES (2);"
+
+for i in $(seq 1 100); do
+  $CLICKHOUSE_CLIENT -q "${INSERT[$RANDOM % 2]}" 2>/dev/null &
+done
+
+seq 1 100 | sed -r -e "s/.+/ALTER TABLE mv MODIFY QUERY SELECT v == 1 as test FROM src_a;/" | $CLICKHOUSE_CLIENT -n 2>/dev/null &
+seq 1 100 | sed -r -e "s/.+/ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test FROM src_b;/" | $CLICKHOUSE_CLIENT -n 2>/dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM mv WHERE v == 1;"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM mv WHERE v == 0;"
+$CLICKHOUSE_CLIENT -q "SELECT 'inserts', count() > 0 FROM mv WHERE test == 1;"
+$CLICKHOUSE_CLIENT -q "SELECT 'inconsistencies', count() FROM mv WHERE test == 0;"

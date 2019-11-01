@@ -34,6 +34,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     if (!table.empty())
     {
+        /// Hold context lock so that MV query isn't suddenly changed to query another table.
+        /// It might be enough to hold it for acquiring structure locks.
+        auto ctx_lock = context.getLock();
+
         Dependencies dependencies = context.getDependencies(database, table);
 
         /// We need special context for materialized views insertions
@@ -48,6 +52,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         for (const auto & database_table : dependencies)
         {
             auto dependent_table = context.getTable(database_table.first, database_table.second);
+
+            /// Lock dependent tables' structure early.
+            addTableLock(dependent_table->lockStructureForShare(true, context.getInitialQueryId()));
 
             ASTPtr query;
             BlockOutputStreamPtr out;
