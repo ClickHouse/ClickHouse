@@ -208,6 +208,17 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
+static void sanitizeBlock(Block & block)
+{
+    for (auto & col : block)
+    {
+        if (!col.column)
+            col.column = col.type->createColumn();
+        else if (isColumnConst(*col.column) && !col.column->empty())
+            col.column = col.column->cloneEmpty();
+    }
+}
+
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
@@ -305,81 +316,104 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         table_lock = storage->lockStructureForShare(false, context.getInitialQueryId());
 
-    syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
-        query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
-
-    /// Save scalar sub queries's results in the query context
-    if (context.hasQueryContext())
-        for (const auto & it : syntax_analyzer_result->getScalars())
-            context.getQueryContext().addScalar(it.first, it.second);
-
-    query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-        query_ptr, syntax_analyzer_result, context,
-        NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-        options.subquery_depth, !options.only_analyze);
-
-    if (!options.only_analyze)
+    auto analyze = [&] ()
     {
-        if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
-            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+        syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
+                query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
 
-        if (query.final() && (input || !storage || !storage->supportsFinal()))
-            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+        /// Save scalar sub queries's results in the query context
+        if (context.hasQueryContext())
+            for (const auto & it : syntax_analyzer_result->getScalars())
+                context.getQueryContext().addScalar(it.first, it.second);
 
-        if (query.prewhere() && (input || !storage || !storage->supportsPrewhere()))
-            throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+        query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
+                query_ptr, syntax_analyzer_result, context,
+                NameSet(required_result_column_names.begin(), required_result_column_names.end()),
+                options.subquery_depth, !options.only_analyze);
 
-        /// Save the new temporary tables in the query context
-        for (const auto & it : query_analyzer->getExternalTables())
-            if (!context.tryGetExternalTable(it.first))
-                context.addExternalTable(it.first, it.second);
-    }
-
-    if (!options.only_analyze || options.modify_inplace)
-    {
-        if (syntax_analyzer_result->rewrite_subqueries)
+        if (!options.only_analyze)
         {
-            /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
-            if (is_subquery)
-                interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                    table_expression,
-                    getSubqueryContext(context),
-                    options.subquery(),
-                    required_columns);
+            if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
+                throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+
+            if (query.final() && (input || !storage || !storage->supportsFinal()))
+                throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+
+            if (query.prewhere() && (input || !storage || !storage->supportsPrewhere()))
+                throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+
+            /// Save the new temporary tables in the query context
+            for (const auto & it : query_analyzer->getExternalTables())
+                if (!context.tryGetExternalTable(it.first))
+                    context.addExternalTable(it.first, it.second);
         }
-    }
 
-    if (interpreter_subquery)
-    {
-        /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
-        if (query_analyzer->hasAggregation())
-            interpreter_subquery->ignoreWithTotals();
-    }
-
-    required_columns = syntax_analyzer_result->requiredSourceColumns();
-
-    if (storage)
-    {
-        source_header = storage->getSampleBlockForColumns(required_columns);
-
-        /// Fix source_header for filter actions.
-        if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        if (!options.only_analyze || options.modify_inplace)
         {
-            filter_info = std::make_shared<FilterInfo>();
-            filter_info->column_name = generateFilterActions(filter_info->actions, storage, context, required_columns);
-            source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
+            if (syntax_analyzer_result->rewrite_subqueries)
+            {
+                /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
+                if (is_subquery)
+                    interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+                            table_expression,
+                            getSubqueryContext(context),
+                            options.subquery(),
+                            required_columns);
+            }
         }
-    }
 
-    /// Calculate structure of the result.
-    result_header = getSampleBlockImpl();
-    for (auto & col : result_header)
+        if (interpreter_subquery)
+        {
+            /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
+            if (query_analyzer->hasAggregation())
+                interpreter_subquery->ignoreWithTotals();
+        }
+
+        required_columns = syntax_analyzer_result->requiredSourceColumns();
+
+        if (storage)
+        {
+            source_header = storage->getSampleBlockForColumns(required_columns);
+
+            /// Fix source_header for filter actions.
+            if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+            {
+                filter_info = std::make_shared<FilterInfo>();
+                filter_info->column_name = generateFilterActions(filter_info->actions, storage, context, required_columns);
+                source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
+            }
+        }
+
+        /// Calculate structure of the result.
+        result_header = getSampleBlockImpl();
+    };
+
+    analyze();
+
+    bool need_analyze_again = false;
+    if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
     {
-        if (!col.column)
-            col.column = col.type->createColumn();
-        else if (isColumnConst(*col.column) && !col.column->empty())
-            col.column = col.column->cloneEmpty();
+        auto constant = std::make_shared<ASTLiteral>(0u);
+        if (analysis_result.prewhere_constant_filter_description.always_true)
+            constant->value = 1u;
+        query.setExpression(ASTSelectQuery::Expression::PREWHERE, constant);
+        need_analyze_again = true;
     }
+    if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
+    {
+        auto constant = std::make_shared<ASTLiteral>(0u);
+        if (analysis_result.where_constant_filter_description.always_true)
+            constant->value = 1u;
+        query.setExpression(ASTSelectQuery::Expression::WHERE, constant);
+        need_analyze_again = true;
+    }
+    if (need_analyze_again)
+        analyze();
+
+    /// Blocks used in expression analysis contains size 1 const columns for constant folding and
+    ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
+    ///  requires all columns to be of size 0, thus we need to sanitize the block here.
+    sanitizeBlock(result_header);
 }
 
 
@@ -478,7 +512,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             context,
             storage,
             options.only_analyze,
-            filter_info
+            filter_info,
+            source_header
         );
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
@@ -529,6 +564,22 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     return analysis_result.final_projection->getSampleBlock();
 }
 
+/// Check if there is an ignore function. It's used for disabling constant folding in query
+///  predicates because some performance tests use ignore function as a non-optimize guard.
+static bool hasIgnore(const ExpressionActions & actions)
+{
+    for (auto & action : actions.getActions())
+    {
+        if (action.type == action.APPLY_FUNCTION && action.function_base)
+        {
+            auto name = action.function_base->getName();
+            if (name == "ignore")
+                return true;
+        }
+    }
+    return false;
+}
+
 InterpreterSelectQuery::AnalysisResult
 InterpreterSelectQuery::analyzeExpressions(
     const ASTSelectQuery & query,
@@ -538,7 +589,8 @@ InterpreterSelectQuery::analyzeExpressions(
     const Context & context,
     const StoragePtr & storage,
     bool only_types,
-    const FilterInfoPtr & filter_info)
+    const FilterInfoPtr & filter_info,
+    const Block & source_header)
 {
     AnalysisResult res;
 
@@ -632,6 +684,16 @@ InterpreterSelectQuery::analyzeExpressions(
             res.prewhere_info = std::make_shared<PrewhereInfo>(
                     chain.steps.front().actions, query.prewhere()->getColumnName());
 
+            if (!hasIgnore(*res.prewhere_info->prewhere_actions))
+            {
+                Block before_prewhere_sample = source_header;
+                sanitizeBlock(before_prewhere_sample);
+                res.prewhere_info->prewhere_actions->execute(before_prewhere_sample);
+                auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
+                /// If the filter column is a constant, record it.
+                if (column_elem.column)
+                    res.prewhere_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+            }
             chain.addStep();
         }
 
@@ -652,6 +714,20 @@ InterpreterSelectQuery::analyzeExpressions(
             where_step_num = chain.steps.size() - 1;
             has_where = res.has_where = true;
             res.before_where = chain.getLastActions();
+            if (!hasIgnore(*res.before_where))
+            {
+                Block before_where_sample;
+                if (chain.steps.size() > 1)
+                    before_where_sample = chain.steps[chain.steps.size() - 2].actions->getSampleBlock();
+                else
+                    before_where_sample = source_header;
+                sanitizeBlock(before_where_sample);
+                res.before_where->execute(before_where_sample);
+                auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
+                /// If the filter column is a constant, record it.
+                if (column_elem.column)
+                    res.where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
+            }
             chain.addStep();
         }
 

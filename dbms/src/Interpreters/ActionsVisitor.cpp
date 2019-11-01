@@ -328,10 +328,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
-        if (!data.no_subqueries)
+        if ((prepared_set = makeSet(node, data, data.no_subqueries)))
         {
             /// Transform tuple or subquery into a set.
-            prepared_set = makeSet(node, data);
         }
         else
         {
@@ -423,8 +422,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
             if (!data.hasColumn(column.name))
             {
-                column.column = ColumnSet::create(1, prepared_set);
-
+                auto column_set = ColumnSet::create(1, prepared_set);
+                /// If prepared_set is not empty, we have a set made with literals.
+                /// Create a const ColumnSet to make constant folding work
+                if (!prepared_set->empty())
+                    column.column = ColumnConst::create(std::move(column_set), 1);
+                else
+                    column.column = std::move(column_set);
                 data.addAction(ExpressionAction::addColumn(column));
             }
 
@@ -542,21 +546,24 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & ast, Data 
     data.addAction(ExpressionAction::addColumn(column));
 }
 
-SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
+SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
       * The enumeration of values is parsed as a function `tuple`.
       */
     const IAST & args = *node.arguments;
-    const ASTPtr & arg = args.children.at(1);
+    const ASTPtr & left_in_operand = args.children.at(0);
+    const ASTPtr & right_in_operand = args.children.at(1);
     const Block & sample_block = data.getSampleBlock();
 
     /// If the subquery or table name for SELECT.
-    const auto * identifier = arg->as<ASTIdentifier>();
-    if (arg->as<ASTSubquery>() || identifier)
+    const auto * identifier = right_in_operand->as<ASTIdentifier>();
+    if (right_in_operand->as<ASTSubquery>() || identifier)
     {
-        auto set_key = PreparedSetKey::forSubquery(*arg);
+        if (no_subqueries)
+            return {};
+        auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
         if (data.prepared_sets.count(set_key))
             return data.prepared_sets.at(set_key);
 
@@ -579,7 +586,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
         }
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        String set_id = arg->getColumnName();
+        String set_id = right_in_operand->getColumnName();
 
         SubqueryForSet & subquery_for_set = data.subqueries_for_sets[set_id];
 
@@ -599,7 +606,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
           */
         if (!subquery_for_set.source && data.no_storage_or_local)
         {
-            auto interpreter = interpretSubquery(arg, data.context, data.subquery_depth, {});
+            auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
                 interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
 
@@ -637,8 +644,11 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data)
     }
     else
     {
-        /// An explicit enumeration of values in parentheses.
-        return makeExplicitSet(&node, sample_block, false, data.context, data.set_size_limit, data.prepared_sets);
+        if (sample_block.has(left_in_operand->getColumnName()))
+            /// An explicit enumeration of values in parentheses.
+            return makeExplicitSet(&node, sample_block, false, data.context, data.set_size_limit, data.prepared_sets);
+        else
+            return {};
     }
 }
 
