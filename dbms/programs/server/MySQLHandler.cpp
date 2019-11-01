@@ -225,7 +225,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
         packet_sender->max_packet_size = connection_context.mysql.max_packet_size;
         packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 #else
-        throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else
@@ -251,7 +251,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 #if USE_SSL
         auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
 #else
-        throw Exception("Compiled without ssl", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
 
