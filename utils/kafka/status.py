@@ -5,7 +5,6 @@
 import kafka  # … kafka-python
 
 import argparse
-from pprint import pprint
 
 
 def main():
