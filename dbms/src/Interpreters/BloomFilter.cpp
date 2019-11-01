@@ -89,7 +89,7 @@ bool BloomFilter::findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed
     return bool(filter[pos / (8 * sizeof(UnderType))] & (1ULL << (pos % (8 * sizeof(UnderType)))));
 }
 
-const DataTypePtr getPrimitiveType(const DataTypePtr data_type)
+DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
@@ -108,7 +108,7 @@ const DataTypePtr getPrimitiveType(const DataTypePtr data_type)
     return data_type;
 }
 
-const ColumnPtr getPrimitiveColumn(const ColumnPtr column)
+ColumnPtr BloomFilter::getPrimitiveColumn(const ColumnPtr & column)
 {
     if (const auto * array_col = typeid_cast<const ColumnArray *>(column.get()))
         return getPrimitiveColumn(array_col->getDataPtr());
