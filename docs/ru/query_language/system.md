@@ -11,7 +11,8 @@
 - [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
 - [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
 - [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
-- [STOP|START MERGES](#query_language-system-stop-start-merges)
+- [STOP MERGES](#query_language-system-stop-merges)
+- [START MERGES](#query_language-system-start-merges)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -83,21 +84,24 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
 
-### STOP|START MERGES {#query_language-system-stop-start-merges}
+### STOP MERGES {#query_language-system-stop-merges}
 
-Позволяет отключать и включать фоновые мержи для всех таблиц семейства *MergeTree:
-
-```sql
-SYSTEM STOP|START MERGES
-```
-
-Также можно указать определенную таблицу:  
+Позволяет остановить фоновые мержи для таблиц семейства *MergeTree:
 
 ```sql
-SYSTEM STOP|START MERGES [db.]<merge_tree_family_table_name>
+SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
-NOTE: DETACH / ATTACH таблицы восстанавливает фоновые мержи для этой 
-таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства *MergeTree до DETACH ).
+!!! note "Note":
+    `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства *MergeTree до `DETACH`).
+
+
+### START MERGES {#query_language-system-start-merges}
+
+Включает фоновые мержи для таблиц семейства *MergeTree:
+
+```sql
+SYSTEM START MERGES [[db.]merge_tree_family_table_name]
+```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/system/) <!--hide-->
 
