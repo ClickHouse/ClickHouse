@@ -26,6 +26,7 @@ nav:
   - 'Input and Output Formats': 'interfaces/formats.md'
   - 'JDBC Driver': 'interfaces/jdbc.md'
   - 'ODBC Driver': 'interfaces/odbc.md'
+  - 'C++ Client Library': 'interfaces/cpp.md'
   - 'Third-Party':
     - 'Client Libraries': 'interfaces/third-party/client_libraries.md'
     - 'Integrations': 'interfaces/third-party/integrations.md'
