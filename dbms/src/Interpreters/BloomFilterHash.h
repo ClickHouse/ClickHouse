@@ -79,7 +79,7 @@ struct BloomFilterHash
         WhichDataType which(data_type);
         if (which.isArray())
         {
-            const ColumnArray * array_col = typeid_cast<const ColumnArray *>(column.get());
+            const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
             if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
                 throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
