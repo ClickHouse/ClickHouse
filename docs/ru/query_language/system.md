@@ -97,7 +97,7 @@ SYSTEM STOP|START MERGES
 SYSTEM STOP|START MERGES [db.]<merge_tree_family_table_name>
 ```
 NOTE: DETACH / ATTACH таблицы восстанавливает фоновые мержи для этой 
-таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства *MergeTree).
+таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства *MergeTree до DETACH ).
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/system/) <!--hide-->
 
