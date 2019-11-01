@@ -100,6 +100,7 @@ Optionally we can define specific table:
 ```sql
 SYSTEM STOP|START MERGES [db.]<merge_tree_family_table_name>
 ```
-NOTE: DETACH / ATTACH table will start background merges for the table even in case we stopped merges for all *MergeTree tables before).
+!!! note "Note":
+    `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all *MergeTree tables before.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/system/) <!--hide-->
