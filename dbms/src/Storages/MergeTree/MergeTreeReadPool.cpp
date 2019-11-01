@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 
 
 namespace ProfileEvents

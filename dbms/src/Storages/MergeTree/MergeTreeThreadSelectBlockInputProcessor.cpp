@@ -1,13 +1,13 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 
 
 namespace DB
 {
 
 
-MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
+MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcessor(
     const size_t thread_,
     const MergeTreeReadPoolPtr & pool_,
     const size_t min_marks_to_read_,
@@ -20,9 +20,10 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     const Settings & settings,
     const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
-        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, settings.min_bytes_to_use_direct_io,
-        settings.max_read_buffer_size, use_uncompressed_cache_, true, virt_column_names_},
+    MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
+                                 preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
+                                 settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size,
+                                 use_uncompressed_cache_, true, virt_column_names_},
     thread{thread_},
     pool{pool_}
 {
@@ -38,21 +39,11 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     else
         min_marks_to_read = min_marks_to_read_;
 
-    ordered_names = getHeader().getNames();
+    ordered_names = getPort().getHeader().getNames();
 }
-
-
-Block MergeTreeThreadSelectBlockInputStream::getHeader() const
-{
-    auto res = pool->getHeader();
-    executePrewhereActions(res, prewhere_info);
-    injectVirtualColumns(res);
-    return res;
-}
-
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectBlockInputStream::getNewTask()
+bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
 
@@ -115,6 +106,6 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
 }
 
 
-MergeTreeThreadSelectBlockInputStream::~MergeTreeThreadSelectBlockInputStream() = default;
+MergeTreeThreadSelectBlockInputProcessor::~MergeTreeThreadSelectBlockInputProcessor() = default;
 
 }
