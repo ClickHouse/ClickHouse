@@ -46,6 +46,7 @@ def main():
         consumer.close()
 
     client.close()
+    return 0
 
 
 if __name__ == "__main__":
