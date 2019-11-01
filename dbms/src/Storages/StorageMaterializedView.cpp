@@ -312,6 +312,7 @@ void StorageMaterializedView::alter(
     ASTPtr new_as_select_query;
 
     mv_params.apply(new_columns, new_indices, new_constraints, out_order_by, out_primary_key, out_ttl_table, out_changes, new_as_select_query);
+    setColumns(std::move(new_columns));
 
     auto & new_query = new_as_select_query->as<ASTSelectWithUnionQuery &>();
     // more locks

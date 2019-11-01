@@ -10,7 +10,7 @@ SELECT v FROM src;
 
 INSERT INTO src VALUES (1), (2), (3);
 
--- live alter changing logic and pushed columns without breaking inserts
+-- Live alter which changes query logic and adds an extra column.
 ALTER TABLE pipe
     MODIFY QUERY
     SELECT
