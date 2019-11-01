@@ -1,7 +1,6 @@
-#include <Storages/MergeTree/MergeTreeReverseSelectBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
-#include <Core/Defines.h>
 
 
 namespace DB
@@ -12,15 +11,34 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
+static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
+{
+    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
+    /// NOTE: We may use similar code to implement non blocking ALTERs.
+    for (const auto & name_type : data_part->columns)
+    {
+        if (header.has(name_type.name))
+        {
+            auto & elem = header.getByName(name_type.name);
+            if (!elem.type->equals(*name_type.type))
+            {
+                elem.type = name_type.type;
+                elem.column = elem.type->createColumn();
+            }
+        }
+    }
 
-MergeTreeReverseSelectBlockInputStream::MergeTreeReverseSelectBlockInputStream(
+    return std::move(header);
+}
+
+MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     const MergeTreeData & storage_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
     UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     Names required_columns_,
-    const MarkRanges & mark_ranges_,
+    MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     bool check_columns,
@@ -31,13 +49,15 @@ MergeTreeReverseSelectBlockInputStream::MergeTreeReverseSelectBlockInputStream(
     size_t part_index_in_query_,
     bool quiet)
     :
-    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
+    MergeTreeBaseSelectProcessor{
+        replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
+        storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
-    required_columns{required_columns_},
+    required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
-    all_mark_ranges(mark_ranges_),
+    all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     path(data_part->getFullPath())
 {
@@ -56,27 +76,8 @@ MergeTreeReverseSelectBlockInputStream::MergeTreeReverseSelectBlockInputStream(
         << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
     addTotalRowsApprox(total_rows);
-    header = storage.getSampleBlockForColumns(required_columns);
 
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->columns)
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    executePrewhereActions(header, prewhere_info);
-    injectVirtualColumns(header);
-
-    ordered_names = getHeader().getNames();
+    ordered_names = header_without_virtual_columns.getNames();
 
     task_columns = getReadTaskColumns(storage, data_part, required_columns, prewhere_info, check_columns);
 
@@ -101,17 +102,10 @@ MergeTreeReverseSelectBlockInputStream::MergeTreeReverseSelectBlockInputStream(
             all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
 }
 
-
-Block MergeTreeReverseSelectBlockInputStream::getHeader() const
-{
-    return header;
-}
-
-
-bool MergeTreeReverseSelectBlockInputStream::getNewTask()
+bool MergeTreeReverseSelectProcessor::getNewTask()
 try
 {
-    if ((blocks.empty() && all_mark_ranges.empty()) || total_marks_count == 0)
+    if ((chunks.empty() && all_mark_ranges.empty()) || total_marks_count == 0)
     {
         finish();
         return false;
@@ -145,14 +139,14 @@ catch (...)
     throw;
 }
 
-Block MergeTreeReverseSelectBlockInputStream::readFromPart()
+Chunk MergeTreeReverseSelectProcessor::readFromPart()
 {
-    Block res;
+    Chunk res;
 
-    if (!blocks.empty())
+    if (!chunks.empty())
     {
-        res = std::move(blocks.back());
-        blocks.pop_back();
+        res = std::move(chunks.back());
+        chunks.pop_back();
         return res;
     }
 
@@ -161,20 +155,20 @@ Block MergeTreeReverseSelectBlockInputStream::readFromPart()
 
     while (!task->isFinished())
     {
-        Block block = readFromPartImpl();
-        blocks.push_back(std::move(block));
+        Chunk chunk = readFromPartImpl();
+        chunks.push_back(std::move(chunk));
     }
 
-    if (blocks.empty())
+    if (chunks.empty())
         return {};
 
-    res = std::move(blocks.back());
-    blocks.pop_back();
+    res = std::move(chunks.back());
+    chunks.pop_back();
 
     return res;
 }
 
-void MergeTreeReverseSelectBlockInputStream::finish()
+void MergeTreeReverseSelectProcessor::finish()
 {
     /** Close the files (before destroying the object).
     * When many sources are created, but simultaneously reading only a few of them,
@@ -186,6 +180,6 @@ void MergeTreeReverseSelectBlockInputStream::finish()
     data_part.reset();
 }
 
-MergeTreeReverseSelectBlockInputStream::~MergeTreeReverseSelectBlockInputStream() = default;
+MergeTreeReverseSelectProcessor::~MergeTreeReverseSelectProcessor() = default;
 
 }
