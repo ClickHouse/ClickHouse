@@ -300,7 +300,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     {
         size_t position = header.getPositionByName(key_ast->getColumnName());
         const DataTypePtr & index_type = header.getByPosition(position).type;
-        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
         if (function_name == "has")
         {
@@ -309,8 +309,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             if (!array_type)
                 throw Exception("First argument for function has must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypePtr actual_type = getPrimitiveType(array_type->getNestedType());
-            Field converted_field = convertFieldToType(value_field, *actual_type.get(), &*value_type);
+            const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
         else
@@ -319,8 +319,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 throw Exception("An array type of bloom_filter supports only has() function.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
-            const DataTypePtr actual_type = getPrimitiveType(index_type);
-            Field converted_field = convertFieldToType(value_field, *actual_type.get(), &*value_type);
+            const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
 

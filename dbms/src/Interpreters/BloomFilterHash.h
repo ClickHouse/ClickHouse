@@ -86,11 +86,11 @@ struct BloomFilterHash
 
             const auto & offsets = array_col->getOffsets();
             size_t offset = (pos == 0) ? 0 : offsets[pos - 1];
-            limit = std::max(array_col->getDataPtr().get()->size() - offset, limit);
+            limit = std::max(array_col->getData().size() - offset, limit);
         }
 
-        const ColumnPtr actual_col = getPrimitiveColumn(column);
-        const DataTypePtr actual_type = getPrimitiveType(data_type);
+        const ColumnPtr actual_col = BloomFilter::getPrimitiveColumn(column);
+        const DataTypePtr actual_type = BloomFilter::getPrimitiveType(data_type);
 
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();

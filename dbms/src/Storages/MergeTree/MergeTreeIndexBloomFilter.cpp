@@ -73,14 +73,14 @@ static void assertIndexColumnsType(const Block & header)
 
     const DataTypes & columns_data_types = header.getDataTypes();
 
-    for (size_t index = 0; index < columns_data_types.size(); ++index)
+    for (auto & type : columns_data_types)
     {
-        const IDataType * actual_type = getPrimitiveType(columns_data_types[index]).get();
+        const IDataType * actual_type = BloomFilter::getPrimitiveType(type).get();
         WhichDataType which(actual_type);
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
             !which.isDateOrDateTime() && !which.isEnum())
-            throw Exception("Unexpected type " + columns_data_types[index]->getName() + " of bloom filter index.",
+            throw Exception("Unexpected type " + type->getName() + " of bloom filter index.",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
 }

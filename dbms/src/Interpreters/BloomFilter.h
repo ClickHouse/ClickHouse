@@ -50,13 +50,16 @@ private:
     size_t seed;
     size_t words;
     Container filter;
+
+public:
+    static ColumnPtr getPrimitiveColumn(const ColumnPtr & column);
+    static DataTypePtr getPrimitiveType(const DataTypePtr & data_type);
 };
 
 using BloomFilterPtr = std::shared_ptr<BloomFilter>;
 
 bool operator== (const BloomFilter & a, const BloomFilter & b);
 
-const DataTypePtr getPrimitiveType(const DataTypePtr data_type);
-const ColumnPtr getPrimitiveColumn(const ColumnPtr column);
+
 
 }
