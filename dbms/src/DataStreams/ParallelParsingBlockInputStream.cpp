@@ -114,7 +114,7 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
 Block ParallelParsingBlockInputStream::readImpl()
 {
     Block res;
-    if (isCancelledOrThrowIfKilled())
+    if (isCancelledOrThrowIfKilled() || executed)
         return res;
 
     std::unique_lock lock(mutex);
@@ -137,9 +137,8 @@ Block ParallelParsingBlockInputStream::readImpl()
     {
         if (is_last[current_number])
         {
-            LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::readImpl()"), "Last unit. Will cancel the query.");
-            lock.unlock();
-            cancel(false);
+            //In case that all data was read we don't need to cancel.
+            executed= true;
             return res;
         }
 

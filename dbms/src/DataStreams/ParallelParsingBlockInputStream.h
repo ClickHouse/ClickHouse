@@ -88,7 +88,6 @@ public:
     ~ParallelParsingBlockInputStream() override
     {
         waitForAllThreads();
-        LOG_TRACE(&Poco::Logger::get("~ParallelParsingBLockInputStream()"), "All threads are killed.");
     }
 
     void cancel(bool kill) override
@@ -114,7 +113,12 @@ public:
     }
 
 protected:
-    void readPrefix() override {}
+    //void readPrefix() override {}
+
+    void readSuffix() override {
+        readers[segmentator_ticket_number % max_threads_to_use]->readPrefix();
+        LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::readSuffix()"), "ReadSuffix");
+    }
 
     //Reader routine
     Block readImpl() override;
@@ -135,6 +139,7 @@ private:
     const size_t min_chunk_size;
 
     std::atomic<bool> is_exception_occured{false};
+    std::atomic<bool> executed{false};
 
     BlockMissingValues last_block_missing_values;
 
