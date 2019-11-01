@@ -97,7 +97,7 @@ SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 
 ### START MERGES {#query_language-system-start-merges}
 
-Включает фоновые мержи для таблиц семейства *MergeTree:
+Включает фоновые мержи для таблиц семейства MergeTree:
 
 ```sql
 SYSTEM START MERGES [[db.]merge_tree_family_table_name]
