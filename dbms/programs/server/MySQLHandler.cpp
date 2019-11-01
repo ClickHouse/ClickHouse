@@ -291,11 +291,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
 }
 
-void MySQLHandler::authPluginSSL() {
+void MySQLHandler::authPluginSSL()
+{
     throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
-void MySQLHandler::finishHandshakeSSL([[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos, [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::HandshakeResponse & packet) {
+void MySQLHandler::finishHandshakeSSL([[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos, [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::HandshakeResponse & packet)
+{
     throw Exception("Compiled without SSL", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
@@ -304,28 +306,30 @@ MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocke
     : MySQLHandler(server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)
-{ }
+{}
 
-void MySQLHandlerSSL::authPluginSSL() {
+void MySQLHandlerSSL::authPluginSSL()
+{
     auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
 }
 
-void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::HandshakeResponse & packet) {
-        read_bytes(packet_size); /// Reading rest SSLRequest.
-        SSLRequest ssl_request;
-        ReadBufferFromMemory payload(buf, pos);
-        payload.ignore(PACKET_HEADER_SIZE);
-        ssl_request.readPayload(payload);
-        connection_context.mysql.client_capabilities = ssl_request.capability_flags;
-        connection_context.mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
-        secure_connection = true;
-        ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-        in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
-        out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
-        connection_context.mysql.sequence_id = 2;
-        packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.mysql.sequence_id);
-        packet_sender->max_packet_size = connection_context.mysql.max_packet_size;
-        packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::HandshakeResponse & packet)
+{
+    read_bytes(packet_size); /// Reading rest SSLRequest.
+    SSLRequest ssl_request;
+    ReadBufferFromMemory payload(buf, pos);
+    payload.ignore(PACKET_HEADER_SIZE);
+    ssl_request.readPayload(payload);
+    connection_context.mysql.client_capabilities = ssl_request.capability_flags;
+    connection_context.mysql.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
+    secure_connection = true;
+    ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
+    in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
+    out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
+    connection_context.mysql.sequence_id = 2;
+    packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.mysql.sequence_id);
+    packet_sender->max_packet_size = connection_context.mysql.max_packet_size;
+    packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 }
 
 #endif
