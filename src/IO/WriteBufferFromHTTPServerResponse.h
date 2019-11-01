@@ -113,6 +113,11 @@ public:
         compress = enable_compression;
     }
 
+    bool getCompression()
+    {
+        return compress;
+    }
+
     /// Set compression level if the compression is turned on.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
     void setCompressionLevel(int level)

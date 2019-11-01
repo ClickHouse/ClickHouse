@@ -216,13 +216,19 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerRequest & request,
     HTMLForm & params,
     Poco::Net::HTTPServerResponse & response,
-    Output & used_output)
+    HTTPStreamsWithOutput & used_output)
 {
     Context context = server.context();
 
     CurrentThread::QueryScope query_scope(context);
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
+
+    if (context.getSettingsRef().allow_experimental_custom_http)
+    {
+        context.getHTTPMatchExecutor()->execute(context, request, response, params, used_output);
+        return;
+    }
 
     std::istream & istr = request.stream();
 
@@ -605,20 +611,14 @@ void HTTPHandler::processQuery(
         }
     );
 
-    if (used_output.hasDelayed())
-    {
-        /// TODO: set Content-Length if possible
-        pushDelayedResults(used_output);
-    }
-
     /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
     /// the client.
-    used_output.out->finalize();
+    used_output.finalize();
 }
 
 void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_code,
     Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
-    Output & used_output)
+    HTTPStreamsWithOutput & used_output)
 {
     try
     {
@@ -655,7 +655,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
         else if (used_output.out_maybe_compressed)
         {
             /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
-            if (used_output.hasDelayed())
+            if (used_output.out_maybe_delayed_and_compressed != used_output.out_maybe_compressed)
                 used_output.out_maybe_delayed_and_compressed.reset();
 
             /// Send the error message into already used (and possibly compressed) stream.
@@ -691,7 +691,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    Output used_output;
+    HTTPStreamsWithOutput used_output;
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;

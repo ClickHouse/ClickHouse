@@ -490,6 +490,8 @@ public:
 
     Compiler & getCompiler();
 
+    HTTPMatchExecutorPtr getHTTPMatchExecutor();
+
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
