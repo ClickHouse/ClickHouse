@@ -113,7 +113,7 @@ public:
     /// FOR MODIFY_SETTING
     ASTPtr settings_changes;
 
-    /// FOR MODIFY_QUERY
+    /// For MODIFY_QUERY
     ASTPtr select;
 
     /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here

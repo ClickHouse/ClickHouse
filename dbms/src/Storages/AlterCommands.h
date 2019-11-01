@@ -87,7 +87,7 @@ struct AlterCommand
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
 
-    /// FOR MODIFY_QUERY
+    /// For MODIFY_QUERY
     ASTPtr select;
 
     AlterCommand() = default;

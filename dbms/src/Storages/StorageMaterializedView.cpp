@@ -271,6 +271,7 @@ void StorageMaterializedView::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
+
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     TableStructureWriteLockHolder target_table_lock_holder;
 
@@ -279,9 +280,11 @@ void StorageMaterializedView::alter(
         target_table_lock_holder = getTargetTable()->lockAlterIntention(context.getCurrentQueryId());
         AlterCommands target_params{};
 
-        std::copy_if(params.begin(), params.end(), std::back_inserter(target_params), [](const AlterCommand & cmd) {
-            return cmd.type != AlterCommand::Type::MODIFY_QUERY;
-        });
+        std::copy_if(params.begin(), params.end(), std::back_inserter(target_params),
+            [](const AlterCommand & cmd)
+            {
+                return cmd.type != AlterCommand::Type::MODIFY_QUERY;
+            });
 
         target_params.validate(*getTargetTable(), context);
         getTargetTable()->alter(target_params, context, target_table_lock_holder);
@@ -289,30 +292,31 @@ void StorageMaterializedView::alter(
 
     /// For MV we're interested only in column and query changes.
     AlterCommands mv_params{};
-    std::copy_if(params.begin(), params.end(), std::back_inserter(mv_params), [](const AlterCommand & cmd) {
-        return cmd.type == AlterCommand::Type::ADD_COLUMN || cmd.type == AlterCommand::Type::DROP_COLUMN
-            || cmd.type == AlterCommand::Type::MODIFY_COLUMN || cmd.type == AlterCommand::Type::COMMENT_COLUMN
-            || cmd.type == AlterCommand::Type::MODIFY_QUERY;
-    });
+    std::copy_if(params.begin(), params.end(), std::back_inserter(mv_params),
+        [](const AlterCommand & cmd)
+        {
+            return cmd.type == AlterCommand::Type::ADD_COLUMN ||cmd.type == AlterCommand::Type::DROP_COLUMN
+                || cmd.type == AlterCommand::Type::MODIFY_COLUMN || cmd.type == AlterCommand::Type::COMMENT_COLUMN
+                || cmd.type == AlterCommand::Type::MODIFY_QUERY;
+        });
+
+    if (!has_inner_table && mv_params.size() != params.size())
+        throw Exception("Alter contains extra commands which can't be applied to a materialized view", ErrorCodes::LOGICAL_ERROR);
 
     if (mv_params.empty())
-    {
         return;
-    }
 
     auto new_columns = getColumns();
-    auto new_indices = getIndices();
-    auto new_constraints = getConstraints();
-
-    ASTPtr out_order_by;
-    ASTPtr out_primary_key;
-    ASTPtr out_ttl_table;
-    SettingsChanges out_changes;
+    auto ignored_indices = getIndices();
+    auto ignored_constraints = getConstraints();
+    ASTPtr ignored_order_by;
+    ASTPtr ignored_primary_key;
+    ASTPtr ignored_ttl_table;
+    SettingsChanges ignored_changes;
 
     ASTPtr new_as_select_query;
 
-    mv_params.apply(new_columns, new_indices, new_constraints, out_order_by, out_primary_key, out_ttl_table, out_changes, new_as_select_query);
-    setColumns(std::move(new_columns));
+    mv_params.apply(new_columns, ignored_indices, ignored_constraints, ignored_order_by, ignored_primary_key, ignored_ttl_table, ignored_changes, new_as_select_query);
 
     auto & new_query = new_as_select_query->as<ASTSelectWithUnionQuery &>();
     // more locks
@@ -353,7 +357,8 @@ void StorageMaterializedView::alter(
         std::atomic_store(&inner_query, new_inner_query);
     }
 
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {}, new_as_select_query);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, getIndices(), getConstraints(), {}, new_as_select_query);
+    setColumns(std::move(new_columns));
 }
 
 void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
