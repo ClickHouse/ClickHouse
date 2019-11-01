@@ -7,10 +7,15 @@
 
 namespace DB
 {
-
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
-    : storage(storage_), context(context_), column_names(columns), max_block_size(max_block_size_), commit_in_suffix(commit_in_suffix_)
+    : storage(storage_)
+    , context(context_)
+    , column_names(columns)
+    , max_block_size(max_block_size_)
+    , commit_in_suffix(commit_in_suffix_)
+    , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
+    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}))
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
     context.setSetting("input_format_allow_errors_ratio", 0.);
@@ -19,7 +24,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     if (!storage.getSchemaName().empty())
         context.setSetting("format_schema", storage.getSchemaName());
 
-    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}).cloneEmptyColumns();
+    virtual_columns = virtual_header.cloneEmptyColumns();
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -57,7 +62,6 @@ Block KafkaBlockInputStream::readImpl()
     if (!buffer)
         return Block();
 
-    auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
     auto read_callback = [this]
     {
         virtual_columns[0]->insert(buffer->currentTopic());     // "topic"
@@ -94,7 +98,6 @@ Block KafkaBlockInputStream::readImpl()
         Block result;
         auto child = FormatFactory::instance().getInput(
             storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, read_callback);
-        const auto virtual_header = storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"});
 
         while (auto block = child->read())
         {
