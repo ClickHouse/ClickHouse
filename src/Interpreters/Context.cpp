@@ -44,6 +44,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/CustomHTTP/HTTPMatchExecutorDefault.h>
 #include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
@@ -348,6 +349,7 @@ struct ContextShared
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
+    mutable std::mutex match_executor_mutex;                  /// Guards match executor and their config
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
@@ -1543,6 +1545,10 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
     shared->clusters->setCluster(cluster_name, cluster);
 }
 
+HTTPMatchExecutorPtr Context::getHTTPMatchExecutor()
+{
+    return std::make_shared<HTTPMatchExecutorDefault>();
+}
 
 void Context::initializeSystemLogs()
 {

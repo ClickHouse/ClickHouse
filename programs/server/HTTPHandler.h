@@ -7,6 +7,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTMLForm.h>
 
+#include <Interpreters/CustomHTTP/HTTPStreamsWithOutput.h>
+
 
 namespace CurrentMetrics
 {
@@ -68,14 +70,14 @@ private:
         Poco::Net::HTTPServerRequest & request,
         HTMLForm & params,
         Poco::Net::HTTPServerResponse & response,
-        Output & used_output);
+        HTTPStreamsWithOutput & used_output);
 
     void trySendExceptionToClient(
         const std::string & s,
         int exception_code,
         Poco::Net::HTTPServerRequest & request,
         Poco::Net::HTTPServerResponse & response,
-        Output & used_output);
+        HTTPStreamsWithOutput & used_output);
 
     static void pushDelayedResults(Output & used_output);
 };
