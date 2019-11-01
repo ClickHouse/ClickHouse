@@ -7,6 +7,9 @@
 * Remove legacy `asterisk_left_columns_only` setting (it was disabled by default).
   [#7335](https://github.com/ClickHouse/ClickHouse/pull/7335) ([Artem
 Zuikov](https://github.com/4ertus2))
+* Format strings for Template data format are now specified in files.
+  [#7118](https://github.com/ClickHouse/ClickHouse/pull/7118)
+([tavplubix](https://github.com/tavplubix))
 
 ### New Feature
 * Introduce uniqCombined64() to calculate cardinality greater than UINT_MAX.
@@ -37,11 +40,15 @@ Kutenin](https://github.com/danlark1))
 * Add a new database engine `Lazy` that is optimized for storing a large number of small -Log
   tables.  [#7171](https://github.com/ClickHouse/ClickHouse/pull/7171) ([Nikita
 Vasilev](https://github.com/nikvas0))
-* Add AND, OR, XOR aggregate function for bitmap columns. [#7109](https://github.com/ClickHouse/ClickHouse/pull/7109) ([Zhichang
+* Add aggregate functions groupBitmapAnd, -Or, -Xor for bitmap columns. [#7109](https://github.com/ClickHouse/ClickHouse/pull/7109) ([Zhichang
 Yu](https://github.com/yuzhichang))
-* Add aggregate function combinators which fill null or default value when there is nothing to
-  aggregate. [#7331](https://github.com/ClickHouse/ClickHouse/pull/7331)
+* Add aggregate function combinators -OrNull and -OrDefault, which return null
+  or default values when there is nothing to aggregate.
+[#7331](https://github.com/ClickHouse/ClickHouse/pull/7331)
 ([hcz](https://github.com/hczhcz))
+* Introduce CustomSeparated data format that supports custom escaping and
+  delimiter rules.  [#7118](https://github.com/ClickHouse/ClickHouse/pull/7118)
+([tavplubix](https://github.com/tavplubix))
 
 ### Bug Fix
 * Fix wrong query result if it has `WHERE IN (SELECT ...)` section and `optimize_read_in_order` is
@@ -52,13 +59,13 @@ Popov](https://github.com/CurtizJ))
 Baranov](https://github.com/yurriy))
 * Fix exception `Cannot convert column ... because it is constant but values of constants are
   different in source and result` which could rarely happen when functions `now()`, `today()`,
-`yestarday()`, `randConstant()` are used.
+`yesterday()`, `randConstant()` are used.
 [#7156](https://github.com/ClickHouse/ClickHouse/pull/7156) ([Nikolai
 Kochetov](https://github.com/KochetovNicolai))
 * Fixed issue of using HTTP keep alive timeout instead of TCP keep alive timeout.
   [#7351](https://github.com/ClickHouse/ClickHouse/pull/7351) ([Vasily
 Nemkov](https://github.com/Enmk))
-* Fixed [#7109](https://github.com/ClickHouse/ClickHouse/issues/7109) groupBitmapOr(31) segfault.
+* Fixed a segmentation fault in groupBitmapOr (issue [#7109](https://github.com/ClickHouse/ClickHouse/issues/7109)).
   [#7289](https://github.com/ClickHouse/ClickHouse/pull/7289) ([Zhichang
 Yu](https://github.com/yuzhichang))
 * For materialized views the commit for Kafka is called after all data were written.
@@ -80,13 +87,14 @@ Kuzmenkov](https://github.com/akuzm))
 * Fix wrong result for some queries given by the optimization of empty IN subqueries and empty
   INNER/RIGHT JOIN. [#7284](https://github.com/ClickHouse/ClickHouse/pull/7284) ([Nikolai
 Kochetov](https://github.com/KochetovNicolai))
+* Fixing AddressSanitizer error in the LIVE VIEW getHeader() method.
+  [#7271](https://github.com/ClickHouse/ClickHouse/pull/7271)
+([vzakaznikov](https://github.com/vzakaznikov))
 
 ### Improvement
 * Add a message in case of queue_wait_max_ms wait takes place.
   [#7390](https://github.com/ClickHouse/ClickHouse/pull/7390) ([Azat
 Khuzhin](https://github.com/azat))
-* Minor improvements of Template format. [#7118](https://github.com/ClickHouse/ClickHouse/pull/7118)
-  ([tavplubix](https://github.com/tavplubix))
 * Made setting `s3_min_upload_part_size` table-level.
   [#7059](https://github.com/ClickHouse/ClickHouse/pull/7059) ([Vladimir
 Chebotarev](https://github.com/excitoon))
@@ -139,7 +147,7 @@ Bird](https://github.com/amosbird))
 ([tavplubix](https://github.com/tavplubix))
 
 ### Build/Testing/Packaging Improvement
-* Disable some contribs for cross-compilation.
+* Disable some contribs for cross-compilation to Mac OS.
   [#7101](https://github.com/ClickHouse/ClickHouse/pull/7101) ([Ivan](https://github.com/abyss7))
 * Add missing linking with PocoXML for clickhouse_common_io.
   [#7200](https://github.com/ClickHouse/ClickHouse/pull/7200) ([Azat
@@ -195,14 +203,6 @@ Kuzmenkov](https://github.com/akuzm)), [#7376](https://github.com/ClickHouse/Cli
 DateTime and UUID. This fixes [#7245](https://github.com/ClickHouse/ClickHouse/issues/7245)
 [#7252](https://github.com/ClickHouse/ClickHouse/pull/7252)
 ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fixing AddressSanitizer error in the LIVE VIEW getHeader() method.
-  [#7271](https://github.com/ClickHouse/ClickHouse/pull/7271)
-([vzakaznikov](https://github.com/vzakaznikov))
-* Wait for all scheduled jobs, which are using local objects, if `ThreadPool::schedule(...)` throws
-  an exception. Rename `ThreadPool::schedule(...)` to `ThreadPool::scheduleOrThrowOnError(...)` and
-fix comments to make obvious that it may throw.
-[#7350](https://github.com/ClickHouse/ClickHouse/pull/7350)
-([tavplubix](https://github.com/tavplubix))
 * Fixing ThreadSanitizer data race error in the LIVE VIEW when accessing no_users_thread variable.
   [#7353](https://github.com/ClickHouse/ClickHouse/pull/7353)
 ([vzakaznikov](https://github.com/vzakaznikov))
@@ -242,6 +242,11 @@ Zuikov](https://github.com/4ertus2))
 * Improved code readability a little bit (`MergeTreeData::getActiveContainingPart`).
   [#7361](https://github.com/ClickHouse/ClickHouse/pull/7361) ([Vladimir
 Chebotarev](https://github.com/excitoon))
+* Wait for all scheduled jobs, which are using local objects, if `ThreadPool::schedule(...)` throws
+  an exception. Rename `ThreadPool::schedule(...)` to `ThreadPool::scheduleOrThrowOnError(...)` and
+fix comments to make obvious that it may throw.
+[#7350](https://github.com/ClickHouse/ClickHouse/pull/7350)
+([tavplubix](https://github.com/tavplubix))
 
 ## ClickHouse release 19.15.2.2, 2019-10-01
 
