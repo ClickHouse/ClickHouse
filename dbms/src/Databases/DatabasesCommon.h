@@ -50,13 +50,11 @@ public:
     virtual ~DatabaseWithOwnTablesBase() override;
 
 protected:
-    String name;
-
     mutable std::mutex mutex;
     Tables tables;
     Dictionaries dictionaries;
 
-    DatabaseWithOwnTablesBase(String name_) : name(std::move(name_)) { }
+    DatabaseWithOwnTablesBase(String name_) : IDatabase(std::move(name_)) { }
 };
 
 }
