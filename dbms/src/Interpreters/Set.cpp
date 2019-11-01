@@ -291,6 +291,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     Block block = header.cloneWithColumns(std::move(columns));
     insertFromBlock(block);
+    finishInsert();
 }
 
 
