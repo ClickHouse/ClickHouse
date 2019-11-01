@@ -36,43 +36,42 @@ struct BloomFilterHash
     static ColumnPtr hashWithField(const IDataType * data_type, const Field & field)
     {
         WhichDataType which(data_type);
+        UInt64 hash = 0;
+        bool unexpected_type = false;
 
-        if (which.isUInt() || which.isDateOrDateTime())
-            if (field.isNull() == false)
-                return ColumnConst::create(ColumnUInt64::create(1, intHash64(field.safeGet<UInt64>())), 1);
+        if (field.isNull())
+        {
+            if (which.isInt() || which.isUInt() || which.isEnum() || which.isDateOrDateTime() || which.isFloat())
+                hash = intHash64(0);
+            else if (which.isString())
+                hash = CityHash_v1_0_2::CityHash64("", 0);
+            else if (which.isFixedString())
+            {
+                const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(data_type);
+                const std::vector<char> value(fixed_string_type->getN(), 0);
+                hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
+            }
             else
-                return ColumnConst::create(ColumnUInt64::create(1, intHash64(0)), 1);
+                unexpected_type = true;
+        }
+        else if (which.isUInt() || which.isDateOrDateTime())
+            hash = intHash64(field.safeGet<UInt64>());
         else if (which.isInt() || which.isEnum())
-            if (field.isNull() == false)
-                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()))), 1);
-            else
-                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(0))), 1);
+            hash = intHash64(ext::bit_cast<UInt64>(field.safeGet<Int64>()));
         else if (which.isFloat32() || which.isFloat64())
-            if (field.isNull() == false)
-                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()))), 1);
-            else
-                return ColumnConst::create(ColumnUInt64::create(1, intHash64(ext::bit_cast<UInt64>(0))), 1);
+            hash = intHash64(ext::bit_cast<UInt64>(field.safeGet<Float64>()));
         else if (which.isString() || which.isFixedString())
         {
-            if (field.isNull() == false)
-            {
-                const auto & value = field.safeGet<String>();
-                return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
-            }
-            else
-            {
-                if (which.isString())
-                    return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64("", 0)), 1);
-                else
-                {
-                    const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(data_type);
-                    const std::vector<char> value(fixed_string_type->getN(), 0);
-                    return ColumnConst::create(ColumnUInt64::create(1, CityHash_v1_0_2::CityHash64(value.data(), value.size())), 1);
-                }
-            }
+            const auto & value = field.safeGet<String>();
+            hash = CityHash_v1_0_2::CityHash64(value.data(), value.size());
         }
         else
+            unexpected_type = true;
+
+        if (unexpected_type)
             throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+
+        return ColumnConst::create(ColumnUInt64::create(1, hash), 1);
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
