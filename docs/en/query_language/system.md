@@ -11,6 +11,7 @@
 - [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
 - [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
 - [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
+- [STOP|START MERGES](#query_language-system-stop-start-merges)
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
@@ -84,5 +85,21 @@ Enables background data distribution when inserting data into distributed tables
 ```sql
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
+
+
+### STOP|START MERGES {#query_language-system-stop-start-merges}
+
+Provides possibility to stop and start background merges for all tables in the MergeTree family:
+
+```sql
+SYSTEM STOP|START MERGES
+```
+
+Optionally we can define specific table:  
+
+```sql
+SYSTEM STOP|START MERGES [db.]<merge_tree_family_table_name>
+```
+NOTE: DETACH / ATTACH table will start background merges even in case we stopped merges for all *MergeTree tables before).
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/system/) <!--hide-->
