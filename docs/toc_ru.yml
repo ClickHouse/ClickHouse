@@ -27,6 +27,7 @@ nav:
   - 'Форматы входных и выходных данных': 'interfaces/formats.md'
   - 'JDBC-драйвер': 'interfaces/jdbc.md'
   - 'ODBC-драйвер': 'interfaces/odbc.md'
+  - 'C++ клиентская библиотека': 'interfaces/cpp.md'
   - 'От сторонних разработчиков':
     - 'Клиентские библиотеки': 'interfaces/third-party/client_libraries.md'
     - 'Интеграции': 'interfaces/third-party/integrations.md'
