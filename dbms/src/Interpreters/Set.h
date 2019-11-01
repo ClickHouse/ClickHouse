@@ -56,6 +56,10 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromBlock(const Block & block);
+    /// Call after all blocks were inserted. To get the information that set is already created.
+    void finishInsert() { is_created = true; }
+
+    bool isCreated() const { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -106,6 +110,9 @@ private:
 
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements;
+
+    /// Check if set contains all the data.
+    bool is_created = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(

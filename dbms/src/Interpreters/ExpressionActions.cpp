@@ -1188,8 +1188,9 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     /// Check has column in (empty set).
     String set_to_check;
 
-    for (auto & action : actions)
+    for (auto it = actions.rbegin(); it != actions.rend(); ++it)
     {
+        auto & action = *it;
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
             auto name = action.function_base->getName();
@@ -1198,6 +1199,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
                 && action.argument_names.size() > 1)
             {
                 set_to_check = action.argument_names[1];
+                break;
             }
         }
     }
@@ -1210,7 +1212,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
             {
                 if (auto * column_set = typeid_cast<const ColumnSet *>(action.added_column.get()))
                 {
-                    if (column_set->getData()->getTotalRowCount() == 0)
+                    if (column_set->getData()->isCreated() && column_set->getData()->empty())
                         return true;
                 }
             }
