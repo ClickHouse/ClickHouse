@@ -43,7 +43,7 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
             {
                 size_t total_items = total_rows;
 
-                if (const ColumnArray * array_col = typeid_cast<const ColumnArray *>(granule_index_block.getByPosition(column).column.get()))
+                if (const auto * array_col = typeid_cast<const ColumnArray *>(granule_index_block.getByPosition(column).column.get()))
                 {
                     const IColumn * nested_col = array_col->getDataPtr().get();
                     total_items = nested_col->size();
