@@ -1212,7 +1212,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
             {
                 if (auto * column_set = typeid_cast<const ColumnSet *>(action.added_column.get()))
                 {
-                    if (column_set->getData()->isCreated() && column_set->getData()->empty())
+                    if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
                         return true;
                 }
             }
