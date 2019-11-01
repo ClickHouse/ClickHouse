@@ -142,11 +142,11 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
     {
         std::lock_guard lock(mutex);
         if (dictionaries.count(table_name))
-            throw Exception("Cannot detach dictionary " + name + "." + table_name + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Cannot detach dictionary " + database_name + "." + table_name + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
 
         auto it = tables.find(table_name);
         if (it == tables.end())
-            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Table " + database_name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         res = it->second;
         tables.erase(it);
     }
@@ -160,7 +160,7 @@ void DatabaseWithOwnTablesBase::detachDictionary(const String & dictionary_name,
         std::lock_guard lock(mutex);
         auto it = dictionaries.find(dictionary_name);
         if (it == dictionaries.end())
-            throw Exception("Dictionary " + name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+            throw Exception("Dictionary " + database_name + "." + dictionary_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         dictionaries.erase(it);
     }
 
@@ -173,7 +173,7 @@ void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const Sto
 {
     std::lock_guard lock(mutex);
     if (!tables.emplace(table_name, table).second)
-        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 

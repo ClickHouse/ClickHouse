@@ -49,7 +49,7 @@ String toQueryStringWithQuote(const std::vector<String> & quote_list)
 DatabaseMySQL::DatabaseMySQL(
     const Context & context_, const String & database_name_, const String & mysql_host_name_, const UInt16 & mysql_port_,
     const String & mysql_database_name_, const String & mysql_user_name_, const String & mysql_user_password_)
-    : global_context(context_), database_name(database_name_), mysql_host_name(mysql_host_name_), mysql_port(mysql_port_),
+    : IDatabase(database_name_), global_context(context_), mysql_host_name(mysql_host_name_), mysql_port(mysql_port_),
       mysql_database_name(mysql_database_name_), mysql_user_name(mysql_user_name_), mysql_user_password(mysql_user_password_),
       mysql_pool(mysql_database_name, mysql_host_name, mysql_user_name, mysql_user_password, mysql_port)
 {
@@ -95,14 +95,19 @@ StoragePtr DatabaseMySQL::tryGetTable(const Context &, const String & mysql_tabl
     return StoragePtr{};
 }
 
-ASTPtr DatabaseMySQL::tryGetCreateTableQuery(const Context &, const String & table_name) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const Context &, const String & table_name, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     fetchTablesIntoLocalCache();
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
-        throw Exception("MySQL table " + mysql_database_name + "." + table_name + " doesn't exist..", ErrorCodes::UNKNOWN_TABLE);
+    {
+        if (throw_on_error)
+            throw Exception("MySQL table " + mysql_database_name + "." + table_name + " doesn't exist..",
+                            ErrorCodes::UNKNOWN_TABLE);
+        return nullptr;
+    }
 
     return local_tables_cache[table_name].create_table_query;
 }
@@ -230,8 +235,8 @@ DatabaseMySQL::MySQLStorageInfo DatabaseMySQL::createStorageInfo(
     const String & table_name, const NamesAndTypesList & columns_name_and_type, const UInt64 & table_modification_time) const
 {
     const auto & mysql_table = StorageMySQL::create(
-        database_name, table_name, std::move(mysql_pool), mysql_database_name, table_name,
-        false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context);
+            database_name, table_name, std::move(mysql_pool), mysql_database_name, table_name,
+            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context);
 
     const auto & create_table_query = std::make_shared<ASTCreateQuery>();
 

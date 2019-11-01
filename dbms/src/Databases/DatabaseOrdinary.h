@@ -60,30 +60,20 @@ public:
         const Context & context,
         const String & table_name) override;
 
-    ASTPtr getCreateTableQuery(
-        const Context & context,
-        const String & table_name) const override;
-
-    ASTPtr tryGetCreateTableQuery(
-        const Context & context,
-        const String & table_name) const override;
-
-    ASTPtr tryGetCreateDictionaryQuery(
-        const Context & context,
-        const String & name) const override;
-
-    ASTPtr getCreateDictionaryQuery(
-        const Context & context,
-        const String & name) const override;
-
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     String getDataPath() const override;
-    String getDatabaseName() const override;
     String getMetadataPath() const override;
     String getObjectMetadataPath(const String & table_name) const override;
 
     void drop(const Context & context) override;
+
+protected:
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name,
+                                   bool throw_on_error) const override;
+
+    ASTPtr getCreateDictionaryQueryImpl(const Context & context, const String & name,
+                                        bool throw_on_error) const override;
 
 private:
     const String metadata_path;

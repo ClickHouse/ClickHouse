@@ -54,7 +54,7 @@ void loadObject(
     Context & context,
     const ASTCreateQuery & query,
     DatabaseOrdinary & database,
-    const String database_data_path,
+    const String & database_data_path_relative,
     const String & database_name,
     bool has_force_restore_data_flag)
 try
@@ -66,10 +66,8 @@ try
     }
     else
     {
-        String table_name;
-        StoragePtr table;
-        std::tie(table_name, table)
-            = createTableFromAST(query, database_name, database_data_path, context, has_force_restore_data_flag);
+        String table_data_path_relative = database_data_path_relative + escapeForFileName(query.table) + '/';
+        auto [table_name, table] = createTableFromAST(query, database_name, table_data_path_relative, context, has_force_restore_data_flag);
         database.attachTable(table_name, table);
     }
 }
@@ -97,8 +95,8 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context_)
     : DatabaseWithOwnTablesBase(std::move(name_))
     , metadata_path(metadata_path_)
-    , data_path("data/" + escapeForFileName(name) + "/")
-    , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
+    , data_path("data/" + escapeForFileName(database_name) + "/")
+    , log(&Logger::get("DatabaseOrdinary (" + database_name + ")"))
 {
     Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
@@ -257,25 +255,14 @@ time_t DatabaseOrdinary::getObjectMetadataModificationTime(
     return DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name);
 }
 
-ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name) const
+ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
 {
-    return DatabaseOnDisk::getCreateTableQuery(*this, context, table_name);
+    return DatabaseOnDisk::getCreateTableQueryImpl(*this, context, table_name, throw_on_error);
 }
 
-ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
+ASTPtr DatabaseOrdinary::getCreateDictionaryQueryImpl(const Context & context, const String & dictionary_name, bool throw_on_error) const
 {
-    return DatabaseOnDisk::tryGetCreateTableQuery(*this, context, table_name);
-}
-
-
-ASTPtr DatabaseOrdinary::getCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
-{
-    return DatabaseOnDisk::getCreateDictionaryQuery(*this, context, dictionary_name);
-}
-
-ASTPtr DatabaseOrdinary::tryGetCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
-{
-    return DatabaseOnDisk::tryGetCreateTableQuery(*this, context, dictionary_name);
+    return DatabaseOnDisk::getCreateDictionaryQueryImpl(*this, context, dictionary_name, throw_on_error);
 }
 
 ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & context) const
@@ -358,11 +345,6 @@ String DatabaseOrdinary::getDataPath() const
 String DatabaseOrdinary::getMetadataPath() const
 {
     return metadata_path;
-}
-
-String DatabaseOrdinary::getDatabaseName() const
-{
-    return name;
 }
 
 String DatabaseOrdinary::getObjectMetadataPath(const String & table_name) const
