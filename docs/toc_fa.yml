@@ -26,6 +26,7 @@ nav:
   - ' فرمت های Input و Output': 'interfaces/formats.md'
   - ' درایور JDBC': 'interfaces/jdbc.md'
   - ' درایور ODBC': 'interfaces/odbc.md'
+  - 'C ++ کتابخانه مشتری': 'interfaces/cpp.md'
   - 'Third-party':
     - 'کتابخانه های مشتری': 'interfaces/third-party/client_libraries.md'
     - 'یکپارچگی': 'interfaces/third-party/integrations.md'
