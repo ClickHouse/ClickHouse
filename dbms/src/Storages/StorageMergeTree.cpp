@@ -25,6 +25,7 @@
 #include <Poco/File.h>
 #include <optional>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -123,7 +124,7 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
-BlockInputStreams StorageMergeTree::read(
+Pipes StorageMergeTree::readWithProcessors(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -132,6 +133,11 @@ BlockInputStreams StorageMergeTree::read(
     const unsigned num_streams)
 {
     return reader.read(column_names, query_info, context, max_block_size, num_streams);
+}
+
+std::optional<UInt64> StorageMergeTree::totalRows() const
+{
+    return getTotalActiveSizeInRows();
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)

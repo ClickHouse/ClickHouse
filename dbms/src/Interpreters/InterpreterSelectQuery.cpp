@@ -26,6 +26,7 @@
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -65,6 +66,7 @@
 #include <Common/checkStackSize.h>
 #include <Parsers/queryToString.h>
 #include <ext/map.h>
+#include <ext/scope_guard.h>
 #include <memory>
 
 #include <Processors/Sources/NullSource.h>
@@ -1273,6 +1275,62 @@ void InterpreterSelectQuery::executeFetchColumns(
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
 
+    /// Optimization for trivial query like SELECT count() FROM table.
+    auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
+    {
+        if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
+            || query.sample_size() || query.sample_offset() || query.final() || query.prewhere() || query.where()
+            || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
+            return {};
+
+        Names key_names;
+        AggregateDescriptions aggregates;
+        query_analyzer->getAggregateInfo(key_names, aggregates);
+
+        if (aggregates.size() != 1)
+            return {};
+
+        const AggregateDescription & desc = aggregates[0];
+        if (typeid_cast<AggregateFunctionCount *>(desc.function.get()))
+            return desc;
+
+        return {};
+    };
+
+    if (auto desc = check_trivial_count_query())
+    {
+        auto func = desc->function;
+        std::optional<UInt64> num_rows = storage->totalRows();
+        if (num_rows)
+        {
+            AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
+
+            /// We will process it up to "WithMergeableState".
+            std::vector<char> state(agg_count.sizeOfData());
+            AggregateDataPtr place = state.data();
+
+            agg_count.create(place);
+            SCOPE_EXIT(agg_count.destroy(place));
+
+            agg_count.set(place, *num_rows);
+
+            auto column = ColumnAggregateFunction::create(func);
+            column->insertFrom(place);
+
+            Block block_with_count{
+                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, DataTypes(), Array()), desc->column_name}};
+
+            auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
+            if constexpr (pipeline_with_processors)
+                pipeline.init({std::make_shared<SourceFromInputStream>(istream)});
+            else
+                pipeline.streams.emplace_back(istream);
+            from_stage = QueryProcessingStage::WithMergeableState;
+            analysis_result.first_stage = false;
+            return;
+        }
+    }
+
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
 
@@ -1562,7 +1620,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             IBlockInputStream::LocalLimits limits;
             limits.mode = IBlockInputStream::LIMITS_TOTAL;
             limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
-            limits.max_execution_time = settings.max_execution_time;
+            limits.speed_limits.max_execution_time = settings.max_execution_time;
             limits.timeout_overflow_mode = settings.timeout_overflow_mode;
 
             /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
@@ -1574,11 +1632,11 @@ void InterpreterSelectQuery::executeFetchColumns(
               */
             if (options.to_stage == QueryProcessingStage::Complete)
             {
-                limits.min_execution_speed = settings.min_execution_speed;
-                limits.max_execution_speed = settings.max_execution_speed;
-                limits.min_execution_speed_bytes = settings.min_execution_speed_bytes;
-                limits.max_execution_speed_bytes = settings.max_execution_speed_bytes;
-                limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+                limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+                limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+                limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+                limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+                limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
             }
 
             QuotaForIntervals & quota = context.getQuota();

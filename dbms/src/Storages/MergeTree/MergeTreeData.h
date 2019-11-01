@@ -435,9 +435,9 @@ public:
     DataPartsVector getDataPartsVector() const;
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
-    DataPartPtr getActiveContainingPart(const String & part_name);
-    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
-    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock);
+    DataPartPtr getActiveContainingPart(const String & part_name) const;
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock) const;
 
     /// Swap part with it's identical copy (possible with another path on another disk).
     /// If original part is not active or doesn't exist exception will be thrown.
@@ -452,6 +452,8 @@ public:
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
+
+    size_t getTotalActiveSizeInRows() const;
 
     size_t getPartsCount() const;
     size_t getMaxPartsCountForPartition() const;
