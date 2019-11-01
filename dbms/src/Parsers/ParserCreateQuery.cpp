@@ -436,9 +436,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!s_as.ignore(pos, expected))
             return false;
 
-        if (!table_function_p.parse(pos, as_table_function, expected))
+        if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
         {
-            if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
+            if (!table_function_p.parse(pos, as_table_function, expected))
             {
                 /// AS [db.]table
                 if (!name_p.parse(pos, as_table, expected))
@@ -686,7 +686,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
-    ParserFunction table_function_p;
     ParserNameList names_p;
 
     ASTPtr database;
