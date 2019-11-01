@@ -9,10 +9,8 @@
 #include <Formats/MySQLBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <Storages/StorageMySQL.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -63,8 +61,12 @@ static String toQueryStringWithQuote(const std::vector<String> & quote_list)
 DatabaseMySQL::DatabaseMySQL(
     const Context & global_context_, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
-    : global_context(global_context_), database_name(database_name_), metadata_path(metadata_path_),
-      database_engine_define(database_engine_define_->clone()), database_name_in_mysql(database_name_in_mysql_), mysql_pool(std::move(pool))
+    : IDatabase(database_name_)
+    , global_context(global_context_)
+    , metadata_path(metadata_path_)
+    , database_engine_define(database_engine_define_->clone())
+    , database_name_in_mysql(database_name_in_mysql_)
+    , mysql_pool(std::move(pool))
 {
 }
 
@@ -150,14 +152,19 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseMySQL::tryGetCreateTableQuery(const Context &, const String & table_name) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const Context &, const String & table_name, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     fetchTablesIntoLocalCache();
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
-        throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    {
+        if (throw_on_error)
+            throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist..",
+                            ErrorCodes::UNKNOWN_TABLE);
+        return nullptr;
+    }
 
     return getCreateQueryFromStorage(local_tables_cache[table_name].second, database_engine_define);
 }
@@ -334,7 +341,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(const Context & /*context*/)
 {
-    Poco::File(getMetadataPath()).remove(true);
+    Poco::File(getMetadataPath()).remove(true); //WTF
 }
 
 void DatabaseMySQL::cleanOutdatedTables()

@@ -129,7 +129,7 @@ ASTPtr parseCreateQueryFromMetadataFile(const String & filepath, Poco::Logger * 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
-    const String & database_data_path_relative,
+    const String & table_data_path_relative,
     Context & context,
     bool has_force_restore_data_flag)
 {
@@ -152,7 +152,6 @@ std::pair<String, StoragePtr> createTableFromAST(
     ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
     ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
-    String table_data_path_relative = database_data_path_relative + escapeForFileName(ast_create_query.table) + '/';
     return
     {
         ast_create_query.table,
@@ -456,27 +455,6 @@ ASTPtr DatabaseOnDisk::getCreateDictionaryQueryImpl(
     }
 
     return ast;
-}
-
-ASTPtr DatabaseOnDisk::getCreateTableQuery(const IDatabase & database, const Context & context, const String & table_name)
-{
-    return getCreateTableQueryImpl(database, context, table_name, true);
-}
-
-ASTPtr DatabaseOnDisk::tryGetCreateTableQuery(const IDatabase & database, const Context & context, const String & table_name)
-{
-    return getCreateTableQueryImpl(database, context, table_name, false);
-}
-
-
-ASTPtr DatabaseOnDisk::getCreateDictionaryQuery(const IDatabase & database, const Context & context, const String & dictionary_name)
-{
-    return getCreateDictionaryQueryImpl(database, context, dictionary_name, true);
-}
-
-ASTPtr DatabaseOnDisk::tryGetCreateDictionaryQuery(const IDatabase & database, const Context & context, const String & dictionary_name)
-{
-    return getCreateDictionaryQueryImpl(database, context, dictionary_name, false);
 }
 
 ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const IDatabase & database, const Context & /*context*/)
