@@ -86,7 +86,7 @@ SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 
 ### STOP MERGES {#query_language-system-stop-merges}
 
-Позволяет остановить фоновые мержи для таблиц семейства *MergeTree:
+Позволяет остановить фоновые мержи для таблиц семейства MergeTree:
 
 ```sql
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
