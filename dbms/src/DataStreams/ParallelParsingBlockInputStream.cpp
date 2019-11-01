@@ -124,7 +124,7 @@ Block ParallelParsingBlockInputStream::readImpl()
     /// Check for an exception and rethrow it
     if (is_exception_occured)
     {
-        segmentator_condvar.notify_all();
+        LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::readImpl()"), "Exception occured. Will cancel the query.");
         lock.unlock();
         cancel(false);
         rethrowFirstException(exceptions);
@@ -136,7 +136,13 @@ Block ParallelParsingBlockInputStream::readImpl()
     if (++internal_block_iter == blocks[current_number].block.size())
     {
         if (is_last[current_number])
-            is_cancelled = true;
+        {
+            LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::readImpl()"), "Last unit. Will cancel the query.");
+            lock.unlock();
+            cancel(false);
+            return res;
+        }
+
         internal_block_iter = 0;
         ++reader_ticket_number;
         status[current_number] = READY_TO_INSERT;
