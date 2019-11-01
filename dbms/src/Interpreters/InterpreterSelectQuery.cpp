@@ -1620,7 +1620,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             IBlockInputStream::LocalLimits limits;
             limits.mode = IBlockInputStream::LIMITS_TOTAL;
             limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
-            limits.max_execution_time = settings.max_execution_time;
+            limits.speed_limits.max_execution_time = settings.max_execution_time;
             limits.timeout_overflow_mode = settings.timeout_overflow_mode;
 
             /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
@@ -1632,11 +1632,11 @@ void InterpreterSelectQuery::executeFetchColumns(
               */
             if (options.to_stage == QueryProcessingStage::Complete)
             {
-                limits.min_execution_speed = settings.min_execution_speed;
-                limits.max_execution_speed = settings.max_execution_speed;
-                limits.min_execution_speed_bytes = settings.min_execution_speed_bytes;
-                limits.max_execution_speed_bytes = settings.max_execution_speed_bytes;
-                limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+                limits.speed_limits.min_execution_rps = settings.min_execution_speed;
+                limits.speed_limits.max_execution_rps = settings.max_execution_speed;
+                limits.speed_limits.min_execution_bps = settings.min_execution_speed_bytes;
+                limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
+                limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
             }
 
             QuotaForIntervals & quota = context.getQuota();
