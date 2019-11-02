@@ -447,7 +447,7 @@ public:
             if (!accurate::convertNumeric(JSONParser::getDouble(it), value))
                 return false;
         }
-        else if (JSONParser::isBool(it) && std::is_integral_v<NumberType> && convert_bool_to_integer)
+        else if (JSONParser::isBool(it) && is_integral_v<NumberType> && convert_bool_to_integer)
             value = static_cast<NumberType>(JSONParser::getBool(it));
         else
             return false;
