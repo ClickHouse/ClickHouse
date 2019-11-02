@@ -149,12 +149,13 @@ namespace
     };
 
 
-    template <typename T, typename ResultOffsetsBuilder>
+    template <typename Container, typename ResultOffsetsBuilder>
     void filterArraysImplGeneric(
-        const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-        PaddedPODArray<T> & res_elems, IColumn::Offsets * res_offsets,
+        const Container & src_elems, const IColumn::Offsets & src_offsets,
+        Container & res_elems, IColumn::Offsets * res_offsets,
         const IColumn::Filter & filt, ssize_t result_size_hint)
     {
+        using T = typename Container::value_type;
         const size_t size = src_offsets.size();
         if (size != filt.size())
             throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -171,7 +172,7 @@ namespace
                 res_elems.reserve((result_size_hint * src_elems.size() + size - 1) / size);
         }
 
-        const UInt8 * filt_pos = filt.data();
+        auto filt_pos = filt.data();
         const auto filt_end = filt_pos + size;
 
         auto offsets_pos = src_offsets.data();
@@ -244,34 +245,44 @@ namespace
 }
 
 
-template <typename T>
+template <typename Container>
 void filterArraysImpl(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-    PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
+    const Container & src_elems, const IColumn::Offsets & src_offsets,
+    Container & res_elems, IColumn::Offsets & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
-    return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint);
+    return filterArraysImplGeneric<Container, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint);
 }
 
-template <typename T>
+template <typename Container>
 void filterArraysImplOnlyData(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-    PaddedPODArray<T> & res_elems,
+    const Container & src_elems, const IColumn::Offsets & src_offsets,
+    Container & res_elems,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
-    return filterArraysImplGeneric<T, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint);
+    return filterArraysImplGeneric<Container, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint);
 }
 
 
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
 #define INSTANTIATE(TYPE) \
-template void filterArraysImpl<TYPE>( \
+template void filterArraysImpl( \
     const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
     PaddedPODArray<TYPE> &, IColumn::Offsets &, \
     const IColumn::Filter &, ssize_t); \
-template void filterArraysImplOnlyData<TYPE>( \
+template void filterArraysImplOnlyData( \
     const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
     PaddedPODArray<TYPE> &, \
+    const IColumn::Filter &, ssize_t);
+
+/// for ColumnString and ColumnFixedString
+template void filterArraysImpl(
+    const PaddedPODArrayChar &, const IColumn::Offsets &,
+    PaddedPODArrayChar &, IColumn::Offsets &,
+    const IColumn::Filter &, ssize_t);
+template void filterArraysImplOnlyData(
+    const PaddedPODArrayChar &, const IColumn::Offsets &,
+    PaddedPODArrayChar &,
     const IColumn::Filter &, ssize_t);
 
 INSTANTIATE(UInt8)

@@ -337,7 +337,7 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     new_filter_vec.resize(new_filter_data - new_filter_vec.data());
 }
 
-size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
+size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8NoAlias * begin, const UInt8NoAlias * end)
 {
     size_t count = 0;
 

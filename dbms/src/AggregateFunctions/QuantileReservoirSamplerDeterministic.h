@@ -22,6 +22,7 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileReservoirSamplerDeterministic
 {
+    using ValuePtr = std::conditional_t<std::is_same_v<Value, UInt8>, UInt8NoAlias, Value> *;
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
@@ -59,7 +60,7 @@ struct QuantileReservoirSamplerDeterministic
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, ValuePtr result)
     {
         for (size_t i = 0; i < size; ++i)
             result[indices[i]] = data.quantileInterpolated(levels[indices[i]]);

@@ -38,6 +38,7 @@ namespace ErrorCodes
 template <typename T>
 class QuantileTDigest
 {
+    using TPtr = std::conditional_t<std::is_same_v<T, UInt8>, UInt8NoAlias, T> *;
     using Value = Float32;
     using Count = Float32;
 
@@ -329,7 +330,7 @@ public:
         return getImpl<Float32>(level);
     }
 
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, T * result)
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, TPtr result)
     {
         getManyImpl(levels, indices, size, result);
     }

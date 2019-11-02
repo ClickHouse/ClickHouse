@@ -378,7 +378,7 @@ namespace
 
         for (size_t i = 0; i < size; ++i)
         {
-            auto val = index[i];
+            auto val = toNativeValue(index[i]);
             if (val < dict_size)
                 max_less_dict_size = std::max(max_less_dict_size, val);
 

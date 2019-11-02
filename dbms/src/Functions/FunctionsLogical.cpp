@@ -160,7 +160,7 @@ public:
     {
         const auto & a = vec[i];
         if constexpr (Op::isSaturable())
-            return Op::isSaturatedValue(a) ? a : Op::apply(a, next.apply(i));
+            return Op::isSaturatedValue(a) ? toNativeValue(a) : Op::apply(a, next.apply(i));
         else
             return Op::apply(a, next.apply(i));
     }

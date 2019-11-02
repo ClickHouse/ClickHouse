@@ -147,6 +147,10 @@ struct IntegerRoundingComputation
             *out = compute(*in, scale);
     }
 
+    static inline void compute(const UInt8NoAlias * __restrict in, size_t scale, UInt8NoAlias * __restrict out)
+    {
+        compute(&in->value, scale, &out->value);
+    }
 };
 
 
@@ -296,11 +300,11 @@ public:
 
         const size_t data_count = std::tuple_size<Data>();
 
-        const T* end_in = in.data() + in.size();
-        const T* limit = in.data() + in.size() / data_count * data_count;
+        auto end_in = in.data() + in.size();
+        auto limit = in.data() + in.size() / data_count * data_count;
 
-        const T* __restrict p_in = in.data();
-        T* __restrict p_out = out.data();
+        auto * __restrict p_in = in.data();
+        auto * __restrict p_out = out.data();
 
         while (p_in < limit)
         {
@@ -333,10 +337,10 @@ public:
     template <size_t scale>
     static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
     {
-        const T * end_in = in.data() + in.size();
+        auto end_in = in.data() + in.size();
 
-        const T * __restrict p_in = in.data();
-        T * __restrict p_out = out.data();
+        auto * __restrict p_in = in.data();
+        auto * __restrict p_out = out.data();
 
         while (p_in < end_in)
         {

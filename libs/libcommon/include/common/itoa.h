@@ -31,6 +31,7 @@
 #include <cstring>
 #include <type_traits>
 #include "likely.h"
+#include "Types.h"
 
 using int128_t = __int128;
 using uint128_t = unsigned __int128;
@@ -407,4 +408,10 @@ template <>
 inline char * itoa<int128_t>(int128_t i, char * p)
 {
     return impl::writeSIntText(i, p);
+}
+
+template <>
+inline char * itoa<UInt8NoAlias>(UInt8NoAlias i, char * p)
+{
+    return impl::writeUIntText(i.value, p);
 }

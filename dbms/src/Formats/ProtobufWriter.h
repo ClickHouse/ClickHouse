@@ -123,7 +123,7 @@ private:
         };
 
         WriteBuffer & out;
-        PODArray<UInt8> buffer;
+        PaddedPODArrayChar buffer;
         std::vector<Piece> pieces;
         size_t current_piece_start;
         size_t num_bytes_skipped;

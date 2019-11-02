@@ -165,7 +165,7 @@ static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 }
 
 template <>
-inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
+inline void appendToStringOrVector(PaddedPODArrayChar & s, ReadBuffer & rb, const char * end)
 {
     if (rb.isPadded())
         s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
@@ -219,7 +219,7 @@ void readString(String & s, ReadBuffer & buf)
     readStringInto(s, buf);
 }
 
-template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringInto<PaddedPODArrayChar>(PaddedPODArrayChar & s, ReadBuffer & buf);
 
 
 template <typename Vector>
@@ -270,7 +270,7 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf)
     readEscapedStringUntilEOLInto(s, buf);
 }
 
-template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilEOFInto<PaddedPODArrayChar>(PaddedPODArrayChar & s, ReadBuffer & buf);
 
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
@@ -447,7 +447,7 @@ void readEscapedString(String & s, ReadBuffer & buf)
     readEscapedStringInto(s, buf);
 }
 
-template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<PaddedPODArrayChar>(PaddedPODArrayChar & s, ReadBuffer & buf);
 template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
@@ -529,7 +529,7 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 }
 
 
-template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readQuotedStringInto<true>(PaddedPODArrayChar & s, ReadBuffer & buf);
 template void readDoubleQuotedStringInto<false>(NullSink & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
@@ -661,7 +661,7 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
     readCSVStringInto(s, buf, settings);
 }
 
-template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringInto<PaddedPODArrayChar>(PaddedPODArrayChar & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>
@@ -709,8 +709,8 @@ void readJSONString(String & s, ReadBuffer & buf)
     readJSONStringInto(s, buf);
 }
 
-template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONStringInto<PaddedPODArrayChar, void>(PaddedPODArrayChar & s, ReadBuffer & buf);
+template bool readJSONStringInto<PaddedPODArrayChar, bool>(PaddedPODArrayChar & s, ReadBuffer & buf);
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 

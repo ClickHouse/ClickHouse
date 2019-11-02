@@ -561,7 +561,7 @@ void ComplexKeyHashedDictionary::getItemsImpl(
         const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
 
         const auto it = attr.find(key);
-        set_value(i, it ? static_cast<OutputType>(*lookupResultGetMapped(it)) : get_default(i));
+        set_value(i, it ? static_cast<OutputType>(*lookupResultGetMapped(it)) : toNativeValue(get_default(i)));
 
         /// free memory allocated for the key
         temporary_keys_pool.rollback(key.size);

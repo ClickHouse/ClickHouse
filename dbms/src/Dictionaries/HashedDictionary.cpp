@@ -596,7 +596,7 @@ void HashedDictionary::getItemsAttrImpl(
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : toNativeValue(get_default(i)));
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);

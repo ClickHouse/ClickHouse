@@ -67,7 +67,7 @@ private:
 
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? 0 : src[i];
+                dst[i] = is_first_line_zero ? 0 : toNativeValue(src[i]);
                 prev = src[i];
                 has_prev_value = true;
             }

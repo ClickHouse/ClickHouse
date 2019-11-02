@@ -233,7 +233,7 @@ bool ProtobufReader::SimpleReader::readFixed(T & value)
     return true;
 }
 
-bool ProtobufReader::SimpleReader::readStringInto(PaddedPODArray<UInt8> & str)
+bool ProtobufReader::SimpleReader::readStringInto(PaddedPODArrayChar & str)
 {
     if (unlikely(cursor == last_string_pos))
         return false; /// We don't want to read the same empty string again.
@@ -386,7 +386,7 @@ public:
     ConverterBaseImpl(SimpleReader & simple_reader_, const google::protobuf::FieldDescriptor * field_)
         : simple_reader(simple_reader_), field(field_) {}
 
-    bool readStringInto(PaddedPODArray<UInt8> &) override
+    bool readStringInto(PaddedPODArrayChar &) override
     {
         cannotConvertType("String");
     }
@@ -528,7 +528,7 @@ protected:
     }
 
     template <typename To>
-    To parseFromString(const PaddedPODArray<UInt8> & str)
+    To parseFromString(const PaddedPODArrayChar & str)
     {
         try
         {
@@ -554,7 +554,7 @@ class ProtobufReader::ConverterFromString : public ConverterBaseImpl
 public:
     using ConverterBaseImpl::ConverterBaseImpl;
 
-    bool readStringInto(PaddedPODArray<UInt8> & str) override { return simple_reader.readStringInto(str); }
+    bool readStringInto(PaddedPODArrayChar & str) override { return simple_reader.readStringInto(str); }
 
     bool readInt8(Int8 & value) override { return readNumeric(value); }
     bool readUInt8(UInt8 & value) override { return readNumeric(value); }
@@ -668,7 +668,7 @@ private:
             enum_name_to_value_map->emplace(name_value_pair.first, name_value_pair.second);
     }
 
-    PaddedPODArray<UInt8> temp_string;
+    PaddedPODArrayChar temp_string;
     std::optional<std::unordered_map<StringRef, Int16>> enum_name_to_value_map;
 };
 
@@ -690,12 +690,12 @@ class ProtobufReader::ConverterFromNumber : public ConverterBaseImpl
 public:
     using ConverterBaseImpl::ConverterBaseImpl;
 
-    bool readStringInto(PaddedPODArray<UInt8> & str) override
+    bool readStringInto(PaddedPODArrayChar & str) override
     {
         FromType number;
         if (!readField(number))
             return false;
-        WriteBufferFromVector<PaddedPODArray<UInt8>> buf(str);
+        WriteBufferFromVector<PaddedPODArrayChar> buf(str);
         writeText(number, buf);
         return true;
     }
@@ -851,7 +851,7 @@ class ProtobufReader::ConverterFromBool : public ConverterBaseImpl
 public:
     using ConverterBaseImpl::ConverterBaseImpl;
 
-    bool readStringInto(PaddedPODArray<UInt8> & str) override
+    bool readStringInto(PaddedPODArrayChar & str) override
     {
         bool b;
         if (!readField(b))
@@ -909,7 +909,7 @@ class ProtobufReader::ConverterFromEnum : public ConverterBaseImpl
 public:
     using ConverterBaseImpl::ConverterBaseImpl;
 
-    bool readStringInto(PaddedPODArray<UInt8> & str) override
+    bool readStringInto(PaddedPODArrayChar & str) override
     {
         prepareEnumPbNumberToNameMap();
         Int64 pbnumber;

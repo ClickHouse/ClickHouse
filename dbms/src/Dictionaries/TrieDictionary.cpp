@@ -509,7 +509,7 @@ void TrieDictionary::getItemsImpl(
         {
             auto addr = Int32(first_column->get64(i));
             uintptr_t slot = btrie_find(trie, addr);
-            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
+            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : toNativeValue(get_default(i)));
         }
     }
     else
@@ -521,7 +521,7 @@ void TrieDictionary::getItemsImpl(
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
             uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8 *>(addr.data));
-            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
+            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : toNativeValue(get_default(i)));
         }
     }
 

@@ -56,7 +56,7 @@ namespace
         return ptr;
     }
 
-    void writeVarint(UInt64 value, PODArray<UInt8> & buf)
+    void writeVarint(UInt64 value, PaddedPODArrayChar & buf)
     {
         size_t old_size = buf.size();
         buf.reserve(old_size + MAX_VARINT_SIZE);
@@ -82,7 +82,7 @@ namespace
         return writeVarint((field_number << 3) | wire_type, ptr);
     }
 
-    void writeFieldNumber(UInt32 field_number, WireType wire_type, PODArray<UInt8> & buf) { writeVarint((field_number << 3) | wire_type, buf); }
+    void writeFieldNumber(UInt32 field_number, WireType wire_type, PaddedPODArrayChar & buf) { writeVarint((field_number << 3) | wire_type, buf); }
 
     // Should we pack repeated values while storing them.
     // It depends on type of the field in the protobuf schema and the syntax of that schema.

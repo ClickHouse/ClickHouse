@@ -296,7 +296,7 @@ private:
                     ++cache_hit;
                     const auto & cell_idx = find_result.cell_idx;
                     const auto & cell = cells[cell_idx];
-                    out[row] = cell.isDefault() ? get_default(row) : static_cast<OutputType>(attribute_array[cell_idx]);
+                    out[row] = cell.isDefault() ? toNativeValue(get_default(row)) : static_cast<OutputType>(attribute_array[cell_idx]);
                 }
             }
         }

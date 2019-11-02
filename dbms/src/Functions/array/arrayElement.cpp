@@ -98,7 +98,7 @@ public:
     operator bool() const { return src_null_map; }
     bool operator!() const { return !src_null_map; }
 
-    void initSource(const UInt8 * src_null_map_)
+    void initSource(const UInt8NoAlias * src_null_map_)
     {
         src_null_map = src_null_map_;
     }
@@ -125,8 +125,8 @@ public:
     ColumnPtr getNullMapColumnPtr() && { return std::move(sink_null_map_holder); }
 
 private:
-    const UInt8 * src_null_map = nullptr;
-    UInt8 * sink_null_map = nullptr;
+    const UInt8NoAlias * __restrict src_null_map = nullptr;
+    UInt8NoAlias * __restrict sink_null_map = nullptr;
     MutableColumnPtr sink_null_map_holder;
     size_t index = 0;
 };

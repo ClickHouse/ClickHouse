@@ -45,7 +45,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
             ColumnWithTypeAndName res_column = block_to_calculate.getByPosition(block_to_calculate.columns() - 1);
             const ColumnUInt8 & res_column_uint8 = assert_cast<const ColumnUInt8 &>(*res_column.column);
 
-            const UInt8 * data = res_column_uint8.getData().data();
+            auto data = res_column_uint8.getData().data();
             size_t size = res_column_uint8.size();
 
             /// Is violated.

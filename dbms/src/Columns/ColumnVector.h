@@ -91,11 +91,12 @@ template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {
 
 /** A template for columns that use a simple array to store.
  */
-template <typename T>
-class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
+template <typename TT>
+class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<TT>>
 {
+    static_assert(!std::is_same_v<TT, UInt8NoAlias> && "cannot use UInt8NoAlias as a template type to columnvector");
+    using T = std::conditional_t<std::is_same_v<TT, UInt8>, UInt8NoAlias, TT>;
     static_assert(!IsDecimalNumber<T>);
-
 private:
     using Self = ColumnVector;
     friend class COWHelper<ColumnVectorHelper, Self>;
@@ -105,7 +106,7 @@ private:
 
 public:
     using value_type = T;
-    using Container = PaddedPODArray<value_type>;
+    using Container = PaddedPODArray<TT>;
 
 private:
     ColumnVector() {}
@@ -114,10 +115,10 @@ private:
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 
     /// Sugar constructor.
-    ColumnVector(std::initializer_list<T> il) : data{il} {}
+    ColumnVector(std::initializer_list<TT> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return IsNumber<T>; }
+    bool isNumeric() const override { return IsNumber<TT>; }
 
     size_t size() const override
     {
@@ -258,7 +259,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        return typeid(rhs) == typeid(ColumnVector<T>);
+        return typeid(rhs) == typeid(Self);
     }
 
     /** More efficient methods of manipulation - to manipulate with data directly. */

@@ -29,6 +29,8 @@ struct QuantileExact
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Value>);
     using Array = PODArrayWithStackMemory<Value, bytes_in_arena>;
+    using ValuePtr = std::conditional_t<std::is_same_v<Value, UInt8>, UInt8NoAlias, Value> *;
+
     Array array;
 
     void add(const Value & x)
@@ -82,7 +84,7 @@ struct QuantileExact
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
+    void getMany(const Float64 * levels, const size_t * indices, size_t size, ValuePtr result)
     {
         if (!array.empty())
         {

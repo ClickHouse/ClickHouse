@@ -25,17 +25,17 @@ bool memoryIsZero(const void * data, size_t size);
 bool memoryIsByte(const void * data, size_t size, uint8_t byte);
 
 /// The general implementation of `filter` function for ColumnArray and ColumnString.
-template <typename T>
+template <typename Container>
 void filterArraysImpl(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-    PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
+    const Container & src_elems, const IColumn::Offsets & src_offsets,
+    Container & res_elems, IColumn::Offsets & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint);
 
 /// Same as above, but not fills res_offsets.
-template <typename T>
+template <typename Container>
 void filterArraysImplOnlyData(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-    PaddedPODArray<T> & res_elems,
+    const Container & src_elems, const IColumn::Offsets & src_offsets,
+    Container & res_elems,
     const IColumn::Filter & filt, ssize_t result_size_hint);
 
 namespace detail

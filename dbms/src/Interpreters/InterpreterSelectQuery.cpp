@@ -393,18 +393,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool need_analyze_again = false;
     if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
     {
-        auto constant = std::make_shared<ASTLiteral>(0u);
         if (analysis_result.prewhere_constant_filter_description.always_true)
-            constant->value = 1u;
-        query.setExpression(ASTSelectQuery::Expression::PREWHERE, constant);
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+        else
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
     if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
     {
-        auto constant = std::make_shared<ASTLiteral>(0u);
         if (analysis_result.where_constant_filter_description.always_true)
-            constant->value = 1u;
-        query.setExpression(ASTSelectQuery::Expression::WHERE, constant);
+            query.setExpression(ASTSelectQuery::Expression::WHERE, {});
+        else
+            query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
     if (need_analyze_again)

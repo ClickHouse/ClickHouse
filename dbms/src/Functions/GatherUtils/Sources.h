@@ -199,7 +199,7 @@ struct ConstSource : public Base
 
 struct StringSource
 {
-    using Slice = NumericArraySlice<UInt8>;
+    using Slice = StringSlice;
     using Column = ColumnString;
 
     const typename ColumnString::Chars & elements;
@@ -366,7 +366,7 @@ struct UTF8StringSource : public StringSource
 
 struct FixedStringSource
 {
-    using Slice = NumericArraySlice<UInt8>;
+    using Slice = StringSlice;
     using Column = ColumnFixedString;
 
     const UInt8 * pos;
@@ -445,7 +445,7 @@ struct FixedStringSource
 
 struct IStringSource
 {
-    using Slice = NumericArraySlice<UInt8>;
+    using Slice = StringSlice;
 
     virtual void next() = 0;
     virtual bool isEnd() const = 0;
@@ -583,10 +583,10 @@ struct NullableArraySource : public ArraySource
     using ArraySource::row_num;
     using ArraySource::offsets;
 
-    const NullMap & null_map;
+    const UInt8NoAlias * null_map;
 
     NullableArraySource(const ColumnArray & arr, const NullMap & null_map_)
-            : ArraySource(arr), null_map(null_map_)
+            : ArraySource(arr), null_map(null_map_.data())
     {
     }
 
@@ -652,7 +652,7 @@ struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
     using Slice = NumericValueSlice<T>;
     using Column = ColumnVector<T>;
 
-    const T * begin;
+    const std::conditional_t<std::is_same_v<T, UInt8>, UInt8NoAlias, T> * begin;
     size_t total_rows;
     size_t row_num = 0;
 

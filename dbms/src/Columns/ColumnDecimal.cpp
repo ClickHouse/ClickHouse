@@ -159,8 +159,8 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
-    const UInt8 * filt_pos = filt.data();
-    const UInt8 * filt_end = filt_pos + size;
+    auto filt_pos = filt.data();
+    auto filt_end = filt_pos + size;
     const T * data_pos = data.data();
 
     while (filt_pos < filt_end)

@@ -508,7 +508,12 @@ private:
         {
             auto it = table.find(src[i]);
             if (it)
-                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
+            {
+                if constexpr (std::is_same_v<U, UInt8>)
+                    memcpy(&dst[i].value, lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
+                else
+                    memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
+            }
             else
                 dst[i] = dst_default;
         }
@@ -524,7 +529,10 @@ private:
         {
             auto it = table.find(src[i]);
             if (it)
-                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
+                if constexpr (std::is_same_v<U, UInt8>)
+                    memcpy(&dst[i].value, lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
+                else
+                    memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = dst_default[i];
         }
@@ -540,7 +548,10 @@ private:
         {
             auto it = table.find(src[i]);
             if (it)
-                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
+                if constexpr (std::is_same_v<T, UInt8>)
+                    memcpy(&dst[i].value, lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
+                else
+                    memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = src[i];
         }
@@ -611,7 +622,10 @@ private:
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
             if (it)
-                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
+                if constexpr (std::is_same_v<U, UInt8>)
+                    memcpy(&dst[i].value, lookupResultGetMapped(it), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
             else
                 dst[i] = dst_default;
         }
@@ -632,7 +646,10 @@ private:
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
             if (it)
-                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
+                if constexpr (std::is_same_v<U, UInt8>)
+                    memcpy(&dst[i].value, lookupResultGetMapped(it), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
             else
                 dst[i] = dst_default[i];
         }

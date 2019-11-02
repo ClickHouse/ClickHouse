@@ -5,6 +5,8 @@
 #pragma once
 
 #include <Common/Allocator_fwd.h>
+#include <type_traits>
+#include <common/Types.h>
 
 namespace DB
 {
@@ -16,12 +18,14 @@ inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
 
 template <typename T, size_t initial_bytes = 4096,
           typename TAllocator = Allocator<false>, size_t pad_right_ = 0,
-          size_t pad_left_ = 0>
+          size_t pad_left_ = 0, bool is_char = false>
 class PODArray;
 
 /** For columns. Padding is enough to read and write xmm-register at the address of the last element. */
 template <typename T, size_t initial_bytes = 4096, typename TAllocator = Allocator<false>>
-using PaddedPODArray = PODArray<T, initial_bytes, TAllocator, 15, 16>;
+using PaddedPODArray = PODArray<T, initial_bytes, TAllocator, 15, 16, false>;
+
+using PaddedPODArrayChar = PODArray<UInt8, 4096, Allocator<false>, 15, 16, true>;
 
 /** A helper for declaring PODArray that uses inline memory.
   * The initial size is set to use all the inline bytes, since using less would

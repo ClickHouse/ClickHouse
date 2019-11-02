@@ -62,10 +62,10 @@ static void fillArrowArrayWithNumericColumnData(
         for (size_t i = 0, size = null_bytemap->size(); i < size; ++i)
             arrow_null_bytemap.emplace_back(1 ^ (*null_bytemap)[i]);
 
-        arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
+        arrow_null_bytemap_raw_ptr = toNativeValue(arrow_null_bytemap.data());
     }
 
-    status = builder.AppendValues(internal_data.data(), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    status = builder.AppendValues(toNativeValue(internal_data.data()), internal_data.size(), arrow_null_bytemap_raw_ptr);
     checkStatus(status, write_column->getName());
 
     status = builder.Finish(&arrow_array);

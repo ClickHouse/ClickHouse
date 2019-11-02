@@ -255,9 +255,13 @@ public:
     }
 };
 
-template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
-class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
+template <typename Type, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_, bool is_char>
+class PODArray : public PODArrayBase<sizeof(Type), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
+    static_assert(!std::is_same_v<Type, UInt8NoAlias> && "cannot use UInt8NoAlias as a template type to podarray");
+    using T_Number = std::conditional_t<std::is_same_v<Type, UInt8>, UInt8NoAlias, Type>;
+    using T = std::conditional_t<is_char, UInt8, T_Number>;
+
 protected:
     using Base = PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>;
 
@@ -294,7 +298,7 @@ public:
         this->c_end += this->byte_size(n);
     }
 
-    PODArray(size_t n, const T & x)
+    PODArray(size_t n, const Type & x)
     {
         this->alloc_for_num_elements(n);
         assign(n, x);
@@ -306,7 +310,13 @@ public:
         insert(from_begin, from_end);
     }
 
-    PODArray(std::initializer_list<T> il) : PODArray(std::begin(il), std::end(il)) {}
+    PODArray(std::initializer_list<Type> il)
+    {
+        auto from_begin = std::begin(il);
+        auto from_end = std::end(il);
+        this->alloc_for_num_elements(from_end - from_begin);
+        insert(from_begin, from_end);
+    }
 
     PODArray(PODArray && other)
     {
@@ -566,7 +576,7 @@ public:
         }
     }
 
-    void assign(size_t n, const T & x)
+    void assign(size_t n, const Type & x)
     {
         this->resize(n);
         std::fill(begin(), end(), x);
@@ -616,8 +626,8 @@ public:
     }
 };
 
-template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_>
-void swap(PODArray<T, initial_bytes, TAllocator, pad_right_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_> & rhs)
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, bool is_char>
+void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, is_char> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, is_char> & rhs)
 {
     lhs.swap(rhs);
 }

@@ -72,6 +72,12 @@ inline size_t DefaultHash64(T key)
     return intHash64(u.out);
 }
 
+template <>
+inline size_t DefaultHash64<UInt8NoAlias>(UInt8NoAlias key)
+{
+    return DefaultHash64(key.value);
+}
+
 template <typename T, typename Enable = void>
 struct DefaultHash;
 
@@ -100,6 +106,12 @@ inline size_t hashCRC32(T key)
     return intHashCRC32(u.out);
 }
 
+template <>
+inline size_t hashCRC32(UInt8NoAlias key)
+{
+    return hashCRC32(key.value);
+}
+
 #define DEFINE_HASH(T) \
 template <> struct HashCRC32<T>\
 {\
@@ -110,6 +122,7 @@ template <> struct HashCRC32<T>\
 };
 
 DEFINE_HASH(DB::UInt8)
+DEFINE_HASH(DB::UInt8NoAlias)
 DEFINE_HASH(DB::UInt16)
 DEFINE_HASH(DB::UInt32)
 DEFINE_HASH(DB::UInt64)

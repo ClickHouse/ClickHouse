@@ -568,7 +568,7 @@ void FlatDictionary::getItemsImpl(
     for (const auto row : ext::range(0, rows))
     {
         const auto id = ids[row];
-        set_value(row, id < ext::size(attr) && loaded_ids[id] ? static_cast<OutputType>(attr[id]) : get_default(row));
+        set_value(row, id < ext::size(attr) && loaded_ids[id] ? static_cast<OutputType>(attr[id]) : toNativeValue(get_default(row)));
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);

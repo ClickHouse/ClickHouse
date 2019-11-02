@@ -57,7 +57,7 @@ namespace
 
         T max_val = index[0];
         for (size_t i = 1; i < size; ++i)
-            max_val = std::max(max_val, index[i]);
+            max_val = std::max(max_val, toNativeValue(index[i]));
 
         /// May happen when dictionary is shared.
         if (max_val > size)

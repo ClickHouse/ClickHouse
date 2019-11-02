@@ -25,7 +25,7 @@ class ColumnString final : public COWHelper<IColumn, ColumnString>
 {
 public:
     using Char = UInt8;
-    using Chars = PaddedPODArray<UInt8>;
+    using Chars = PaddedPODArrayChar;
 
 private:
     friend class COWHelper<IColumn, ColumnString>;

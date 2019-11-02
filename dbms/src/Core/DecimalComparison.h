@@ -262,10 +262,10 @@ private:
                                         CompareInt scale)
     {
         size_t size = a.size();
-        const A * a_pos = a.data();
-        const B * b_pos = b.data();
-        UInt8 * c_pos = c.data();
-        const A * a_end = a_pos + size;
+        auto a_pos = a.data();
+        auto b_pos = b.data();
+        auto c_pos = c.data();
+        auto a_end = a_pos + size;
 
         while (a_pos < a_end)
         {
@@ -280,9 +280,9 @@ private:
     static void NO_INLINE vector_constant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
-        const A * a_pos = a.data();
-        UInt8 * c_pos = c.data();
-        const A * a_end = a_pos + size;
+        auto a_pos = a.data();
+        auto c_pos = c.data();
+        auto a_end = a_pos + size;
 
         while (a_pos < a_end)
         {
@@ -296,9 +296,9 @@ private:
     static void NO_INLINE constant_vector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = b.size();
-        const B * b_pos = b.data();
-        UInt8 * c_pos = c.data();
-        const B * b_end = b_pos + size;
+        auto b_pos = b.data();
+        auto c_pos = c.data();
+        auto b_end = b_pos + size;
 
         while (b_pos < b_end)
         {

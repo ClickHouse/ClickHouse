@@ -367,8 +367,8 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
-    const UInt8 * cond_pos = condition.data();
-    const UInt8 * cond_end = cond_pos + condition.size();
+    auto cond_pos = condition.data();
+    auto cond_end = cond_pos + condition.size();
 
     while (cond_pos < cond_end)
     {
@@ -390,7 +390,7 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 template <bool all, typename FirstSliceType, typename SecondSliceType,
           bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
 bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
-                  const UInt8 * first_null_map, const UInt8 * second_null_map)
+                  const UInt8NoAlias * first_null_map, const UInt8NoAlias * second_null_map)
 {
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;

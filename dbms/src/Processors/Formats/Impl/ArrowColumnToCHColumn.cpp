@@ -82,7 +82,7 @@ namespace DB
 /// Also internal strings are null terminated.
     static void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
     {
-        PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
+        PaddedPODArrayChar & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
         PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
 
         size_t chars_t_size = 0;

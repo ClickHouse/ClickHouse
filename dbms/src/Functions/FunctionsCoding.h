@@ -1595,9 +1595,7 @@ public:
         for (size_t offset = 0; offset < input_rows_count; ++offset)
         {
             const size_t offset_ipv6 = offset * IPV6_BINARY_LENGTH;
-            UInt8 cidr = col_const_cidr_in
-                ? col_const_cidr_in->getValue<UInt8>()
-                : col_cidr_in->getData()[offset];
+            UInt8 cidr = col_const_cidr_in ? col_const_cidr_in->getValue<UInt8>() : UInt8(col_cidr_in->getData()[offset]);
             cidr = std::min(cidr, max_cidr_mask);
             applyCIDRMask(&vec_in[offset_ipv6], &vec_res_lower_range[offset_ipv6], &vec_res_upper_range[offset_ipv6], cidr);
         }
@@ -1688,9 +1686,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt8 cidr = col_const_cidr_in
-                ? col_const_cidr_in->getValue<UInt8>()
-                : col_cidr_in->getData()[i];
+            UInt8 cidr = col_const_cidr_in ? col_const_cidr_in->getValue<UInt8>() : UInt8(col_cidr_in->getData()[i]);
 
             std::tie(vec_res_lower_range[i], vec_res_upper_range[i]) = applyCIDRMask(vec_in[i], cidr);
         }

@@ -53,6 +53,8 @@ using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
 
+using UInt8NoAlias = ::UInt8NoAlias;
+
 using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
@@ -69,6 +71,7 @@ using String = std::string;
 template <typename T> constexpr bool IsNumber = false;
 
 template <> inline constexpr bool IsNumber<UInt8> = true;
+template <> inline constexpr bool IsNumber<UInt8NoAlias> = true;
 template <> inline constexpr bool IsNumber<UInt16> = true;
 template <> inline constexpr bool IsNumber<UInt32> = true;
 template <> inline constexpr bool IsNumber<UInt64> = true;
@@ -82,6 +85,7 @@ template <> inline constexpr bool IsNumber<Float64> = true;
 template <typename T> struct TypeName;
 
 template <> struct TypeName<UInt8>   { static const char * get() { return "UInt8";   } };
+template <> struct TypeName<UInt8NoAlias>  { static const char * get() { return "UInt8";  } };
 template <> struct TypeName<UInt16>  { static const char * get() { return "UInt16";  } };
 template <> struct TypeName<UInt32>  { static const char * get() { return "UInt32";  } };
 template <> struct TypeName<UInt64>  { static const char * get() { return "UInt64";  } };
@@ -95,6 +99,7 @@ template <> struct TypeName<String>  { static const char * get() { return "Strin
 
 template <typename T> struct TypeId;
 template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };
+template <> struct TypeId<UInt8NoAlias>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };
 template <> struct TypeId<UInt16>   { static constexpr const TypeIndex value = TypeIndex::UInt16;  };
 template <> struct TypeId<UInt32>   { static constexpr const TypeIndex value = TypeIndex::UInt32;  };
 template <> struct TypeId<UInt64>   { static constexpr const TypeIndex value = TypeIndex::UInt64;  };

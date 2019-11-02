@@ -21,7 +21,7 @@ class ColumnFixedString final : public COWHelper<ColumnVectorHelper, ColumnFixed
 public:
     friend class COWHelper<ColumnVectorHelper, ColumnFixedString>;
 
-    using Chars = PaddedPODArray<UInt8>;
+    using Chars = PaddedPODArrayChar;
 
 private:
     /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.

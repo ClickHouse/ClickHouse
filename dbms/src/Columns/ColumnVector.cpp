@@ -204,7 +204,15 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
-            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));
+        {
+            if constexpr (std::is_same_v<value_type, UInt8NoAlias>)
+            {
+                for (auto i = count; i < size; ++i)
+                    new_col.data[i] = 0;
+            }
+            else
+                memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));
+        }
     }
 
     return res;
@@ -252,9 +260,9 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
-    const UInt8 * filt_pos = filt.data();
-    const UInt8 * filt_end = filt_pos + size;
-    const T * data_pos = data.data();
+    auto filt_pos = filt.data();
+    auto filt_end = filt_pos + size;
+    auto data_pos = data.data();
 
 #ifdef __SSE2__
     /** A slightly more optimized version.
@@ -265,7 +273,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
     static constexpr size_t SIMD_BYTES = 16;
     const __m128i zero16 = _mm_setzero_si128();
-    const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+    auto filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
     while (filt_pos < filt_end_sse)
     {
@@ -386,7 +394,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     T cur_min = NaNOrZero<T>();
     T cur_max = NaNOrZero<T>();
 
-    for (const T x : data)
+    for (const T & x : data)
     {
         if (isNaN(x))
             continue;

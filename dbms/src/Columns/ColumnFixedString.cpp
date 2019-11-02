@@ -166,9 +166,9 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     if (result_size_hint)
         res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
-    const UInt8 * filt_pos = filt.data();
-    const UInt8 * filt_end = filt_pos + col_size;
-    const UInt8 * data_pos = chars.data();
+    auto filt_pos = filt.data();
+    auto filt_end = filt_pos + col_size;
+    auto data_pos = chars.data();
 
 #ifdef __SSE2__
     /** A slightly more optimized version.
@@ -179,7 +179,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 
     static constexpr size_t SIMD_BYTES = 16;
     const __m128i zero16 = _mm_setzero_si128();
-    const UInt8 * filt_end_sse = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
+    auto filt_end_sse = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
     const size_t chars_per_simd_elements = SIMD_BYTES * n;
 
     while (filt_pos < filt_end_sse)

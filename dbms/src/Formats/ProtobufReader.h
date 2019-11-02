@@ -62,7 +62,7 @@ public:
     bool readNumber(Float32 & value) { return current_converter->readFloat32(value); }
     bool readNumber(Float64 & value) { return current_converter->readFloat64(value); }
 
-    bool readStringInto(PaddedPODArray<UInt8> & str) { return current_converter->readStringInto(str); }
+    bool readStringInto(PaddedPODArrayChar & str) { return current_converter->readStringInto(str); }
 
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & name_value_pairs) { current_converter->prepareEnumMapping8(name_value_pairs); }
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & name_value_pairs) { current_converter->prepareEnumMapping16(name_value_pairs); }
@@ -96,7 +96,7 @@ private:
         bool readSInt(Int64 & value);
         bool readUInt(UInt64 & value);
         template<typename T> bool readFixed(T & value);
-        bool readStringInto(PaddedPODArray<UInt8> & str);
+        bool readStringInto(PaddedPODArrayChar & str);
 
         bool ALWAYS_INLINE canReadMoreValues() const { return cursor < field_end; }
 
@@ -133,7 +133,7 @@ private:
     {
     public:
        virtual ~IConverter() = default;
-       virtual bool readStringInto(PaddedPODArray<UInt8> &) = 0;
+       virtual bool readStringInto(PaddedPODArrayChar &) = 0;
        virtual bool readInt8(Int8&) = 0;
        virtual bool readUInt8(UInt8 &) = 0;
        virtual bool readInt16(Int16 &) = 0;
@@ -219,7 +219,7 @@ public:
     bool readNumber(UInt128 &) { return false; }
     bool readNumber(Float32 &) { return false; }
     bool readNumber(Float64 &) { return false; }
-    bool readStringInto(PaddedPODArray<UInt8> &) { return false; }
+    bool readStringInto(PaddedPODArrayChar &) { return false; }
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> &) {}
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> &) {}
     bool readEnum(Int8 &) { return false; }

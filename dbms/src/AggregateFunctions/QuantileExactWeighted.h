@@ -20,6 +20,7 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileExactWeighted
 {
+    using ValuePtr = std::conditional_t<std::is_same_v<Value, UInt8>, UInt8NoAlias, Value> *;
     struct Int128Hash
     {
         size_t operator()(Int128 x) const
@@ -123,7 +124,7 @@ struct QuantileExactWeighted
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
-    void getMany(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
+    void getMany(const Float64 * levels, const size_t * indices, size_t num_levels, ValuePtr result) const
     {
         size_t size = map.size();
 
