@@ -26,7 +26,7 @@ void DataTypeNumberBase<T>::deserializeText(IColumn & column, ReadBuffer & istr,
 {
     T x;
 
-    if constexpr (std::is_integral_v<T> && std::is_arithmetic_v<T>)
+    if constexpr (is_integral_v<T> && is_arithmetic_v<T>)
         readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
@@ -68,7 +68,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (std::is_integral_v<T> && (sizeof(T) == 8) && settings.json.quote_64bit_integers)
+    const bool need_quote = (is_integral_v<T> && (sizeof(T) == 8) && settings.json.quote_64bit_integers)
         || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
@@ -242,13 +242,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return std::is_integral_v<T>;
+    return is_integral_v<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return std::is_integral_v<T> && std::is_unsigned_v<T>;
+    return is_integral_v<T> && is_unsigned_v<T>;
 }
 
 

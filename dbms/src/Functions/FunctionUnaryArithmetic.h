@@ -187,7 +187,7 @@ public:
             {
                 auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                 auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
-                result = Op<T0>::compile(b, v, std::is_signed_v<T1>);
+                result = Op<T0>::compile(b, v, is_signed_v<T1>);
                 return true;
             }
             return false;

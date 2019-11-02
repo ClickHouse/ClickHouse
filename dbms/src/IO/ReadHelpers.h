@@ -272,7 +272,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '+':
                 break;
             case '-':
-                if (std::is_signed_v<T>)
+                if (is_signed_v<T>)
                     negative = true;
                 else
                 {
@@ -339,7 +339,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (unlikely(buf.eof()))
         return on_error();
 
-    if (std::is_signed_v<T> && *buf.position() == '-')
+    if (is_signed_v<T> && *buf.position() == '-')
     {
         ++buf.position();
         negative = true;
@@ -372,7 +372,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// See note about undefined behaviour above.
-    x = std::is_signed_v<T> && negative ? -res : res;
+    x = is_signed_v<T> && negative ? -res : res;
 }
 
 template <typename T>
@@ -653,7 +653,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 
 /// Generic methods to read value in native binary format.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
@@ -668,7 +668,7 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, void>
+inline std::enable_if_t<is_integral_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
@@ -691,7 +691,7 @@ inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
@@ -713,7 +713,7 @@ inline void readQuoted(LocalDateTime & x, ReadBuffer & buf)
 
 /// Same as above, but in double quotes.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
 inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
@@ -752,7 +752,7 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
