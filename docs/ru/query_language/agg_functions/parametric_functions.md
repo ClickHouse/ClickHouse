@@ -73,7 +73,7 @@ FROM
 
 ## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
 
-Проверяет, содержит ли последовательность цепочку событий, которая соответствует шаблону.
+Проверяет, содержит ли последовательность событий цепочку, которая соответствует указанному шаблону.
 
 ```sql
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
