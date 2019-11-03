@@ -503,19 +503,24 @@ void Join::initRightBlockStructure()
     /// Save non key columns
     for (auto & column : sample_block_with_columns_to_add)
         saved_block_sample.insert(column);
-}
-
-Block * Join::storeRightBlock(const Block & block)
-{
-    Block structured_block;
-    for (auto & columns : saved_block_sample.getColumnsWithTypeAndName())
-        structured_block.insert(block.getByName(columns.name));
-
-    /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
-    materializeBlockInplace(structured_block);
 
     if (nullable_right_side)
-        JoinCommon::convertColumnsToNullable(structured_block, (isFull(kind) ? right_table_keys.columns() : 0));
+        JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) ? right_table_keys.columns() : 0));
+}
+
+Block * Join::storeRightBlock(const Block & source_block)
+{
+    /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
+    Block block = materializeBlock(source_block);
+
+    Block structured_block;
+    for (auto & sample_column : saved_block_sample.getColumnsWithTypeAndName())
+    {
+        auto & column = block.getByName(sample_column.name);
+        if (sample_column.column->isNullable())
+            JoinCommon::convertColumnToNullable(column);
+        structured_block.insert(column);
+    }
 
     blocks.push_back(structured_block);
     return &blocks.back();
@@ -1147,24 +1152,24 @@ private:
     std::optional<Join::BlockNullmapList::const_iterator> nulls_position;
 
 
-    /// result_sample_block: "left keys", "left" columns, "right" columns, some "right keys"
+    /// "left" columns, "right" not key columns, some "right keys"
     void makeResultSampleBlock(const Block & left_sample_block)
     {
         result_sample_block = materializeBlock(left_sample_block);
         if (parent.nullable_left_side)
             JoinCommon::convertColumnsToNullable(result_sample_block);
 
-        for (const ColumnWithTypeAndName & src_column : parent.sample_block_with_columns_to_add)
+        for (const ColumnWithTypeAndName & column : parent.sample_block_with_columns_to_add)
         {
-            if (!result_sample_block.has(src_column.name))
-                result_sample_block.insert(src_column.cloneEmpty());
+            bool is_nullable = parent.nullable_right_side || column.column->isNullable();
+            result_sample_block.insert(correctNullability({column.column, column.type, column.name}, is_nullable));
         }
 
         for (auto & required_key : parent.required_right_keys)
         {
             const auto & right_key = parent.saved_block_sample.getByName(required_key.name);
 
-            bool is_nullable = (parent.nullable_right_side && isFull(parent.kind)) || right_key.column->isNullable();
+            bool is_nullable = parent.nullable_right_side || right_key.column->isNullable();
             result_sample_block.insert(correctNullability({right_key.column, right_key.type, right_key.name}, is_nullable));
         }
     }
