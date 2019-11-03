@@ -396,7 +396,7 @@ Default value: 163840.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
 
-If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file on several threads.
+If the number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file from several threads.
 
 Possible values:
 
