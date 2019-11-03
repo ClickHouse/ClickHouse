@@ -4,6 +4,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
+#include <Common/assert_cast.h>
+
 #include <time.h>
 
 
@@ -18,10 +20,23 @@ namespace ErrorCodes
 
 DateTime64::NativeType nowSubsecond(UInt32 scale)
 {
+    const Int32 fractional_scale = 9;
     timespec spec;
     clock_gettime(CLOCK_REALTIME, &spec);
 
-    return decimalFromComponents<DateTime64>(spec.tv_sec, spec.tv_nsec, scale).value;
+    DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
+
+    // clock_gettime produces subsecond part in nanoseconds, but decimalFromComponents fractional is scale-dependent.
+    // Andjust fractional to scale, e.g. for 123456789 nanoseconds:
+    //   if scale is  6 (miscoseconds) => divide by 9 - 6 = 3 to get 123456 microseconds
+    //   if scale is 12 (picoseconds)  => multiply by abs(9 - 12) = 3 to get 123456789000 picoseconds
+    const auto adjust_scale = fractional_scale - static_cast<Int32>(scale);
+    if (adjust_scale < 0)
+        components.fractional *= intExp10(std::abs(adjust_scale));
+    else if (adjust_scale > 0)
+        components.fractional /= intExp10(adjust_scale);
+
+    return decimalFromComponents<DateTime64>(components, scale).value;
 }
 
 class FunctionNow64 : public IFunction
@@ -62,21 +77,16 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result, size_t input_rows_count) override
     {
+        auto & result_col = block.getByPosition(result);
         UInt32 scale = DataTypeDateTime64::default_scale;
-        if (arguments.size() == 1)
+        if (const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(result_col.type.get()))
         {
-            const IColumn * scale_column = block.getByPosition(arguments[0]).column.get();
-            if (!isColumnConst(*scale_column))
-                throw Exception("Unsupported argument type: " + scale_column->getName() +
-                                + " for function " + getName() + ". Expected const integer.",
-                                ErrorCodes::ILLEGAL_COLUMN);
-
-            scale = scale_column->get64(0);
+            scale = dt64->getScale();
         }
 
-        block.getByPosition(result).column = DataTypeDateTime64(scale).createColumnConst(input_rows_count, nowSubsecond(scale));
+        result_col.column = DataTypeDateTime64(scale).createColumnConst(input_rows_count, nowSubsecond(scale));
     }
 };
 
