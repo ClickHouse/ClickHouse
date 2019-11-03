@@ -853,7 +853,7 @@ Shard is considered unavailable if all its replicas are unavailable. A replica i
 
     - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
 
-    - Configuration error. ClickHouse configuration file contains the wrong hostname.
+    - Configuration error. ClickHouse configuration file contains a wrong hostname.
 
 Possible values:
 
