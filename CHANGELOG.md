@@ -595,6 +595,13 @@ fix comments to make obvious that it may throw.
 ### Security Fix
 * Fix two vulnerabilities in codecs in decompression phase (malicious user can fabricate compressed data that will lead to buffer overflow in decompression). [#6670](https://github.com/ClickHouse/ClickHouse/pull/6670) ([Artem Zuikov](https://github.com/4ertus2))
 
+## ClickHouse release 19.11.13.74, 2019-11-01
+
+### Bug Fix
+* Fixed rare crash in `ALTER MODIFY COLUMN` and vertical merge when one of merged/altered parts is empty (0 rows). [#6780](https://github.com/ClickHouse/ClickHouse/pull/6780) ([alesapin](https://github.com/alesapin))
+* Manual update of `SIMDJSON`. This fixes possible flooding of stderr files with bogus json diagnostic messages. [#7548](https://github.com/ClickHouse/ClickHouse/pull/7548) ([Alexander Kazakov](https://github.com/Akazz))
+* Fixed bug with `mrk` file extension for mutations ([alesapin](https://github.com/alesapin))
+
 ## ClickHouse release 19.11.12.69, 2019-10-02
 
 ### Bug Fix
