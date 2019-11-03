@@ -240,7 +240,7 @@ struct ToDateTime64Transform
 
     inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
-        return decimalFromComponentsWithMultipliers<DateTime64>(dt, 0, scale_multiplier, 1);
+        return decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 };
 
