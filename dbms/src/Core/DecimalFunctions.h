@@ -24,21 +24,13 @@ struct DecimalComponents
 };
 
 template <typename DecimalType>
-DecimalType decimalFromComponentsWithMultipliers(const typename DecimalType::NativeType & whole,
+DecimalType decimalFromComponentsWithMultiplier(const typename DecimalType::NativeType & whole,
                                                  const typename DecimalType::NativeType & fractional,
-                                                 typename DecimalType::NativeType scale_multiplier,
-                                                 typename DecimalType::NativeType fractional_divider)
+                                                 typename DecimalType::NativeType scale_multiplier)
 {
     using T = typename DecimalType::NativeType;
-    const T value = whole * scale_multiplier + fractional / fractional_divider;
+    const T value = whole * scale_multiplier + fractional % scale_multiplier;
     return DecimalType(value);
-}
-
-template <typename DecimalType>
-typename DecimalType::NativeType  decimalFractionalDivider(UInt32 scale)
-{
-    using T = typename DecimalType::NativeType;
-    return decimalScaleMultiplier<T>(std::numeric_limits<T>::digits10 - scale);
 }
 
 template <typename DecimalType>
@@ -46,7 +38,7 @@ DecimalType decimalFromComponents(const typename DecimalType::NativeType & whole
 {
     using T = typename DecimalType::NativeType;
 
-    return decimalFromComponentsWithMultipliers<DecimalType>(whole, fractional, decimalScaleMultiplier<T>(scale), decimalFractionalDivider<DecimalType>(scale));
+    return decimalFromComponentsWithMultiplier<DecimalType>(whole, fractional, decimalScaleMultiplier<T>(scale));
 }
 
 template <typename DecimalType>
