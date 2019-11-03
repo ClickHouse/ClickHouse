@@ -859,7 +859,7 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data  and doesn't report node availability issues. 
+    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues. 
 
 - 0 — skipping disabled.
 
