@@ -58,7 +58,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ##  bitmapSubsetInRange {#bitmapsubsetinrange}
 
-Converts a bitmap into an integer array. Returns values from within given range not including the range_end.
+Converts a bitmap into an integer array. Returns values from given range not including the range_end.
 
 **Syntax** 
 
@@ -74,7 +74,7 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Returned values**
 
-Return subset of the values in set which greater or equal than `range_start` and less than `range_end`.
+Returns subset of the values in set which greater or equal than `range_start` and less than `range_end`.
 
 Type: `Bitmap`.
 
