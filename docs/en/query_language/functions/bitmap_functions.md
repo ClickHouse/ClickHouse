@@ -56,25 +56,38 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
-## bitmapSubsetInRange {#bitmap_functions-bitmapsubsetinrange}
+##  bitmapSubsetInRange {#bitmapsubsetinrange}
 
-Return subset in specified range (not include the range_end).
+Converts a bitmap into an integer array. Returns values from within given range not including the range_end.
+
+**Syntax** 
 
 ```sql
 bitmapSubsetInRange(bitmap, range_start, range_end)
 ```
 
-**Parameters**
+**Parameters** 
 
 - `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
-- `range_end` – range end point(excluded). Type: [UInt32](../../data_types/int_uint.md).
+- `range_start` – range start point. [UInt32](https://clickhouse.yandex/docs/en/data_types/int_uint/).
+- `range_end` – range end point (excluded). [UInt32](https://clickhouse.yandex/docs/en/data_types/int_uint/).
+
+**Returned values**
+
+Return subset of the values in set which greater or equal than `range_start` and less than `range_end`.
+
+Type: `Bitmap`.
 
 **Example**
+
+
+Query:
 
 ```sql
 SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
+
+Result:
 
 ```text
 ┌─res───────────────┐
