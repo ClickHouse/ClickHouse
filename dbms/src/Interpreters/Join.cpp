@@ -1070,8 +1070,9 @@ public:
         : parent(parent_)
         , max_block_size(max_block_size_)
     {
-        /// Left or right keys map. In case of collisions it contains any right_key that has data for left one.
-        std::unordered_map<size_t, size_t> left_to_right_key_position;
+        bool remap_keys = parent.table_join->hasUsing();
+        std::unordered_map<size_t, size_t> left_to_right_key_remap;
+
         for (size_t i = 0; i < parent.table_join->keyNamesLeft().size(); ++i)
         {
             const String & left_key_name = parent.table_join->keyNamesLeft()[i];
@@ -1080,18 +1081,18 @@ public:
             size_t left_key_pos = left_sample_block.getPositionByName(left_key_name);
             size_t right_key_pos = parent.saved_block_sample.getPositionByName(right_key_name);
 
-            left_to_right_key_position[left_key_pos] = right_key_pos;
+            if (remap_keys && !parent.required_right_keys.has(right_key_name))
+                left_to_right_key_remap[left_key_pos] = right_key_pos;
         }
 
         makeResultSampleBlock(left_sample_block);
 
-        bool join_using = parent.table_join->hasUsing();
         for (size_t left_pos = 0; left_pos < left_sample_block.columns(); ++left_pos)
         {
             /// We need right 'x' for 'RIGHT JOIN ... USING(x)'.
-            if (join_using && left_to_right_key_position.count(left_pos))
+            if (left_to_right_key_remap.count(left_pos))
             {
-                size_t right_key_pos = left_to_right_key_position[left_pos];
+                size_t right_key_pos = left_to_right_key_remap[left_pos];
                 setRightIndex(right_key_pos, left_pos);
             }
             else
@@ -1165,10 +1166,8 @@ private:
             result_sample_block.insert(correctNullability({column.column, column.type, column.name}, is_nullable));
         }
 
-        for (auto & required_key : parent.required_right_keys)
+        for (const ColumnWithTypeAndName & right_key : parent.required_right_keys)
         {
-            const auto & right_key = parent.saved_block_sample.getByName(required_key.name);
-
             bool is_nullable = parent.nullable_right_side || right_key.column->isNullable();
             result_sample_block.insert(correctNullability({right_key.column, right_key.type, right_key.name}, is_nullable));
         }
