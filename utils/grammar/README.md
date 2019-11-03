@@ -1,4 +1,5 @@
-=== ClickHouse grammar for ANTLR4
+ClickHouse grammar for ANTLR4
+=============================
 
 Authors: Yuriy Galitskiy (orantius, https://github.com/duremar), Sergey Serebryanik (serebrserg, https://github.com/serebrserg), Efim Pyshnograev (graev).
 
