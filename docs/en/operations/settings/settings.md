@@ -851,7 +851,7 @@ Shard is considered unavailable if all its replicas are unavailable. A replica i
 
     If replica's hostname can't be resolved through DNS, it can indicate the following situations:
 
-    - Replica's host has no a DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
 
     - Configuration error. ClickHouse configuration file contains the wrong hostname.
 
