@@ -233,9 +233,9 @@ private:
                 overflow |= (A(x) != a);
             if constexpr (sizeof(B) > sizeof(CompareInt))
                 overflow |= (B(y) != b);
-            if constexpr (std::is_unsigned_v<A>)
+            if constexpr (is_unsigned_v<A>)
                 overflow |= (x < 0);
-            if constexpr (std::is_unsigned_v<B>)
+            if constexpr (is_unsigned_v<B>)
                 overflow |= (y < 0);
 
             if constexpr (scale_left)

@@ -9,6 +9,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Storages/System/StorageSystemDictionaries.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Columns/ColumnString.h>
+#include <Core/Names.h>
 
 #include <ext/map.h>
 #include <mutex>
@@ -19,34 +22,40 @@ namespace DB
 NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 {
     return {
-        { "name", std::make_shared<DataTypeString>() },
-        { "status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues()) },
-        { "origin", std::make_shared<DataTypeString>() },
-        { "type", std::make_shared<DataTypeString>() },
-        { "key", std::make_shared<DataTypeString>() },
-        { "attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "bytes_allocated", std::make_shared<DataTypeUInt64>() },
-        { "query_count", std::make_shared<DataTypeUInt64>() },
-        { "hit_rate", std::make_shared<DataTypeFloat64>() },
-        { "element_count", std::make_shared<DataTypeUInt64>() },
-        { "load_factor", std::make_shared<DataTypeFloat64>() },
-        { "source", std::make_shared<DataTypeString>() },
-        { "loading_start_time", std::make_shared<DataTypeDateTime>() },
-        { "loading_duration", std::make_shared<DataTypeFloat32>() },
+        {"database", std::make_shared<DataTypeString>()},
+        {"name", std::make_shared<DataTypeString>()},
+        {"status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues())},
+        {"origin", std::make_shared<DataTypeString>()},
+        {"type", std::make_shared<DataTypeString>()},
+        {"key", std::make_shared<DataTypeString>()},
+        {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"bytes_allocated", std::make_shared<DataTypeUInt64>()},
+        {"query_count", std::make_shared<DataTypeUInt64>()},
+        {"hit_rate", std::make_shared<DataTypeFloat64>()},
+        {"element_count", std::make_shared<DataTypeUInt64>()},
+        {"load_factor", std::make_shared<DataTypeFloat64>()},
+        {"source", std::make_shared<DataTypeString>()},
+        {"loading_start_time", std::make_shared<DataTypeDateTime>()},
+        {"loading_duration", std::make_shared<DataTypeFloat32>()},
         //{ "creation_time", std::make_shared<DataTypeDateTime>() },
-        { "last_exception", std::make_shared<DataTypeString>() },
+        {"last_exception", std::make_shared<DataTypeString>()},
     };
 }
 
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & [dict_name, load_result] : external_dictionaries.getCurrentLoadResults())
     {
         size_t i = 0;
 
-        res_columns[i++]->insert(dict_name);
+        res_columns[i++]->insert(load_result.repository_name);
+        if (!load_result.repository_name.empty())
+            res_columns[i++]->insert(dict_name.substr(load_result.repository_name.length() + 1));
+        else
+            res_columns[i++]->insert(dict_name);
+
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.origin);
 

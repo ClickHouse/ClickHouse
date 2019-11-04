@@ -11,6 +11,12 @@ class DateLUTImpl;
 namespace DB
 {
 
+static constexpr size_t minDecimalPrecision() { return 1; }
+template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
+template <> constexpr size_t maxDecimalPrecision<Decimal32>() { return 9; }
+template <> constexpr size_t maxDecimalPrecision<Decimal64>() { return 18; }
+template <> constexpr size_t maxDecimalPrecision<Decimal128>() { return 38; }
+
 template <typename T> T decimalScaleMultiplier(UInt32 scale);
 template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
 template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }

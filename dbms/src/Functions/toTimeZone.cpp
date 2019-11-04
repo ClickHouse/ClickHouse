@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <Core/Field.h>
 
