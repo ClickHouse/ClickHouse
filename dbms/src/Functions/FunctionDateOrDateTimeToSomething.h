@@ -30,7 +30,6 @@ struct WithDateTime64Converter : public Transform
     {
         auto x = DateTime64(t);
         auto res = transform.execute(static_cast<UInt32>(decimalWholePart(x, scale)), time_zone);
-        std::cout << "calling through datetime64 wrapper v=" << x.value << "tz= " << time_zone.getTimeZone() << " result=" << res << std::endl;
         return res;
     }
 };

@@ -282,7 +282,6 @@ struct FormatImpl
 {
     static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
     {
-        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<>" << std::endl;
         writeText(x, wb);
     }
 };
@@ -292,7 +291,6 @@ struct FormatImpl<DataTypeDate>
 {
     static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
-        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDate> v=" << x << std::endl;
         writeDateText(DayNum(x), wb);
     }
 };
@@ -302,7 +300,6 @@ struct FormatImpl<DataTypeDateTime>
 {
     static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
     {
-        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDateTime> v=" << x << " tz=" << time_zone->getTimeZone() << std::endl;
         writeDateTimeText(x, wb, *time_zone);
     }
 };
@@ -312,7 +309,6 @@ struct FormatImpl<DataTypeDateTime64>
 {
     static void execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 * type, const DateLUTImpl * time_zone)
     {
-        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDateTime64> v=" << x << " tz=" << time_zone << std::endl;
         writeDateTimeText(DateTime64(x), type->getScale(), wb, *time_zone);
     }
 };
@@ -356,7 +352,6 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
-        std::cout << "!!!!!!!!!!!!!!!!! executing to string convertImpl " << std::endl;
         const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
@@ -374,7 +369,6 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
-            std::cout << "vec_form size=" << size << " bytes=" << vec_from.allocated_bytes() << std::endl;
 
             if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
                 data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
@@ -1045,14 +1039,12 @@ private:
             else
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count);
 
-            std::cout << "finished running convertImpl " << std::endl;
             return true;
         };
 
         bool done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call);
         if (!done)
         {
-            std::cout << "not done yet, falling back on generic conversion" << std::endl;
             /// Generic conversion of any type to String.
             if (std::is_same_v<ToDataType, DataTypeString>)
             {

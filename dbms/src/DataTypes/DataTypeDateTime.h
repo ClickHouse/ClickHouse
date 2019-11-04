@@ -12,7 +12,7 @@ class TimezoneMixin
 {
 public:
     explicit TimezoneMixin(const String & time_zone_name = "");
-    TimezoneMixin(const TimezoneMixin & ) = default;
+    TimezoneMixin(const TimezoneMixin &) = default;
 
     const DateLUTImpl & getTimeZone() const { return time_zone; }
 
