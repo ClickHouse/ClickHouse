@@ -530,7 +530,8 @@ void TCPHandler::processOrdinaryQuery()
                 sendLogs();
             }
 
-            sendData(block);
+            if (!block || !state.io.null_format)
+                sendData(block);
             if (!block)
                 break;
         }
