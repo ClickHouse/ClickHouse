@@ -4,6 +4,7 @@
 #include <common/arithmeticOverflow.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeWithSimpleSerialization.h>
@@ -24,13 +25,6 @@ namespace ErrorCodes
 class Context;
 bool decimalCheckComparisonOverflow(const Context & context);
 bool decimalCheckArithmeticOverflow(const Context & context);
-
-
-static constexpr size_t minDecimalPrecision() { return 1; }
-template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
-template <> constexpr size_t maxDecimalPrecision<Decimal32>() { return 9; }
-template <> constexpr size_t maxDecimalPrecision<Decimal64>() { return 18; }
-template <> constexpr size_t maxDecimalPrecision<Decimal128>() { return 38; }
 
 inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {

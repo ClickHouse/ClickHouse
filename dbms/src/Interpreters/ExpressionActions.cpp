@@ -15,6 +15,7 @@
 #include <set>
 #include <optional>
 #include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace ProfileEvents
@@ -1208,7 +1209,8 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
         {
             if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
             {
-                if (auto * column_set = typeid_cast<const ColumnSet *>(action.added_column.get()))
+                // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
+                if (auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
                 {
                     if (column_set->getData()->getTotalRowCount() == 0)
                         return true;

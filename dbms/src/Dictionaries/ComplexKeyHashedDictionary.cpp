@@ -755,7 +755,7 @@ void registerDictionaryComplexKeyHashed(DictionaryFactory & factory)
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         return std::make_unique<ComplexKeyHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
-    factory.registerLayout("complex_key_hashed", create_layout);
+    factory.registerLayout("complex_key_hashed", create_layout, true);
 }
 
 

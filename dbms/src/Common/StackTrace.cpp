@@ -30,7 +30,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";

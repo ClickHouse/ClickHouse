@@ -1,5 +1,6 @@
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 

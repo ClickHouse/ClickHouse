@@ -174,7 +174,7 @@ Changes already made by the mutation are not rolled back.
 ## OPTIMIZE {#misc_operations-optimize}
 
 ```sql
-OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL]
 ```
 
 This query tries to initialize an unscheduled merge of data parts for tables with a table engine from the [MergeTree](../operations/table_engines/mergetree.md) family. Other kinds of table engines aren't supported.
@@ -182,7 +182,7 @@ This query tries to initialize an unscheduled merge of data parts for tables wit
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
 
 - If `OPTIMIZE` doesn't perform a merge for any reason, it doesn't notify the client. To enable notifications, use the [optimize_throw_if_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
-- If you specify a `PARTITION`, only the specified partition is optimized.
+- If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](alter.md#alter-how-to-specify-part-expr).
 - If you specify `FINAL`, optimization is performed even when all the data is already in one part.
 
 !!! warning "Warning"

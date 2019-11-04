@@ -29,10 +29,6 @@
 
 #include <Formats/FormatSettings.h>
 
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-
-
 namespace DB
 {
 
@@ -570,42 +566,6 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
-/// Methods for output in binary format.
-template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
-writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
-inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
-
-/// Methods for outputting the value in text form for a tab-separated format.
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, void>
-writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
-
-template <typename T>
-inline std::enable_if_t<std::is_floating_point_v<T>, void>
-writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
-
-inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
-
-/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
-template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
-
-/// unlike the method for std::string
-/// assumes here that `x` is a null-terminated string.
-inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
-inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
-
 /// in YYYY-MM-DD format
 template <char delimiter = '-'>
 inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
@@ -750,7 +710,6 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
 {
     static constexpr UInt32 MaxScale = maxDecimalPrecision<DateTime64>();
     scale = scale > MaxScale ? MaxScale : scale;
-
     if (unlikely(!datetime64))
     {
         static const char s[] =
@@ -765,22 +724,59 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
         buf.write(s, sizeof(s) - (MaxScale - scale));
         return;
     }
-
     auto c = decimalSplit(datetime64, scale);
     const auto & values = date_lut.getValues(c.whole);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
                       date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
 
-    buf.write(fractional_time_delimiter);
+    if (scale > 0)
+    {
+        buf.write(fractional_time_delimiter);
 
-    // trenary to fix GCC-9 build error:
-    // error: '%0*ld' directive writing between 1 and 20 bytes into a region of size 18 [-Werror=format-overflow=]
-    char data[MaxScale > 20 ? MaxScale : 20];
-    int written = sprintf(data, "%0*ld", scale, c.fractional); // TODO(nemkov): can it be negative ? if yes, do abs() on it.
-    writeText(&data[0], static_cast<size_t>(written), buf);
+        // trenary to fix GCC-9 build error:
+        // error: '%0*ld' directive writing between 1 and 20 bytes into a region of size 18 [-Werror=format-overflow=]
+        char data[MaxScale > 20 ? MaxScale : 20];
+        int written = sprintf(data, "%0*ld", scale, c.fractional); // TODO(nemkov): can it be negative ? if yes, do abs() on it.
+        writeString(&data[0], static_cast<size_t>(written), buf);
+    }
 }
 
+/// Methods for output in binary format.
+template <typename T>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
+writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+
+inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+
+
+/// Methods for outputting the value in text form for a tab-separated format.
+template <typename T>
+inline std::enable_if_t<is_integral_v<T>, void>
+writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
+
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
+writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+
+inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
+
+/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
+template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
+
+/// unlike the method for std::string
+/// assumes here that `x` is a null-terminated string.
+inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
+inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
@@ -813,7 +809,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
@@ -841,7 +837,7 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
@@ -870,7 +866,7 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }

@@ -51,6 +51,7 @@ public:
 private:
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
+    BlockIO createDictionary(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table and return columns.
     ColumnsDescription setProperties(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
