@@ -311,8 +311,8 @@ private:
     using SetFieldFunction = void (*)(Derived &, const Field &);
     using SerializeFunction = void (*)(const Derived &, WriteBuffer & buf);
     using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf);
-    using CastValueWithoutApplyingFunction = Field (*)(const Field &);
-
+    using ValueToStringFunction = String (*)(const Field &);
+    using ValueToCorrespondingTypeFunction = Field (*)(const Field &);
 
     struct MemberInfo
     {
@@ -325,9 +325,8 @@ private:
         SetFieldFunction set_field;
         SerializeFunction serialize;
         DeserializeFunction deserialize;
-        CastValueWithoutApplyingFunction cast_value_without_applying;
-
-        bool isChanged(const Derived & collection) const { return is_changed(collection); }
+        ValueToStringFunction value_to_string;
+        ValueToCorrespondingTypeFunction value_to_corresponding_type;
     };
 
     class MemberInfos : private boost::noncopyable
@@ -394,7 +393,7 @@ public:
         const_reference(const const_reference & src) = default;
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
-        bool isChanged() const { return member->isChanged(*collection); }
+        bool isChanged() const { return member->is_changed(*collection); }
         Field getValue() const;
         String getValueAsString() const { return member->get_string(*collection); }
     protected:
@@ -457,16 +456,20 @@ public:
     static StringRef getDescription(const String & name) { return members().findStrict(name)->description; }
 
     /// Searches a setting by its name; returns `npos` if not found.
-    static size_t findIndex(const String & name) { return members().findIndex(name); }
+    static size_t findIndex(const StringRef & name) { return members().findIndex(name); }
     static constexpr size_t npos = static_cast<size_t>(-1);
 
     /// Searches a setting by its name; throws an exception if not found.
-    static size_t findIndexStrict(const String & name) { return members().findIndexStrict(name); }
+    static size_t findIndexStrict(const StringRef & name) { return members().findIndexStrict(name); }
+
+    /// Casts a value to a string according to a specified setting without actual changing this settings.
+    static String valueToString(size_t index, const Field & value);
+    static String valueToString(const StringRef & name, const Field & value);
 
     /// Casts a value to a type according to a specified setting without actual changing this settings.
     /// E.g. for SettingInt64 it casts Field to Field::Types::Int64.
-    static Field castValueWithoutApplying(size_t index, const Field & value);
-    static Field castValueWithoutApplying(const String & name, const Field & value);
+    static Field valueToCorrespondingType(size_t index, const Field & value);
+    static Field valueToCorrespondingType(const StringRef & name, const Field & value);
 
     iterator begin() { return iterator(castToDerived(), members().begin()); }
     const_iterator begin() const { return const_iterator(castToDerived(), members().begin()); }
@@ -475,39 +478,39 @@ public:
 
     /// Returns a proxy object for accessing to a setting. Throws an exception if there is not setting with such name.
     reference operator[](size_t index) { return reference(castToDerived(), members()[index]); }
-    reference operator[](const String & name) { return reference(castToDerived(), *(members().findStrict(name))); }
+    reference operator[](const StringRef & name) { return reference(castToDerived(), *(members().findStrict(name))); }
     const_reference operator[](size_t index) const { return const_reference(castToDerived(), members()[index]); }
-    const_reference operator[](const String & name) const { return const_reference(castToDerived(), *(members().findStrict(name))); }
+    const_reference operator[](const StringRef & name) const { return const_reference(castToDerived(), *(members().findStrict(name))); }
 
     /// Searches a setting by its name; returns end() if not found.
-    iterator find(const String & name) { return iterator(castToDerived(), members().find(name)); }
-    const_iterator find(const String & name) const { return const_iterator(castToDerived(), members().find(name)); }
+    iterator find(const StringRef & name) { return iterator(castToDerived(), members().find(name)); }
+    const_iterator find(const StringRef & name) const { return const_iterator(castToDerived(), members().find(name)); }
 
     /// Searches a setting by its name; throws an exception if not found.
-    iterator findStrict(const String & name) { return iterator(castToDerived(), members().findStrict(name)); }
-    const_iterator findStrict(const String & name) const { return const_iterator(castToDerived(), members().findStrict(name)); }
+    iterator findStrict(const StringRef & name) { return iterator(castToDerived(), members().findStrict(name)); }
+    const_iterator findStrict(const StringRef & name) const { return const_iterator(castToDerived(), members().findStrict(name)); }
 
     /// Sets setting's value.
     void set(size_t index, const Field & value);
-    void set(const String & name, const Field & value);
+    void set(const StringRef & name, const Field & value);
 
     /// Sets setting's value. Read value in text form from string (for example, from configuration file or from URL parameter).
     void set(size_t index, const String & value) { (*this)[index].setValue(value); }
-    void set(const String & name, const String & value) { (*this)[name].setValue(value); }
+    void set(const StringRef & name, const String & value) { (*this)[name].setValue(value); }
 
     /// Returns value of a setting.
     Field get(size_t index) const;
-    Field get(const String & name) const;
+    Field get(const StringRef & name) const;
 
     /// Returns value of a setting converted to string.
     String getAsString(size_t index) const { return (*this)[index].getValueAsString(); }
-    String getAsString(const String & name) const { return (*this)[name].getValueAsString(); }
+    String getAsString(const StringRef & name) const { return (*this)[name].getValueAsString(); }
 
     /// Returns value of a setting; returns false if there is no setting with the specified name.
-    bool tryGet(const String & name, Field & value) const;
+    bool tryGet(const StringRef & name, Field & value) const;
 
     /// Returns value of a setting converted to string; returns false if there is no setting with the specified name.
-    bool tryGet(const String & name, String & value) const;
+    bool tryGet(const StringRef & name, String & value) const;
 
     /// Compares two collections of settings.
     bool operator ==(const Derived & rhs) const;
@@ -537,7 +540,7 @@ public:
     {
         for (const auto & member : members())
         {
-            if (member.isChanged(castToDerived()))
+            if (member.is_changed(castToDerived()))
             {
                 details::SettingsCollectionUtils::serializeName(member.name, buf);
                 member.serialize(castToDerived(), buf);
@@ -600,7 +603,8 @@ public:
     static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
     static void NAME##_serialize(const Derived & collection, WriteBuffer & buf) { collection.NAME.serialize(buf); } \
     static void NAME##_deserialize(Derived & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); } \
-    static Field NAME##_castValueWithoutApplying(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
+    static String NAME##_valueToString(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toString(); } \
+    static Field NAME##_valueToCorrespondingType(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
@@ -609,5 +613,5 @@ public:
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
          &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
-         &Functions::NAME##_castValueWithoutApplying });
+         &Functions::NAME##_valueToString, &Functions::NAME##_valueToCorrespondingType});
 }

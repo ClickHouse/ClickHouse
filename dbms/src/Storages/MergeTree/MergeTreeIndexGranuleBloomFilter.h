@@ -19,7 +19,7 @@ public:
 
     void deserializeBinary(ReadBuffer & istr) override;
 
-    const std::vector<BloomFilterPtr> getFilters() const { return bloom_filters; }
+    const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
 
 private:
     size_t total_rows;
