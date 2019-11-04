@@ -1,6 +1,6 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -13,17 +13,17 @@ namespace DB
 /// Used to read data from single part with select query
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeSelectBlockInputStream : public MergeTreeBaseSelectBlockInputStream
+class MergeTreeReverseSelectProcessor : public MergeTreeBaseSelectProcessor
 {
 public:
-    MergeTreeSelectBlockInputStream(
+    MergeTreeReverseSelectProcessor(
         const MergeTreeData & storage,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
-        Names column_names_,
-        const MarkRanges & mark_ranges,
+        Names column_names,
+        MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         bool check_columns,
@@ -34,11 +34,9 @@ public:
         size_t part_index_in_query = 0,
         bool quiet = false);
 
-    ~MergeTreeSelectBlockInputStream() override;
+    ~MergeTreeReverseSelectProcessor() override;
 
-    String getName() const override { return "MergeTree"; }
-
-    Block getHeader() const override;
+    String getName() const override { return "MergeTreeReverse"; }
 
     /// Closes readers and unlock part locks
     void finish();
@@ -46,6 +44,7 @@ public:
 protected:
 
     bool getNewTask() override;
+    Chunk readFromPart() override;
 
 private:
     Block header;
@@ -70,11 +69,11 @@ private:
     /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
 
-    bool check_columns;
     String path;
-    bool is_first_task = true;
 
-    Logger * log = &Logger::get("MergeTreeSelectBlockInputStream");
+    Chunks chunks;
+
+    Logger * log = &Logger::get("MergeTreeReverseSelectProcessor");
 };
 
 }
