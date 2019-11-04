@@ -1,6 +1,6 @@
 I hereby agree to the terms of the CLA available at: https://yandex.ru/legal/cla/?lang=en
 
-For changelog. Remove if this is non-significant change.
+For changelog. Remove this line if this is non-significant change.
 
 Category (leave one):
 - New Feature
