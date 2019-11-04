@@ -50,7 +50,6 @@ def insert_reliable(instance, query_insert):
     raise last_exception
 
 
-TEST_REPLICATED_ALTERS=False # TODO: Check code and turn on
 cluster = ClickHouseCluster(__file__)
 
 
@@ -199,9 +198,6 @@ def test_replicated_alters(started_cluster):
     ddl_check_query(instance, "DROP TABLE IF EXISTS merge_for_alter ON CLUSTER cluster")
     ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_32 ON CLUSTER cluster")
     ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_64 ON CLUSTER cluster")
-
-    if not TEST_REPLICATED_ALTERS:
-        return
 
     # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
     firewall_drops_rules = cluster.pm_random_drops.pop_rules()
