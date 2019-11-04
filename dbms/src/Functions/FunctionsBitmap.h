@@ -354,9 +354,9 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr dataPtr0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr0);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(data_ptr_0);
             const UInt32 range_start = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const UInt32 range_end = is_column_const[2] ? (*container2)[0] : (*container2)[i];
 
@@ -504,9 +504,9 @@ private:
         size_t to_end;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr dataPtr0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(dataPtr0);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
             if (is_column_const[1])
             {
                 from_start = 0;
@@ -785,10 +785,10 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr dataPtr0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
             const UInt32 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(dataPtr0);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
             vec_to[i] = bitmap_data_0.rbs.rb_contains(data1);
         }
     }
@@ -882,12 +882,12 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const AggregateDataPtr dataPtr0 = is_column_const[0] ? container0[0] : container0[i];
-            const AggregateDataPtr dataPtr1 = is_column_const[1] ? container1[0] : container1[i];
+            const AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
+            const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_1
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr0);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T>*>(dataPtr1);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
             vec_to[i] = Impl<T>::apply(bitmap_data_1, bitmap_data_2);
         }
     }
