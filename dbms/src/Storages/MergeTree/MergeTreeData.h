@@ -631,7 +631,7 @@ public:
 
     MergeTreeDataFormatVersion format_version;
 
-    Context global_context;
+    Context & global_context;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
