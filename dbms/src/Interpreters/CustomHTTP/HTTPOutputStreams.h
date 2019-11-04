@@ -22,7 +22,7 @@ using HTTPServerResponse = Poco::Net::HTTPServerResponse;
  * ↓
  * WriteBufferFromHTTPServerResponse out
  */
-struct HTTPStreamsWithOutput
+struct HTTPOutputStreams
 {
     using HTTPResponseBufferPtr = std::shared_ptr<WriteBufferFromHTTPServerResponse>;
 
@@ -32,17 +32,17 @@ struct HTTPStreamsWithOutput
     /// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
     std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
 
+    HTTPOutputStreams() = default;
+
+    HTTPOutputStreams(Context & context, HTTPServerRequest & request, HTTPServerResponse & response, HTMLForm & form, size_t keep_alive_timeout);
+
     void finalize() const;
 
-    WriteBufferPtr createMaybeDelayedAndCompressionEndpoint(Context & context, HTMLForm & form, WriteBufferPtr & endpoint);
+    WriteBufferPtr createMaybeDelayedAndCompressionOut(Context &context, HTMLForm &form, WriteBufferPtr &out_);
 
-    WriteBufferPtr createMaybeCompressionEndpoint(HTMLForm & form, std::shared_ptr<WriteBufferFromHTTPServerResponse> & endpoint);
+    WriteBufferPtr createMaybeCompressionOut(HTMLForm & form, std::shared_ptr<WriteBufferFromHTTPServerResponse> & out_);
 
-    HTTPResponseBufferPtr createEndpoint(HTTPServerRequest & request, HTTPServerResponse & response, size_t keep_alive_timeout);
-
-    void attachSettings(Context & context, Settings & settings, HTTPServerRequest & request);
-
-    void attachRequestAndResponse(Context & context, HTTPServerRequest & request, HTTPServerResponse & response, HTMLForm & form, size_t keep_alive_timeout);
+    HTTPResponseBufferPtr createResponseOut(HTTPServerRequest & request, HTTPServerResponse & response, size_t keep_alive_timeout);
 };
 
 }

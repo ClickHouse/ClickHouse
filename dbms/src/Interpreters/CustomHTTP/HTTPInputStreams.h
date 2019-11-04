@@ -11,15 +11,13 @@ namespace DB
 
 using HTTPServerRequest = Poco::Net::HTTPServerRequest;
 
-struct HTTPStreamsWithInput
+struct HTTPInputStreams
 {
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<ReadBuffer> in_maybe_compressed;
     std::shared_ptr<ReadBuffer> in_maybe_internal_compressed;
 
-    HTTPStreamsWithInput(HTTPServerRequest & request, HTMLForm & from);
-
-    void attachSettings(Context & context, Settings & settings, HTTPServerRequest & request);
+    HTTPInputStreams(Context & context, HTTPServerRequest & request, HTMLForm & from);
 
     ReadBufferPtr createRawInBuffer(HTTPServerRequest & request) const;
     ReadBufferPtr createCompressedBuffer(HTTPServerRequest & request, ReadBufferPtr & raw_buffer) const;

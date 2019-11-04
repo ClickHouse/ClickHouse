@@ -26,6 +26,12 @@ struct HTMLForm : public Poco::Net::HTMLForm
         readUrl(istr);
     }
 
+    template <typename T>
+    bool check(const std::string & key, T check_value)
+    {
+        const auto & value = getParsed<T>(key, T());
+        return value == check_value;
+    }
 
     template <typename T>
     T getParsed(const std::string & key, T default_value)

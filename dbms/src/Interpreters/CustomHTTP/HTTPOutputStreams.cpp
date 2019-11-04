@@ -1,4 +1,4 @@
-#include <Interpreters/CustomHTTP/HTTPStreamsWithOutput.h>
+#include <Interpreters/CustomHTTP/HTTPOutputStreams.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/copyData.h>
 #include <IO/CascadeWriteBuffer.h>
@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ConcatReadBuffer.h>
+#include "HTTPOutputStreams.h"
 
 
 namespace DB
@@ -51,8 +52,14 @@ namespace
     }
 }
 
-void HTTPStreamsWithOutput::attachSettings(Context & context, Settings & settings, HTTPServerRequest & request)
+HTTPOutputStreams::HTTPOutputStreams(
+    Context & context, HTTPServerRequest & request, HTTPServerResponse & response, HTMLForm & form, size_t keep_alive_timeout)
+    : out(createResponseOut(request, response, keep_alive_timeout))
+    , out_maybe_compressed(createMaybeCompressionOut(form, out))
+    , out_maybe_delayed_and_compressed(createMaybeDelayedAndCompressionOut(context, form, out_maybe_compressed))
 {
+    Settings & settings = context.getSettingsRef();
+
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
     out->setCompression(out->getCompression() && settings.enable_http_compression);
@@ -77,16 +84,8 @@ void HTTPStreamsWithOutput::attachSettings(Context & context, Settings & setting
     }
 }
 
-void HTTPStreamsWithOutput::attachRequestAndResponse(
-    Context & context, HTTPServerRequest & request, HTTPServerResponse & response, HTMLForm & form, size_t keep_alive_timeout)
-{
-    out = createEndpoint(request, response, keep_alive_timeout);
-    out_maybe_compressed = createMaybeCompressionEndpoint(form, out);
-    out_maybe_delayed_and_compressed = createMaybeDelayedAndCompressionEndpoint(context, form, out_maybe_compressed);
-}
-
-std::shared_ptr<WriteBufferFromHTTPServerResponse> HTTPStreamsWithOutput::createEndpoint(
-    HTTPServerRequest & request, HTTPServerResponse & response, size_t keep_alive_timeout)
+std::shared_ptr<WriteBufferFromHTTPServerResponse> HTTPOutputStreams::createResponseOut(
+    HTTPServerRequest &request, HTTPServerResponse &response, size_t keep_alive_timeout)
 {
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -112,15 +111,15 @@ std::shared_ptr<WriteBufferFromHTTPServerResponse> HTTPStreamsWithOutput::create
         request, response, keep_alive_timeout, false, CompressionMethod{}, DBMS_DEFAULT_BUFFER_SIZE);
 }
 
-WriteBufferPtr HTTPStreamsWithOutput::createMaybeCompressionEndpoint(HTMLForm & form, std::shared_ptr<WriteBufferFromHTTPServerResponse> & endpoint)
+WriteBufferPtr HTTPOutputStreams::createMaybeCompressionOut(HTMLForm & form, std::shared_ptr<WriteBufferFromHTTPServerResponse> & out_)
 {
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
     bool internal_compression = form.getParsed<bool>("compress", false);
-    return internal_compression ? std::make_shared<CompressedWriteBuffer>(*endpoint) : WriteBufferPtr(endpoint);
+    return internal_compression ? std::make_shared<CompressedWriteBuffer>(*out_) : WriteBufferPtr(out_);
 }
 
-WriteBufferPtr HTTPStreamsWithOutput::createMaybeDelayedAndCompressionEndpoint(Context & context, HTMLForm & form, WriteBufferPtr & endpoint)
+WriteBufferPtr HTTPOutputStreams::createMaybeDelayedAndCompressionOut(Context & context, HTMLForm & form, WriteBufferPtr & out_)
 {
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
@@ -152,7 +151,7 @@ WriteBufferPtr HTTPStreamsWithOutput::createMaybeDelayedAndCompressionEndpoint(C
         }
         else
         {
-            auto push_memory_buffer_and_continue = [next_buffer = endpoint] (const WriteBufferPtr & prev_buf)
+            auto push_memory_buffer_and_continue = [next_buffer = out_] (const WriteBufferPtr & prev_buf)
             {
                 auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                 if (!prev_memory_buffer)
@@ -170,10 +169,10 @@ WriteBufferPtr HTTPStreamsWithOutput::createMaybeDelayedAndCompressionEndpoint(C
         return std::make_shared<CascadeWriteBuffer>(std::move(cascade_buffer1), std::move(cascade_buffer2));
     }
 
-    return endpoint;
+    return out_;
 }
 
-void HTTPStreamsWithOutput::finalize() const
+void HTTPOutputStreams::finalize() const
 {
     if (out_maybe_delayed_and_compressed != out_maybe_compressed)
     {

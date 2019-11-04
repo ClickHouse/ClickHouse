@@ -7,7 +7,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTMLForm.h>
 
-#include <Interpreters/CustomHTTP/HTTPStreamsWithOutput.h>
+#include <Interpreters/CustomHTTP/HTTPOutputStreams.h>
 
 
 namespace CurrentMetrics
@@ -30,31 +30,22 @@ public:
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
-    /// This method is called right before the query execution.
-    virtual void customizeContext(DB::Context& /* context */) {}
-
 private:
-    struct Output
+    using HTTPRequest = Poco::Net::HTTPServerRequest;
+    using HTTPResponse = Poco::Net::HTTPServerResponse;
+
+    struct SessionContextHolder
     {
-        /* Raw data
-         * ↓
-         * CascadeWriteBuffer out_maybe_delayed_and_compressed (optional)
-         * ↓ (forwards data if an overflow is occur or explicitly via pushDelayedResults)
-         * CompressedWriteBuffer out_maybe_compressed (optional)
-         * ↓
-         * WriteBufferFromHTTPServerResponse out
-         */
+        ~SessionContextHolder();
 
-        std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
-        /// Points to 'out' or to CompressedWriteBuffer(*out), depending on settings.
-        std::shared_ptr<WriteBuffer> out_maybe_compressed;
-        /// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
-        std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
+        SessionContextHolder(IServer & accepted_server, HTMLForm & params);
 
-        inline bool hasDelayed() const
-        {
-            return out_maybe_delayed_and_compressed != out_maybe_compressed;
-        }
+        void authentication(HTTPServerRequest & request, HTMLForm & params);
+
+        String session_id;
+        std::unique_ptr<Context> context = nullptr;
+        std::shared_ptr<Context> session_context = nullptr;
+        std::chrono::steady_clock::duration session_timeout;
     };
 
     IServer & server;
@@ -66,20 +57,11 @@ private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
     /// Also initializes 'used_output'.
-    void processQuery(
-        Poco::Net::HTTPServerRequest & request,
-        HTMLForm & params,
-        Poco::Net::HTTPServerResponse & response,
-        HTTPStreamsWithOutput & used_output);
+    void processQuery(HTTPRequest & request, HTMLForm & params, HTTPResponse & response, SessionContextHolder & holder);
 
     void trySendExceptionToClient(
-        const std::string & s,
-        int exception_code,
-        Poco::Net::HTTPServerRequest & request,
-        Poco::Net::HTTPServerResponse & response,
-        HTTPStreamsWithOutput & used_output);
+        const std::string & message, int exception_code, HTTPRequest & request, HTTPResponse & response, HTTPOutputStreams & used_output);
 
-    static void pushDelayedResults(Output & used_output);
 };
 
 }
