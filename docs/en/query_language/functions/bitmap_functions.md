@@ -46,7 +46,7 @@ bitmapToArray(bitmap)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
@@ -98,7 +98,7 @@ bitmapSubsetLimit(bitmap, range_start, limit)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
 ```
 
@@ -130,7 +130,7 @@ Type: `UInt8`.
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
 ```
 ```text
@@ -236,7 +236,7 @@ bitmapMin(bitmap)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
@@ -261,7 +261,7 @@ bitmapMax(bitmap)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
@@ -288,7 +288,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)))) AS res
 ```
 
@@ -312,7 +312,7 @@ bitmapAnd(bitmap,bitmap)
 
 **Example**
 
-``` sql
+```sql
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS res
 ```
 
