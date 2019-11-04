@@ -17,17 +17,18 @@ class ReadBufferFromS3 : public ReadBuffer
 {
 protected:
     Poco::URI uri;
-    std::string method;
+    String access_key_id;
+    String secret_access_key;
 
     HTTPSessionPtr session;
     std::istream * istr; /// owned by session
     std::unique_ptr<ReadBuffer> impl;
 
 public:
-    explicit ReadBufferFromS3(Poco::URI uri_,
-        const ConnectionTimeouts & timeouts = {},
-        const Poco::Net::HTTPBasicCredentials & credentials = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit ReadBufferFromS3(const Poco::URI & uri_,
+        const String & access_key_id_,
+        const String & secret_access_key_,
+        const ConnectionTimeouts & timeouts = {});
 
     bool nextImpl() override;
 };
