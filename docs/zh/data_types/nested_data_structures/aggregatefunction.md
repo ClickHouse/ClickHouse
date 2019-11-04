@@ -1,18 +1,18 @@
 # AggregateFunction(name, types_of_arguments...) {#data_type-aggregatefunction}
 
-聚合函数中的中间状态。可以在聚合函数中通过`-State`后缀来访问它。为了在后续访问聚合数据，请您必须使用含有`-Merge`后缀的相同聚合函数。
+聚合函数的中间状态，可以通过聚合函数名称加`-State`后缀的形式得到它。与此同时，当您需要访问该类型的最终状态数据时，您需要以相同的聚合函数名加`-Merge`后缀的形式来得到最终状态数据。
 
 `AggregateFunction` — 参数化的数据类型。
 
-**Parameters**
+**参数**
 
 - 聚合函数名
 
-    如果函数是参数化的，则还要指定其参数。
+    如果函数具备多个参数列表，请在此处指定其他参数列表中的值。
 
 - 聚合函数参数的类型
 
-**Example**
+**示例**
 
 ```sql
 CREATE TABLE t
@@ -23,32 +23,32 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-ClickHouse中支持的聚合函数包括 [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) 及 [quantiles](../../query_language/agg_functions/reference.md)
+上述中的[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)， anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) 以及 [quantiles](../../query_language/agg_functions/reference.md) 都为ClickHouse中支持的聚合函数。
 
-## Usage
+## 使用指南
 
-### Data Insertion
+### 数据写入
 
-当写入数据时，请使用含有`-State`后缀的函数的`INSERT SELECT`语句。
+当需要写入数据时，您需要将数据包含在`INSERT SELECT`语句中，同时对于`AggregateFunction`类型的数据，您需要使用对应的以`-State`为后缀的函数进行处理。
 
-**Function examples**
+**函数使用示例**
 
 ```sql
 uniqState(UserID)
 quantilesState(0.5, 0.9)(SendTiming)
 ```
 
-不同于相对应的`uniq`和`quantiles`，含有`-State`后缀的函数返回的是状态，而不是最终值。 也就是说，它们返回的是`AggregateFunction`类型的值。
+不同于`uniq`和`quantiles`函数返回聚合结果的最终值，以`-State`后缀的函数总是返回`AggregateFunction`类型的数据的中间状态。
 
-在`SELECT`查询的结果中，`AggregateFunction`类型的值能够表示所有ClickHouse输出格式所对应的特定二进制形式。 例如，如果使用`SELECT`查询将数据转储为`TabSeparated`格式，可以使用`INSERT`查询将其转储回去。
+对于`SELECT`而言，`AggregateFunction`类型总是以特定的二进制形式展现在所有的输出格式中。例如，您可以使用`SELECT`语句将函数的状态数据转储为`TabSeparated`格式的同时使用`INSERT`语句将数据转储回去。
 
-### Data Selection
+### 数据查询
 
-当从`AggregatingMergeTree`表中查询数据时，请使用`GROUP BY`子句，并使用含有`-Merge`后缀的相同聚合函数来写入数据。
+当从`AggregatingMergeTree`表中查询数据时，对于`AggregateFunction`类型的字段，您需要使用以`-Merge`为后缀的相同聚合函数来聚合数据。对于非`AggregateFunction`类型的字段，请将它们包含在`GROUP BY`子句中。
 
-后缀为`-Merge`的聚合函数，可以对一组状态值进行组合，然后返回完整的数据聚合结果。
+以`-Merge`为后缀的聚合函数，可以将多个`AggregateFunction`类型的中间状态组合计算为最终的聚合结果。
 
-例如，以下的两个查询返回相同的结果：
+例如，如下的两个查询返回的结果总是一致：
 
 ```sql
 SELECT uniq(UserID) FROM table
@@ -56,7 +56,7 @@ SELECT uniq(UserID) FROM table
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
 ```
 
-## Usage Example
+## 使用示例
 
 请参阅 [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) 的说明
 
