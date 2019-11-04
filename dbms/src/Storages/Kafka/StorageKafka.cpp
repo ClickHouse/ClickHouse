@@ -389,7 +389,7 @@ bool StorageKafka::streamToViews()
 
         // Limit read batch to maximum block size to allow DDL
         IBlockInputStream::LocalLimits limits;
-        limits.max_execution_time = settings.stream_flush_interval_ms;
+        limits.speed_limits.max_execution_time = settings.stream_flush_interval_ms;
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         stream->setLimits(limits);
     }

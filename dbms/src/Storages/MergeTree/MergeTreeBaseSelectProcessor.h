@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <Processors/Sources/SourceWithProgress.h>
+
 namespace DB
 {
 
@@ -13,11 +15,12 @@ class UncompressedCache;
 class MarkCache;
 
 
-/// Base class for MergeTreeThreadSelectBlockInputStream and MergeTreeSelectBlockInputStream
-class MergeTreeBaseSelectBlockInputStream : public IBlockInputStream
+/// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
+class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
 public:
-    MergeTreeBaseSelectBlockInputStream(
+    MergeTreeBaseSelectProcessor(
+        Block header,
         const MergeTreeData & storage_,
         const PrewhereInfoPtr & prewhere_info_,
         UInt64 max_block_size_rows_,
@@ -29,28 +32,27 @@ public:
         bool save_marks_in_cache_ = true,
         const Names & virt_column_names_ = {});
 
-    ~MergeTreeBaseSelectBlockInputStream() override;
+    ~MergeTreeBaseSelectProcessor() override;
 
     static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
 
 protected:
-    Block readImpl() final;
+    Chunk generate() final;
 
-    /// Creates new this->task, and initilizes readers
+    /// Creates new this->task, and initializes readers.
     virtual bool getNewTask() = 0;
 
-    /// We will call progressImpl manually.
-    void progress(const Progress &) override {}
+    virtual Chunk readFromPart();
 
-    virtual Block readFromPart();
+    Chunk readFromPartImpl();
 
-    Block readFromPartImpl();
+    /// Two versions for header and chunk.
+    static void injectVirtualColumns(Block & block, MergeTreeReadTask * task, const Names & virtual_columns);
+    static void injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const Names & virtual_columns);
 
-    void injectVirtualColumns(Block & block) const;
+    static Block getHeader(Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns);
 
     void initializeRangeReaders(MergeTreeReadTask & task);
-
-    size_t estimateNumRows(MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader);
 
 protected:
     const MergeTreeData & storage;
@@ -68,6 +70,8 @@ protected:
     bool save_marks_in_cache;
 
     Names virt_column_names;
+    /// This header is used for chunks from readFromPart().
+    Block header_without_virtual_columns;
 
     std::unique_ptr<MergeTreeReadTask> task;
 
