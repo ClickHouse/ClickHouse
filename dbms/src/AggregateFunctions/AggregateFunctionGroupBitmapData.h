@@ -584,11 +584,11 @@ public:
     /**
      * Replace value
      */
-    void rb_replace(const UInt32* from_vals, const UInt32* to_vals, size_t num)
+    void rb_replace(const UInt32 * from_vals, const UInt32 * to_vals, size_t num)
     {
         if (isSmall())
             toLarge();
-        for (size_t i = 0; i < num; i++)
+        for (size_t i = 0; i < num; ++i)
         {
             if (from_vals[i] == to_vals[i])
                 continue;
