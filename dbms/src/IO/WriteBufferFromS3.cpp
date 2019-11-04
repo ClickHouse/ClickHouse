@@ -30,22 +30,22 @@ namespace ErrorCodes
 
 WriteBufferFromS3::WriteBufferFromS3(
     const Poco::URI & uri_,
+    const String & access_key_id_,
+    const String & secret_access_key_,
     size_t minimum_upload_part_size_,
-    const ConnectionTimeouts & timeouts_,
-    const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_
-)
-    : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
+    const ConnectionTimeouts & timeouts_)
+    : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
     , uri {uri_}
+    , access_key_id {access_key_id_}
+    , secret_access_key {secret_access_key_}
     , minimum_upload_part_size {minimum_upload_part_size_}
     , timeouts {timeouts_}
-    , auth_request {Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
     , temporary_buffer {std::make_unique<WriteBufferFromString>(buffer_string)}
     , last_part_size {0}
 {
-    if (!credentials.getUsername().empty())
-        credentials.authenticate(auth_request);
-
     initiate();
+
+    /// FIXME: Implement rest of S3 authorization.
 }
 
 
@@ -113,12 +113,6 @@ void WriteBufferFromS3::initiate()
         request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, initiate_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request_ptr->setHost(initiate_uri.getHost()); // use original, not resolved host name in header
 
-        if (auth_request.hasCredentials())
-        {
-            Poco::Net::HTTPBasicCredentials credentials(auth_request);
-            credentials.authenticate(*request_ptr);
-        }
-
         request_ptr->setContentLength(0);
 
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << initiate_uri.toString());
@@ -178,12 +172,6 @@ void WriteBufferFromS3::writePart(const String & data)
         session = makeHTTPSession(part_uri, timeouts);
         request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, part_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request_ptr->setHost(part_uri.getHost()); // use original, not resolved host name in header
-
-        if (auth_request.hasCredentials())
-        {
-            Poco::Net::HTTPBasicCredentials credentials(auth_request);
-            credentials.authenticate(*request_ptr);
-        }
 
         request_ptr->setExpectContinue(true);
 
@@ -251,12 +239,6 @@ void WriteBufferFromS3::complete()
         session = makeHTTPSession(complete_uri, timeouts);
         request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, complete_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request_ptr->setHost(complete_uri.getHost()); // use original, not resolved host name in header
-
-        if (auth_request.hasCredentials())
-        {
-            Poco::Net::HTTPBasicCredentials credentials(auth_request);
-            credentials.authenticate(*request_ptr);
-        }
 
         request_ptr->setExpectContinue(true);
 
