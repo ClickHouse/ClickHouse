@@ -195,7 +195,7 @@ public:
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const DataTypePtr data_type = bitmap_type->getArgumentsDataTypes()[0];
@@ -277,7 +277,7 @@ public:
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto arg_type1 = typeid_cast<const DataTypeNumber<UInt32> *>(arguments[1].get());
@@ -415,7 +415,7 @@ public:
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         for (size_t i = 0; i < 2; i++)
         {
@@ -560,7 +560,7 @@ public:
         auto bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return std::make_shared<DataTypeNumber<ToType>>();
     }
@@ -724,7 +724,7 @@ public:
         auto bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         auto arg_type1 = typeid_cast<const DataTypeNumber<UInt32> *>(arguments[1].get());
         if (!(arg_type1))
@@ -814,13 +814,13 @@ public:
         auto bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
         if (!(bitmap_type1 && bitmap_type1->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "Second argument for function " + getName() + " must be an bitmap but it has type " + arguments[1]->getName() + ".",
+                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
@@ -949,13 +949,13 @@ public:
         auto bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "First argument for function " + getName() + " must be an bitmap but it has type " + arguments[0]->getName() + ".",
+                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
         if (!(bitmap_type1 && bitmap_type1->getFunctionName() == AggregateFunctionGroupBitmapData<UInt32>::name()))
             throw Exception(
-                "Second argument for function " + getName() + " must be an bitmap but it has type " + arguments[1]->getName() + ".",
+                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName() + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
