@@ -52,7 +52,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
                 auto resolved = address.getResolvedAddress();
                 res_columns[i++]->insert(resolved ? resolved->host().toString() : String());
                 res_columns[i++]->insert(address.port);
-                res_columns[i++]->insert(shard_info.isLocal());
+                res_columns[i++]->insert(address.is_local);
                 res_columns[i++]->insert(address.user);
                 res_columns[i++]->insert(address.default_database);
             }
