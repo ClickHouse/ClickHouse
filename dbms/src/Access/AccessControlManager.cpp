@@ -2,6 +2,7 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
+#include <Access/QuotaContextFactory.h>
 
 
 namespace DB
@@ -19,7 +20,8 @@ namespace
 
 
 AccessControlManager::AccessControlManager()
-    : MultipleAccessStorage(createStorages())
+    : MultipleAccessStorage(createStorages()),
+      quota_context_factory(std::make_unique<QuotaContextFactory>(*this))
 {
 }
 
@@ -35,4 +37,16 @@ void AccessControlManager::loadFromConfig(const Poco::Util::AbstractConfiguratio
     users_config_access_storage.loadFromConfig(users_config);
 }
 
+
+std::shared_ptr<QuotaContext> AccessControlManager::createQuotaContext(
+    const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key)
+{
+    return quota_context_factory->createContext(user_name, address, custom_quota_key);
+}
+
+
+std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
+{
+    return quota_context_factory->getUsageInfo();
+}
 }

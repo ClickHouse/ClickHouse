@@ -5,6 +5,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
+#include <Poco/Util/Application.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
@@ -26,9 +27,9 @@
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsConstraints.h>
+#include <Access/QuotaContext.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/UsersManager.h>
-#include <Interpreters/Quota.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -133,7 +134,6 @@ struct ContextShared
     String system_profile_name;                             /// Profile used by system processes
     AccessControlManager access_control_manager;
     std::unique_ptr<UsersManager> users_manager;            /// Known users.
-    Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
@@ -328,7 +328,7 @@ Context & Context::operator=(const Context &) = default;
 Context Context::createGlobal()
 {
     Context res;
-    res.quota = std::make_shared<QuotaForIntervals>();
+    res.quota = std::make_shared<QuotaContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -605,7 +605,6 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     shared->users_config = config;
     shared->access_control_manager.loadFromConfig(*shared->users_config);
     shared->users_manager->loadFromConfig(*shared->users_config);
-    shared->quotas.loadFromConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -646,7 +645,8 @@ void Context::calculateUserSettings()
 {
     auto lock = getLock();
 
-    String profile = shared->users_manager->getUser(client_info.current_user)->profile;
+    auto user = getUser(client_info.current_user);
+    String profile = user->profile;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
@@ -661,6 +661,9 @@ void Context::calculateUserSettings()
 
     /// 3) Apply settings from current user
     setProfile(profile);
+
+    quota = getAccessControlManager().createQuotaContext(
+        client_info.current_user, client_info.current_address.host(), client_info.quota_key);
 }
 
 
@@ -693,23 +696,8 @@ void Context::setUser(const String & name, const String & password, const Poco::
         client_info.quota_key = quota_key;
 
     calculateUserSettings();
-
-    setQuota(user_props->quota, quota_key, name, address.host());
 }
 
-
-void Context::setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address)
-{
-    auto lock = getLock();
-    quota = shared->quotas.get(name, quota_key, user_name, address);
-}
-
-
-QuotaForIntervals & Context::getQuota()
-{
-    auto lock = getLock();
-    return *quota;
-}
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {

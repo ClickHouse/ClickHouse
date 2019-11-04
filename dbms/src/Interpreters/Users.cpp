@@ -49,7 +49,6 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
     }
 
     profile = config.getString(config_elem + ".profile");
-    quota = config.getString(config_elem + ".quota");
 
     /// Fill list of allowed hosts.
     const auto config_networks = config_elem + ".networks";

@@ -30,7 +30,6 @@ struct User
     Authentication authentication;
 
     String profile;
-    String quota;
 
     AllowedClientHosts allowed_client_hosts;
 

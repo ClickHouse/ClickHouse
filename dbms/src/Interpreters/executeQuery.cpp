@@ -24,7 +24,7 @@
 
 #include <Storages/StorageInput.h>
 
-#include <Interpreters/Quota.h>
+#include <Access/QuotaContext.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
@@ -150,7 +150,7 @@ static void logException(Context & context, QueryLogElement & elem)
 static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
 {
     /// Exception before the query execution.
-    context.getQuota().addError();
+    context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -271,10 +271,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
 
-        QuotaForIntervals & quota = context.getQuota();
-
-        quota.addQuery();    /// NOTE Seems that when new time interval has come, first query is not accounted in number of queries.
-        quota.checkExceeded(current_time);
+        auto quota = context.getQuota();
+        quota->used(Quota::QUERIES, 1);
+        quota->checkExceeded(Quota::ERRORS);
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         ProcessList::EntryPtr process_list_entry;
@@ -484,7 +483,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             auto exception_callback = [elem, &context, log_queries] () mutable
             {
-                context.getQuota().addError();
+                context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 

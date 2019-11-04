@@ -470,6 +470,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_ALREADY_EXISTS = 493;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
     extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
+    extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
