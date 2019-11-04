@@ -58,10 +58,32 @@ public:
     ~SettingsConstraints();
 
     void clear();
+    bool empty() const { return constraints_by_index.empty(); }
 
-    void setMinValue(const String & name, const Field & min_value);
-    void setMaxValue(const String & name, const Field & max_value);
-    void setReadOnly(const String & name, bool read_only);
+    void setMinValue(const StringRef & name, const Field & min_value);
+    Field getMinValue(const StringRef & name) const;
+
+    void setMaxValue(const StringRef & name, const Field & max_value);
+    Field getMaxValue(const StringRef & name) const;
+
+    void setReadOnly(const StringRef & name, bool read_only);
+    bool isReadOnly(const StringRef & name) const;
+
+    void set(const StringRef & name, const Field & min_value, const Field & max_value, bool read_only);
+    void get(const StringRef & name, Field & min_value, Field & max_value, bool & read_only) const;
+
+    void merge(const SettingsConstraints & other);
+
+    struct Info
+    {
+        StringRef name;
+        Field min;
+        Field max;
+        bool read_only = false;
+    };
+    using Infos = std::vector<Info>;
+
+    Infos getInfo() const;
 
     void check(const Settings & current_settings, const SettingChange & change) const;
     void check(const Settings & current_settings, const SettingsChanges & changes) const;
@@ -74,12 +96,18 @@ public:
     /// Loads the constraints from configuration file, at "path" prefix in configuration.
     void loadFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
+    friend bool operator ==(const SettingsConstraints & lhs, const SettingsConstraints & rhs);
+    friend bool operator !=(const SettingsConstraints & lhs, const SettingsConstraints & rhs) { return !(lhs == rhs); }
+
 private:
     struct Constraint
     {
         bool read_only = false;
         Field min_value;
         Field max_value;
+
+        bool operator ==(const Constraint & rhs) const;
+        bool operator !=(const Constraint & rhs) const { return !(*this == rhs); }
     };
 
     Constraint & getConstraintRef(size_t index);

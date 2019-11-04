@@ -204,21 +204,6 @@ void AnalyzedJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) c
 
         bool make_nullable = join_use_nulls && left_or_full_join;
 
-        if (!make_nullable)
-        {
-            /// Keys from right table are usually not stored in Join, but copied from the left one.
-            /// So, if left key is nullable, let's make right key nullable too.
-            /// Note: for some join types it's not needed and, probably, may be removed.
-            /// Note: changing this code, take into account the implementation in Join.cpp.
-            auto it = std::find(key_names_right.begin(), key_names_right.end(), col.name);
-            if (it != key_names_right.end())
-            {
-                auto pos = it - key_names_right.begin();
-                const auto & left_key_name = key_names_left[pos];
-                make_nullable = sample_block.getByName(left_key_name).type->isNullable();
-            }
-        }
-
         if (make_nullable && res_type->canBeInsideNullable())
             res_type = makeNullable(res_type);
 
