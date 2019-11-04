@@ -1776,7 +1776,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
             }
 
-            QuotaForIntervals & quota = context->getQuota();
+            auto quota = context->getQuota();
 
             for (auto & stream : streams)
             {
