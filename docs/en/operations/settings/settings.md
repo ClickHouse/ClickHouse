@@ -912,24 +912,31 @@ Default value: `uniqExact`.
 
 ## skip_unavailable_shards {#settings-skip_unavailable_shards}
 
-Enables or disables silent skipping of:
+Enables or disables silently skipping of unavailable shards.
 
-- Node, if its name cannot be resolved through DNS.
+Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
 
-    When skipping is disabled, ClickHouse requires that all the nodes in the [cluster configuration](../server_settings/settings.md#server_settings_remote_servers) can be resolvable through DNS. Otherwise, ClickHouse throws an exception when trying to perform a query on the cluster.
+- ClickHouse can't connect to replica for any reason.
 
-    If skipping is enabled, ClickHouse considers unresolved nodes as unavailable and tries to resolve them at every connection attempt. Such behavior creates the risk of wrong cluster configuration because a user can specify the wrong node name, and ClickHouse doesn't report about it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
 
-- Shard, if there are no available replicas of the shard.
+- Replica can't be resolved through DNS.
 
-    When skipping is disabled, ClickHouse throws an exception.
+    If replica's hostname can't be resolved through DNS, it can indicate the following situations:
 
-    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about issues with nodes availability.
+    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+
+    - Configuration error. ClickHouse configuration file contains a wrong hostname.
 
 Possible values:
 
 - 1 — skipping enabled.
+
+    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn't report node availability issues. 
+
 - 0 — skipping disabled.
+
+    If a shard is unavailable, ClickHouse throws an exception.
 
 Default value: 0.
 
