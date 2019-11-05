@@ -23,11 +23,14 @@ protected:
     std::istream * istr; /// owned by session
     std::unique_ptr<ReadBuffer> impl;
 
+    RemoteHostFilter remote_host_filter;
+
 public:
     explicit ReadBufferFromS3(Poco::URI uri_,
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        const RemoteHostFilter & remote_host_filter_ = {});
 
     bool nextImpl() override;
 };
