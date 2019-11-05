@@ -404,7 +404,7 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
             {
                 size_t prev_index_read_bytes = index_reader.readBytes();
                 granule = index_reader.read();
-                progressImpl(Progress(0, index_reader.readBytes() - prev_index_read_bytes));
+                progress(Progress(0, index_reader.readBytes() - prev_index_read_bytes));
             }
 
             MarkRange data_range(std::max(range.begin, i * index_granularity), std::min(range.end, (i + 1) * index_granularity));
@@ -412,7 +412,7 @@ MarkRanges MergeTreeBaseSelectProcessor::filterMarksUsingIndex(
             if (!condition->mayBeTrueOnGranule(granule))
             {
                 for (size_t index = data_range.begin; index < data_range.end; ++index)
-                    progressImpl(Progress(0, 0, part->index_granularity.getMarkRows(index)));
+                    progress(Progress(0, 0, part->index_granularity.getMarkRows(index)));
             }
             else
             {

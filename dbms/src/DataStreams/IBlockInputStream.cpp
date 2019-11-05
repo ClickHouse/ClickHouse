@@ -272,7 +272,7 @@ void IBlockInputStream::progressImpl(const Progress & value)
             */
         if (limits.mode == LIMITS_TOTAL)
         {
-            if (!limits.size_limits.check(total_rows_estimate, progress.read_bytes, "rows to read",
+            if (!limits.size_limits.check(progress.read_rows, progress.read_bytes, "rows to read",
                                          ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
                 cancel(false);
         }
@@ -288,7 +288,8 @@ void IBlockInputStream::progressImpl(const Progress & value)
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
+        /// TODO: It not be a good idea to make `progress.read_rows + progress.skipped_rows` as read_rows
+        limits.speed_limits.throttle(progress.read_rows + progress.skipped_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota != nullptr && limits.mode == LIMITS_TOTAL)
         {

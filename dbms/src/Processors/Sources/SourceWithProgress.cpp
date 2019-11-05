@@ -40,7 +40,6 @@ void SourceWithProgress::progress(const Progress & value)
         /// The total amount of data processed or intended for processing in all sources, possibly on remote servers.
 
         ProgressValues progress = process_list_elem->getProgressIn();
-        size_t total_rows_estimate = std::max(progress.read_rows, progress.total_rows_to_read);
 
         /// Check the restrictions on the
         ///  * amount of data to read
@@ -50,7 +49,7 @@ void SourceWithProgress::progress(const Progress & value)
 
         if (limits.mode == LimitsMode::LIMITS_TOTAL)
         {
-            if (!limits.size_limits.check(total_rows_estimate, progress.read_bytes, "rows to read",
+            if (!limits.size_limits.check(progress.read_rows, progress.read_bytes, "rows to read",
                                           ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
                 cancel();
         }
@@ -70,7 +69,8 @@ void SourceWithProgress::progress(const Progress & value)
 
         /// Should be done in PipelineExecutor.
         /// It is here for compatibility with IBlockInputsStream.
-        limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
+        /// TODO: It not be a good idea to make `progress.read_rows + progress.skipped_rows` as read_rows
+        limits.speed_limits.throttle(progress.read_rows + progress.skipped_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota != nullptr && limits.mode == LimitsMode::LIMITS_TOTAL)
         {
