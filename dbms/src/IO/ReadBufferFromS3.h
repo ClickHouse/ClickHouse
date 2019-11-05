@@ -17,9 +17,6 @@ class ReadBufferFromS3 : public ReadBuffer
 {
 protected:
     Poco::URI uri;
-    String access_key_id;
-    String secret_access_key;
-
     HTTPSessionPtr session;
     std::istream * istr; /// owned by session
     std::unique_ptr<ReadBuffer> impl;

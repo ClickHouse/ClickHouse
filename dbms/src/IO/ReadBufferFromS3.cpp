@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromS3.h>
 
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/S3Common.h>
 
 #include <common/logger_useful.h>
 
@@ -16,12 +17,8 @@ ReadBufferFromS3::ReadBufferFromS3(const Poco::URI & uri_,
     const ConnectionTimeouts & timeouts)
     : ReadBuffer(nullptr, 0)
     , uri {uri_}
-    , access_key_id {access_key_id_}
-    , secret_access_key {secret_access_key_}
     , session {makeHTTPSession(uri_, timeouts)}
 {
-    /// FIXME: Implement rest of S3 authorization.
-
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
 
@@ -36,6 +33,8 @@ ReadBufferFromS3::ReadBufferFromS3(const Poco::URI & uri_,
             uri.getPathAndQuery(),
             Poco::Net::HTTPRequest::HTTP_1_1);
         request->setHost(uri.getHost()); // use original, not resolved host name in header
+
+        S3Helper::authenticateRequest(*request, access_key_id_, secret_access_key_);
 
         LOG_TRACE((&Logger::get("ReadBufferFromS3")), "Sending request to " << uri.toString());
 

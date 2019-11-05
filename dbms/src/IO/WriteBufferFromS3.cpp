@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromS3.h>
 
+#include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 
 #include <Poco/DOM/AutoPtr.h>
@@ -113,6 +114,8 @@ void WriteBufferFromS3::initiate()
         request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, initiate_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request_ptr->setHost(initiate_uri.getHost()); // use original, not resolved host name in header
 
+        S3Helper::authenticateRequest(*request_ptr, access_key_id, secret_access_key);
+
         request_ptr->setContentLength(0);
 
         LOG_TRACE((&Logger::get("WriteBufferFromS3")), "Sending request to " << initiate_uri.toString());
@@ -172,6 +175,8 @@ void WriteBufferFromS3::writePart(const String & data)
         session = makeHTTPSession(part_uri, timeouts);
         request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_PUT, part_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request_ptr->setHost(part_uri.getHost()); // use original, not resolved host name in header
+
+        S3Helper::authenticateRequest(*request_ptr, access_key_id, secret_access_key);
 
         request_ptr->setExpectContinue(true);
 
@@ -239,6 +244,8 @@ void WriteBufferFromS3::complete()
         session = makeHTTPSession(complete_uri, timeouts);
         request_ptr = std::make_unique<Poco::Net::HTTPRequest>(Poco::Net::HTTPRequest::HTTP_POST, complete_uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
         request_ptr->setHost(complete_uri.getHost()); // use original, not resolved host name in header
+
+        S3Helper::authenticateRequest(*request_ptr, access_key_id, secret_access_key);
 
         request_ptr->setExpectContinue(true);
 
