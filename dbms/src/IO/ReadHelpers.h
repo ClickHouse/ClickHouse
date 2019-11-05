@@ -646,13 +646,27 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     }
 
     auto remainder1 = buf.available();
-    readIntText(c.fractional, buf);
-    auto fractional_length = remainder1 - buf.available();
+    if (tryReadIntText(c.fractional, buf))
+    {
+        // Adjust fractional part to the scale, since decimalFromComponents knows nothing
+        // about convention of ommiting trailing zero on fractional part
+        // and assumes that fractional part value is less than 10^scale.
 
-    c.fractional *= common::exp10_i64(scale - fractional_length);
-    datetime64 = decimalFromComponents<DateTime64>(c, scale);
+        // If scale is 3, but we read '12', promote fractional part to '120'.
+        // And vice versa: if we read '1234', denote it to '123'.
+        const auto fractional_length = static_cast<Int32>(remainder1 - buf.available());
+        if (const auto adjust_scale = static_cast<Int32>(scale) - fractional_length; adjust_scale > 0)
+        {
+            c.fractional *= common::exp10_i64(adjust_scale);
+        }
+        else if (adjust_scale < 0)
+        {
+            c.fractional /= common::exp10_i64(-1 * adjust_scale);
+        }
+        datetime64 = decimalFromComponents<DateTime64>(c, scale);
+    }
 
-    return ReturnType(false);
+    return ReturnType(true);
 }
 
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
