@@ -59,7 +59,8 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     UNUSED(skip_offsets);
     UNUSED(already_written_offset_columns);
 
-    auto [new_current_mark, new_index_offset] = writer->write(block, nullptr, current_mark, index_offset, index_granularity);
+    auto [new_current_mark, new_index_offset] = writer->write(block, nullptr, current_mark, index_offset,
+        index_granularity, {}, {}, skip_offsets, already_written_offset_columns);
 
     /// Should be written before index offset update, because we calculate,
     /// indices of currently written granules
@@ -80,8 +81,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     MergeTreeData::DataPart::Checksums checksums;
     bool write_final_mark = with_final_mark && (index_offset != 0 || current_mark != 0);
     writer->finalize(checksums, write_final_mark, sync);
-
-    finishSkipIndicesSerialization(checksums);
 
     return checksums;
 }

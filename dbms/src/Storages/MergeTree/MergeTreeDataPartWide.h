@@ -60,8 +60,10 @@ public:
 
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const WriterSettings & writer_settings) const override;
+        const WriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity = {}) const override;
 
     bool isStoredOnDisk() const override { return true; }
 
@@ -73,10 +75,6 @@ public:
 
     Type getType() const override { return Type::WIDE; }
 
-    /// Calculate the total size of the entire directory with all the files
-    static UInt64 calculateTotalSizeOnDisk(const String & from);
-
-
 private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
@@ -85,7 +83,6 @@ private:
 
     void checkConsistency(bool require_part_metadata);
 };
-
 
 // using MergeTreeDataPartState =IMergeTreeDataPart::State;
 

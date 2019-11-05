@@ -47,11 +47,6 @@ public:
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const
-    {
-        return index_granularity;
-    }
-
 private:
     void init();
 
@@ -64,13 +59,6 @@ private:
     NamesAndTypesList columns_list;
 
     size_t rows_count = 0;
-
-    std::unique_ptr<WriteBufferFromFile> index_file_stream;
-    std::unique_ptr<HashingWriteBuffer> index_stream;
-    MutableColumns index_columns;
-    /// Index columns values from the last row from the last block
-    /// It's written to index file in the `writeSuffixAndFinalizePart` method
-    ColumnsWithTypeAndName last_index_row;
 };
 
 }

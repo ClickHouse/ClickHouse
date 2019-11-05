@@ -28,7 +28,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         part_path + DATA_FILE_NAME, marks_file_extension,
         default_codec,
         settings.max_compress_block_size,
-        0,
+        settings.estimated_size,
         settings.aio_threshold);
 }
 
@@ -78,6 +78,7 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
         // size_t rows_to_write = std::min(total_rows, index_granularity.getMarkRows(current_mark));
         size_t rows_to_write = total_rows;
         index_granularity.appendMark(total_rows);
+
         // if (current_row == 0 && index_offset != 0)
         // {
         //     rows_to_write = index_offset;
@@ -112,6 +113,7 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
             for (size_t i = 0; i < columns_to_write.size(); ++i)
                 next_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
         }
+
         current_row = next_row;
     }
 
@@ -120,10 +122,10 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
 
 size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows)
 {
-
     std::cerr << "(writeColumnSingleGranule) writing column: " << column.name << "\n";
     std::cerr << "(writeColumnSingleGranule) from_row: " << from_row << "\n";
     std::cerr << "(writeColumnSingleGranule) number_of_rows: " << number_of_rows << "\n";
+
     IDataType::SerializeBinaryBulkStatePtr state;
     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
@@ -148,6 +150,8 @@ void MergeTreeDataPartWriterCompact::finalize(IMergeTreeDataPart::Checksums & ch
             writeIntBinary(stream->plain_hashing.count(), stream->marks);
             writeIntBinary(stream->compressed.offset(), stream->marks);
         }
+        if (compute_granularity)
+            index_granularity.appendMark(0);
     }
 
     stream->finalize();

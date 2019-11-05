@@ -989,7 +989,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
 
-       IMergeTreeDataPart::MinMaxIndex minmax_idx;
+        IMergeTreeDataPart::MinMaxIndex minmax_idx;
+
+        WriterSettings writer_settings;
+        auto part_writer = new_data_part->getWriter(all_columns, compression_codec, blocks_are_granules_size, )
 
         MergedBlockOutputStream out(new_data_part, all_columns, compression_codec);
 
@@ -1092,6 +1095,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         new_data_part->index_granularity = source_part->index_granularity;
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
+
         MergedColumnOnlyOutputStream out(
             new_data_part,
             updated_header,
