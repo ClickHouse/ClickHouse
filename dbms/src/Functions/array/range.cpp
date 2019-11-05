@@ -24,6 +24,7 @@ class FunctionRange : public IFunction
 {
 public:
     static constexpr auto name = "range";
+    static constexpr size_t max_elements = 100'000'000;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
 
 private:
@@ -51,11 +52,54 @@ private:
         return std::make_shared<DataTypeArray>(arguments.size() == 3 ? arguments[1] : arguments.back());
     }
 
+    template <typename T>
+    bool executeInternal(Block & block, const IColumn * arg, const size_t result)
+    {
+        if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
+        {
+            const auto & in_data = in->getData();
+            const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), size_t{},
+                [this] (const size_t lhs, const size_t rhs)
+                {
+                    const auto sum = lhs + rhs;
+                    if (sum < lhs)
+                        throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+
+                    return sum;
+                });
+
+            if (total_values > max_elements)
+                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+
+            auto data_col = ColumnVector<T>::create(total_values);
+            auto offsets_col = ColumnArray::ColumnOffsets::create(in->size());
+
+            auto & out_data = data_col->getData();
+            auto & out_offsets = offsets_col->getData();
+
+            IColumn::Offset offset{};
+            for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
+            {
+                for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
+                    out_data[offset + elem_idx] = elem_idx;
+
+                offset += in_data[row_idx];
+                out_offsets[row_idx] = offset;
+            }
+
+            block.getByPosition(result).column = ColumnArray::create(std::move(data_col), std::move(offsets_col));
+            return true;
+        }
+        else
+            return false;
+    }
+
     template <typename Start, typename End, typename Step>
     bool executeStartEndStep(Block & block, const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count, const size_t result)
     {
-        static constexpr size_t max_elements = 100'000'000;
-
         auto start_column = checkAndGetColumn<ColumnVector<Start>>(start_col);
         auto end_column = checkAndGetColumn<ColumnVector<End>>(end_col);
         auto step_column = checkAndGetColumn<ColumnVector<Step>>(step_col);
@@ -133,28 +177,31 @@ private:
     {
         Columns columns_holder(3);
         ColumnRawPtrs columns(3);
-        size_t idx = 0;
 
-        // for start column, default to 0
         if (arguments.size() == 1)
         {
-            columns_holder[idx] = DataTypeUInt8().createColumnConst(input_rows_count, 0)->convertToFullColumnIfConst();
-            columns[idx] = columns_holder[idx].get();
-            ++idx;
+            const auto col = block.getByPosition(arguments[0]).column.get();
+            if (!executeInternal<UInt8>(block, col, result) &&
+                !executeInternal<UInt16>(block, col, result) &&
+                !executeInternal<UInt32>(block, col, result) &&
+                !executeInternal<UInt64>(block, col, result))
+            {
+                throw Exception{"Illegal column " + col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            }
+            return;
         }
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            columns_holder[idx] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
-            columns[idx] = columns_holder[idx].get();
-            ++idx;
+            columns_holder[i] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
+            columns[i] = columns_holder[i].get();
         }
 
         // for step column, defaults to 1
-        if (arguments.size() <= 2)
+        if (arguments.size() == 2)
         {
-            columns_holder[idx] = DataTypeUInt8().createColumnConst(input_rows_count, 1)->convertToFullColumnIfConst();
-            columns[idx] = columns_holder[idx].get();
+            columns_holder[2] = DataTypeUInt8().createColumnConst(input_rows_count, 1)->convertToFullColumnIfConst();
+            columns[2] = columns_holder[2].get();
         }
 
         if (!executeStart<UInt8 >(block, columns[0], columns[1], columns[2], input_rows_count, result) &&
