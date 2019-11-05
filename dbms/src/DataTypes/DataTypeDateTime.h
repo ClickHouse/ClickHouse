@@ -48,7 +48,9 @@ public:
     explicit DataTypeDateTime(const String & time_zone_name = "");
     explicit DataTypeDateTime(const TimezoneMixin & time_zone);
 
-    const char * getFamilyName() const override { return "DateTime"; }
+    static constexpr auto family_name = "DateTime";
+
+    const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 

@@ -555,12 +555,16 @@ struct ConvertThroughParsing
         /// For conversion to DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
+            const auto result_type = removeNullable(block.getByPosition(result).type);
             // Time zone is already figured out during result type resultion, no need to do it here.
-            if (const auto dt_col = checkAndGetDataType<ToDataType>(block.getByPosition(result).type.get()))
+            if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
             else
             {
-                throw Exception("Can't get timezone info from result type", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception("Can't get timezone info from result type, expected "
+                    + std::string(ToDataType::family_name)
+                    + " got " + block.getByPosition(result).type->getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
             }
 
             if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
