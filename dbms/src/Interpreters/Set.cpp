@@ -106,6 +106,7 @@ void Set::setHeader(const Block & block)
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
+    set_elements_types.reserve(keys_size);
 
     /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
@@ -116,6 +117,7 @@ void Set::setHeader(const Block & block)
         materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
         data_types.emplace_back(block.safeGetByPosition(i).type);
+        set_elements_types.emplace_back(block.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
         if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -135,8 +137,8 @@ void Set::setHeader(const Block & block)
         /// Create empty columns with set values in advance.
         /// It is needed because set may be empty, so method 'insertFromBlock' will be never called.
         set_elements.reserve(keys_size);
-        for (const auto & type : data_types)
-            set_elements.emplace_back(removeNullable(type)->createColumn());
+        for (const auto & type : set_elements_types)
+            set_elements.emplace_back(type->createColumn());
     }
 
     /// Choose data structure to use for the set.
