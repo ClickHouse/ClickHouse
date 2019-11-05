@@ -1,5 +1,6 @@
 #include "LibraryDictionarySource.h"
 #include <DataStreams/OneBlockInputStream.h>
+#include <Core/Defines.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <common/logger_useful.h>
@@ -120,13 +121,13 @@ namespace
 LibraryDictionarySource::LibraryDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    Block & sample_block)
+    const std::string & config_prefix_,
+    Block & sample_block_)
     : log(&Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
-    , config_prefix{config_prefix}
+    , config_prefix{config_prefix_}
     , path{config.getString(config_prefix + ".path", "")}
-    , sample_block{sample_block}
+    , sample_block{sample_block_}
 {
     if (!Poco::File(path).exists())
         throw Exception(
@@ -134,7 +135,7 @@ LibraryDictionarySource::LibraryDictionarySource(
             ErrorCodes::FILE_DOESNT_EXIST);
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path, RTLD_LAZY
-#if defined(RTLD_DEEPBIND) // Does not exists in freebsd
+#if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
         | RTLD_DEEPBIND
 #endif
     );

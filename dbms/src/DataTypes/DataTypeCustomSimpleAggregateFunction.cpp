@@ -88,7 +88,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
             params_row[i] = lit->value;
         }
     }
-    else if (auto opt_name = getIdentifierName(arguments->children[0]))
+    else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
     {
         function_name = *opt_name;
     }

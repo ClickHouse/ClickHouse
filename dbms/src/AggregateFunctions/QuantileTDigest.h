@@ -50,9 +50,9 @@ class QuantileTDigest
 
         Centroid() = default;
 
-        explicit Centroid(Value mean, Count count)
-            : mean(mean)
-            , count(count)
+        explicit Centroid(Value mean_, Count count_)
+            : mean(mean_)
+            , count(count_)
         {}
 
         Centroid & operator+=(const Centroid & other)
@@ -86,8 +86,7 @@ class QuantileTDigest
 
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 128 - sizeof(PODArray<Centroid>) - sizeof(Count) - sizeof(UInt32);
-
-    using Summary = PODArray<Centroid, bytes_in_arena / sizeof(Centroid), AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
+    using Summary = PODArrayWithStackMemory<Centroid, bytes_in_arena>;
 
     Summary summary;
     Count count = 0;

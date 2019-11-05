@@ -31,7 +31,7 @@ namespace ReservoirSamplerOnEmpty
     };
 }
 
-template <typename ResultType, bool IsFloatingPoint>
+template <typename ResultType, bool is_float>
 struct NanLikeValueConstructor
 {
     static ResultType getValue()
@@ -109,8 +109,11 @@ public:
     double quantileInterpolated(double level)
     {
         if (samples.empty())
+        {
+            if (DB::IsDecimalNumber<T>)
+                return 0;
             return onEmpty<double>();
-
+        }
         sortIfNeeded();
 
         double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
@@ -194,8 +197,7 @@ private:
     friend void rs_perf_test();
 
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
-    static constexpr size_t bytes_on_stack = 64;
-    using Array = DB::PODArray<T, bytes_on_stack / sizeof(T), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+    using Array = DB::PODArrayWithStackMemory<T, 64>;
 
     size_t sample_count;
     size_t total_values = 0;

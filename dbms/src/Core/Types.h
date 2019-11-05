@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
-#include <cstdint>
+#include <common/Types.h>
 
 
 namespace DB
@@ -11,6 +12,41 @@ namespace DB
 /// Data types for representing elementary values from a database in RAM.
 
 struct Null {};
+
+enum class TypeIndex
+{
+    Nothing = 0,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Int128,
+    Float32,
+    Float64,
+    Date,
+    DateTime,
+    String,
+    FixedString,
+    Enum8,
+    Enum16,
+    Decimal32,
+    Decimal64,
+    Decimal128,
+    UUID,
+    Array,
+    Tuple,
+    Set,
+    Interval,
+    Nullable,
+    Function,
+    AggregateFunction,
+    LowCardinality,
+};
 
 using UInt8 = uint8_t;
 using UInt16 = uint16_t;
@@ -56,41 +92,6 @@ template <> struct TypeName<Int64>   { static const char * get() { return "Int64
 template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
-
-enum class TypeIndex
-{
-    Nothing = 0,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    Float32,
-    Float64,
-    Date,
-    DateTime,
-    String,
-    FixedString,
-    Enum8,
-    Enum16,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    UUID,
-    Array,
-    Tuple,
-    Set,
-    Interval,
-    Nullable,
-    Function,
-    AggregateFunction,
-    LowCardinality,
-};
 
 template <typename T> struct TypeId;
 template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };

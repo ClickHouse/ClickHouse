@@ -14,6 +14,7 @@
 #include <IO/Progress.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/config.h>
 
 
 namespace Poco

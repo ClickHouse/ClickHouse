@@ -2,13 +2,13 @@
 
 Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-To implement ODBC connection safely, ClickHouse uses the separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from the `clickhouse-server` program, the problems in the driver can crash the ClickHouse server. ClickHouse starts the `clickhouse-odbc-bridge` program automatically when it is required. The ODBC bridge program is installed by the same package as the `clickhouse-server`.
+To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
 
 This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
 ## Creating a Table
 
-```
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -18,12 +18,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(connection_settings, external_database, external_table)
 ```
 
-See the detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
-The table structure can be not the same as the source table structure:
+The table structure can differ from the source table structure:
 
-- Names of columns should be the same as in the source table, but you can use just some of these columns in any order.
-- Types of columns may differ from the types in the source table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values into the ClickHouse data types.
+- Column names should be the same as in the source table, but you can use just some of these columns and in any order.
+- Column types may differ from those in the source table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 
@@ -33,23 +33,25 @@ The table structure can be not the same as the source table structure:
 
 ## Usage Example
 
-**Getting data from the local MySQL installation via ODBC**
+**Retrieving data from the local MySQL installation via ODBC**
 
-This example is for linux Ubuntu 18.04 and MySQL server 5.7.
+This example is checked for Ubuntu Linux 18.04 and MySQL server 5.7.
 
-Ensure that there are unixODBC and MySQL Connector are installed.
+Ensure that unixODBC and MySQL Connector are installed.
 
-By default (if installed from packages) ClickHouse starts on behalf of the user `clickhouse`. Thus, you need to create and configure this user at MySQL server.
+By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus, you need to create and configure this user in the MySQL server.
 
+```bash
+$ sudo mysql
 ```
-sudo mysql
+```sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
 Then configure the connection in `/etc/odbc.ini`.
 
-```
+```bash
 $ cat /etc/odbc.ini
 [mysqlconn]
 DRIVER = /usr/local/lib/libmyodbc5w.so
@@ -60,10 +62,10 @@ USERNAME = clickhouse
 PASSWORD = clickhouse
 ```
 
-You can check the connection by the `isql` utility from the unixODBC installation.
+You can check the connection using the `isql` utility from the unixODBC installation.
 
-```
-isql -v mysqlconn
+```bash
+$ isql -v mysqlconn
 +---------------------------------------+
 | Connected!                            |
 |                                       |
@@ -72,7 +74,7 @@ isql -v mysqlconn
 
 Table in MySQL:
 
-```
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -93,7 +95,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Table in ClickHouse, getting data from the MySQL table:
+Table in ClickHouse, retrieving data from the MySQL table:
 
 ```sql
 CREATE TABLE odbc_t
@@ -115,6 +117,6 @@ SELECT * FROM odbc_t
 ## See Also
 
 - [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table function](../../query_language/table_functions/odbc.md).
+- [ODBC table function](../../query_language/table_functions/odbc.md)
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/odbc/) <!--hide-->

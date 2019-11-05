@@ -23,7 +23,7 @@ class SquashingTransform
 {
 public:
     /// Conditions on rows and bytes are OR-ed. If one of them is zero, then corresponding condition is ignored.
-    SquashingTransform(size_t min_block_size_rows, size_t min_block_size_bytes);
+    SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_, bool reserve_memory_ = false);
 
     /// When not ready, you need to pass more blocks to add function.
     struct Result
@@ -32,7 +32,7 @@ public:
         MutableColumns columns;
 
         Result(bool ready_) : ready(ready_) {}
-        Result(MutableColumns && columns) : ready(true), columns(std::move(columns)) {}
+        Result(MutableColumns && columns_) : ready(true), columns(std::move(columns_)) {}
     };
 
     /** Add next block and possibly returns squashed block.
@@ -43,6 +43,7 @@ public:
 private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
+    bool reserve_memory;
 
     MutableColumns accumulated_columns;
 

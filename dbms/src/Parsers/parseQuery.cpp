@@ -218,7 +218,7 @@ ASTPtr tryParseQuery(
     size_t max_query_size)
 {
     Tokens tokens(pos, end, max_query_size);
-    TokenIterator token_iterator(tokens);
+    IParser::Pos token_iterator(tokens);
 
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)

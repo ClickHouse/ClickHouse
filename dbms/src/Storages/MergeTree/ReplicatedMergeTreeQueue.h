@@ -138,7 +138,7 @@ private:
     friend class SubscriberHandler;
     struct SubscriberHandler : public boost::noncopyable
     {
-        SubscriberHandler(SubscriberIterator it, ReplicatedMergeTreeQueue & queue) : it(it), queue(queue) {}
+        SubscriberHandler(SubscriberIterator it_, ReplicatedMergeTreeQueue & queue_) : it(it_), queue(queue_) {}
         ~SubscriberHandler();
 
     private:
@@ -215,7 +215,7 @@ private:
         friend class ReplicatedMergeTreeQueue;
 
         /// Created only in the selectEntryToProcess function. It is called under mutex.
-        CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue);
+        CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
         static void setActualPartName(ReplicatedMergeTreeQueue::LogEntry & entry, const String & actual_part_name,
@@ -228,6 +228,7 @@ public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
 
     ~ReplicatedMergeTreeQueue();
+
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts);
@@ -296,7 +297,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Count the number of merges and mutations of single parts in the queue.
-    size_t countMergesAndPartMutations() const;
+    std::pair<size_t, size_t> countMergesAndPartMutations() const;
 
     /// Count the total number of active mutations.
     size_t countMutations() const;
@@ -304,6 +305,7 @@ public:
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
 
+    /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
@@ -318,12 +320,17 @@ public:
     /// (because some mutations are probably done but we are not sure yet), returns true.
     bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
 
-    /// Prohibit merges in the specified range.
-    void disableMergesInRange(const String & part_name);
+    /// Prohibit merges in the specified blocks range.
+    /// Add part to virtual_parts, which means that part must exist
+    /// after processing replication log up to log_pointer.
+    /// Part maybe fake (look at ReplicatedMergeTreeMergePredicate).
+    void disableMergesInBlockRange(const String & part_name);
 
-    /** Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
-      * Locks queue's mutex.
-      */
+    /// Cheks that part is already in virtual parts
+    bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
+
+    /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
+    /// Locks queue's mutex.
     bool addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason);
 
     /// A blocker that stops selects from the queue

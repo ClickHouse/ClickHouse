@@ -1,4 +1,7 @@
 #include <Functions/FunctionFactory.h>
+
+// TODO include this last because of a broken roaring header. See the comment
+// inside.
 #include <Functions/FunctionsBitmap.h>
 
 
@@ -9,8 +12,13 @@ void registerFunctionsBitmap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitmapBuild>();
     factory.registerFunction<FunctionBitmapToArray>();
+    factory.registerFunction<FunctionBitmapSubsetInRange>();
+    factory.registerFunction<FunctionBitmapSubsetLimit>();
+    factory.registerFunction<FunctionBitmapTransform>();
 
     factory.registerFunction<FunctionBitmapSelfCardinality>();
+    factory.registerFunction<FunctionBitmapMin>();
+    factory.registerFunction<FunctionBitmapMax>();
     factory.registerFunction<FunctionBitmapAndCardinality>();
     factory.registerFunction<FunctionBitmapOrCardinality>();
     factory.registerFunction<FunctionBitmapXorCardinality>();
@@ -23,5 +31,6 @@ void registerFunctionsBitmap(FunctionFactory & factory)
 
     factory.registerFunction<FunctionBitmapHasAll>();
     factory.registerFunction<FunctionBitmapHasAny>();
+    factory.registerFunction<FunctionBitmapContains>();
 }
 }

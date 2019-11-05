@@ -11,6 +11,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/quoteString.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -40,7 +41,8 @@ ColumnsDescription getStructureOfRemoteTable(
         if (shard_info.isLocal())
         {
             const auto * table_function = table_func_ptr->as<ASTFunction>();
-            return TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context)->getColumns();
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
+            return table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName())->getColumns();
         }
 
         auto table_func_name = queryToString(table_func_ptr);

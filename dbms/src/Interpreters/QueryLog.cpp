@@ -1,4 +1,6 @@
 #include <Common/ProfileEvents.h>
+#include <Common/IPv6ToBinary.h>
+#include <Common/ClickHouseRevision.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -7,11 +9,11 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
 #include <array>
 
@@ -19,11 +21,22 @@
 namespace DB
 {
 
+template <> struct NearestFieldTypeImpl<QueryLogElement::Type> { using Type = UInt64; };
+
 Block QueryLogElement::createBlock()
 {
+    auto query_status_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"QueryStart",                  static_cast<Int8>(QUERY_START)},
+            {"QueryFinish",                 static_cast<Int8>(QUERY_FINISH)},
+            {"ExceptionBeforeStart",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
+            {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
+        });
+
     return
     {
-        {std::make_shared<DataTypeUInt8>(),                                   "type"},
+        {std::move(query_status_datatype),                                    "type"},
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
         {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
@@ -44,11 +57,11 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt8>(),                                   "is_initial_query"},
         {std::make_shared<DataTypeString>(),                                  "user"},
         {std::make_shared<DataTypeString>(),                                  "query_id"},
-        {std::make_shared<DataTypeFixedString>(16),                           "address"},
+        {DataTypeFactory::instance().get("IPv6"),                             "address"},
         {std::make_shared<DataTypeUInt16>(),                                  "port"},
         {std::make_shared<DataTypeString>(),                                  "initial_user"},
         {std::make_shared<DataTypeString>(),                                  "initial_query_id"},
-        {std::make_shared<DataTypeFixedString>(16),                           "initial_address"},
+        {DataTypeFactory::instance().get("IPv6"),                             "initial_address"},
         {std::make_shared<DataTypeUInt16>(),                                  "initial_port"},
         {std::make_shared<DataTypeUInt8>(),                                   "interface"},
         {std::make_shared<DataTypeString>(),                                  "os_user"},
@@ -65,34 +78,12 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
 
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "os_thread_ids"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"}
     };
-}
-
-
-static std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
-{
-    std::array<char, 16> res;
-
-    if (Poco::Net::IPAddress::IPv6 == address.family())
-    {
-        memcpy(res.data(), address.addr(), 16);
-    }
-    else if (Poco::Net::IPAddress::IPv4 == address.family())
-    {
-        /// Convert to IPv6-mapped address.
-        memset(res.data(), 0, 10);
-        res[10] = '\xFF';
-        res[11] = '\xFF';
-        memcpy(&res[12], address.addr(), 4);
-    }
-    else
-        memset(res.data(), 0, 16);
-
-    return res;
 }
 
 
@@ -102,7 +93,7 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     size_t i = 0;
 
-    columns[i++]->insert(UInt64(type));
+    columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
     columns[i++]->insert(query_start_time);
@@ -129,6 +120,14 @@ void QueryLogElement::appendToBlock(Block & block) const
         Array threads_array;
         threads_array.reserve(thread_numbers.size());
         for (const UInt32 thread_number : thread_numbers)
+            threads_array.emplace_back(UInt64(thread_number));
+        columns[i++]->insert(threads_array);
+    }
+
+    {
+        Array threads_array;
+        threads_array.reserve(os_thread_ids.size());
+        for (const UInt32 thread_number : os_thread_ids)
             threads_array.emplace_back(UInt64(thread_number));
         columns[i++]->insert(threads_array);
     }

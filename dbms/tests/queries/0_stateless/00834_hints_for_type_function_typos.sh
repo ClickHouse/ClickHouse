@@ -21,8 +21,8 @@ $CLICKHOUSE_CLIENT -q "select multisearchallposicionutf7casesensitive('abc');" 2
 $CLICKHOUSE_CLIENT -q "select multiSearchAllposicionutf7sensitive('abc');" 2>&1 | grep "Maybe you meant: \['multiSearchAllPositionsCaseInsensitive','multiSearchAnyCaseInsensitive'\]." &>/dev/null;
 $CLICKHOUSE_CLIENT -q "select multiSearchAllPosicionSensitiveUTF8('abc');" 2>&1 | grep "Maybe you meant: \['multiSearchAnyCaseInsensitiveUTF8','multiSearchAllPositionsCaseInsensitiveUTF8'\]." &>/dev/null;
 
-$CLICKHOUSE_CLIENT -q "select * FROM numberss(10);" 2>&1 | grep "Maybe you meant: \['numbers'\]." &>/dev/null
-$CLICKHOUSE_CLIENT -q "select * FROM anothernumbers(10);" 2>&1 | grep -v "Maybe you meant: \['numbers'\]." &>/dev/null
+$CLICKHOUSE_CLIENT -q "select * FROM numberss(10);" 2>&1 | grep "Maybe you meant: \['numbers'\,'numbers_mt'\]." &>/dev/null
+$CLICKHOUSE_CLIENT -q "select * FROM anothernumbers(10);" 2>&1 | grep -v "Maybe you meant: \['numbers'\,'numbers_mt'\]." &>/dev/null
 $CLICKHOUSE_CLIENT -q "select * FROM mynumbers(10);" 2>&1 | grep "Maybe you meant: \['numbers'\]." &>/dev/null
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE stored_aggregates (d Date, Uniq AggregateFunction(uniq, UInt64)) ENGINE = MergeTre(d, d, 8192);" 2>&1 | grep "Maybe you meant: \['MergeTree'\]." &>/dev/null

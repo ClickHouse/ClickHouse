@@ -12,11 +12,11 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [name, ttl_info] : other_infos.columns_ttl)
     {
         columns_ttl[name].update(ttl_info);
-        updatePartMinTTL(ttl_info.min);
+        updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
     }
 
     table_ttl.update(other_infos.table_ttl);
-    updatePartMinTTL(table_ttl.min);
+    updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
 }
 
 void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
@@ -37,7 +37,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             String name = col["name"].getString();
             columns_ttl.emplace(name, ttl_info);
 
-            updatePartMinTTL(ttl_info.min);
+            updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
         }
     }
     if (json.has("table"))
@@ -46,7 +46,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         table_ttl.min = table["min"].getUInt();
         table_ttl.max = table["max"].getUInt();
 
-        updatePartMinTTL(table_ttl.min);
+        updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
 }
 

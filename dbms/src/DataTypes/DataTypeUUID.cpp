@@ -5,6 +5,7 @@
 #include <Formats/ProtobufWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -12,14 +13,14 @@ namespace DB
 
 void DataTypeUUID::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeText(UUID(static_cast<const ColumnUInt128 &>(column).getData()[row_num]), ostr);
+    writeText(UUID(assert_cast<const ColumnUInt128 &>(column).getData()[row_num]), ostr);
 }
 
 void DataTypeUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     readText(x, istr);
-    static_cast<ColumnUInt128 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(x);
 }
 
 void DataTypeUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -40,7 +41,7 @@ void DataTypeUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, co
     assertChar('\'', istr);
     readText(x, istr);
     assertChar('\'', istr);
-    static_cast<ColumnUInt128 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
 void DataTypeUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -56,7 +57,7 @@ void DataTypeUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr, cons
     assertChar('"', istr);
     readText(x, istr);
     assertChar('"', istr);
-    static_cast<ColumnUInt128 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(x);
 }
 
 void DataTypeUUID::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -70,14 +71,14 @@ void DataTypeUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
 {
     UUID value;
     readCSV(value, istr);
-    static_cast<ColumnUInt128 &>(column).getData().push_back(value);
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(value);
 }
 
 void DataTypeUUID::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     if (value_index)
         return;
-    value_index = static_cast<bool>(protobuf.writeUUID(UUID(static_cast<const ColumnUInt128 &>(column).getData()[row_num])));
+    value_index = static_cast<bool>(protobuf.writeUUID(UUID(assert_cast<const ColumnUInt128 &>(column).getData()[row_num])));
 }
 
 void DataTypeUUID::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
@@ -87,7 +88,7 @@ void DataTypeUUID::deserializeProtobuf(IColumn & column, ProtobufReader & protob
     if (!protobuf.readUUID(uuid))
         return;
 
-    auto & container = static_cast<ColumnUInt128 &>(column).getData();
+    auto & container = assert_cast<ColumnUInt128 &>(column).getData();
     if (allow_add_row)
     {
         container.emplace_back(uuid);

@@ -72,25 +72,25 @@ public:
             return data == nullptr;
         }
 
-        operator mysqlxx::Connection & ()
+        operator mysqlxx::Connection & () &
         {
             forceConnected();
             return data->conn;
         }
 
-        operator const mysqlxx::Connection & () const
+        operator const mysqlxx::Connection & () const &
         {
             forceConnected();
             return data->conn;
         }
 
-        const mysqlxx::Connection * operator->() const
+        const mysqlxx::Connection * operator->() const &
         {
             forceConnected();
             return &data->conn;
         }
 
-        mysqlxx::Connection * operator->()
+        mysqlxx::Connection * operator->() &
         {
             forceConnected();
             return &data->conn;

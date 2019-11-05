@@ -1,5 +1,4 @@
 <test>
-    <name>basename</name>
     <type>loop</type>
 
     <stop_conditions>

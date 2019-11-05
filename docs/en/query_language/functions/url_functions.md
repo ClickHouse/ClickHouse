@@ -2,17 +2,62 @@
 
 All these functions don't follow the RFC. They are maximally simplified for improved performance.
 
-## Functions that extract part of a URL
+## Functions that Extract Parts of a URL
 
-If there isn't anything similar in a URL, an empty string is returned.
+If the relevant part isn't present in a URL, an empty string is returned.
 
 ### protocol
 
-Returns the protocol. Examples: http, ftp, mailto, magnet...
+Extracts the protocol from a URL.
+
+Examples of typical returned values: http, https, ftp, mailto, tel, magnet...
 
 ### domain
 
-Gets the domain.
+Extracts the hostname from a URL.
+
+```sql
+domain(url)
+```
+
+**Parameters**
+
+- `url` — URL. Type: [String](../../data_types/string.md).
+
+
+The URL can be specified with or without a scheme. Examples:
+
+```text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://yandex.com/time/
+```
+
+For these examples, the `domain` function returns the following results:
+
+```text
+some.svn-hosting.com
+some.svn-hosting.com
+yandex.com
+```
+
+**Returned values**
+
+- Host name. If ClickHouse can parse the input string as a URL.
+- Empty string. If ClickHouse can't parse the input string as a URL.
+
+Type: `String`.
+
+**Example**
+
+```sql
+SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
+```
+```text
+┌─domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')─┐
+│ some.svn-hosting.com                                   │
+└────────────────────────────────────────────────────────┘
+```
 
 ### domainWithoutWWW
 
@@ -20,7 +65,41 @@ Returns the domain and removes no more than one 'www.' from the beginning of it,
 
 ### topLevelDomain
 
-Returns the top-level domain. Example: .ru.
+Extracts the the top-level domain from a URL.
+
+```sql
+topLevelDomain(url)
+```
+
+**Parameters**
+
+- `url` — URL. Type: [String](../../data_types/string.md).
+
+The URL can be specified with or without a scheme. Examples:
+
+```text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://yandex.com/time/
+```
+
+**Returned values**
+
+- Domain name. If ClickHouse can parse the input string as a URL.
+- Empty string. If ClickHouse cannot parse the input string as a URL.
+
+Type: `String`.
+
+**Example**
+
+```sql
+SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
+```
+```text
+┌─topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
+│ com                                                                │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 ### firstSignificantSubdomain
 
@@ -66,13 +145,13 @@ Returns an array of name strings corresponding to the names of URL parameters. T
 
 ### URLHierarchy(URL)
 
-Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters. 
+Returns an array containing the URL, truncated at the end by the symbols /,? in the path and query-string. Consecutive separator characters are counted as one. The cut is made in the position after all the consecutive separator characters.
 
 ### URLPathHierarchy(URL)
 
 The same as above, but without the protocol and host in the result. The / element (root) is not included. Example: the function is used to implement tree reports the URL in Yandex. Metric.
 
-```
+```text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -85,11 +164,11 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 Returns the decoded URL.
 Example:
 
-``` sql
+```sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-```
+```text
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘

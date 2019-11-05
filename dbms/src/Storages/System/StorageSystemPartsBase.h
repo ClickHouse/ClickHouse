@@ -54,6 +54,7 @@ class StorageSystemPartsBase : public IStorage
 {
 public:
     std::string getTableName() const override { return name; }
+    std::string getDatabaseName() const override { return "system"; }
 
     NameAndTypePair getColumn(const String & column_name) const override;
 

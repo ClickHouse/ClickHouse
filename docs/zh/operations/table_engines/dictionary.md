@@ -60,7 +60,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-你可以使用 [dictGet*](../../query_language/functions/ext_dict_functions.md#ext_dict_functions) 函数来获取这种格式的字典数据。
+你可以使用 [dictGet*](../../query_language/functions/ext_dict_functions.md) 函数来获取这种格式的字典数据。
 
 当你需要获取原始数据，或者是想要使用 `JOIN` 操作的时候，这种视图并没有什么帮助。对于这些情况，你可以使用 `Dictionary` 引擎，它可以将字典数据展示在表中。
 

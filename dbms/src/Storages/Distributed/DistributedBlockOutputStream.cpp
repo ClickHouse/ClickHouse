@@ -59,9 +59,9 @@ namespace ErrorCodes
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-        const Context & context_, StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
+        const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_, const ClusterPtr & cluster_,
         bool insert_sync_, UInt64 insert_timeout_)
-        : context(context_), storage(storage), query_ast(query_ast), query_string(queryToString(query_ast)),
+        : context(context_), storage(storage_), query_ast(query_ast_), query_string(queryToString(query_ast_)),
         cluster(cluster_), insert_sync(insert_sync_),
         insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
 {
@@ -81,12 +81,27 @@ void DistributedBlockOutputStream::writePrefix()
 
 void DistributedBlockOutputStream::write(const Block & block)
 {
-    if (insert_sync)
-        writeSync(block);
-    else
-        writeAsync(block);
-}
+    Block ordinary_block{ block };
 
+    /* They are added by the AddingDefaultBlockOutputStream, and we will get
+     * different number of columns eventually */
+    for (const auto & col : storage.getColumns().getMaterialized())
+    {
+        if (ordinary_block.has(col.name))
+        {
+            ordinary_block.erase(col.name);
+            LOG_DEBUG(log, storage.getTableName()
+                << ": column " + col.name + " will be removed, "
+                << "because it is MATERIALIZED");
+        }
+    }
+
+
+    if (insert_sync)
+        writeSync(ordinary_block);
+    else
+        writeAsync(ordinary_block);
+}
 
 void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
@@ -242,6 +257,8 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         {
             if (!job.stream)
             {
+                const Settings & settings = context.getSettingsRef();
+                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
                 {
                     /// Skip replica_index in case of internal replication
@@ -249,7 +266,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto connections = shard_info.pool->getMany(&context.getSettingsRef(), PoolMode::GET_ONE);
+                    auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
                     if (connections.empty() || connections.front().isNull())
                         throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
 
@@ -263,7 +280,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                     if (!connection_pool)
                         throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = connection_pool->get(&context.getSettingsRef());
+                    job.connection_entry = connection_pool->get(timeouts, &settings);
                     if (job.connection_entry.isNull())
                         throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
                 }
@@ -271,7 +288,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, query_string, &context.getSettingsRef());
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings);
                 job.stream->writePrefix();
             }
 
@@ -337,11 +354,19 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
             per_shard_jobs[current_selector[i]].shard_current_block_permuation.push_back(i);
     }
 
-    /// Run jobs in parallel for each block and wait them
-    finished_jobs_count = 0;
-    for (size_t shard_index : ext::range(0, shards_info.size()))
-        for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-            pool->schedule(runWritingJob(job, block));
+    try
+    {
+        /// Run jobs in parallel for each block and wait them
+        finished_jobs_count = 0;
+        for (size_t shard_index : ext::range(0, shards_info.size()))
+            for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+                pool->scheduleOrThrowOnError(runWritingJob(job, block));
+    }
+    catch (...)
+    {
+        pool->wait();
+        throw;
+    }
 
     try
     {
@@ -371,17 +396,27 @@ void DistributedBlockOutputStream::writeSuffix()
     if (insert_sync && pool)
     {
         finished_jobs_count = 0;
-        for (auto & shard_jobs : per_shard_jobs)
-            for (JobReplica & job : shard_jobs.replicas_jobs)
+        try
+        {
+            for (auto & shard_jobs : per_shard_jobs)
             {
-                if (job.stream)
+                for (JobReplica & job : shard_jobs.replicas_jobs)
                 {
-                    pool->schedule([&job] ()
+                    if (job.stream)
                     {
-                        job.stream->writeSuffix();
-                    });
+                        pool->scheduleOrThrowOnError([&job]()
+                        {
+                            job.stream->writeSuffix();
+                        });
+                    }
                 }
             }
+        }
+        catch (...)
+        {
+            pool->wait();
+            throw;
+        }
 
         try
         {
@@ -563,7 +598,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path, ErrorCodes::CANNOT_LINK);
+            throwFromErrnoWithPath("Could not link " + block_file_path + " to " + first_file_tmp_path, block_file_path,
+                                   ErrorCodes::CANNOT_LINK);
     }
 
     /** remove the temporary file, enabling the OS to reclaim inode after all threads

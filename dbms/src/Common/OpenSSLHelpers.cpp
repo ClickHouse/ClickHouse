@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_SSL
 #include "OpenSSLHelpers.h"
 #include <ext/scope_guard.h>
 #include <openssl/err.h>
@@ -16,3 +18,4 @@ String getOpenSSLErrors()
 }
 
 }
+#endif

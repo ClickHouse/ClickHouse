@@ -1,4 +1,5 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
+#include <Common/MemorySanitizer.h>
 
 
 namespace DB
@@ -70,6 +71,12 @@ void ZlibDeflatingWriteBuffer::nextImpl()
         int rc = deflate(&zstr, Z_NO_FLUSH);
         out.position() = out.buffer().end() - zstr.avail_out;
 
+        // Unpoison the result of deflate explicitly. It uses some custom SSE algo
+        // for computing CRC32, and it looks like msan is unable to comprehend
+        // it fully, so it complains about the resulting value depending on the
+        // uninitialized padding of the input buffer.
+        __msan_unpoison(out.position(), zstr.avail_out);
+
         if (rc != Z_OK)
             throw Exception(std::string("deflate failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
@@ -91,6 +98,12 @@ void ZlibDeflatingWriteBuffer::finish()
 
         int rc = deflate(&zstr, Z_FINISH);
         out.position() = out.buffer().end() - zstr.avail_out;
+
+        // Unpoison the result of deflate explicitly. It uses some custom SSE algo
+        // for computing CRC32, and it looks like msan is unable to comprehend
+        // it fully, so it complains about the resulting value depending on the
+        // uninitialized padding of the input buffer.
+        __msan_unpoison(out.position(), zstr.avail_out);
 
         if (rc == Z_STREAM_END)
         {

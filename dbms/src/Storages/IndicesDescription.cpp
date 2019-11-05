@@ -1,12 +1,27 @@
 #include <Storages/IndicesDescription.h>
 
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-
 namespace DB
 {
+
+bool IndicesDescription::empty() const
+{
+    return indices.empty();
+}
+
+bool IndicesDescription::has(const String & name) const
+{
+    return std::cend(indices) != std::find_if(
+            std::cbegin(indices), std::cend(indices),
+            [&name](const auto & index)
+            {
+                return index->name == name;
+            });
+}
 
 String IndicesDescription::toString() const
 {

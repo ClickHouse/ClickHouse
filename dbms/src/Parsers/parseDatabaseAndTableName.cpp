@@ -29,13 +29,13 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
             return false;
         }
 
-        getIdentifierName(database, database_str);
-        getIdentifierName(table, table_str);
+        tryGetIdentifierNameInto(database, database_str);
+        tryGetIdentifierNameInto(table, table_str);
     }
     else
     {
         database_str = "";
-        getIdentifierName(database, table_str);
+        tryGetIdentifierNameInto(database, table_str);
     }
 
     return true;

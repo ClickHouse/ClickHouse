@@ -1,7 +1,8 @@
+#include <Poco/Version.h>
 #include <DataStreams/MergeSortingBlockInputStream.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/copyData.h>
+#include <DataStreams/TemporaryFileStream.h>
 #include <DataStreams/processConstants.h>
 #include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
@@ -21,10 +22,11 @@ namespace DB
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_, size_t max_bytes_before_remerge_,
-    size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
+    size_t max_bytes_before_external_sort_, const std::string & tmp_path_, size_t min_free_disk_space_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
     max_bytes_before_remerge(max_bytes_before_remerge_),
-    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
+    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_),
+    min_free_disk_space(min_free_disk_space_)
 {
     children.push_back(input);
     header = children.at(0)->getHeader();
@@ -77,17 +79,16 @@ Block MergeSortingBlockInputStream::readImpl()
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
-                Poco::File(tmp_path).createDirectories();
-                temporary_files.emplace_back(std::make_unique<Poco::TemporaryFile>(tmp_path));
+                if (!enoughSpaceInDirectory(tmp_path, sum_bytes_in_blocks + min_free_disk_space))
+                    throw Exception("Not enough space for external sort in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+
+                temporary_files.emplace_back(createTemporaryFile(tmp_path));
                 const std::string & path = temporary_files.back()->path();
-                WriteBufferFromFile file_buf(path);
-                CompressedWriteBuffer compressed_buf(file_buf);
-                NativeBlockOutputStream block_out(compressed_buf, 0, header_without_constants);
                 MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
                 LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
                 ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
-                copyData(block_in, block_out, &is_cancelled);    /// NOTE. Possibly limit disk usage.
+                TemporaryFileStream::write(path, header_without_constants, block_in, &is_cancelled); /// NOTE. Possibly limit disk usage.
                 LOG_INFO(log, "Done writing part of data into temporary file " + path);
 
                 blocks.clear();
@@ -134,7 +135,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
 
 MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
-    Blocks & blocks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+    Blocks & blocks_, const SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : blocks(blocks_), header(blocks.at(0).cloneEmpty()), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Blocks nonempty_blocks;

@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "config_core.h"
 
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
@@ -18,11 +19,13 @@ void registerStorageDistributed(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory);
+void registerStorageS3(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
+void registerStorageLiveView(StorageFactory & factory);
 
 #if USE_HDFS
 void registerStorageHDFS(StorageFactory & factory);
@@ -58,11 +61,13 @@ void registerStorages()
     registerStorageMemory(factory);
     registerStorageFile(factory);
     registerStorageURL(factory);
+    registerStorageS3(factory);
     registerStorageDictionary(factory);
     registerStorageSet(factory);
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
+    registerStorageLiveView(factory);
 
     #if USE_HDFS
     registerStorageHDFS(factory);

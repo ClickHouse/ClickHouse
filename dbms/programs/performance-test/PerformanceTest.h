@@ -5,6 +5,7 @@
 #include <common/logger_useful.h>
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <IO/ConnectionTimeouts.h>
 #include "PerformanceTestInfo.h"
 
 namespace DB
@@ -20,6 +21,7 @@ public:
     PerformanceTest(
         const XMLConfigurationPtr & config_,
         Connection & connection_,
+        const ConnectionTimeouts & timeouts_,
         InterruptListener & interrupt_listener_,
         const PerformanceTestInfo & test_info_,
         Context & context_,
@@ -45,6 +47,7 @@ private:
 private:
     XMLConfigurationPtr config;
     Connection & connection;
+    const ConnectionTimeouts & timeouts;
     InterruptListener & interrupt_listener;
 
     PerformanceTestInfo test_info;

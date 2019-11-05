@@ -17,7 +17,7 @@ public:
         size_t parts_to_merge = 10;
     };
 
-    explicit LevelMergeSelector(const Settings & settings) : settings(settings) {}
+    explicit LevelMergeSelector(const Settings & settings_) : settings(settings_) {}
 
     PartsInPartition select(
         const Partitions & partitions,

@@ -7,7 +7,17 @@ SELECT
     0.1 OR NULL,
     NULL OR 1 OR NULL,
     0 OR NULL OR 1 OR NULL;
-   
+
+SELECT
+    0 AND NULL,
+    1 AND NULL,
+    toNullable(0) AND NULL,
+    toNullable(1) AND NULL,
+    0.0 AND NULL,
+    0.1 AND NULL,
+    NULL AND 1 AND NULL,
+    0 AND NULL AND 1 AND NULL;
+
 SELECT
     x,
     0 OR x,

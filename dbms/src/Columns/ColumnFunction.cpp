@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/PODArray.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 
@@ -13,8 +14,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function, const ColumnsWithTypeAndName & columns_to_capture)
-        : size_(size), function(function)
+ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture)
+        : size_(size), function(function_)
 {
     appendArguments(columns_to_capture);
 }

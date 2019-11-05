@@ -62,6 +62,19 @@ public:
         return getMarkRows(last);
     }
 
+    size_t getLastNonFinalMarkRows() const
+    {
+        size_t last_mark_rows = getLastMarkRows();
+        if (last_mark_rows != 0)
+            return last_mark_rows;
+        return getMarkRows(marks_rows_partial_sums.size() - 2);
+    }
+
+    bool hasFinalMark() const
+    {
+        return getLastMarkRows() == 0;
+    }
+
     bool empty() const
     {
         return marks_rows_partial_sums.empty();

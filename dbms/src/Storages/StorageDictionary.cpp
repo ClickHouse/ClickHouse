@@ -7,7 +7,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/ASTLiteral.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -24,18 +24,22 @@ namespace ErrorCodes
 
 
 StorageDictionary::StorageDictionary(
+    const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
     const Context & context,
     bool attach,
     const String & dictionary_name_)
-    : IStorage{columns_}, table_name(table_name_),
+    : table_name(table_name_),
+    database_name(database_name_),
     dictionary_name(dictionary_name_),
     logger(&Poco::Logger::get("StorageDictionary"))
 {
+    setColumns(columns_);
+
     if (!attach)
     {
-        const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+        const auto & dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
         checkNamesAndTypesCompatibleWithDictionary(dictionary_structure);
     }
@@ -49,7 +53,7 @@ BlockInputStreams StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }
 
@@ -104,7 +108,7 @@ void registerStorageDictionary(StorageFactory & factory)
         String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageDictionary::create(
-            args.table_name, args.columns, args.context, args.attach, dictionary_name);
+            args.database_name, args.table_name, args.columns, args.context, args.attach, dictionary_name);
     });
 }
 

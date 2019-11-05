@@ -66,5 +66,4 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
     if (has_nested)
         writeException(Exception(Exception::CreateFromPoco, *e.nested()), buf, with_stack_trace);
 }
-
 }

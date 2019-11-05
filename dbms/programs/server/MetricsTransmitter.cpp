@@ -1,7 +1,6 @@
 #include "MetricsTransmitter.h"
 
 #include <Interpreters/AsynchronousMetrics.h>
-#include <Interpreters/Context.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -16,6 +15,20 @@
 namespace DB
 {
 
+MetricsTransmitter::MetricsTransmitter(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_name_, const AsynchronousMetrics & async_metrics_)
+    : async_metrics(async_metrics_), config_name(config_name_)
+{
+    interval_seconds = config.getInt(config_name + ".interval", 60);
+    send_events = config.getBool(config_name + ".events", true);
+    send_events_cumulative = config.getBool(config_name + ".events_cumulative", false);
+    send_metrics = config.getBool(config_name + ".metrics", true);
+    send_asynchronous_metrics = config.getBool(config_name + ".asynchronous_metrics", true);
+
+    thread = ThreadFromGlobalPool{&MetricsTransmitter::run, this};
+}
+
+
 MetricsTransmitter::~MetricsTransmitter()
 {
     try
@@ -27,7 +40,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
         cond.notify_one();
 
-        thread.join();
+        thread->join();
     }
     catch (...)
     {
@@ -38,10 +51,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-    const auto & config = context.getConfigRef();
-    auto interval = config.getInt(config_name + ".interval", 60);
-
-    const std::string thread_name = "MetrTx" + std::to_string(interval);
+    const std::string thread_name = "MetrTx" + std::to_string(interval_seconds);
     setThreadName(thread_name.c_str());
 
     const auto get_next_time = [](size_t seconds)
@@ -60,7 +70,7 @@ void MetricsTransmitter::run()
 
     while (true)
     {
-        if (cond.wait_until(lock, get_next_time(interval), [this] { return quit; }))
+        if (cond.wait_until(lock, get_next_time(interval_seconds), [this] { return quit; }))
             break;
 
         transmit(prev_counters);
@@ -70,14 +80,12 @@ void MetricsTransmitter::run()
 
 void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_counters)
 {
-    const auto & config = context.getConfigRef();
     auto async_metrics_values = async_metrics.getValues();
 
     GraphiteWriter::KeyValueVector<ssize_t> key_vals{};
     key_vals.reserve(ProfileEvents::end() + CurrentMetrics::end() + async_metrics_values.size());
 
-
-    if (config.getBool(config_name + ".events", true))
+    if (send_events)
     {
         for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
         {
@@ -90,7 +98,17 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
         }
     }
 
-    if (config.getBool(config_name + ".metrics", true))
+    if (send_events_cumulative)
+    {
+        for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+        {
+            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+            std::string key{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
+            key_vals.emplace_back(profile_events_cumulative_path_prefix + key, counter);
+        }
+    }
+
+    if (send_metrics)
     {
         for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         {
@@ -101,7 +119,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
         }
     }
 
-    if (config.getBool(config_name + ".asynchronous_metrics", true))
+    if (send_asynchronous_metrics)
     {
         for (const auto & name_value : async_metrics_values)
         {
@@ -112,4 +130,5 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     if (key_vals.size())
         BaseDaemon::instance().writeToGraphite(key_vals, config_name);
 }
+
 }

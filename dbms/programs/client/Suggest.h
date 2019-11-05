@@ -8,12 +8,12 @@
 #include <vector>
 #include <algorithm>
 
-#include <ext/singleton.h>
 #include <common/readline_use.h>
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnString.h>
 #include <Client/Connection.h>
+#include <IO/ConnectionTimeouts.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
-class Suggest : public ext::singleton<Suggest>
+class Suggest : private boost::noncopyable
 {
 private:
     /// The vector will be filled with completion words from the server and sorted.
@@ -42,7 +42,7 @@ private:
         "KILL", "QUERY", "SYNC", "ASYNC", "TEST", "BETWEEN", "TRUNCATE"
     };
 
-    /// Words are fetched asynchonously.
+    /// Words are fetched asynchronously.
     std::thread loading_thread;
     std::atomic<bool> ready{false};
 
@@ -71,7 +71,7 @@ private:
         return word;
     }
 
-    void loadImpl(Connection & connection, size_t suggestion_limit)
+    void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
     {
         std::stringstream query;
         query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
@@ -104,12 +104,12 @@ private:
 
         query << ") WHERE notEmpty(res)";
 
-        fetch(connection, query.str());
+        fetch(connection, timeouts, query.str());
     }
 
-    void fetch(Connection & connection, const std::string & query)
+    void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
     {
-        connection.sendQuery(query);
+        connection.sendQuery(timeouts, query);
 
         while (true)
         {
@@ -160,6 +160,12 @@ private:
     }
 
 public:
+    static Suggest & instance()
+    {
+        static Suggest instance;
+        return instance;
+    }
+
     /// More old server versions cannot execute the query above.
     static constexpr int MIN_SERVER_REVISION = 54406;
 
@@ -175,12 +181,11 @@ public:
                     connection_parameters.default_database,
                     connection_parameters.user,
                     connection_parameters.password,
-                    connection_parameters.timeouts,
                     "client",
                     connection_parameters.compression,
                     connection_parameters.security);
 
-                loadImpl(connection, suggestion_limit);
+                loadImpl(connection, connection_parameters.timeouts, suggestion_limit);
             }
             catch (...)
             {

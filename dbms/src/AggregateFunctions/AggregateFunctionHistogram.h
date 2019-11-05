@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -304,9 +305,9 @@ private:
     const UInt32 max_bins;
 
 public:
-    AggregateFunctionHistogram(UInt32 max_bins, const DataTypes & arguments, const Array & params)
+    AggregateFunctionHistogram(UInt32 max_bins_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params)
-        , max_bins(max_bins)
+        , max_bins(max_bins_)
     {
     }
 
@@ -333,7 +334,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        auto val = static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+        auto val = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
         this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
@@ -356,13 +357,13 @@ public:
     {
         auto & data = this->data(const_cast<AggregateDataPtr>(place));
 
-        auto & to_array = static_cast<ColumnArray &>(to);
+        auto & to_array = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = to_array.getOffsets();
-        auto & to_tuple = static_cast<ColumnTuple &>(to_array.getData());
+        auto & to_tuple = assert_cast<ColumnTuple &>(to_array.getData());
 
-        auto & to_lower = static_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(0));
-        auto & to_upper = static_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(1));
-        auto & to_weights = static_cast<ColumnVector<Data::Weight> &>(to_tuple.getColumn(2));
+        auto & to_lower = assert_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(0));
+        auto & to_upper = assert_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(1));
+        auto & to_weights = assert_cast<ColumnVector<Data::Weight> &>(to_tuple.getColumn(2));
         data.insertResultInto(to_lower, to_upper, to_weights, max_bins);
 
         offsets_to.push_back(to_tuple.size());

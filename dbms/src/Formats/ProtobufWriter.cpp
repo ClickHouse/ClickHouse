@@ -1,5 +1,7 @@
-#include <Common/config.h>
+#include "config_formats.h"
 #if USE_PROTOBUF
+
+#include "ProtobufWriter.h"
 
 #include <cassert>
 #include <optional>
@@ -11,7 +13,6 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "ProtobufWriter.h"
 
 
 namespace DB
@@ -140,7 +141,8 @@ void ProtobufWriter::SimpleWriter::endMessage()
     size_t size_of_message = buffer.size() - num_bytes_skipped;
     writeVarint(size_of_message, out);
     for (const auto & piece : pieces)
-        out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
+        if (piece.end > piece.start)
+            out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
     buffer.clear();
     pieces.clear();
     num_bytes_skipped = 0;
@@ -524,7 +526,7 @@ public:
 
     void writeEnum16(Int16 value) override
     {
-        if constexpr (!std::is_integral_v<ToType>)
+        if constexpr (!is_integral_v<ToType>)
             cannotConvertType("Enum"); // It's not correct to convert enum to floating point.
         castNumericAndWriteField(value);
     }

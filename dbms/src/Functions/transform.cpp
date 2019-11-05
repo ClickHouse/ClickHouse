@@ -155,7 +155,7 @@ public:
 
         const auto in = block.getByPosition(arguments.front()).column.get();
 
-        if (in->isColumnConst())
+        if (isColumnConst(*in))
         {
             executeConst(block, arguments, result, input_rows_count);
             return;
@@ -228,7 +228,7 @@ private:
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
             }
-            else if (default_untyped->isColumnConst())
+            else if (isColumnConst(*default_untyped))
             {
                 if (!executeNumToNumWithConstDefault<T, UInt8>(in, out_untyped)
                     && !executeNumToNumWithConstDefault<T, UInt16>(in, out_untyped)
@@ -281,7 +281,7 @@ private:
                     throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN};
             }
-            else if (default_untyped->isColumnConst())
+            else if (isColumnConst(*default_untyped))
             {
                 if (!executeStringToNumWithConstDefault<UInt8>(in, out_untyped)
                     && !executeStringToNumWithConstDefault<UInt16>(in, out_untyped)
@@ -507,8 +507,8 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));    /// little endian.
+            if (it)
+                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = dst_default;
         }
@@ -523,8 +523,8 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));    /// little endian.
+            if (it)
+                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = dst_default[i];
         }
@@ -539,8 +539,8 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
+            if (it)
+                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
             else
                 dst[i] = src[i];
         }
@@ -557,7 +557,7 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            StringRef ref = it != table.end() ? it->getSecond() : dst_default;
+            StringRef ref = it ? *lookupResultGetMapped(it) : dst_default;
             dst_data.resize(current_dst_offset + ref.size);
             memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
             current_dst_offset += ref.size;
@@ -580,8 +580,8 @@ private:
             auto it = table.find(src[i]);
             StringRef ref;
 
-            if (it != table.end())
-                ref = it->getSecond();
+            if (it)
+                ref = *lookupResultGetMapped(it);
             else
             {
                 ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
@@ -610,8 +610,8 @@ private:
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
+            if (it)
+                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
             else
                 dst[i] = dst_default;
         }
@@ -631,8 +631,8 @@ private:
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
-            if (it != table.end())
-                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
+            if (it)
+                memcpy(&dst[i], lookupResultGetMapped(it), sizeof(dst[i]));
             else
                 dst[i] = dst_default[i];
         }
@@ -655,7 +655,7 @@ private:
 
             auto it = table.find(src_ref);
 
-            StringRef dst_ref = it != table.end() ? it->getSecond() : (with_default ? dst_default : src_ref);
+            StringRef dst_ref = it ? *lookupResultGetMapped(it) : (with_default ? dst_default : src_ref);
             dst_data.resize(current_dst_offset + dst_ref.size);
             memcpy(&dst_data[current_dst_offset], dst_ref.data, dst_ref.size);
             current_dst_offset += dst_ref.size;
@@ -696,8 +696,8 @@ private:
             auto it = table.find(src_ref);
             StringRef dst_ref;
 
-            if (it != table.end())
-                dst_ref = it->getSecond();
+            if (it)
+                dst_ref = *lookupResultGetMapped(it);
             else
             {
                 dst_ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);

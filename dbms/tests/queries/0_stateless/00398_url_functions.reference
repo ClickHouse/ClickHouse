@@ -12,13 +12,17 @@ www.example.com
 127.0.0.1
 www.example.com
 www.example.com
+www.example.com
+example.com
 example.com
 example.com
 ====DOMAIN====
 com
 
 ru
-ru
+
+com
+com
 com
 ====PATH====
 П
@@ -54,6 +58,8 @@ query=hello world+foo+bar#a=b
 query=hello world+foo+bar#a=b
 #a=b
 ====CUT TO FIRST SIGNIFICANT SUBDOMAIN====
+example.com
+example.com
 example.com
 example.com
 example.com

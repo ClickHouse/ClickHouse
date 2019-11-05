@@ -1,5 +1,6 @@
--- Must use `test` database and this tables - they configured in dbms/tests/*_dictionary.xml
-use test;
+-- Must use `test_00950` database and these tables - they're configured in dbms/tests/*_dictionary.xml
+create database if not exists test_00950;
+use test_00950;
 drop table if exists ints;
 drop table if exists strings;
 drop table if exists decimals;
@@ -59,6 +60,34 @@ select 'dictGetOrDefault', 'hashed_ints' as dict_name, toUInt64(1) as k,
     dictGetOrDefault(dict_name, 'u32', k, toUInt32(42)),
     dictGetOrDefault(dict_name, 'u64', k, toUInt64(42));
 select 'dictGetOrDefault', 'hashed_ints' as dict_name, toUInt64(0) as k,
+    dictGetOrDefault(dict_name, 'i8', k, toInt8(42)),
+    dictGetOrDefault(dict_name, 'i16', k, toInt16(42)),
+    dictGetOrDefault(dict_name, 'i32', k, toInt32(42)),
+    dictGetOrDefault(dict_name, 'i64', k, toInt64(42)),
+    dictGetOrDefault(dict_name, 'u8', k, toUInt8(42)),
+    dictGetOrDefault(dict_name, 'u16', k, toUInt16(42)),
+    dictGetOrDefault(dict_name, 'u32', k, toUInt32(42)),
+    dictGetOrDefault(dict_name, 'u64', k, toUInt64(42));
+
+select 'dictGet', 'hashed_sparse_ints' as dict_name, toUInt64(1) as k,
+    dictGet(dict_name, 'i8', k),
+    dictGet(dict_name, 'i16', k),
+    dictGet(dict_name, 'i32', k),
+    dictGet(dict_name, 'i64', k),
+    dictGet(dict_name, 'u8', k),
+    dictGet(dict_name, 'u16', k),
+    dictGet(dict_name, 'u32', k),
+    dictGet(dict_name, 'u64', k);
+select 'dictGetOrDefault', 'hashed_sparse_ints' as dict_name, toUInt64(1) as k,
+    dictGetOrDefault(dict_name, 'i8', k, toInt8(42)),
+    dictGetOrDefault(dict_name, 'i16', k, toInt16(42)),
+    dictGetOrDefault(dict_name, 'i32', k, toInt32(42)),
+    dictGetOrDefault(dict_name, 'i64', k, toInt64(42)),
+    dictGetOrDefault(dict_name, 'u8', k, toUInt8(42)),
+    dictGetOrDefault(dict_name, 'u16', k, toUInt16(42)),
+    dictGetOrDefault(dict_name, 'u32', k, toUInt32(42)),
+    dictGetOrDefault(dict_name, 'u64', k, toUInt64(42));
+select 'dictGetOrDefault', 'hashed_sparse_ints' as dict_name, toUInt64(0) as k,
     dictGetOrDefault(dict_name, 'i8', k, toInt8(42)),
     dictGetOrDefault(dict_name, 'i16', k, toInt16(42)),
     dictGetOrDefault(dict_name, 'i32', k, toInt32(42)),
@@ -244,3 +273,4 @@ select 'dictGetOrDefault', 'complex_cache_decimals' as dict_name, tuple(toUInt64
 drop table ints;
 drop table strings;
 drop table decimals;
+drop database test_00950;

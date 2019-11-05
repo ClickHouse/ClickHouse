@@ -1,10 +1,13 @@
 #pragma once
 
+#include <variant>
 #include <optional>
 #include <shared_mutex>
+#include <deque>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
 #include <Core/SettingsCommon.h>
@@ -19,12 +22,12 @@
 
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <variant>
-#include <common/constexpr_helpers.h>
 
 
 namespace DB
 {
+
+class AnalyzedJoin;
 
 namespace JoinStuff
 {
@@ -118,28 +121,22 @@ using MappedAsof =      WithFlags<AsofRowRefs, false>;
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
-class Join
+class Join : public IJoin
 {
 public:
-    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
-         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_ = false);
+    Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
     bool empty() { return type == Type::EMPTY; }
-
-    /** Set information about structure of right hand of JOIN (joined data).
-      * You must call this method before subsequent calls to insertFromBlock.
-      */
-    void setSampleBlock(const Block & block);
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool insertFromBlock(const Block & block);
+    bool addJoinedBlock(const Block & block) override;
 
-    /** Join data from the map (that was previously built by calls to insertFromBlock) to the block with data from "left" table.
+    /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const;
+    void joinBlock(Block & block) override;
 
     /// Infer the return type for joinGet function
     DataTypePtr joinGetReturnType(const String & column_name) const;
@@ -149,26 +146,29 @@ public:
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
-    void setTotals(const Block & block) { totals = block; }
-    bool hasTotals() const { return totals; }
+    void setTotals(const Block & block) override { totals = block; }
+    bool hasTotals() const override { return totals; }
 
-    void joinTotals(Block & block) const;
+    void joinTotals(Block & block) const override;
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                      const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
-    size_t getTotalRowCount() const;
+    size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const;
 
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && has_no_rows_in_maps; }
+
     ASTTableJoin::Kind getKind() const { return kind; }
+    ASTTableJoin::Strictness getStrictness() const { return strictness; }
     AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
     /// Different types of keys for maps.
@@ -271,109 +271,43 @@ public:
     using MapsAllFull =         MapsTemplate<JoinStuff::MappedAllFull>;
     using MapsAsof =            MapsTemplate<JoinStuff::MappedAsof>;
 
-    template <ASTTableJoin::Kind KIND>
-    struct KindTrait
-    {
-        // Affects the Adder trait so that when the right part is empty, adding a default value on the left
-        static constexpr bool fill_left = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
-
-        // Affects the Map trait so that a `used` flag is attached to map slots in order to
-        // generate default values on the right when the left part is empty
-        static constexpr bool fill_right = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
-    };
-
-    template <bool fill_right, typename ASTTableJoin::Strictness>
-    struct MapGetterImpl;
-
-    template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness>
-    using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness>::Map;
-
-    static constexpr std::array<ASTTableJoin::Strictness, 3> STRICTNESSES
-        = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All, ASTTableJoin::Strictness::Asof};
-    static constexpr std::array<ASTTableJoin::Kind, 4> KINDS
-        = {ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Full, ASTTableJoin::Kind::Right};
-
-    struct MapInitTag {};
-
-    template <typename Func>
-    bool dispatch(Func && func)
-    {
-        if (any_take_last_row)
-        {
-            return static_for<0, KINDS.size()>([&](auto i)
-            {
-                if (kind == KINDS[i] && strictness == ASTTableJoin::Strictness::Any)
-                {
-                    if constexpr (std::is_same_v<Func, MapInitTag>)
-                        maps = Map<KINDS[i], ASTTableJoin::Strictness::Any>();
-                    else
-                        func(
-                            std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
-                            std::integral_constant<ASTTableJoin::Strictness, ASTTableJoin::Strictness::Any>(),
-                            std::get<Map<KINDS[i], ASTTableJoin::Strictness::Any>>(maps));
-                    return true;
-                }
-                return false;
-            });
-        }
-        else
-        {
-            return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
-            {
-                // NOTE: Avoid using nested static loop as GCC and CLANG have bugs in different ways
-                // See https://stackoverflow.com/questions/44386415/gcc-and-clang-disagree-about-c17-constexpr-lambda-captures
-                constexpr auto i = ij / STRICTNESSES.size();
-                constexpr auto j = ij % STRICTNESSES.size();
-                if (kind == KINDS[i] && strictness == STRICTNESSES[j])
-                {
-                    if constexpr (std::is_same_v<Func, MapInitTag>)
-                        maps = Map<KINDS[i], STRICTNESSES[j]>();
-                    else
-                        func(
-                            std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
-                            std::integral_constant<ASTTableJoin::Strictness, STRICTNESSES[j]>(),
-                            std::get<Map<KINDS[i], STRICTNESSES[j]>>(maps));
-                    return true;
-                }
-                return false;
-            });
-        }
-    }
-
-    template <typename Func>
-    bool dispatch(Func && func) const
-    {
-        return const_cast<Join &>(*this).dispatch(std::forward<Func>(func));
-    }
+    using MapsVariant = std::variant<MapsAny, MapsAll, MapsAnyFull, MapsAllFull, MapsAsof>;
 
 private:
     friend class NonJoinedBlockInputStream;
     friend class JoinBlockInputStream;
 
+    std::shared_ptr<AnalyzedJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
-    /// Names of key columns (columns for equi-JOIN) in "right" table (in the order they appear in USING clause).
-    const Names key_names_right;
+    /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
+    const Names & key_names_right;
 
-    /// Substitute NULLs for non-JOINed rows.
-    bool use_nulls;
+    /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
+    bool nullable_right_side;
+    /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
+    bool nullable_left_side;
 
     /// Overwrite existing values when encountering the same key again
     bool any_take_last_row;
 
-    /** Blocks of "right" table.
-      */
+    /// Blocks of "right" table.
     BlocksList blocks;
 
-    std::variant<MapsAny, MapsAll, MapsAnyFull, MapsAllFull, MapsAsof> maps;
+    /// Nullmaps for blocks of "right" table (if needed)
+    using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
+    BlockNullmapList blocks_nullmaps;
+
+    MapsVariant maps;
+    bool has_no_rows_in_maps = true;
 
     /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
     Arena pool;
 
-private:
     Type type = Type::EMPTY;
     std::optional<AsofRowRefs::Type> asof_type;
+    ASOF::Inequality asof_inequality;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
@@ -381,16 +315,17 @@ private:
 
     /// Block with columns from the right-side table except key columns.
     Block sample_block_with_columns_to_add;
-    /// Block with key columns in the same order they appear in the right-side table.
-    Block sample_block_with_keys;
+    /// Block with key columns in the same order they appear in the right-side table (duplicates appear once).
+    Block right_table_keys;
+    /// Block with key columns right-side table keys that are needed in result (would be attached after joined columns).
+    Block required_right_keys;
+    /// Left table column names that are sources for required_right_keys columns
+    std::vector<String> required_right_keys_sources;
 
     /// Block as it would appear in the BlockList
-    Block blocklist_sample;
+    Block saved_block_sample;
 
     Poco::Logger * log;
-
-    /// Limits for maximum map size.
-    SizeLimits limits;
 
     Block totals;
 
@@ -403,19 +338,19 @@ private:
 
     void init(Type type_);
 
-    /** Take an inserted block and discard everything that does not need to be stored
-     *  Example, remove the keys as they come from the LHS block, but do keep the ASOF timestamps
-     */
-    void prepareBlockListStructure(Block & stored_block);
+    /** Set information about structure of right hand of JOIN (joined data).
+      */
+    void setSampleBlock(const Block & block);
 
-    /// Throw an exception if blocks have different types of key columns.
-    void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right) const;
+    /// Modify (structure) and save right block, @returns pointer to saved block
+    Block * storeRightBlock(const Block & stored_block);
+    void initRightBlockStructure();
+    void initRequiredRightKeys();
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(
         Block & block,
         const Names & key_names_left,
-        const NamesAndTypesList & columns_added_by_join,
         const Block & block_with_columns_to_add,
         const Maps & maps) const;
 
@@ -423,39 +358,6 @@ private:
 
     template <typename Maps>
     void joinGetImpl(Block & block, const String & column_name, const Maps & maps) const;
-};
-
-using JoinPtr = std::shared_ptr<Join>;
-using Joins = std::vector<JoinPtr>;
-
-template <>
-struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::Any>
-{
-    using Map = MapsAny;
-};
-
-template <>
-struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::Any>
-{
-    using Map = MapsAnyFull;
-};
-
-template <>
-struct Join::MapGetterImpl<false, ASTTableJoin::Strictness::All>
-{
-    using Map = MapsAll;
-};
-
-template <>
-struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::All>
-{
-    using Map = MapsAllFull;
-};
-
-template <bool fill_right>
-struct Join::MapGetterImpl<fill_right, ASTTableJoin::Strictness::Asof>
-{
-    using Map = MapsAsof;
 };
 
 }

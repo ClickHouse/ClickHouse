@@ -1,7 +1,6 @@
 #pragma once
 
 
-#include <Core/Field.h>
 #include <Core/Names.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
@@ -55,6 +54,8 @@ struct IDictionaryBase : public IExternalLoadable
         auto source = getSource();
         return source && source->isModified();
     }
+
+    virtual std::exception_ptr getLastException() const { return {}; }
 
     std::shared_ptr<IDictionaryBase> shared_from_this()
     {

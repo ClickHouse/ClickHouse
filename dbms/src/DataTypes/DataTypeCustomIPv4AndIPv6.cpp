@@ -98,7 +98,7 @@ public:
     }
 };
 
-} // namespace
+}
 
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
 {
@@ -115,4 +115,4 @@ void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
     });
 }
 
-} // namespace DB
+}

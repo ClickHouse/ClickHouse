@@ -51,9 +51,13 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
     {
+        /// Lazy database can not contain replicated tables
+        if (db.second->getEngineName() == "Lazy")
+            continue;
+
         if (context.hasDatabaseAccessRights(db.first))
         {
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
                 if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                     replicated_tables[db.first][iterator->name()] = iterator->table();
         }
@@ -108,8 +112,8 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
 
             Array parts_to_merge;
             parts_to_merge.reserve(entry.source_parts.size());
-            for (const auto & name : entry.source_parts)
-                parts_to_merge.push_back(name);
+            for (const auto & part_name : entry.source_parts)
+                parts_to_merge.push_back(part_name);
 
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);

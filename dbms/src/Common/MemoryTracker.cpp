@@ -1,3 +1,5 @@
+#include <cstdlib>
+
 #include "MemoryTracker.h"
 #include <common/likely.h>
 #include <common/logger_useful.h>
@@ -17,6 +19,8 @@ namespace DB
 
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
+/// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
+static constexpr Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
 
 MemoryTracker::~MemoryTracker()
@@ -85,6 +89,9 @@ void MemoryTracker::alloc(Int64 size)
     {
         free(size);
 
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        auto untrack_lock = blocker.cancel();
+
         std::stringstream message;
         message << "Memory tracker";
         if (description)
@@ -99,6 +106,9 @@ void MemoryTracker::alloc(Int64 size)
     if (unlikely(current_limit && will_be > current_limit))
     {
         free(size);
+
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        auto untrack_lock = blocker.cancel();
 
         std::stringstream message;
         message << "Memory limit";
@@ -191,19 +201,41 @@ namespace CurrentMemoryTracker
     void alloc(Int64 size)
     {
         if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
-            memory_tracker->alloc(size);
+        {
+            Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
+            untracked += size;
+            if (untracked > untracked_memory_limit)
+            {
+                /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
+                /// more. It could be usefull for enlarge Exception message in rethrow logic.
+                Int64 tmp = untracked;
+                untracked = 0;
+                memory_tracker->alloc(tmp);
+            }
+        }
     }
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
-            memory_tracker->alloc(new_size - old_size);
+        Int64 addition = new_size - old_size;
+        if (addition > 0)
+            alloc(addition);
+        else
+            free(-addition);
     }
 
     void free(Int64 size)
     {
         if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
-            memory_tracker->free(size);
+        {
+            Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
+            untracked -= size;
+            if (untracked < -untracked_memory_limit)
+            {
+                memory_tracker->free(-untracked);
+                untracked = 0;
+            }
+        }
     }
 }
 

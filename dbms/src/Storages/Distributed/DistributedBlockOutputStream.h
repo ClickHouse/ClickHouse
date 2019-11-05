@@ -3,6 +3,7 @@
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
+#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
@@ -35,7 +36,7 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(const Context & context_, StorageDistributed & storage, const ASTPtr & query_ast,
+    DistributedBlockOutputStream(const Context & context_, StorageDistributed & storage_, const ASTPtr & query_ast_,
                                  const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_);
 
     Block getHeader() const override;
@@ -98,8 +99,8 @@ private:
     struct JobReplica
     {
         JobReplica() = default;
-        JobReplica(size_t shard_index, size_t replica_index, bool is_local_job, const Block & sample_block)
-            : shard_index(shard_index), replica_index(replica_index), is_local_job(is_local_job), current_shard_block(sample_block.cloneEmpty()) {}
+        JobReplica(size_t shard_index_, size_t replica_index_, bool is_local_job_, const Block & sample_block)
+            : shard_index(shard_index_), replica_index(replica_index_), is_local_job(is_local_job_), current_shard_block(sample_block.cloneEmpty()) {}
 
         size_t shard_index = 0;
         size_t replica_index = 0;

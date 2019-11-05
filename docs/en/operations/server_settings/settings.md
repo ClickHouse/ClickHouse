@@ -61,7 +61,7 @@ ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `c
 
 The default database.
 
-To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#show-databases) query.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/show.md#show-databases) query.
 
 **Example**
 
@@ -83,7 +83,7 @@ Settings profiles are located in the file specified in the parameter `user_confi
 ```
 
 
-## dictionaries_config
+## dictionaries_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -101,7 +101,7 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md)"
 ```
 
 
-## dictionaries_lazy_load
+## dictionaries_lazy_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -140,9 +140,10 @@ Settings:
 - interval – The interval for sending, in seconds.
 - timeout – The timeout for sending data, in seconds.
 - root_path – Prefix for keys.
-- metrics – Sending data from a :ref:`system_tables-system.metrics` table.
-- events – Sending data from a :ref:`system_tables-system.events` table.
-- asynchronous_metrics – Sending data from a :ref:`system_tables-system.asynchronous_metrics` table.
+- metrics – Sending data from a [system.metrics](../system_tables.md#system_tables-metrics) table.
+- events – Sending deltas data accumulated for the time period from a [system.events](../system_tables.md#system_tables-events) table.
+- events_cumulative – Sending cumulative data from a [system.events](../system_tables.md#system_tables-events) table.
+- asynchronous_metrics – Sending data from a [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -157,6 +158,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
     <root_path>one_min</root_path>
     <metrics>true</metrics>
     <events>true</events>
+    <events_cumulative>false</events_cumulative>
     <asynchronous_metrics>true</asynchronous_metrics>
 </graphite>
 ```
@@ -258,6 +260,25 @@ Useful for breaking away from a specific network interface.
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
+## interserver_http_credentials {#server-settings-interserver_http_credentials}
+
+The username and password used to authenticate during [replication](../table_engines/replication.md) with the Replicated* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
+By default, the authentication is not used.
+
+This section contains the following parameters:
+
+- `user` — username.
+- `password` — password.
+
+**Example**
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+</interserver_http_credentials>
+```
+
 
 ## keep_alive_timeout
 
@@ -322,8 +343,8 @@ Writing to the syslog is also supported. Config example:
 
 Keys:
 
-- user_syslog — Required setting if you want to write to the syslog.
-- address — The host[:порт] of syslogd. If omitted, the local daemon is used.
+- use_syslog — Required setting if you want to write to the syslog.
+- address — The host[:port] of syslogd. If omitted, the local daemon is used.
 - hostname — Optional. The name of the host that logs are sent from.
 - facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
 Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
@@ -345,11 +366,14 @@ For more information, see the section "[Creating replicated tables](../../operat
 ```
 
 
-## mark_cache_size
+## mark_cache_size {#server-mark-cache-size}
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md).
+Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../operations/table_engines/mergetree.md) family.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+
+!!! warning "Warning"
+    This parameter could be exceeded by the [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime) setting.
 
 **Example**
 
@@ -514,7 +538,7 @@ Use the following parameters to configure logging:
 ```
 
 
-## path
+## path {#server_settings-path}
 
 The path to the directory containing data.
 
@@ -554,12 +578,40 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 </query_log>
 ```
 
+## query_masking_rules
 
-## remote_servers
+Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
+`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to client. That allows preventing
+sensitive data leakage from SQL queries (like names / emails / personal
+identifiers / credit card numbers etc) to logs.
 
-Configuration of clusters used by the Distributed table engine.
+**Example**
 
-For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md)".
+```xml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```
+
+Config fields:
+- `name` - name for the rule (optional)
+- `regexp` - RE2 compatible regular expression (mandatory)
+- `replace` - substitution string for sensitive data (optional, by default - six asterisks)
+
+The masking rules are applied on whole query (to prevent leaks of sensitive data from malformed / non parsable queries).
+
+`system.events` table have counter `QueryMaskingRulesMatch` which have overall number of query masking rules matches.
+
+For distributed queries each server have to be configured separately, otherwise subquries passed to other
+nodes will be stored without masking.
+
+## remote_servers {#server_settings_remote_servers}
+
+Configuration of clusters used by the [Distributed](../../operations/table_engines/distributed.md) table engine and by the `cluster` table function.
 
 **Example**
 
@@ -569,6 +621,9 @@ For more information, see the section "[Table engines/Distributed](../../operati
 
 For the value of the `incl` attribute, see the section "[Configuration files](../configuration_files.md#configuration_files)".
 
+**See Also**
+
+- [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone
 
@@ -666,13 +721,13 @@ Path to the file that contains:
 
 ## zookeeper {#server-settings_zookeeper}
 
-Contains settings that allow ClickHouse to interact with [ZooKeeper](http://zookeeper.apache.org/) cluster.
+Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this parameter section can be omitted.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This parameter section contains the following parameters:
+This section contains the following parameters:
 
-- `node` — ZooKeeper endpoint. You can set a few endpoints.
+- `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
     For example:
 
@@ -683,12 +738,11 @@ This parameter section contains the following parameters:
     </node>
     ```
 
-    The `index` attribute is not used in ClickHouse. The only reason for this attribute is to allow some other programs to use the same configuraton.
+    The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
-- `session_timeout_ms` — Maximum timeout for client session in milliseconds (default: 30000).
-- `operation_timeout_ms` — Maximum timeout for operation in milliseconds (default: 10000).
-- `root` — ZNode, that is used as root for znodes used by ClickHouse server. Optional.
-- `identity` — User and password, required by ZooKeeper to give access to requested znodes. Optional.
+- `session_timeout` — Maximum timeout for the client session in milliseconds.
+- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 
@@ -743,5 +797,19 @@ If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_e
     Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 
 **Default value:** 0.
+
+## disable_internal_dns_cache {#server-settings-disable_internal_dns_cache}
+
+Disables the internal DNS cache. Recommended for operating ClickHouse in systems
+with frequently changing infrastructure such as Kubernetes.
+
+**Default value:** 0.
+
+## dns_cache_update_period {#server-settings-dns_cache_update_period}
+
+The period of updating IP addresses stored in the ClickHouse internal DNS cache (in seconds).
+The update is performed asynchronously, in a separate system thread.
+
+**Default value**: 15.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

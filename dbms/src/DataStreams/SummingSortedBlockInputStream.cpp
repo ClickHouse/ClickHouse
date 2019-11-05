@@ -10,6 +10,7 @@
 #include <Common/FieldVisitors.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -297,7 +298,7 @@ Block SummingSortedBlockInputStream::readImpl()
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();
             for (size_t i = 0; i < tuple_size; ++i)
-                res.getByPosition(desc.column_numbers[i]).column = static_cast<const ColumnTuple &>(*desc.merged_column).getColumnPtr(i);
+                res.getByPosition(desc.column_numbers[i]).column = assert_cast<const ColumnTuple &>(*desc.merged_column).getColumnPtr(i);
         }
         else
             res.getByPosition(desc.column_numbers[0]).column = std::move(desc.merged_column);
@@ -491,7 +492,7 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
         {
             // desc.state is not used for AggregateFunction types
             auto & col = cursor->all_columns[desc.column_numbers[0]];
-            static_cast<ColumnAggregateFunction &>(*desc.merged_column).insertMergeFrom(*col, cursor->pos);
+            assert_cast<ColumnAggregateFunction &>(*desc.merged_column).insertMergeFrom(*col, cursor->pos);
         }
         else
         {

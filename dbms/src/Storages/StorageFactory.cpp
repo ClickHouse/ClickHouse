@@ -46,6 +46,7 @@ StoragePtr StorageFactory::get(
     Context & local_context,
     Context & context,
     const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
     bool attach,
     bool has_force_restore_data_flag) const
 {
@@ -59,6 +60,14 @@ StoragePtr StorageFactory::get(
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
         name = "View";
+    }
+    else if (query.is_live_view)
+    {
+
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
+
+        name = "LiveView";
     }
     else
     {
@@ -95,11 +104,12 @@ StoragePtr StorageFactory::get(
             }
 
             if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by ||
-                 (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
+                storage_def->ttl_table || !columns.getColumnTTLs().empty() ||
+                (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty()))
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses and skipping indices. "
+                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY, TTL or SAMPLE BY clauses and skipping indices. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 
@@ -113,6 +123,12 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(
                     "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement",
+                    ErrorCodes::INCORRECT_QUERY);
+            }
+            else if (name == "LiveView")
+            {
+                throw Exception(
+                    "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
         }
@@ -140,11 +156,18 @@ StoragePtr StorageFactory::get(
         .local_context = local_context,
         .context = context,
         .columns = columns,
+        .constraints = constraints,
         .attach = attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
 
     return it->second(arguments);
+}
+
+StorageFactory & StorageFactory::instance()
+{
+    static StorageFactory ret;
+    return ret;
 }
 
 }

@@ -4,6 +4,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitors.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
+    extern const int CANNOT_PARSE_BOOL;
 }
 
 
@@ -63,12 +65,36 @@ void SettingNumber<Type>::set(const String & x)
     set(parse<Type>(x));
 }
 
+template <>
+void SettingNumber<bool>::set(const String & x)
+{
+    if (x.size() == 1)
+    {
+        if (x[0] == '0')
+            set(false);
+        else if (x[0] == '1')
+            set(true);
+        else
+            throw Exception("Cannot parse bool from string '" + x + "'", ErrorCodes::CANNOT_PARSE_BOOL);
+    }
+    else
+    {
+        ReadBufferFromString buf(x);
+        if (checkStringCaseInsensitive("true", buf))
+            set(true);
+        else if (checkStringCaseInsensitive("false", buf))
+            set(false);
+        else
+            throw Exception("Cannot parse bool from string '" + x + "'", ErrorCodes::CANNOT_PARSE_BOOL);
+    }
+}
+
 template <typename Type>
 void SettingNumber<Type>::serialize(WriteBuffer & buf) const
 {
-    if constexpr (std::is_integral_v<Type> && std::is_unsigned_v<Type>)
+    if constexpr (is_integral_v<Type> && is_unsigned_v<Type>)
         writeVarUInt(static_cast<UInt64>(value), buf);
-    else if constexpr (std::is_integral_v<Type> && std::is_signed_v<Type>)
+    else if constexpr (is_integral_v<Type> && is_signed_v<Type>)
         writeVarInt(static_cast<Int64>(value), buf);
     else
     {
@@ -80,13 +106,13 @@ void SettingNumber<Type>::serialize(WriteBuffer & buf) const
 template <typename Type>
 void SettingNumber<Type>::deserialize(ReadBuffer & buf)
 {
-    if constexpr (std::is_integral_v<Type> && std::is_unsigned_v<Type>)
+    if constexpr (is_integral_v<Type> && is_unsigned_v<Type>)
     {
         UInt64 x;
         readVarUInt(x, buf);
         set(static_cast<Type>(x));
     }
-    else if constexpr (std::is_integral_v<Type> && std::is_signed_v<Type>)
+    else if constexpr (is_integral_v<Type> && is_signed_v<Type>)
     {
         Int64 x;
         readVarInt(x, buf);
@@ -313,6 +339,18 @@ void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf)
     String s;
     readBinary(s, buf);
     set(s);
+}
+
+template <typename EnumType, typename Tag>
+Field SettingEnum<EnumType, Tag>::toField() const
+{
+    return toString();
+}
+
+template <typename EnumType, typename Tag>
+void SettingEnum<EnumType, Tag>::set(const Field & x)
+{
+    set(safeGet<const String &>(x));
 }
 
 

@@ -19,7 +19,7 @@ FROM
             count(),
             1
         FROM test_00744
-    ) USING (1)
+    ) jss2 USING (1)
     LIMIT 10
 );
 
@@ -33,5 +33,5 @@ ALL INNER JOIN
         count(),
         1
     FROM test_00744
-) USING (1)
+) js2 USING (1)
 LIMIT 10;

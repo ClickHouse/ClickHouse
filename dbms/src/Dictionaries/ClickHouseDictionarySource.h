@@ -22,11 +22,12 @@ public:
         const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const Block & sample_block,
-        Context & context);
+        const Block & sample_block_,
+        const Context & context);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
+    ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
     BlockInputStreamPtr loadAll() override;
 

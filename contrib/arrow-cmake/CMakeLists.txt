@@ -46,6 +46,75 @@ set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE aft
 target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
 
 
+# === orc
+
+set(ORC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/orc/c++)
+set(ORC_INCLUDE_DIR ${ORC_SOURCE_DIR}/include)
+set(ORC_SOURCE_SRC_DIR ${ORC_SOURCE_DIR}/src)
+set(ORC_SOURCE_WRAP_DIR ${ORC_SOURCE_DIR}/wrap)
+
+set(ORC_BUILD_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src)
+set(ORC_BUILD_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include)
+
+set(GOOGLE_PROTOBUF_DIR ${Protobuf_INCLUDE_DIR}/)
+set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(ARROW_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src)
+
+set(PROTOBUF_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
+set(PROTO_DIR ${ORC_SOURCE_DIR}/../proto)
+
+
+add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
+        COMMAND ${PROTOBUF_EXECUTABLE}
+        -I ${PROTO_DIR}
+        --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+        "${PROTO_DIR}/orc_proto.proto")
+
+# arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features. 
+# Apple Clang compiler failed to compile this code without specifying c++11 standard. 
+# As result these compiler features detected as absent. In result it failed to compile orc itself.
+# In orc makefile there is code that sets flags, but arrow-cmake ignores these flags.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  set (CXX11_FLAGS "-std=c++0x")
+endif()
+
+include(${ClickHouse_SOURCE_DIR}/contrib/orc/cmake_modules/CheckSourceCompiles.cmake)
+include(orc_check.cmake)
+configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in"  "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")
+configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
+
+
+set(ORC_SRCS
+        ${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc
+        ${ORC_SOURCE_SRC_DIR}/Exceptions.cc
+        ${ORC_SOURCE_SRC_DIR}/OrcFile.cc
+        ${ORC_SOURCE_SRC_DIR}/Reader.cc
+        ${ORC_SOURCE_SRC_DIR}/ByteRLE.cc
+        ${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc
+        ${ORC_SOURCE_SRC_DIR}/ColumnReader.cc
+        ${ORC_SOURCE_SRC_DIR}/ColumnWriter.cc
+        ${ORC_SOURCE_SRC_DIR}/Common.cc
+        ${ORC_SOURCE_SRC_DIR}/Compression.cc
+        ${ORC_SOURCE_SRC_DIR}/Exceptions.cc
+        ${ORC_SOURCE_SRC_DIR}/Int128.cc
+        ${ORC_SOURCE_SRC_DIR}/LzoDecompressor.cc
+        ${ORC_SOURCE_SRC_DIR}/MemoryPool.cc
+        ${ORC_SOURCE_SRC_DIR}/OrcFile.cc
+        ${ORC_SOURCE_SRC_DIR}/Reader.cc
+        ${ORC_SOURCE_SRC_DIR}/RLE.cc
+        ${ORC_SOURCE_SRC_DIR}/RLEv1.cc
+        ${ORC_SOURCE_SRC_DIR}/RLEv2.cc
+        ${ORC_SOURCE_SRC_DIR}/Statistics.cc
+        ${ORC_SOURCE_SRC_DIR}/StripeStream.cc
+        ${ORC_SOURCE_SRC_DIR}/Timezone.cc
+        ${ORC_SOURCE_SRC_DIR}/TypeImpl.cc
+        ${ORC_SOURCE_SRC_DIR}/Vector.cc
+        ${ORC_SOURCE_SRC_DIR}/Writer.cc
+        ${ORC_SOURCE_SRC_DIR}/io/InputStream.cc
+        ${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc
+        ${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc
+        )
+
 
 # === arrow
 
@@ -102,6 +171,7 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/util/thread-pool.cc
   ${LIBRARY_DIR}/util/trie.cc
   ${LIBRARY_DIR}/util/utf8.cc
+  ${ORC_SRCS}
 )
 
 set(ARROW_SRCS ${ARROW_SRCS}
@@ -150,8 +220,13 @@ endif()
 
 
 add_library(${ARROW_LIBRARY} ${ARROW_SRCS})
+
+if (USE_INTERNAL_PROTOBUF_LIBRARY)
+    add_dependencies(${ARROW_LIBRARY} protoc)
+endif()
+
 target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
-target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} Threads::Threads)
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
 if (ARROW_WITH_LZ4)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${LZ4_LIBRARY})
 endif()
@@ -165,6 +240,14 @@ if (ARROW_WITH_ZSTD)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${ZSTD_LIBRARY})
 endif()
 
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_WRAP_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
 
 # === parquet
 

@@ -17,9 +17,11 @@ namespace ErrorCodes
 }
 
 
-FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
-                                               const String & filter_column_name, bool remove_filter)
-    : remove_filter(remove_filter), expression(expression_)
+FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, ExpressionActionsPtr expression_,
+                                               String filter_column_name_, bool remove_filter_)
+    : remove_filter(remove_filter_)
+    , expression(std::move(expression_))
+    , filter_column_name(std::move(filter_column_name_))
 {
     children.push_back(input);
 
@@ -72,6 +74,9 @@ Block FilterBlockInputStream::readImpl()
     if (constant_filter_description.always_false)
         return removeFilterIfNeed(std::move(res));
 
+    if (expression->checkColumnIsAlwaysFalse(filter_column_name))
+        return {};
+
     /// Until non-empty block after filtering or end of stream.
     while (1)
     {
@@ -112,7 +117,7 @@ Block FilterBlockInputStream::readImpl()
         size_t first_non_constant_column = 0;
         for (size_t i = 0; i < columns; ++i)
         {
-            if (!res.safeGetByPosition(i).column->isColumnConst())
+            if (!isColumnConst(*res.safeGetByPosition(i).column))
             {
                 first_non_constant_column = i;
 
@@ -165,7 +170,7 @@ Block FilterBlockInputStream::readImpl()
             if (i == first_non_constant_column)
                 continue;
 
-            if (current_column.column->isColumnConst())
+            if (isColumnConst(*current_column.column))
                 current_column.column = current_column.column->cut(0, filtered_rows);
             else
                 current_column.column = current_column.column->filter(*filter_and_holder.data, -1);

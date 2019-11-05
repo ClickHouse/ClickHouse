@@ -13,7 +13,7 @@ class Context;
 class FileDictionarySource final : public IDictionarySource
 {
 public:
-    FileDictionarySource(const std::string & filename, const std::string & format, Block & sample_block, const Context & context);
+    FileDictionarySource(const std::string & filename_, const std::string & format_, Block & sample_block_, const Context & context_);
 
     FileDictionarySource(const FileDictionarySource & other);
 

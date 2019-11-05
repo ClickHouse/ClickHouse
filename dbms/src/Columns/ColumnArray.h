@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Defines.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -89,12 +91,12 @@ public:
 
     Offsets & ALWAYS_INLINE getOffsets()
     {
-        return static_cast<ColumnOffsets &>(*offsets).getData();
+        return assert_cast<ColumnOffsets &>(*offsets).getData();
     }
 
     const Offsets & ALWAYS_INLINE getOffsets() const
     {
-        return static_cast<const ColumnOffsets &>(*offsets).getData();
+        return assert_cast<const ColumnOffsets &>(*offsets).getData();
     }
 
     const ColumnPtr & getDataPtr() const { return data; }

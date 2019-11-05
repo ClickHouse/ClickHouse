@@ -129,7 +129,7 @@ find_package_handle_standard_args(ODBC
 )
 
 if(ODBC_FOUND)
-  set(ODBC_LIBRARIES ${ODBC_LIBRARY} ${_odbc_required_libs_paths})
+  set(ODBC_LIBRARIES ${ODBC_LIBRARY} ${_odbc_required_libs_paths} ${LTDL_LIBRARY})
   set(ODBC_INCLUDE_DIRS ${ODBC_INCLUDE_DIR})
   set(ODBC_DEFINITIONS ${PC_ODBC_CFLAGS_OTHER})
 endif()

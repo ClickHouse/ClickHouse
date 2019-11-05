@@ -23,16 +23,14 @@ class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
 public:
     ComplexKeyHashedDictionary(
-        const std::string & name,
-        const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime,
-        bool require_nonempty,
-        BlockPtr saved_block = nullptr);
+        const std::string & name_,
+        const DictionaryStructure & dict_struct_,
+        DictionarySourcePtr source_ptr_,
+        const DictionaryLifetime dict_lifetime_,
+        bool require_nonempty_,
+        BlockPtr saved_block_ = nullptr);
 
     std::string getKeyDescription() const { return key_description; }
-
-    std::exception_ptr getCreationException() const override { return creation_exception; }
 
     std::string getName() const override { return name; }
 
@@ -50,9 +48,9 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
+    std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_unique<ComplexKeyHashedDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+        return std::make_shared<ComplexKeyHashedDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -60,8 +58,6 @@ public:
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
-
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -254,10 +250,6 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
-
-    std::chrono::time_point<std::chrono::system_clock> creation_time;
-
-    std::exception_ptr creation_exception;
 
     BlockPtr saved_block;
 };

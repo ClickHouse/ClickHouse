@@ -1,5 +1,4 @@
 <test>
-    <name>set_lookup_hits</name>
     <type>loop</type>
 
     <preconditions>

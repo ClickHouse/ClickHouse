@@ -21,19 +21,19 @@ struct ASTTableExpression;
 class RequiredSourceColumnsMatcher
 {
 public:
-    using Visitor = InDepthNodeVisitor<RequiredSourceColumnsMatcher, false>;
+    using Visitor = ConstInDepthNodeVisitor<RequiredSourceColumnsMatcher, false>;
     using Data = ColumnNamesContext;
 
-    static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
-    static void visit(ASTPtr & ast, Data & data);
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
+    static void visit(const ASTPtr & ast, Data & data);
 
 private:
     static void visit(const ASTIdentifier & node, const ASTPtr &, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr &, Data & data);
-    static void visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data);
-    static void visit(ASTTableExpression & node, const ASTPtr &, Data & data);
+    static void visit(const ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data);
+    static void visit(const ASTTableExpression & node, const ASTPtr &, Data & data);
     static void visit(const ASTArrayJoin & node, const ASTPtr &, Data & data);
-    static void visit(ASTSelectQuery & select, const ASTPtr &, Data & data);
+    static void visit(const ASTSelectQuery & select, const ASTPtr &, Data & data);
 };
 
 /// Extracts all the information about columns and tables from ASTSelectQuery block into ColumnNamesContext object.

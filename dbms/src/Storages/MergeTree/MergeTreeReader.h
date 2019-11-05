@@ -19,16 +19,19 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
-    MergeTreeReader(const String & path, /// Path to the directory containing the part
-        const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-        UncompressedCache * uncompressed_cache,
-        MarkCache * mark_cache,
-        bool save_marks_in_cache,
-        const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
-        size_t aio_threshold, size_t max_read_buffer_size,
-        const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
-        clockid_t clock_type = CLOCK_MONOTONIC_COARSE);
+    MergeTreeReader(String path_, /// Path to the directory containing the part
+        MergeTreeData::DataPartPtr data_part_,
+        NamesAndTypesList columns_,
+        UncompressedCache * uncompressed_cache_,
+        MarkCache * mark_cache_,
+        bool save_marks_in_cache_,
+        const MergeTreeData & storage_,
+        MarkRanges all_mark_ranges_,
+        size_t aio_threshold_,
+        size_t max_read_buffer_size_,
+        ValueSizeMap avg_value_size_hints_ = ValueSizeMap{},
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
+        clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
 
     ~MergeTreeReader();
 
@@ -36,20 +39,18 @@ public:
 
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
-    /// If at least one column was added, reorders all columns in the block according to ordered_names.
-    /// num_rows is needed in case block is empty.
-    void fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults, size_t num_rows);
-    /// Sort columns to ensure consistent order among all blocks.
-    /// If filter_name is not nullptr and block has filter column, move it to the end of block.
-    void reorderColumns(Block & res, const Names & ordered_names, const String * filter_name);
+    /// num_rows is needed in case if all res_columns are nullptr.
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows);
     /// Evaluate defaulted columns if necessary.
-    void evaluateMissingDefaults(Block & res);
+    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+    size_t numColumnsInResult() const { return columns.size(); }
 
     /// Return the number of rows has been read or zero if there is no columns to read.
-    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
+    /// Fills res_columns in order specified in getColumns() list. If column was not read it will be nullptr.
+    size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns);
 
     MergeTreeData::DataPartPtr data_part;
 

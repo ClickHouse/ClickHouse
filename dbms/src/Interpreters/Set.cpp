@@ -106,6 +106,7 @@ void Set::setHeader(const Block & block)
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
+    set_elements_types.reserve(keys_size);
 
     /// The constant columns to the right of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
@@ -116,6 +117,7 @@ void Set::setHeader(const Block & block)
         materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
         data_types.emplace_back(block.safeGetByPosition(i).type);
+        set_elements_types.emplace_back(block.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
         if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -127,17 +129,16 @@ void Set::setHeader(const Block & block)
     }
 
     /// We will insert to the Set only keys, where all components are not NULL.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     if (fill_set_elements)
     {
         /// Create empty columns with set values in advance.
         /// It is needed because set may be empty, so method 'insertFromBlock' will be never called.
         set_elements.reserve(keys_size);
-        for (const auto & type : data_types)
-            set_elements.emplace_back(removeNullable(type)->createColumn());
+        for (const auto & type : set_elements_types)
+            set_elements.emplace_back(type->createColumn());
     }
 
     /// Choose data structure to use for the set.
@@ -168,9 +169,8 @@ bool Set::insertFromBlock(const Block & block)
     size_t rows = block.rows();
 
     /// We will insert to the Set only keys, where all components are not NULL.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
@@ -248,7 +248,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
         else if (const auto * func = elem->as<ASTFunction>())
         {
             Field function_result;
-            const TupleBackend * tuple = nullptr;
+            const Tuple * tuple = nullptr;
             if (func->name != "tuple")
             {
                 if (!tuple_type)
@@ -259,7 +259,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
                     throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
                                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-                tuple = &function_result.get<Tuple>().toUnderType();
+                tuple = &function_result.get<Tuple>();
             }
 
             size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
@@ -322,13 +322,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         return res;
     }
 
-    if (data_types.size() != num_key_columns)
-    {
-        std::stringstream message;
-        message << "Number of columns in section IN doesn't match. "
-            << num_key_columns << " at left, " << data_types.size() << " at right.";
-        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-    }
+    checkColumnsNumber(num_key_columns);
 
     /// Remember the columns we will work with. Also check that the data types are correct.
     ColumnRawPtrs key_columns;
@@ -339,19 +333,14 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
-            throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
-                + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
-                " on the left.", ErrorCodes::TYPE_MISMATCH);
-
+        checkTypesEqual(i, block.safeGetByPosition(i).type);
         materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back() = materialized_columns.back().get();
     }
 
     /// We will check existence in Set only for keys, where all components are not NULL.
-    ColumnPtr null_map_holder;
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
@@ -424,6 +413,25 @@ void Set::executeOrdinary(
     }
 }
 
+void Set::checkColumnsNumber(size_t num_key_columns) const
+{
+    if (data_types.size() != num_key_columns)
+    {
+        std::stringstream message;
+        message << "Number of columns in section IN doesn't match. "
+                << num_key_columns << " at left, " << data_types.size() << " at right.";
+        throw Exception(message.str(), ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+    }
+}
+
+void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
+{
+
+    if (!removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type))))
+        throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
+                        + data_types[set_type_idx]->getName() + " on the right, " + other_type->getName() +
+                        " on the left.", ErrorCodes::TYPE_MISMATCH);
+}
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_)
     : indexes_mapping(std::move(index_mapping_))

@@ -47,6 +47,18 @@ inline void writeChar(char x, WriteBuffer & buf)
     ++buf.position();
 }
 
+/// Write the same character n times.
+inline void writeChar(char c, size_t n, WriteBuffer & buf)
+{
+    while (n)
+    {
+        buf.nextIfAtEnd();
+        size_t count = std::min(n, buf.available());
+        memset(buf.position(), c, count);
+        n -= count;
+        buf.position() += count;
+    }
+}
 
 /// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
@@ -255,14 +267,19 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 }
 
 
-template <char c>
+/** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
+ *   - when escape_quote_with_quote is true, use backslash to escape list of special characters,
+ *      and use quote_character to escape quote_character. such as: 'hello''world'
+ *   - otherwise use backslash to escape list of special characters and quote_character
+ */
+template <char quote_character, bool escape_quote_with_quote = false>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
     while (true)
     {
         /// On purpose we will escape more characters than minimally necessary.
-        const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', c>(pos, end);
+        const char * next_pos = find_first_symbols<'\b', '\f', '\n', '\r', '\t', '\0', '\\', quote_character>(pos, end);
 
         if (next_pos == end)
         {
@@ -303,10 +320,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
-                case c:
-                    writeChar('\\', buf);
-                    writeChar(c, buf);
+                case quote_character:
+                {
+                    if constexpr (escape_quote_with_quote)
+                        writeChar(quote_character, buf);
+                    else
+                        writeChar('\\', buf);
+                    writeChar(quote_character, buf);
                     break;
+                }
                 default:
                     writeChar(*pos, buf);
             }
@@ -353,27 +375,27 @@ inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
 }
 
 
-template <char c>
+template <char quote_character>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
 {
-    writeChar(c, buf);
-    writeAnyEscapedString<c>(begin, end, buf);
-    writeChar(c, buf);
+    writeChar(quote_character, buf);
+    writeAnyEscapedString<quote_character>(begin, end, buf);
+    writeChar(quote_character, buf);
 }
 
 
 
-template <char c>
+template <char quote_character>
 void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c>(s.data(), s.data() + s.size(), buf);
+    writeAnyQuotedString<quote_character>(s.data(), s.data() + s.size(), buf);
 }
 
 
-template <char c>
+template <char quote_character>
 void writeAnyQuotedString(const StringRef & ref, WriteBuffer & buf)
 {
-    writeAnyQuotedString<c>(ref.data, ref.data + ref.size, buf);
+    writeAnyQuotedString<quote_character>(ref.data, ref.data + ref.size, buf);
 }
 
 
@@ -388,28 +410,36 @@ inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(ref, buf);
 }
 
-inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
+inline void writeDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
 }
 
-/// Outputs a string in backquotes, as an identifier in MySQL.
-inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
+/// Outputs a string in backquotes.
+inline void writeBackQuotedString(const StringRef & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'`'>(s, buf);
+}
+
+/// Outputs a string in backquotes for MySQL.
+inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
+{
+    writeChar('`', buf);
+    writeAnyEscapedString<'`', true>(s.data, s.data + s.size, buf);
+    writeChar('`', buf);
 }
 
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
 template <typename F>
-inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F && write_quoted_string)
+inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
 {
-    if (s.empty() || !isValidIdentifierBegin(s[0]))
+    if (!s.size || !isValidIdentifierBegin(s.data[0]))
         write_quoted_string(s, buf);
     else
     {
-        const char * pos = s.data() + 1;
-        const char * end = s.data() + s.size();
+        const char * pos = s.data + 1;
+        const char * end = s.data + s.size;
         for (; pos < end; ++pos)
             if (!isWordCharASCII(*pos))
                 break;
@@ -420,14 +450,19 @@ inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F
     }
 }
 
-inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+inline void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
 }
 
-inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
+inline void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+}
+
+inline void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 
@@ -672,7 +707,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 
 /// Methods for output in binary format.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -689,7 +724,7 @@ inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBi
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, void>
+inline std::enable_if_t<is_integral_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -743,7 +778,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
@@ -771,7 +806,7 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
@@ -800,14 +835,14 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+inline std::enable_if_t<is_arithmetic_v<T>, void>
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
-inline void writeCSV(const UInt128, WriteBuffer &)
+[[noreturn]] inline void writeCSV(const UInt128, WriteBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
@@ -870,5 +905,4 @@ inline String toString(const T & x)
     writeText(x, buf);
     return buf.str();
 }
-
 }

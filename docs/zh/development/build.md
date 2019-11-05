@@ -56,7 +56,7 @@ sudo apt-get install gcc-7 g++-7
 
 ### 源码安装 gcc
 
-请查看 [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
+请查看 [utils/ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
 ## 使用 GCC 7 来编译
 

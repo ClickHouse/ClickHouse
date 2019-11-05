@@ -10,13 +10,94 @@
 Возвращает протокол. Примеры: http, ftp, mailto, magnet...
 
 ### domain
-Возвращает домен.
+
+Извлекает имя хоста из URL.
+
+```sql
+domain(url)
+```
+
+**Параметры**
+
+- `url` — URL. Тип — [String](../../data_types/string.md).
+
+URL может быть указан со схемой или без неё. Примеры:
+
+```text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://yandex.com/time/
+```
+
+Для указанных примеров функция `domain` возвращает следующие результаты:
+
+```text
+some.svn-hosting.com
+some.svn-hosting.com
+yandex.com
+```
+
+**Возвращаемые значения**
+
+- Имя хоста. Если ClickHouse может распарсить входную строку как URL.
+- Пустая строка. Если ClickHouse не может распарсить входную строку как URL.
+
+Тип — `String`.
+
+**Пример**
+
+```sql
+SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
+```
+
+```text
+┌─domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')─┐
+│ some.svn-hosting.com                                   │
+└────────────────────────────────────────────────────────┘
+```
 
 ### domainWithoutWWW
-Возвращает домен, удалив не более одного 'www.' с начала, если есть.
+
+Возвращает домен, удалив префикс 'www.', если он присутствовал.
 
 ### topLevelDomain
-Возвращает домен верхнего уровня. Пример: .ru.
+
+Извлекает домен верхнего уровня из URL.
+
+```sql
+topLevelDomain(url)
+```
+
+**Параметры**
+
+- `url` — URL. Тип — [String](../../data_types/string.md).
+
+URL может быть указан со схемой или без неё. Примеры:
+
+```text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://yandex.com/time/
+```
+
+**Возвращаемые значения**
+
+- Имя домена. Если ClickHouse может распарсить входную строку как URL.
+- Пустая строка. Если ClickHouse не может распарсить входную строку как URL.
+
+Тип — `String`.
+
+**Пример**
+
+```sql
+SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
+```
+
+```text
+┌─topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')─┐
+│ com                                                                │
+└────────────────────────────────────────────────────────────────────┘
+```
 
 ### firstSignificantSubdomain
 Возвращает "первый существенный поддомен". Это понятие является нестандартным и специфично для Яндекс.Метрики. Первый существенный поддомен - это домен второго уровня, если он не равен одному из com, net, org, co, или домен третьего уровня, иначе. Например, firstSignificantSubdomain('<https://news.yandex.ru/>') = 'yandex', firstSignificantSubdomain('<https://news.yandex.com.tr/>') = 'yandex'. Список "несущественных" доменов второго уровня и другие детали реализации могут изменяться в будущем.
@@ -57,7 +138,7 @@
 То же самое, но без протокола и хоста в результате. Элемент / (корень) не включается. Пример:
 Функция используется для реализации древовидных отчётов по URL в Яндекс.Метрике.
 
-```
+```text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -69,11 +150,11 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 Возвращает декодированный URL.
 Пример:
 
-``` sql
+```sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-```
+```text
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘

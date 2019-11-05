@@ -1,27 +1,25 @@
-#include <IO/ConcatReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
-
-#include <Common/typeid_cast.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
+#include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/copyData.h>
-
+#include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-
+#include <Storages/Kafka/StorageKafka.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Parsers/ASTFunction.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -36,9 +34,14 @@ namespace ErrorCodes
 
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
-    : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
+    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
+    : query_ptr(query_ptr_)
+    , context(context_)
+    , allow_materialized(allow_materialized_)
+    , no_squash(no_squash_)
+    , no_destination(no_destination_)
 {
+    checkStackSize();
 }
 
 
@@ -48,7 +51,8 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
     {
         const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
-        return factory.get(table_function->name, context)->execute(query.table_function, context);
+        TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
+        return table_function_ptr->execute(query.table_function, context, table_function_ptr->getName());
     }
 
     /// Into what table to write.
@@ -57,15 +61,12 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
 {
-
-
     Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        /// Format Native ignores header and write blocks as is.
-        if (query.format == "Native")
-            return {};
+        if (no_destination)
+            return table->getSampleBlockWithVirtuals();
         else
             return table_sample_non_materialized;
     }
@@ -96,26 +97,35 @@ BlockIO InterpreterInsertQuery::execute()
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructureForShare(true, context.getCurrentQueryId());
+    auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
+    /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
+    ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
+    if (table->noPushingToViews() && !no_destination)
+        out = table->write(query_ptr, context);
+    else
+        out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, no_destination);
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
+    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
     {
         out = std::make_shared<SquashingBlockOutputStream>(
-            out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            out, out->getHeader(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
     auto query_sample_block = getSampleBlock(query, table);
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, query_sample_block, table->getSampleBlock(), table->getColumns().getDefaults(), context);
+        out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
+
+    if (const auto & constraints = table->getConstraints(); !constraints.empty())
+        out = std::make_shared<CheckConstraintsBlockOutputStream>(query.table,
+            out, query_sample_block, table->getConstraints(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -147,7 +157,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
-        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context);
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context, nullptr);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
         res.out = nullptr;
     }

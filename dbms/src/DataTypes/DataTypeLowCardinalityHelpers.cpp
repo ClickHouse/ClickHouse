@@ -7,6 +7,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Common/assert_cast.h>
+
+
 namespace DB
 {
 
@@ -110,7 +113,7 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
         if (from_type->equals(*low_cardinality_type->getDictionaryType()))
         {
             auto col = low_cardinality_type->createColumn();
-            static_cast<ColumnLowCardinality &>(*col).insertRangeFromFullColumn(*column, 0, column->size());
+            assert_cast<ColumnLowCardinality &>(*col).insertRangeFromFullColumn(*column, 0, column->size());
             return col;
         }
     }

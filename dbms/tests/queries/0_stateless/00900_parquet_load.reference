@@ -39,7 +39,7 @@
 23.0
 24.0
 === Try load data from datapage_v2.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading parquet data: IOError: Arrow error: IOError: Corrupt snappy compressed data.
+Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Arrow error: IOError: Corrupt snappy compressed data.
 
 === Try load data from fixed_length_decimal_1.parquet
 1.0
@@ -171,19 +171,19 @@ Code: 33. DB::Ex---tion: Error while reading parquet data: IOError: Arrow error:
 Code: 8. DB::Ex---tion: Column "element" is not presented in input data
 
 === Try load data from nested_maps.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: Currently only nesting with Lists is supported.
+Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Currently only nesting with Lists is supported.
 
 === Try load data from nonnullable.impala.parquet
-Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: Currently only nesting with Lists is supported.
+Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Currently only nesting with Lists is supported.
 
 === Try load data from nullable.impala.parquet
-Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: Currently only nesting with Lists is supported.
+Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Currently only nesting with Lists is supported.
 
 === Try load data from nulls.snappy.parquet
 Code: 8. DB::Ex---tion: Column "b_c_int" is not presented in input data
 
 === Try load data from repeated_no_annotation.parquet
-Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: Currently only nesting with Lists is supported.
+Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Currently only nesting with Lists is supported.
 
 === Try load data from userdata1.parquet
 1454486129	1	Amanda	Jordan	ajordan0@com.com	Female	1.197.201.2	6759521864920116	Indonesia	3/8/1971	49756.53	Internal Auditor	1E+02

@@ -1,38 +1,38 @@
 # mysql
 
-Allows to perform `SELECT` queries on data that is stored on a remote MySQL server.
+Позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
 
-```
+```sql
 mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-**Parameters**
+**Параметры**
 
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — MySQL user.
-- `password` — User password.
-- `replace_query` — Flag that sets query substitution `INSERT INTO` to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
-- `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
+- `host:port` — адрес сервера MySQL.
+- `database` — имя базы данных на удалённом сервере.
+- `table` — имя таблицы на удалённом сервере.
+- `user` — пользователь MySQL.
+- `password` — пароль пользователя.
+- `replace_query` — флаг, отвечающий за преобразование запросов `INSERT INTO` в `REPLACE INTO`. Если `replace_query=1`, то запрос заменяется.
+- `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое в запрос `INSERT`.
 
-    Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See MySQL documentation to find which `on_duplicate_clause` you can use with `ON DUPLICATE KEY` clause.
+    Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`. Чтобы узнать какие `on_duplicate_clause` можно использовать с секцией `ON DUPLICATE KEY`  обратитесь к документации MySQL.
 
-    To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
+    Чтобы указать `'on_duplicate_clause'` необходимо передать `0` в параметр `replace_query`. Если одновременно передать `replace_query = 1` и `'on_duplicate_clause'`, то ClickHouse сгенерирует исключение.
 
-At this time, simple `WHERE` clauses and elements of `AND` chain in `WHERE` clause such as `=, !=, >, >=, <, <=, LIKE, IN` with compatible functions are also pushed down for execution on the MySQL server.
+Простые условия `WHERE` такие как ` =, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
-The rest of the conditions and the `LIMIT` constraint are executed in ClickHouse only after the query to MySQL finishes.
+Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
 
-**Returned Value**
+**Возвращаемое значение**
 
-A table object with the same columns as the original MySQL table.
+Объект таблицы с теми же столбцами, что и в исходной таблице MySQL.
 
-## Usage Example
+## Пример использования
 
-Table in MySQL:
+Таблица в MySQL:
 
-```
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -53,20 +53,21 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Selection of the data from ClickHouse:
+Получение данных в ClickHouse:
 
 ```sql
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
+
 ```text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## See Also
+## Смотрите также
 
-- [The 'MySQL' table engine](../../operations/table_engines/mysql.md)
-- [Using MySQL as a source of extenal dictionary](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+- [Движок таблиц 'MySQL'](../../operations/table_engines/mysql.md)
+- [Использование MySQL как источника данных для внешнего словаря](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/mysql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/mysql/) <!--hide-->

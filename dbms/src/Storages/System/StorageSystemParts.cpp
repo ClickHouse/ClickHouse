@@ -9,12 +9,13 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Common/hex.h>
 
 namespace DB
 {
 
-StorageSystemParts::StorageSystemParts(const std::string & name)
-    : StorageSystemPartsBase(name,
+StorageSystemParts::StorageSystemParts(const std::string & name_)
+    : StorageSystemPartsBase(name_,
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
@@ -44,13 +45,18 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"database",                                   std::make_shared<DataTypeString>()},
         {"table",                                      std::make_shared<DataTypeString>()},
         {"engine",                                     std::make_shared<DataTypeString>()},
+        {"disk_name",                                  std::make_shared<DataTypeString>()},
         {"path",                                       std::make_shared<DataTypeString>()},
+
+        {"hash_of_all_files",                          std::make_shared<DataTypeString>()},
+        {"hash_of_uncompressed_files",                 std::make_shared<DataTypeString>()},
+        {"uncompressed_hash_of_compressed_files",      std::make_shared<DataTypeString>()}
     }
     )
 {
 }
 
-void StorageSystemParts::processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column)
+void StorageSystemParts::processNextStorage(MutableColumns & columns_, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -63,50 +69,67 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
-        MergeTreeDataPart::ColumnSize columns_size = part->getTotalColumnsSize();
+        ColumnSize columns_size = part->getTotalColumnsSize();
 
         size_t i = 0;
         {
             WriteBufferFromOwnString out;
             part->partition.serializeText(*info.data, out, format_settings);
-            columns[i++]->insert(out.str());
+            columns_[i++]->insert(out.str());
         }
-        columns[i++]->insert(part->name);
-        columns[i++]->insert(part_state == State::Committed);
-        columns[i++]->insert(part->getMarksCount());
-        columns[i++]->insert(part->rows_count);
-        columns[i++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
-        columns[i++]->insert(columns_size.data_compressed);
-        columns[i++]->insert(columns_size.data_uncompressed);
-        columns[i++]->insert(columns_size.marks);
-        columns[i++]->insert(static_cast<UInt64>(part->modification_time));
+        columns_[i++]->insert(part->name);
+        columns_[i++]->insert(part_state == State::Committed);
+        columns_[i++]->insert(part->getMarksCount());
+        columns_[i++]->insert(part->rows_count);
+        columns_[i++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
+        columns_[i++]->insert(columns_size.data_compressed);
+        columns_[i++]->insert(columns_size.data_uncompressed);
+        columns_[i++]->insert(columns_size.marks);
+        columns_[i++]->insert(static_cast<UInt64>(part->modification_time));
 
         time_t remove_time = part->remove_time.load(std::memory_order_relaxed);
-        columns[i++]->insert(static_cast<UInt64>(remove_time == std::numeric_limits<time_t>::max() ? 0 : remove_time));
+        columns_[i++]->insert(static_cast<UInt64>(remove_time == std::numeric_limits<time_t>::max() ? 0 : remove_time));
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-        columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
+        columns_[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
 
-        columns[i++]->insert(part->getMinDate());
-        columns[i++]->insert(part->getMaxDate());
-        columns[i++]->insert(part->getMinTime());
-        columns[i++]->insert(part->getMaxTime());
-        columns[i++]->insert(part->info.partition_id);
-        columns[i++]->insert(part->info.min_block);
-        columns[i++]->insert(part->info.max_block);
-        columns[i++]->insert(part->info.level);
-        columns[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
-        columns[i++]->insert(part->getIndexSizeInBytes());
-        columns[i++]->insert(part->getIndexSizeInAllocatedBytes());
-        columns[i++]->insert(part->is_frozen);
+        columns_[i++]->insert(part->getMinDate());
+        columns_[i++]->insert(part->getMaxDate());
+        columns_[i++]->insert(static_cast<UInt32>(part->getMinTime()));
+        columns_[i++]->insert(static_cast<UInt32>(part->getMaxTime()));
+        columns_[i++]->insert(part->info.partition_id);
+        columns_[i++]->insert(part->info.min_block);
+        columns_[i++]->insert(part->info.max_block);
+        columns_[i++]->insert(part->info.level);
+        columns_[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
+        columns_[i++]->insert(part->getIndexSizeInBytes());
+        columns_[i++]->insert(part->getIndexSizeInAllocatedBytes());
+        columns_[i++]->insert(part->is_frozen.load(std::memory_order_relaxed));
 
-        columns[i++]->insert(info.database);
-        columns[i++]->insert(info.table);
-        columns[i++]->insert(info.engine);
-        columns[i++]->insert(part->getFullPath());
+        columns_[i++]->insert(info.database);
+        columns_[i++]->insert(info.table);
+        columns_[i++]->insert(info.engine);
+        columns_[i++]->insert(part->disk->getName());
+        columns_[i++]->insert(part->getFullPath());
 
         if (has_state_column)
-            columns[i++]->insert(part->stateString());
+            columns_[i++]->insert(part->stateString());
+
+        MinimalisticDataPartChecksums helper;
+        {
+            /// TODO: MergeTreeDataPart structure is too error-prone.
+            std::shared_lock<std::shared_mutex> lock(part->columns_lock);
+            helper.computeTotalChecksums(part->checksums);
+        }
+
+        auto checksum = helper.hash_of_all_files;
+        columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+
+        checksum = helper.hash_of_uncompressed_files;
+        columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+
+        checksum = helper.uncompressed_hash_of_compressed_files;
+        columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
     }
 }
 

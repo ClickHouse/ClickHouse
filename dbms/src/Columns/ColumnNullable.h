@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -45,7 +47,7 @@ public:
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     MutableColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }
-    bool isNullAt(size_t n) const override { return static_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
+    bool isNullAt(size_t n) const override { return assert_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? 0 : nested_column->getBool(n); }
@@ -59,6 +61,10 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
     void insertFrom(const IColumn & src, size_t n) override;
+
+    void insertFromNotNullable(const IColumn & src, size_t n);
+    void insertRangeFromNotNullable(const IColumn & src, size_t start, size_t length);
+    void insertManyFromNotNullable(const IColumn & src, size_t position, size_t length);
 
     void insertDefault() override
     {
@@ -100,7 +106,7 @@ public:
         return false;
     }
 
-    bool isColumnNullable() const override { return true; }
+    bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
@@ -116,8 +122,8 @@ public:
     /// Return the column that represents the byte map.
     const ColumnPtr & getNullMapColumnPtr() const { return null_map; }
 
-    ColumnUInt8 & getNullMapColumn() { return static_cast<ColumnUInt8 &>(*null_map); }
-    const ColumnUInt8 & getNullMapColumn() const { return static_cast<const ColumnUInt8 &>(*null_map); }
+    ColumnUInt8 & getNullMapColumn() { return assert_cast<ColumnUInt8 &>(*null_map); }
+    const ColumnUInt8 & getNullMapColumn() const { return assert_cast<const ColumnUInt8 &>(*null_map); }
 
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
     const NullMap & getNullMapData() const { return getNullMapColumn().getData(); }
@@ -141,7 +147,6 @@ private:
     template <bool negative>
     void applyNullMapImpl(const ColumnUInt8 & map);
 };
-
 
 ColumnPtr makeNullable(const ColumnPtr & column);
 

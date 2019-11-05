@@ -180,7 +180,21 @@
                      <port>9000</port>
                  </replica>
              </shard>
-         </test_cluster_two_shards_localhost>
+        </test_cluster_two_shards_localhost>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
         <test_shard_localhost_secure>
             <shard>
                 <replica>
@@ -217,6 +231,7 @@
 
          See https://clickhouse.yandex/docs/en/table_engines/replication/
       -->
+
     <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
@@ -257,6 +272,7 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>true</asynchronous_metrics>
     </graphite>
     <graphite>
@@ -268,6 +284,7 @@
 
         <metrics>true</metrics>
         <events>true</events>
+        <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>false</asynchronous_metrics>
     </graphite>
     -->
@@ -294,6 +311,16 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
 
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </trace_log>
+
     <!-- Query thread log. Has information about all threads participated in query execution.
          Used only for queries with setting log_query_threads = 1. -->
     <query_thread_log>
@@ -312,6 +339,24 @@
     </part_log>
     -->
 
+    <!-- Uncomment to write text log into table.
+         Text log contains all information from usual server log but stores it in structured and efficient way.
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </text_log>
+    -->
+
+    <!-- Uncomment to write metric log into table.
+         Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+    -->
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
@@ -409,6 +454,20 @@
          The directory will be created if it doesn't exist.
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+
+    <!-- Uncomment to use query masking rules.
+        name - name for the rule (optional)
+        regexp - RE2 compatible regular expression (mandatory)
+        replace - substitution string for sensitive data (optional, by default - six asterisks)
+    <query_masking_rules>
+        <rule>
+            <name>hide SSN</name>
+            <regexp>\b\d{3}-\d{2}-\d{4}\b</regexp>
+            <replace>000-00-0000</replace>
+        </rule>
+    </query_masking_rules>
+    -->
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->

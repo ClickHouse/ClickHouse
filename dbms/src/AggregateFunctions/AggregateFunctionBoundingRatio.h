@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -151,7 +152,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnFloat64 &>(to).getData().push_back(getBoundingRatio(data(place)));
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(getBoundingRatio(data(place)));
     }
 
     const char * getHeaderFilePath() const override

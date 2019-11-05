@@ -11,7 +11,7 @@ Restrictions:
 
 - Only applied for IN and JOIN subqueries.
 - Only if the FROM section uses a distributed table containing more than one shard.
-- If the subquery concerns a distributed table containing more than one shard,
+- If the subquery concerns a distributed table containing more than one shard.
 - Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
 
 Possible values:
@@ -32,7 +32,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
 
 **Usage**
 
@@ -72,6 +72,9 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
 
+## format_schema
+
+This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
 
 ## fsync_metadata
 
@@ -114,30 +117,43 @@ Possible values:
 
 Default value: 0.
 
-## input_format_allow_errors_num
+## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
+
+Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_ratio`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_ratio`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_num`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_num` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
-## input_format_allow_errors_ratio
+## input_format_allow_errors_ratio {#settings-input_format_allow_errors_ratio}
 
 Sets the maximum percentage of errors allowed when reading from text formats (CSV, TSV, etc.).
 The percentage of errors is set as a floating-point number between 0 and 1.
 
 The default value is 0.
 
-Always pair it with `input_format_allow_errors_num`. To skip errors, both settings must be greater than 0.
+Always pair it with `input_format_allow_errors_num`.
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
+If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
 
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
@@ -163,7 +179,8 @@ Insert the [DateTime](../../data_types/datetime.md) type value with the differen
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Exception on client:
 Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
 ```
@@ -171,7 +188,8 @@ Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 
 ```sql
 SET input_format_values_interpret_expressions = 1;
 INSERT INTO datetime_t VALUES (now())
-
+```
+```text
 Ok.
 ```
 
@@ -180,33 +198,57 @@ The last query is equivalent to the following:
 ```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t SELECT now()
-
+```
+```text
 Ok.
 ```
 
+## input_format_values_deduce_templates_of_expressions {#settings-input_format_values_deduce_templates_of_expressions}
+Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on batch of successfully parsed rows. For the following query:
+```sql
+INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
+``` 
+ - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
+ - if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
+ - if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it's not possible to deduce template.
+  
+ This feature is experimental, disabled by default.
+
+## input_format_values_accurate_types_of_literals {#settings-input_format_values_accurate_types_of_literals}
+This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
+```sql
+(..., abs(0), ...),             -- UInt64 literal
+(..., abs(3.141592654), ...),   -- Float64 literal
+(..., abs(-1), ...),            -- Int64 literal
+```
+When this setting is enabled, ClickHouse will check actual type of literal and will use expression template of the corresponding type. In some cases it may significantly slow down expression evaluation in `Values`. 
+When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
+Enabled by default.
+
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
-
-When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
-
-When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
-
-Operations where you may need the extended data exchange enabled:
-
-- Inserting data in [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
-
-For all other operations, ClickHouse doesn't apply the setting.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
 
 !!! note "Note"
-    The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
+    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
 
 Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
 
-Default value: 0.
+Default value: 1.
+
+## input_format_tsv_empty_as_default {#settings-input_format_tsv_empty_as_default}
+
+When enabled, replace empty input fields in TSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Disabled by default.
+
+## input_format_null_as_default {#settings-input_format_null_as_default}
+
+Enables or disables using default values if input data contain `NULL`, but data type of corresponding column in not `Nullable(T)` (for text input formats).
+
 
 ## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
 
@@ -228,6 +270,25 @@ Possible values:
 
 Default value: 0.
 
+## input_format_import_nested_json {#settings-input_format_import_nested_json}
+
+Enables or disables the insertion of JSON data with nested objects.
+
+Supported formats:
+
+- [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+**See Also**
+
+- [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
+
 ## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
 
 Enables or disables checking the column order when inserting data.
@@ -246,29 +307,84 @@ Possible values:
 
 Default value: 1.
 
+## date_time_input_format {#settings-date_time_input_format}
+
+Allows to choose a parser of text representation of date and time.
+
+The setting doesn't apply to [date and time functions](../../query_language/functions/date_time_functions.md).
+
+Possible values:
+
+- `'best_effort'` — Enables extended parsing.
+
+    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+
+Default value: `'basic'`.
+
+**See Also**
+
+- [DateTime data type.](../../data_types/datetime.md)
+- [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
+
 ## join_default_strictness {#settings-join_default_strictness}
 
 Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
-**Possible values**
+Possible values:
 
-- `ALL` — If the right table has several matching rows, the data is multiplied by the number of these rows. This is the normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behavior from standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+- `ASOF` — For joining sequences with an uncertain match.
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
-**Default value**: `ALL`
+Default value: `ALL`.
 
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes behavior of join operations with `ANY` strictness.
+
+!!! warning "Attention"
+    This setting applies only for `JOIN` operations with [Join](../table_engines/join.md) engine tables.
+
+Possible values:
+
+- 0 — If the right table has more than one matching row, only the first one found is joined.
+- 1 — If the right table has more than one matching row, only the last one found is joined.
+
+Default value: 0.
+
+**See Also**
+
+- [JOIN clause](../../query_language/select.md#select-join)
+- [Join table engine](../table_engines/join.md)
+- [join_default_strictness](#settings-join_default_strictness)
 
 ## join_use_nulls {#settings-join_use_nulls}
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
-**Possible values**
+Possible values:
 
 - 0 — The empty cells are filled with the default value of the corresponding field type.
 - 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
-**Default value**: 0.
+Default value: 0.
+
+
+## join_any_take_last_row {#settings-join_any_take_last_row}
+
+Changes the behavior of `ANY JOIN`. When disabled, `ANY JOIN` takes the first row found for a key. When enabled, `ANY JOIN` takes the last matched row if there are multiple rows for the same key. The setting is used only in [Join table engine](../table_engines/join.md).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
 
 
 ## max_block_size
@@ -289,52 +405,90 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ClickHouse uses multiple threads when reading from [MergeTree*](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
 
-**Possible values**
+Possible values:
 
 - 0 — Do not use uniform read distribution.
 - 1 — Use uniform read distribution.
 
-**Default value**: 1.
+Default value: 1.
 
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
 
 If the number of rows to be read from a file of a [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
-**Possible values**
+Possible values:
 
-Any positive integer.
+- Any positive integer.
 
-**Default value**: 163840.
+Default value: 163840.
+
+## merge_tree_min_bytes_for_concurrent_read {#setting-merge_tree_min_bytes_for_concurrent_read}
+
+If a number of bytes to read from one file of a [MergeTree*](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 240 ✕ 1024 ✕ 1024.
+
 
 ## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
 
 If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
 
-**Possible values**
+Possible values:
 
-Any positive integer.
+- Any positive integer.
 
-**Default value**: 0.
+Default value: 0.
+
+## merge_tree_min_bytes_for_seek {#setting-merge_tree_min_bytes_for_seek}
+
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 0.
+
 
 ## merge_tree_coarse_index_granularity {#setting-merge_tree_coarse_index_granularity}
 
 When searching data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
 
-**Possible values**
+Possible values:
 
-Any positive even integer.
+- Any positive even integer.
 
-**Default value**: 8.
+Default value: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cash of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
-**Possible values**
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
 
-Any positive integer.
+Possible values:
 
-**Default value**: 1048576.
+- Any positive integer.
+
+Default value: 128 ✕ 8192.
+
+
+## merge_tree_max_bytes_to_use_cache {#setting-merge_tree_max_bytes_to_use_cache}
+
+If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries reading a large amount of data.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: 1920 ✕ 1024 ✕ 1024.
+
 
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 
@@ -388,7 +542,7 @@ The maximum number of query processing threads, excluding threads for retrieving
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
 For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-Default value: 2.
+Default value: the number of physical CPU cores.
 
 If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
 
@@ -415,6 +569,12 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won't be decompressed.
 
 There usually isn't any reason to change this setting.
+
+## mark_cache_min_lifetime {#settings-mark_cache_min_lifetime}
+
+If the value of [mark_cache_size](../server_settings/settings.md#server-mark-cache-size) setting is exceeded, delete only records older than mark_cache_min_lifetime seconds. If your hosts have low amount of RAM, it makes sense to lower this parameter.
+
+Default value: 10000 seconds.
 
 ## max_query_size {#settings-max_query_size}
 
@@ -491,10 +651,6 @@ If a query from the same user with the same 'query_id' already exists at this ti
 
 Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn't finished yet, it should be canceled.
 
-## schema
-
-This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/). The value depends on the format.
-
 
 ## stream_flush_interval_ms
 
@@ -518,7 +674,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 
 ### Random (by default) {#load_balancing-random}
 
-```
+```sql
 load_balancing = random
 ```
 
@@ -527,7 +683,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-```
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -541,7 +697,7 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### In Order {#load_balancing-in_order}
 
-```
+```sql
 load_balancing = in_order
 ```
 
@@ -551,7 +707,7 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-```
+```sql
 load_balancing = first_or_random
 ```
 
@@ -614,6 +770,10 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
+
+For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
@@ -674,12 +834,55 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## max_network_bytes {#settings-max_network_bytes}
+Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Data volume control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth {#settings-max_network_bandwidth}
+
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
+
+Possible values:
+
+- Positive integer.
+- 0 — Bandwidth control is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_user {#settings-max_network_bandwidth_for_user}
+
+Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
+## max_network_bandwidth_for_all_users {#settings-max_network_bandwidth_for_all_users}
+
+Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the data speed is disabled.
+
+Default value: 0.
+
 ## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
 
 Enables or disables:
 
-1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
-2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+1. Rewriting queries for join from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with syntax that uses commas, and throws an exception.
+2. Converting `CROSS JOIN` to `INNER JOIN` if `WHERE` conditions allow it.
 
 Possible values:
 
@@ -688,5 +891,100 @@ Possible values:
 
 Default value: 1.
 
+**See Also**
 
-[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
+- [Multiple JOIN](../../query_language/select.md#select-join)
+
+
+## count_distinct_implementation {#settings-count_distinct_implementation}
+
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+
+Possible values:
+
+- [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
+- [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
+- [uniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
+- [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
+- [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+
+Default value: `uniqExact`.
+
+## skip_unavailable_shards {#settings-skip_unavailable_shards}
+
+Enables or disables silent skipping of:
+
+- Node, if its name cannot be resolved through DNS.
+
+    When skipping is disabled, ClickHouse requires that all the nodes in the [cluster configuration](../server_settings/settings.md#server_settings_remote_servers) can be resolvable through DNS. Otherwise, ClickHouse throws an exception when trying to perform a query on the cluster.
+
+    If skipping is enabled, ClickHouse considers unresolved nodes as unavailable and tries to resolve them at every connection attempt. Such behavior creates the risk of wrong cluster configuration because a user can specify the wrong node name, and ClickHouse doesn't report about it. However, this can be useful in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+
+- Shard, if there are no available replicas of the shard.
+
+    When skipping is disabled, ClickHouse throws an exception.
+
+    When skipping is enabled, ClickHouse returns a partial answer and doesn't report about issues with nodes availability.
+
+Possible values:
+
+- 1 — skipping enabled.
+- 0 — skipping disabled.
+
+Default value: 0.
+
+## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
+
+Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn't perform a merge.
+
+By default, `OPTIMIZE` returns successfully even if it didn't do anything. This setting lets you differentiate these situations and get the reason in an exception message.
+
+Possible values:
+
+- 1 — Throwing an exception is enabled.
+- 0 — Throwing an exception is disabled.
+
+Default value: 0.
+
+
+## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
+
+- Type: seconds
+- Default value: 60 seconds
+
+Controls how fast errors of distributed tables are zeroed. Given that currently a replica was unavailabe for some time and accumulated 5 errors and distributed_replica_error_half_life is set to 1 second, then said replica is considered back to normal in 3 seconds since last error.
+
+** See also **
+
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [`distributed_replica_error_cap`](#settings-distributed_replica_error_cap)
+
+
+## distributed_replica_error_cap {#settings-distributed_replica_error_cap}
+
+- Type: unsigned int
+- Default value: 1000
+
+Error count of each replica is capped at this value, preventing a single replica from accumulating to many errors.
+
+** See also **
+
+- [Table engine Distributed](../../operations/table_engines/distributed.md)
+- [`distributed_replica_error_half_life`](#settings-distributed_replica_error_half_life)
+
+## os_thread_priority {#setting-os_thread_priority}
+
+Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
+
+!!! warning "Warning"
+    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments don't allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+
+Possible values:
+
+- You can set values in the range `[-20, 19]`.
+
+Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long running non-interactive queries because it allows them to quickly give up resources in favor of short interactive queries when they arrive.
+
+Default value: 0.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!-- hide -->

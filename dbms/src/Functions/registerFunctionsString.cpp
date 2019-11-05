@@ -1,10 +1,10 @@
-#include <Common/config.h>
+#include "config_functions.h"
 
 namespace DB
 {
-
 class FunctionFactory;
 
+void registerFunctionRepeat(FunctionFactory &);
 void registerFunctionEmpty(FunctionFactory &);
 void registerFunctionNotEmpty(FunctionFactory &);
 void registerFunctionLength(FunctionFactory &);
@@ -20,6 +20,7 @@ void registerFunctionReverseUTF8(FunctionFactory &);
 void registerFunctionsConcat(FunctionFactory &);
 void registerFunctionFormat(FunctionFactory &);
 void registerFunctionSubstring(FunctionFactory &);
+void registerFunctionCRC(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
@@ -34,6 +35,7 @@ void registerFunctionTryBase64Decode(FunctionFactory &);
 
 void registerFunctionsString(FunctionFactory & factory)
 {
+    registerFunctionRepeat(factory);
     registerFunctionEmpty(factory);
     registerFunctionNotEmpty(factory);
     registerFunctionLength(factory);
@@ -45,6 +47,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionLowerUTF8(factory);
     registerFunctionUpperUTF8(factory);
     registerFunctionReverse(factory);
+    registerFunctionCRC(factory);
     registerFunctionReverseUTF8(factory);
     registerFunctionsConcat(factory);
     registerFunctionFormat(factory);
@@ -62,4 +65,3 @@ void registerFunctionsString(FunctionFactory & factory)
 }
 
 }
-

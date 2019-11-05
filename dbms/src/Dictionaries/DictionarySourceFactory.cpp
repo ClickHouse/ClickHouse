@@ -80,7 +80,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const DictionaryStructure & dict_struct,
-    Context & context) const
+    const Context & context) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -88,20 +88,23 @@ DictionarySourcePtr DictionarySourceFactory::create(
         throw Exception{name + ": element dictionary.source should have exactly one child element",
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
-    auto sample_block = createSampleBlock(dict_struct);
-
     const auto & source_type = keys.front();
 
+    const auto found = registered_sources.find(source_type);
+    if (found != registered_sources.end())
     {
-        const auto found = registered_sources.find(source_type);
-        if (found != registered_sources.end())
-        {
-            const auto & create_source = found->second;
-            return create_source(dict_struct, config, config_prefix, sample_block, context);
-        }
+        const auto & create_source = found->second;
+        auto sample_block = createSampleBlock(dict_struct);
+        return create_source(dict_struct, config, config_prefix, sample_block, context);
     }
 
     throw Exception{name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
+}
+
+DictionarySourceFactory & DictionarySourceFactory::instance()
+{
+    static DictionarySourceFactory instance;
+    return instance;
 }
 
 }

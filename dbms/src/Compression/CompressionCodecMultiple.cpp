@@ -1,5 +1,6 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
+#include <Common/PODArray.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadHelpers.h>
@@ -18,8 +19,8 @@ extern const int UNKNOWN_CODEC;
 extern const int CORRUPTED_DATA;
 }
 
-CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs)
-    : codecs(codecs)
+CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
+    : codecs(codecs_)
 {
 }
 
@@ -88,6 +89,9 @@ void CompressionCodecMultiple::useInfoAboutType(DataTypePtr data_type)
 
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
+    if (source_size < 1 || !source[0])
+        throw Exception("Wrong compression methods list", ErrorCodes::CORRUPTED_DATA);
+
     UInt8 compression_methods_size = source[0];
 
     PODArray<char> compressed_buf(&source[compression_methods_size + 1], &source[source_size]);
@@ -103,7 +107,8 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
         UInt32 uncompressed_size = ICompressionCodec::readDecompressedBlockSize(compressed_buf.data());
 
         if (idx == 0 && uncompressed_size != decompressed_size)
-            throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) + ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
+            throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) +
+                ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
 
         uncompressed_buf.resize(uncompressed_size + codec->getAdditionalSizeAtTheEndOfBuffer());
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());

@@ -154,7 +154,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
   */
 inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
-#ifdef __SSSE3__
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 
     static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
@@ -200,7 +200,7 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
         0, 1, 2, 3, 4, 5, 6, 0,
     };
 
-    unalignedStore(op, vtbl1_u8(unalignedLoad<uint8x8_t>(match), unalignedLoad<uint8x8_t>(masks + 8 * offset)));
+    unalignedStore<uint8x8_t>(op, vtbl1_u8(unalignedLoad<uint8x8_t>(match), unalignedLoad<uint8x8_t>(masks + 8 * offset)));
     match += masks[offset];
 }
 
@@ -268,7 +268,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
-#ifdef __SSSE3__
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 
     static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
     {
@@ -328,10 +328,10 @@ inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
         0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
     };
 
-    unalignedStore(op,
+    unalignedStore<uint8x8_t>(op,
         vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset)));
 
-    unalignedStore(op + 8,
+    unalignedStore<uint8x8_t>(op + 8,
         vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
 
     match += masks[offset];
@@ -536,7 +536,6 @@ void decompress(
 {
     if (source_size == 0 || dest_size == 0)
         return;
-
 
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)

@@ -69,6 +69,10 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - پشتیبانی از Pager برای خروجی داده.
 - دستورات پست سفارشی مانند PostgreSQL.
 
+### clickhouse-flamegraph
+
+[clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) یک ابزار تخصصی برای تجسم است `system.trace_log`مانند[flamegraph](http://www.brendangregg.com/flamegraphs.html).
+
 ## تجاری
 
 ### DataGrip

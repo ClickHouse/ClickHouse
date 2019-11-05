@@ -195,39 +195,45 @@ private:
 
 StorageStripeLog::StorageStripeLog(
     const std::string & path_,
-    const std::string & name_,
+    const std::string & database_name_,
+    const std::string & table_name_,
     const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{columns_},
-    path(path_), name(name_),
+    : path(path_), table_name(table_name_), database_name(database_name_),
     max_compress_block_size(max_compress_block_size_),
-    file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
+    file_checker(path + escapeForFileName(table_name) + '/' + "sizes.json"),
     log(&Logger::get("StorageStripeLog"))
 {
+    setColumns(columns_);
+    setConstraints(constraints_);
+
     if (path.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
-    String full_path = path + escapeForFileName(name) + '/';
+    String full_path = path + escapeForFileName(table_name) + '/';
     if (!attach)
     {
         /// create files if they do not exist
         if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
-            throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
+            throwFromErrnoWithPath("Cannot create directory " + full_path, full_path,
+                                   ErrorCodes::CANNOT_CREATE_DIRECTORY);
     }
 }
 
 
-void StorageStripeLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
-    Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
+    Poco::File(path + escapeForFileName(table_name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
     path = new_path_to_db;
-    name = new_table_name;
-    file_checker.setPath(path + escapeForFileName(name) + "/" + "sizes.json");
+    table_name = new_table_name;
+    database_name = new_database_name;
+    file_checker.setPath(path + escapeForFileName(table_name) + "/" + "sizes.json");
 }
 
 
@@ -282,24 +288,24 @@ BlockOutputStreamPtr StorageStripeLog::write(
 }
 
 
-bool StorageStripeLog::checkData() const
+CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Context & /* context */)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const Context &)
+void StorageStripeLog::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
 {
-    if (name.empty())
+    if (table_name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    auto file = Poco::File(path + escapeForFileName(name));
+    auto file = Poco::File(path + escapeForFileName(table_name));
     file.remove(true);
     file.createDirectories();
 
-    file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
+    file_checker = FileChecker{path + escapeForFileName(table_name) + '/' + "sizes.json"};
 }
 
 
@@ -313,7 +319,7 @@ void registerStorageStripeLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageStripeLog::create(
-            args.data_path, args.table_name, args.columns,
+            args.data_path, args.database_name, args.table_name, args.columns, args.constraints,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

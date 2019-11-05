@@ -79,11 +79,12 @@ try
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     Context context = Context::createGlobal();
+    context.makeGlobalContext();
 
     context.setPath("./");
     auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/", context);
     context.addDatabase("test", database);
-    database->loadTables(context, nullptr, false);
+    database->loadStoredObjects(context, false);
     context.setCurrentDatabase("test");
 
     InterpreterCreateQuery interpreter(ast, context);

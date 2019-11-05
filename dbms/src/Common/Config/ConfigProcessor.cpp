@@ -210,7 +210,13 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
 
 void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 {
-    mergeRecursive(config, getRootNode(&*config), getRootNode(&*with));
+    Node * config_root = getRootNode(config.get());
+    Node * with_root = getRootNode(with.get());
+
+    if (config_root->nodeName() != with_root->nodeName())
+        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
+
+    mergeRecursive(config, config_root, with_root);
 }
 
 std::string ConfigProcessor::layerFromHost()
@@ -527,7 +533,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
     XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
 
     if (has_zk_includes && !allow_zk_includes)
-        throw Poco::Exception("Error while loading config `" + path + "': from_zk includes are not allowed!");
+        throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 

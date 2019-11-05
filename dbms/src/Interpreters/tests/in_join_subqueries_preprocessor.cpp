@@ -30,6 +30,7 @@ namespace DB
 /// Simplified version of the StorageDistributed class.
 class StorageDistributedFake : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
+    friend struct ext::shared_ptr_helper<StorageDistributedFake>;
 public:
     std::string getName() const override { return "DistributedFake"; }
     bool isRemote() const override { return true; }
@@ -38,6 +39,7 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
 
     std::string getTableName() const override { return ""; }
+    std::string getDatabaseName() const override { return ""; }
 
 protected:
     StorageDistributedFake(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
@@ -1158,6 +1160,7 @@ bool run()
 TestResult check(const TestEntry & entry)
 {
     static DB::Context context = DB::Context::createGlobal();
+    context.makeGlobalContext();
 
     try
     {

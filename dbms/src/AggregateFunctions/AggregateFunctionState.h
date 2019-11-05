@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -23,9 +24,9 @@ private:
     Array params;
 
 public:
-    AggregateFunctionState(AggregateFunctionPtr nested, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments, params)
-        , nested_func(nested), arguments(arguments), params(params) {}
+    AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
+        , nested_func(nested_), arguments(arguments_), params(params_) {}
 
     String getName() const override
     {
@@ -81,7 +82,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnAggregateFunction &>(to).getData().push_back(const_cast<AggregateDataPtr>(place));
+        assert_cast<ColumnAggregateFunction &>(to).getData().push_back(const_cast<AggregateDataPtr>(place));
     }
 
     /// Aggregate function or aggregate function state.

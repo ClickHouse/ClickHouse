@@ -1,10 +1,8 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
+#include <common/find_symbols.h>
 
-#ifdef __SSE4_2__
-#include <nmmintrin.h>
-#endif
 
 namespace DB
 {
@@ -60,7 +58,7 @@ public:
             execute(reinterpret_cast<const UInt8 *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
 
             res_data.resize(res_data.size() + length + 1);
-            memcpy(&res_data[res_offset], start, length);
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
             res_offset += length + 1;
             res_data[res_offset - 1] = '\0';
 
@@ -77,59 +75,27 @@ public:
 private:
     static void execute(const UInt8 * data, size_t size, const UInt8 *& res_data, size_t & res_size)
     {
-        size_t chars_to_trim_left = 0;
-        size_t chars_to_trim_right = 0;
-        char whitespace = ' ';
-#ifdef __SSE4_2__
-        const auto bytes_sse = sizeof(__m128i);
-        const auto size_sse = size - (size % bytes_sse);
-        const auto whitespace_mask = _mm_set1_epi8(whitespace);
-        constexpr auto base_sse_mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_EACH | _SIDD_NEGATIVE_POLARITY;
-        auto mask = bytes_sse;
-#endif
+        const char * char_data = reinterpret_cast<const char *>(data);
+        const char * char_end = char_data + size;
 
         if constexpr (mode::trim_left)
         {
-#ifdef __SSE4_2__
-            /// skip whitespace from left in blocks of up to 16 characters
-
-            /// Avoid gcc bug: _mm_cmpistri: error: the third argument must be an 8-bit immediate
-            enum { left_sse_mode = base_sse_mode | _SIDD_LEAST_SIGNIFICANT };
-            while (mask == bytes_sse && chars_to_trim_left < size_sse)
-            {
-                const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + chars_to_trim_left));
-                mask = _mm_cmpistri(whitespace_mask, chars, left_sse_mode);
-                chars_to_trim_left += mask;
-            }
-#endif
-            /// skip remaining whitespace from left, character by character
-            while (chars_to_trim_left < size && data[chars_to_trim_left] == whitespace)
-                ++chars_to_trim_left;
+            const char * found = find_first_not_symbols<' '>(char_data, char_end);
+            size_t num_chars = found - char_data;
+            char_data += num_chars;
         }
 
         if constexpr (mode::trim_right)
         {
-            const auto trim_right_size = size - chars_to_trim_left;
-#ifdef __SSE4_2__
-            /// try to skip whitespace from right in blocks of up to 16 characters
-
-            /// Avoid gcc bug: _mm_cmpistri: error: the third argument must be an 8-bit immediate
-            enum { right_sse_mode = base_sse_mode | _SIDD_MOST_SIGNIFICANT };
-            const auto trim_right_size_sse = trim_right_size - (trim_right_size % bytes_sse);
-            while (mask == bytes_sse && chars_to_trim_right < trim_right_size_sse)
-            {
-                const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + size - chars_to_trim_right - bytes_sse));
-                mask = _mm_cmpistri(whitespace_mask, chars, right_sse_mode);
-                chars_to_trim_right += mask;
-            }
-#endif
-            /// skip remaining whitespace from right, character by character
-            while (chars_to_trim_right < trim_right_size && data[size - chars_to_trim_right - 1] == whitespace)
-                ++chars_to_trim_right;
+            const char * found = find_last_not_symbols_or_null<' '>(char_data, char_end);
+            if (found)
+                char_end = found + 1;
+            else
+                char_end = char_data;
         }
 
-        res_data = data + chars_to_trim_left;
-        res_size = size - chars_to_trim_left - chars_to_trim_right;
+        res_data = reinterpret_cast<const UInt8 *>(char_data);
+        res_size = char_end - char_data;
     }
 };
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IExternalLoadable.h>
@@ -21,21 +22,21 @@ namespace ErrorCodes
 
 enum class AttributeUnderlyingType
 {
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Float32,
-    Float64,
-    Decimal32,
-    Decimal64,
-    Decimal128,
-    String
+    utUInt8,
+    utUInt16,
+    utUInt32,
+    utUInt64,
+    utUInt128,
+    utInt8,
+    utInt16,
+    utInt32,
+    utInt64,
+    utFloat32,
+    utFloat64,
+    utDecimal32,
+    utDecimal64,
+    utDecimal128,
+    utString
 };
 
 

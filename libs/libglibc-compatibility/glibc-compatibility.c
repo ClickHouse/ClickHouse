@@ -131,7 +131,7 @@ int sscanf(const char *restrict s, const char *restrict fmt, ...)
     return ret;
 }
 
-int __isoc99_sscanf(const char *str, const char *format, ...) __attribute__((weak, alias("sscanf")));
+int __isoc99_sscanf(const char *str, const char *format, ...) __attribute__((weak, nonnull, nothrow, alias("sscanf")));
 
 int open(const char *path, int oflag);
 

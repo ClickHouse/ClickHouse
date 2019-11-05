@@ -1,11 +1,13 @@
 #include "PerformanceTestInfo.h"
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <boost/filesystem.hpp>
 #include "applySubstitutions.h"
+#include <filesystem>
 #include <iostream>
+
 
 namespace DB
 {
@@ -39,7 +41,7 @@ void extractSettings(
 }
 
 
-namespace fs = boost::filesystem;
+namespace fs = std::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
@@ -48,8 +50,8 @@ PerformanceTestInfo::PerformanceTestInfo(
     : profiles_file(profiles_file_)
     , settings(global_settings_)
 {
-    test_name = config->getString("name");
     path = config->getString("path");
+    test_name = fs::path(path).stem().string();
     if (config->has("main_metric"))
     {
         Strings main_metrics;

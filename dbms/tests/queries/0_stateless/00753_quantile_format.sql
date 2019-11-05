@@ -15,11 +15,11 @@ SELECT quantilesExact(0.2)(d) FROM datetime;
 SELECT quantileExactWeighted(0.2)(d, 1) FROM datetime;
 SELECT quantilesExactWeighted(0.2)(d, 1) FROM datetime;
 
-SELECT quantileTiming(0.2)(d) FROM datetime; -- { serverError 43 }
-SELECT quantilesTiming(0.2)(d) FROM datetime; -- { serverError 43 }
+SELECT quantileTiming(0.2)(d) FROM datetime;
+SELECT quantilesTiming(0.2)(d) FROM datetime;
 
-SELECT quantileTimingWeighted(0.2)(d, 1) FROM datetime; -- { serverError 43 }
-SELECT quantilesTimingWeighted(0.2)(d, 1) FROM datetime; -- { serverError 43 }
+SELECT quantileTimingWeighted(0.2)(d, 1) FROM datetime;
+SELECT quantilesTimingWeighted(0.2)(d, 1) FROM datetime;
 
 SELECT quantileTDigest(0.2)(d) FROM datetime;
 SELECT quantilesTDigest(0.2)(d) FROM datetime;

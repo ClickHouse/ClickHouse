@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -120,8 +121,8 @@ public:
         Arena *
     ) const override
     {
-        auto col_x = static_cast<const ColumnVector<X> *>(columns[0]);
-        auto col_y = static_cast<const ColumnVector<Y> *>(columns[1]);
+        auto col_x = assert_cast<const ColumnVector<X> *>(columns[0]);
+        auto col_y = assert_cast<const ColumnVector<Y> *>(columns[1]);
 
         X x = col_x->getData()[row_num];
         Y y = col_y->getData()[row_num];
@@ -181,9 +182,9 @@ public:
         Ret k = this->data(place).getK();
         Ret b = this->data(place).getB(k);
 
-        auto & col_tuple = static_cast<ColumnTuple &>(to);
-        auto & col_k = static_cast<ColumnVector<Ret> &>(col_tuple.getColumn(0));
-        auto & col_b = static_cast<ColumnVector<Ret> &>(col_tuple.getColumn(1));
+        auto & col_tuple = assert_cast<ColumnTuple &>(to);
+        auto & col_k = assert_cast<ColumnVector<Ret> &>(col_tuple.getColumn(0));
+        auto & col_b = assert_cast<ColumnVector<Ret> &>(col_tuple.getColumn(1));
 
         col_k.getData().push_back(k);
         col_b.getData().push_back(b);

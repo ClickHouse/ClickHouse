@@ -1,5 +1,4 @@
 #include <Interpreters/Set.h>
-#include <Interpreters/Join.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
@@ -124,12 +123,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_join)
         {
-            subquery.renameColumns(block);
-
-            if (subquery.joined_block_actions)
-                subquery.joined_block_actions->execute(block);
-
-            if (!subquery.join->insertFromBlock(block))
+            if (!subquery.insertJoinedBlock(block))
                 done_with_join = true;
         }
 
@@ -162,8 +156,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
     head_rows = profile_info.rows;
 
-    if (subquery.join)
-        subquery.join->setTotals(subquery.source->getTotals());
+    subquery.setTotals();
 
     if (head_rows != 0)
     {

@@ -3,8 +3,8 @@
 #include <Common/NamePrompter.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
-#include <ext/singleton.h>
 #include <unordered_map>
 
 
@@ -20,9 +20,12 @@ class ASTStorage;
   * In 'columns' Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : public ext::singleton<StorageFactory>, public IHints<1, StorageFactory>
+class StorageFactory : private boost::noncopyable, public IHints<1, StorageFactory>
 {
 public:
+
+    static StorageFactory & instance();
+
     struct Arguments
     {
         const String & engine_name;
@@ -35,6 +38,7 @@ public:
         Context & local_context;
         Context & context;
         const ColumnsDescription & columns;
+        const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
     };
@@ -49,6 +53,7 @@ public:
         Context & local_context,
         Context & context,
         const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints,
         bool attach,
         bool has_force_restore_data_flag) const;
 

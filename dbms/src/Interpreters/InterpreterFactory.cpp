@@ -14,6 +14,7 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTWatchQuery.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
@@ -35,6 +36,7 @@
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
@@ -131,7 +133,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         throwIfNoAccess(context);
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
-    else if (query->as<ASTExistsQuery>())
+    else if (query->as<ASTExistsTableQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTExistsDictionaryQuery>())
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
@@ -140,6 +146,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
     else if (query->as<ASTShowCreateDatabaseQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateDictionaryQuery>())
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
@@ -172,6 +182,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         throwIfNoAccess(context);
         return std::make_unique<InterpreterSystemQuery>(query, context);
+    }
+    else if (query->as<ASTWatchQuery>())
+    {
+        return std::make_unique<InterpreterWatchQuery>(query, context);
     }
     else
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

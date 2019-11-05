@@ -1,4 +1,3 @@
-
 SELECT '----- NULL value -----';
 
 SELECT NULL;
@@ -126,6 +125,7 @@ SELECT '----- ifNull, nullIf -----';
 
 SELECT col1, col2, ifNull(col1,col2) FROM test1_00395 ORDER BY col1,col2 ASC;
 SELECT col1, col2, nullIf(col1,col2) FROM test1_00395 ORDER BY col1,col2 ASC;
+SELECT nullIf(1, NULL);
 
 SELECT '----- coalesce -----';
 
@@ -148,18 +148,18 @@ SELECT col1 FROM test1_00395 WHERE col1 IS NULL;
 
 SELECT '----- if -----';
 
-DROP TABLE IF EXISTS test.test1_00395;
-CREATE TABLE test.test1_00395 (col1 Nullable(String)) ENGINE=TinyLog;
-INSERT INTO test.test1_00395 VALUES ('a'), ('b'), ('c'), (NULL);
+DROP TABLE IF EXISTS test1_00395;
+CREATE TABLE test1_00395 (col1 Nullable(String)) ENGINE=TinyLog;
+INSERT INTO test1_00395 VALUES ('a'), ('b'), ('c'), (NULL);
 
-SELECT col1, if(col1 IN ('a' ,'b'), 1, 0) AS t, toTypeName(t) FROM test.test1_00395;
-SELECT col1, if(col1 IN ('a' ,'b'), NULL, 0) AS t, toTypeName(t) FROM test.test1_00395;
+SELECT col1, if(col1 IN ('a' ,'b'), 1, 0) AS t, toTypeName(t) FROM test1_00395;
+SELECT col1, if(col1 IN ('a' ,'b'), NULL, 0) AS t, toTypeName(t) FROM test1_00395;
 
 SELECT '----- case when -----';
 
-SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 ELSE 0 END AS t, toTypeName(t) FROM test.test1_00395;
-SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN NULL ELSE 0 END AS t, toTypeName(t) FROM test.test1_00395;
-SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 END AS t, toTypeName(t) FROM test.test1_00395;
+SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 ELSE 0 END AS t, toTypeName(t) FROM test1_00395;
+SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN NULL ELSE 0 END AS t, toTypeName(t) FROM test1_00395;
+SELECT col1, CASE WHEN col1 IN ('a' ,'b') THEN 1 END AS t, toTypeName(t) FROM test1_00395;
 
 SELECT '----- multiIf -----';
 
@@ -497,3 +497,4 @@ INSERT INTO test1_00395(col1,col2) VALUES([NULL], 'ACDEFBGH');
 SELECT col1, count() FROM test1_00395 GROUP BY col1 ORDER BY col1;
 
 DROP TABLE IF EXISTS test1_00395;
+DROP TABLE test2;

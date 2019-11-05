@@ -21,7 +21,7 @@ install (FILES server-test.xml DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-ser
 install (FILES client-test.xml DESTINATION  ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse)
 
 if (ENABLE_TESTS)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CTestCustom.cmake ${CMAKE_BINARY_DIR})
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CTestCustom.cmake ${ClickHouse_BINARY_DIR})
 
     # maybe add --no-long ?
     # if you want disable some tests: env TEST_OPT0='--skip compile'

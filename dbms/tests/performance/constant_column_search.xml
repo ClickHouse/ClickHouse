@@ -1,6 +1,4 @@
 <test>
-    <name>Constant column string search</name>
-
     <tags>
         <tag>search</tag>
     </tags>

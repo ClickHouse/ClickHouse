@@ -54,7 +54,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
     if (fd == -1)
     {
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-        throwFromErrno("Cannot open file " + filename, error_code);
+        throwFromErrnoWithPath("Cannot open file " + filename, filename, error_code);
     }
 }
 
@@ -254,7 +254,7 @@ void ReadBufferAIO::prepare()
     /// Region of the disk from which we want to read data.
     const off_t region_begin = first_unread_pos_in_file;
 
-    if ((requested_byte_count > std::numeric_limits<off_t>::max()) ||
+    if ((requested_byte_count > static_cast<size_t>(std::numeric_limits<off_t>::max())) ||
         (first_unread_pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(requested_byte_count))))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 

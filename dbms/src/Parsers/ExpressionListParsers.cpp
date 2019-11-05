@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -78,7 +79,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
 
-    auto list = std::make_shared<ASTExpressionList>();
+    auto list = std::make_shared<ASTExpressionList>(result_separator);
     node = list;
 
     while (true)
@@ -139,6 +140,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 {
     bool first = true;
 
+    auto current_depth = pos.depth;
     while (1)
     {
         if (first)
@@ -190,10 +192,14 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 ++pos;
             }
 
+            /// Left associative operator chain is parsed as a tree: ((((1 + 1) + 1) + 1) + 1)...
+            /// We must account it's depth - otherwise we may end up with stack overflow later - on destruction of AST.
+            pos.increaseDepth();
             node = function;
         }
     }
 
+    pos.depth = current_depth;
     return true;
 }
 
@@ -522,9 +528,9 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected 
 }
 
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool prefer_alias_to_column_name)
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
     : impl(std::make_unique<ParserWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                     allow_alias_without_as_keyword, prefer_alias_to_column_name))
+                                                     allow_alias_without_as_keyword))
 {
 }
 
@@ -532,7 +538,7 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword, prefer_alias_to_column_name),
+        std::make_unique<ParserExpressionWithOptionalAlias>(allow_alias_without_as_keyword),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
@@ -554,7 +560,7 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr node_comp;
-    if (!ParserComparisonExpression{}.parse(pos, node_comp, expected))
+    if (!elem_parser.parse(pos, node_comp, expected))
         return false;
 
     ParserKeyword s_is{"IS"};
@@ -622,5 +628,47 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     return true;
 }
 
+bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserLiteral literal_parser;
+
+    ASTPtr identifier;
+    ASTPtr value;
+    bool with_brackets = false;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    /// If it's not literal or identifier, than it's possible list of pairs
+    if (!literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    {
+        ParserKeyValuePairsList kv_pairs_list;
+        ParserToken open(TokenType::OpeningRoundBracket);
+        ParserToken close(TokenType::ClosingRoundBracket);
+
+        if (!open.ignore(pos))
+            return false;
+
+        if (!kv_pairs_list.parse(pos, value, expected))
+            return false;
+
+        if (!close.ignore(pos))
+            return false;
+
+        with_brackets = true;
+    }
+
+    auto pair = std::make_shared<ASTPair>(with_brackets);
+    pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
+    pair->second = value;
+    node = pair;
+    return true;
+}
+
+bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserList parser(std::make_unique<ParserKeyValuePair>(), std::make_unique<ParserNothing>(), true, 0);
+    return parser.parse(pos, node, expected);
+}
 
 }

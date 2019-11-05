@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -23,14 +24,14 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
         return;
     }
 
-    if (column.isColumnConst())
+    if (isColumnConst(column))
     {
-        const ColumnConst & column_const = static_cast<const ColumnConst &>(column);
+        const ColumnConst & column_const = assert_cast<const ColumnConst &>(column);
         ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfLowCardinality();
 
         if (!typeid_cast<const ColumnUInt8 *>(column_nested.get()))
         {
-            const ColumnNullable * column_nested_nullable = typeid_cast<const ColumnNullable *>(column_nested.get());
+            const ColumnNullable * column_nested_nullable = checkAndGetColumn<ColumnNullable>(*column_nested);
             if (!column_nested_nullable || !typeid_cast<const ColumnUInt8 *>(&column_nested_nullable->getNestedColumn()))
             {
                 throw Exception("Illegal type " + column_nested->getName() + " of column for constant filter. Must be UInt8 or Nullable(UInt8).",
@@ -60,7 +61,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         return;
     }
 
-    if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(&column))
+    if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(column))
     {
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
         MutableColumnPtr mutable_holder = (*std::move(nested_column)).mutate();

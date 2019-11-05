@@ -26,6 +26,11 @@ private:
 
 struct TableStructureReadLockHolder
 {
+    void release()
+    {
+        *this = TableStructureReadLockHolder();
+    }
+
 private:
     friend class IStorage;
 

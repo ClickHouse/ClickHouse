@@ -2,7 +2,7 @@
 
 The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
-`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a row are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
+`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a sorting key (`ORDER BY`) are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
 The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
 
@@ -65,7 +65,7 @@ Use the particular column `Sign`. If `Sign = 1` it means that the row is a state
 
 For example, we want to calculate how much pages users checked at some site and how long they were there. At some moment of time we write the following row with the state of user activity:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
@@ -73,20 +73,20 @@ For example, we want to calculate how much pages users checked at some site and 
 
 At some moment later we register the change of user activity and write it with the following two rows.
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-The first row cancels the previous state of the object (user). It should copy all of the fields of the canceled state excepting `Sign`.
+The first row cancels the previous state of the object (user). It should copy the sorting key fields of the canceled state excepting `Sign`.
 
 The second row contains the current state.
 
 As we need only the last state of user activity, the rows
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -99,13 +99,13 @@ Why we need 2 rows for each change read in the [Algorithm](#table_engine-collaps
 
 **Peculiar properties of such approach**
 
-1. The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should be the copy of "state" string with the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
+1. The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should contain copies of the sorting key fields of the "state" string and the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
 2. Long growing arrays in columns reduce the efficiency of the engine due to load for writing. The more straightforward data, the higher efficiency.
 3. The `SELECT` results depend strongly on the consistency of object changes history. Be accurate when preparing data for inserting. You can get unpredictable results in inconsistent data, for example, negative values for non-negative metrics such as session depth.
 
 ### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
 
-When ClickHouse merges data parts, each group of consecutive rows with the same primary key is reduced to not more than two rows, one with `Sign = 1` ("state" row) and another with `Sign = -1` ("cancel" row). In other words, entries collapse.
+When ClickHouse merges data parts, each group of consecutive rows with the same sorting key (`ORDER BY`) is reduced to not more than two rows, one with `Sign = 1` ("state" row) and another with `Sign = -1` ("cancel" row). In other words, entries collapse.
 
 For each resulting data part ClickHouse saves:
 
@@ -119,9 +119,9 @@ For each resulting data part ClickHouse saves:
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
 
-The `Sign` is required because the merging algorithm doesn't guarantee that all of the rows with the same primary key will be in the same resulting data part and even on the same physical server. ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely "collapsed" data from `CollapsingMergeTree` table.
+The `Sign` is required because the merging algorithm doesn't guarantee that all of the rows with the same sorting key will be in the same resulting data part and even on the same physical server. ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely "collapsed" data from `CollapsingMergeTree` table.
 
-To finalize collapsing write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
+To finalize collapsing, write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
 
 The aggregates `count`, `sum` and `avg` could be calculated this way. The aggregate `uniq` could be calculated if an object has at least one state not collapsed. The aggregates `min` and `max` could not be calculated because `CollapsingMergeTree` does not save values history of the collapsed states.
 
@@ -131,7 +131,7 @@ If you need to extract data without aggregation (for example, to check whether r
 
 Example data:
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -166,11 +166,11 @@ We use two `INSERT` queries to create two different data parts. If we insert the
 
 Getting the data:
 
-```
+```sql
 SELECT * FROM UAct
 ```
 
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -195,7 +195,7 @@ FROM UAct
 GROUP BY UserID
 HAVING sum(Sign) > 0
 ```
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
@@ -206,12 +206,84 @@ If we do not need aggregation and want to force collapsing, we can use `FINAL` m
 ```sql
 SELECT * FROM UAct FINAL
 ```
-```
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
 This way of selecting the data is very inefficient. Don't use it for big tables.
+
+## Example of another approach
+
+Example data:
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+│ 4324182021466249494 │        -5 │     -146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+The idea is that merges take into account only key fields. And in the "Cancel" line we can specify negative values that equalize the previous version of the row when summing without using the Sign column. For this approach, it is necessary to change the data type `PageViews`,` Duration` to store negative values of UInt8 -> Int16.
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews Int16,
+    Duration Int16,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+```
+
+Let's test the approach:
+```sql
+insert into UAct values(4324182021466249494,  5,  146,  1);
+insert into UAct values(4324182021466249494, -5, -146, -1);
+insert into UAct values(4324182021466249494,  6,  185,  1);
+
+select * from UAct final; // avoid using final in production (just for a test or small tables)
+```
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+```sql
+SELECT
+    UserID,
+    sum(PageViews) AS PageViews,
+    sum(Duration) AS Duration
+FROM UAct
+GROUP BY UserID
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+```
+```sqk
+select count() FROM UAct
+```
+```text
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+```sql
+optimize table UAct final;
+
+select * FROM UAct
+```
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

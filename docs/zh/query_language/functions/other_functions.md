@@ -76,7 +76,7 @@ SELECT visibleWidth(NULL)
 
 如果将`NULL`作为参数传递给函数，那么它返回`Nullable（Nothing）`类型，它对应于ClickHouse中的内部`NULL`。
 
-## blockSize()
+## blockSize() {#function-blocksize}
 
 获取Block的大小。
 在ClickHouse中，查询始终工作在Block（包含列的部分的集合）上。此函数允许您获取调用其的块的大小。
@@ -122,7 +122,7 @@ Accepts constant strings: database name, table name, and column name. Returns a 
 The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
-## bar
+## bar {#function-bar}
 
 使用unicode构建图表。
 
@@ -305,7 +305,7 @@ SELECT
 
 返回行所在的Block的序列号。
 
-## rowNumberInBlock
+## rowNumberInBlock {#function-rownumberinblock}
 
 返回行所在Block中行的序列号。 针对不同的Block始终重新计算。
 
@@ -637,11 +637,11 @@ SELECT replicate(1, ['a', 'b', 'c'])
 
 返回磁盘的容量信息，以字节为单位。使用配置文件中的path配置评估此信息。
 
-## finalizeAggregation
+## finalizeAggregation {#function-finalizeaggregation}
 
 获取聚合函数的状态。返回聚合结果（最终状态）。
 
-## runningAccumulate
+## runningAccumulate {#function-runningaccumulate}
 
 获取聚合函数的状态并返回其具体的值。这是从第一行到当前行的所有行累计的结果。
 

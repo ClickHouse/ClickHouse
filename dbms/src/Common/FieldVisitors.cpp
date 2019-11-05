@@ -72,9 +72,8 @@ String FieldVisitorDump::operator() (const Array & x) const
     return wb.str();
 }
 
-String FieldVisitorDump::operator() (const Tuple & x_def) const
+String FieldVisitorDump::operator() (const Tuple & x) const
 {
-    auto & x = x_def.toUnderType();
     WriteBufferFromOwnString wb;
 
     wb << "Tuple_(";
@@ -130,7 +129,7 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) con
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
 {
-    return "(" + formatQuoted(x.name) + ")" + formatQuoted(x.data);
+    return formatQuoted(x.data);
 }
 
 String FieldVisitorToString::operator() (const Array & x) const
@@ -149,9 +148,8 @@ String FieldVisitorToString::operator() (const Array & x) const
     return wb.str();
 }
 
-String FieldVisitorToString::operator() (const Tuple & x_def) const
+String FieldVisitorToString::operator() (const Tuple & x) const
 {
-    auto & x = x_def.toUnderType();
     WriteBufferFromOwnString wb;
 
     wb << '(';
@@ -167,7 +165,7 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
 }
 
 
-FieldVisitorHash::FieldVisitorHash(SipHash & hash) : hash(hash) {}
+FieldVisitorHash::FieldVisitorHash(SipHash & hash_) : hash(hash_) {}
 
 void FieldVisitorHash::operator() (const Null &) const
 {
@@ -209,6 +207,16 @@ void FieldVisitorHash::operator() (const String & x) const
     hash.update(type);
     hash.update(x.size());
     hash.update(x.data(), x.size());
+}
+
+void FieldVisitorHash::operator() (const Tuple & x) const
+{
+    UInt8 type = Field::Types::Tuple;
+    hash.update(type);
+    hash.update(x.size());
+
+    for (const auto & elem : x)
+        applyVisitor(*this, elem);
 }
 
 void FieldVisitorHash::operator() (const Array & x) const

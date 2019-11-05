@@ -19,9 +19,11 @@ separator - необязательный параметр, константна�
 
 **Пример:**
 
-```
+```sql
 SELECT alphaTokens('abca1abc')
+```
 
+```text
 ┌─alphaTokens('abca1abc')─┐
 │ ['abca','abc']          │
 └─────────────────────────┘

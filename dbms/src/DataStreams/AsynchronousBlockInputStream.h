@@ -73,6 +73,15 @@ public:
 
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
+    void cancel(bool kill) override
+    {
+        IBlockInputStream::cancel(kill);
+
+        /// Wait for some backgroud calculations to be sure,
+        ///  that after end of stream nothing is being executing.
+        if (started)
+            pool.wait();
+    }
 
     ~AsynchronousBlockInputStream() override
     {

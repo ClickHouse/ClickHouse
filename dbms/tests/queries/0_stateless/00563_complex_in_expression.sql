@@ -20,7 +20,7 @@ ALL INNER JOIN
         data
     FROM join_with_index
     WHERE toUInt64(data) IN (0, 529335254087962442)
-) USING (key);
+) js2 USING (key);
 
 SELECT _uniq, _uniq IN (0, 99)
 FROM join_with_index

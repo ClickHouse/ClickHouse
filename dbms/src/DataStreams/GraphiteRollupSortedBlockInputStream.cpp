@@ -14,9 +14,9 @@ namespace ErrorCodes
 
 GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-    const Graphite::Params & params, time_t time_of_merge)
+    const Graphite::Params & params_, time_t time_of_merge_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-    params(params), time_of_merge(time_of_merge)
+    params(params_), time_of_merge(time_of_merge_)
 {
     size_t max_size_of_aggregate_state = 0;
     size_t max_alignment_of_aggregate_state = 1;
@@ -103,7 +103,7 @@ Graphite::RollupRule GraphiteRollupSortedBlockInputStream::selectPatternForPath(
 
 UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
 {
-    static_assert(std::is_signed_v<time_t>, "time_t must be signed type");
+    static_assert(is_signed_v<time_t>, "time_t must be signed type");
 
     for (const auto & retention : retentions)
     {
@@ -321,7 +321,7 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
 }
 
 
-void GraphiteRollupSortedBlockInputStream::accumulateRow(RowRef & row)
+void GraphiteRollupSortedBlockInputStream::accumulateRow(SharedBlockRowRef & row)
 {
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
     if (aggregate_state_created)

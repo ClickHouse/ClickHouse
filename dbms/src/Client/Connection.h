@@ -57,18 +57,16 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const ConnectionTimeouts & timeouts_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
         Protocol::Secure secure_ = Protocol::Secure::Disable,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_), current_resolved_address(host, port),
+        user(user_), password(password_),
         client_name(client_name_),
         compression(compression_),
         secure(secure_),
-        timeouts(timeouts_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
     {
@@ -106,11 +104,16 @@ public:
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
-    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision);
-    UInt64 getServerRevision();
+    void getServerVersion(const ConnectionTimeouts & timeouts,
+                          String & name,
+                          UInt64 & version_major,
+                          UInt64 & version_minor,
+                          UInt64 & version_patch,
+                          UInt64 & revision);
+    UInt64 getServerRevision(const ConnectionTimeouts & timeouts);
 
-    const String & getServerTimezone();
-    const String & getServerDisplayName();
+    const String & getServerTimezone(const ConnectionTimeouts & timeouts);
+    const String & getServerDisplayName(const ConnectionTimeouts & timeouts);
 
     /// For log and exception messages.
     const String & getDescription() const;
@@ -118,14 +121,9 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
-    /// For proper polling.
-    inline const auto & getTimeouts() const
-    {
-        return timeouts;
-    }
-
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
+        const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id_ = "",
         UInt64 stage = QueryProcessingStage::Complete,
@@ -135,7 +133,9 @@ public:
 
     void sendCancel();
     /// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
-    void sendData(const Block & block, const String & name = "");
+    void sendData(const Block & block, const String & name = "", bool scalar = false);
+    /// Send all scalars.
+    void sendScalarsData(Scalars & data);
     /// Send all contents of external (temporary) tables.
     void sendExternalTablesData(ExternalTablesData & data);
 
@@ -156,9 +156,10 @@ public:
     Packet receivePacket();
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
-    void forceConnected();
+    void forceConnected(const ConnectionTimeouts & timeouts);
 
-    TablesStatusResponse getTablesStatus(const TablesStatusRequest & request);
+    TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
+                                         const TablesStatusRequest & request);
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state
@@ -169,9 +170,6 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
-    /// Returns initially resolved address
-    Poco::Net::SocketAddress getResolvedAddress() const;
-
 private:
     String host;
     UInt16 port;
@@ -181,11 +179,14 @@ private:
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
-    Poco::Net::SocketAddress current_resolved_address;
+    std::optional<Poco::Net::SocketAddress> current_resolved_address;
 
     /// For messages in log and in exceptions.
     String description;
     void setDescription();
+
+    /// Returns resolved address if it was resolved.
+    std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
     String client_name;
 
@@ -216,7 +217,6 @@ private:
       */
     ThrottlerPtr throttler;
 
-    ConnectionTimeouts timeouts;
     Poco::Timespan sync_request_timeout;
 
     /// From where to read query execution result.
@@ -252,7 +252,7 @@ private:
 
     LoggerWrapper log_wrapper;
 
-    void connect();
+    void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
     bool ping();

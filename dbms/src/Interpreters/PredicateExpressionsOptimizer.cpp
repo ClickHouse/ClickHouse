@@ -15,15 +15,18 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
 #include <Interpreters/ExtractFunctionDataVisitor.h>
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -46,7 +49,7 @@ String qualifiedName(ASTIdentifier * identifier, const String & prefix)
     return identifier->getAliasOrColumnName();
 }
 
-} // namespace
+}
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
     ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_)
@@ -136,7 +139,10 @@ bool PredicateExpressionsOptimizer::allowPushDown(
     const std::vector<IdentifierWithQualifier> & dependencies,
     OptimizeKind & optimize_kind)
 {
-    if (!subquery || subquery->final() || subquery->limitBy() || subquery->limitLength() || subquery->with())
+    if (!subquery
+        || (!settings.enable_optimize_predicate_expression_to_final_subquery && subquery->final())
+        || subquery->limitBy() || subquery->limitLength()
+        || subquery->with())
         return false;
     else
     {
@@ -266,7 +272,7 @@ std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(con
                     continue;
                 }
             }
-            idx++;
+            ++idx;
         }
     }
     return predicate_expressions;
@@ -401,18 +407,21 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     /// TODO: get tables from evaluateAsterisk instead of tablesOnly() to extract asterisks in general way
     std::vector<TableWithColumnNames> tables_with_columns = TranslateQualifiedNamesVisitor::Data::tablesOnly(tables);
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, tables_with_columns, false);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, std::move(tables_with_columns), false);
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};
     QueryAliasesVisitor(query_aliases_data).visit(ast);
+
+    MarkTableIdentifiersVisitor::Data mark_tables_data{aliases};
+    MarkTableIdentifiersVisitor(mark_tables_data).visit(ast);
 
     QueryNormalizer::Data normalizer_data(aliases, settings);
     QueryNormalizer(normalizer_data).visit(ast);
 
     for (const auto & projection_column : select_query->select()->children)
     {
-        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>())
+        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>() || projection_column->as<ASTColumnsMatcher>())
         {
             ASTs evaluated_columns = evaluateAsterisk(select_query, projection_column);
 
@@ -483,8 +492,20 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
                 throw Exception("Logical error: unexpected table expression", ErrorCodes::LOGICAL_ERROR);
 
             const auto block = storage->getSampleBlock();
-            for (size_t idx = 0; idx < block.columns(); idx++)
-                projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
+            if (const auto * asterisk_pattern = asterisk->as<ASTColumnsMatcher>())
+            {
+                for (size_t idx = 0; idx < block.columns(); ++idx)
+                {
+                    auto & col = block.getByPosition(idx);
+                    if (asterisk_pattern->isColumnMatching(col.name))
+                        projection_columns.emplace_back(std::make_shared<ASTIdentifier>(col.name));
+                }
+            }
+            else
+            {
+                for (size_t idx = 0; idx < block.columns(); ++idx)
+                    projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
+            }
         }
     }
     return projection_columns;

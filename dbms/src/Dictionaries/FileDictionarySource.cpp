@@ -13,8 +13,8 @@ static const UInt64 max_block_size = 8192;
 
 
 FileDictionarySource::FileDictionarySource(
-    const std::string & filename, const std::string & format, Block & sample_block, const Context & context)
-    : filename{filename}, format{format}, sample_block{sample_block}, context(context)
+    const std::string & filename_, const std::string & format_, Block & sample_block_, const Context & context_)
+    : filename{filename_}, format{format_}, sample_block{sample_block_}, context(context_)
 {
 }
 
@@ -56,7 +56,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 Context & context) -> DictionarySourcePtr
+                                 const Context & context) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};

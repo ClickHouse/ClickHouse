@@ -8,6 +8,7 @@ struct FixedHashTableCell
     using State = TState;
 
     using value_type = Key;
+    using mapped_type = void;
     bool full;
 
     FixedHashTableCell() {}
@@ -16,7 +17,6 @@ struct FixedHashTableCell
     bool isZero(const State &) const { return !full; }
     void setZero() { full = false; }
     static constexpr bool need_zero_value_storage = false;
-    void setMapped(const value_type & /*value*/) {}
 
     /// This Cell is only stored inside an iterator. It's used to accomodate the fact
     ///  that the iterator based API always provide a reference to a continuous memory
@@ -28,7 +28,6 @@ struct FixedHashTableCell
     {
         Key key;
 
-        value_type & getValueMutable() { return key; }
         const value_type & getValue() const { return key; }
         void update(Key && key_, FixedHashTableCell *) { key = key_; }
     };
@@ -142,6 +141,11 @@ protected:
 public:
     using key_type = Key;
     using value_type = typename Cell::value_type;
+    using mapped_type = typename Cell::mapped_type;
+
+    using LookupResult = Cell *;
+    using ConstLookupResult = const Cell *;
+
 
     size_t hash(const Key & x) const { return x; }
 
@@ -262,10 +266,11 @@ public:
     iterator end() { return iterator(this, buf + BUFFER_SIZE); }
 
 
-protected:
-    void ALWAYS_INLINE emplaceImpl(Key x, iterator & it, bool & inserted)
+public:
+    /// The last parameter is unused but exists for compatibility with HashTable interface.
+    void ALWAYS_INLINE emplace(Key x, LookupResult & it, bool & inserted, size_t /* hash */ = 0)
     {
-        it = iterator(this, &buf[x]);
+        it = &buf[x];
 
         if (!buf[x].isZero(*this))
         {
@@ -278,44 +283,34 @@ protected:
         ++m_size;
     }
 
-
-public:
-    std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
     {
-        std::pair<iterator, bool> res;
-        emplaceImpl(Cell::getKey(x), res.first, res.second);
+        std::pair<LookupResult, bool> res;
+        emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
-            res.first.ptr->setMapped(x);
+            insertSetMapped(lookupResultGetMapped(res.first), x);
 
         return res;
     }
 
-
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted) { emplaceImpl(x, it, inserted); }
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t) { emplaceImpl(x, it, inserted); }
-
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith x)
+    LookupResult ALWAYS_INLINE find(Key x)
     {
-        return !buf[x].isZero(*this) ? iterator(this, &buf[x]) : end();
+        return !buf[x].isZero(*this) ? &buf[x] : nullptr;
     }
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x) const
+    ConstLookupResult ALWAYS_INLINE find(Key x) const
     {
-        return !buf[x].isZero(*this) ? const_iterator(this, &buf[x]) : end();
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(x);
     }
 
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith, size_t hash_value)
+    LookupResult ALWAYS_INLINE find(Key, size_t hash_value)
     {
-        return !buf[hash_value].isZero(*this) ? iterator(this, &buf[hash_value]) : end();
+        return !buf[hash_value].isZero(*this) ? &buf[hash_value] : nullptr;
     }
 
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith, size_t hash_value) const
+    ConstLookupResult ALWAYS_INLINE find(Key key, size_t hash_value) const
     {
-        return !buf[hash_value].isZero(*this) ? const_iterator(this, &buf[hash_value]) : end();
+        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(key, hash_value);
     }
 
     bool ALWAYS_INLINE has(Key x) const { return !buf[x].isZero(*this); }

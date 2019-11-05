@@ -93,6 +93,10 @@ public:
         return checkDepthImpl(max_depth, 0);
     }
 
+    /** Get total number of tree elements
+     */
+    size_t size() const;
+
     /** Same for the total number of tree elements.
       */
     size_t checkSize(size_t max_size) const;
@@ -161,6 +165,13 @@ public:
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
+        FormatSettings(std::ostream & ostr_, const FormatSettings & other)
+            : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
+        {
+            nl_or_ws = one_line ? ' ' : '\n';
+        }
+
         void writeIdentifier(const String & name) const;
     };
 
@@ -170,7 +181,10 @@ public:
         /** The SELECT query in which the alias was found; identifier of a node with such an alias.
           * It is necessary that when the node has met again, output only the alias.
           */
-        std::set<std::pair<const IAST *, std::string>> printed_asts_with_alias;
+        std::set<std::tuple<
+            const IAST * /* SELECT query node */,
+            std::string /* alias */,
+            Hash /* printed content */>> printed_asts_with_alias;
     };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
@@ -201,16 +215,11 @@ public:
     static const char * hilite_function;
     static const char * hilite_operator;
     static const char * hilite_alias;
+    static const char * hilite_substitution;
     static const char * hilite_none;
 
 private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
-
-
-/// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(const String & x);
-/// Quote the identifier with backquotes.
-String backQuote(const String & x);
 
 }

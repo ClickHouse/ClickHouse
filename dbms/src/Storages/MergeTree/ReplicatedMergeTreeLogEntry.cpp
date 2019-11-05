@@ -46,6 +46,13 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << new_part_name;
             break;
 
+        case CLEAR_INDEX:
+            out << "clear_index\n"
+                << escape << index_name
+                << "\nfrom\n"
+                << new_part_name;
+            break;
+
         case REPLACE_RANGE:
             out << typeToString(REPLACE_RANGE) << "\n";
             replace_range_entry->writeText(out);
@@ -124,6 +131,11 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     {
         type = CLEAR_COLUMN;
         in >> escape >> column_name >> "\nfrom\n" >> new_part_name;
+    }
+    else if (type_str == "clear_index")
+    {
+        type = CLEAR_INDEX;
+        in >> escape >> index_name >> "\nfrom\n" >> new_part_name;
     }
     else if (type_str == typeToString(REPLACE_RANGE))
     {

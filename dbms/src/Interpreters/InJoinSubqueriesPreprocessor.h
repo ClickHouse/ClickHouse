@@ -46,8 +46,8 @@ public:
         virtual ~CheckShardsAndTables() {}
     };
 
-    InJoinSubqueriesPreprocessor(const Context & context, CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
-        : context(context)
+    InJoinSubqueriesPreprocessor(const Context & context_, CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
+        : context(context_)
         , checker(std::move(_checker))
     {}
 

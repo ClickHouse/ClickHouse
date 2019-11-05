@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
-#include <zstd.h>
 
 namespace ProfileEvents
 {
@@ -29,7 +28,7 @@ namespace ErrorCodes
 }
 
 
-UInt32 ICompressionCodec::compress(char * source, UInt32 source_size, char * dest) const
+UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {
     dest[0] = getMethodByte();
     UInt8 header_size = getHeaderSize();
@@ -41,17 +40,17 @@ UInt32 ICompressionCodec::compress(char * source, UInt32 source_size, char * des
 }
 
 
-UInt32 ICompressionCodec::decompress(char * source, UInt32 source_size, char * dest) const
+UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
     UInt8 method = source[0];
     if (method != getMethodByte())
         throw Exception("Can't decompress data with codec byte " + toString(method) + " from codec with byte " + toString(method), ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 header_size = getHeaderSize();
-    UInt32 decompressed_size = unalignedLoad<UInt32>(&source[5]);
+    UInt32 decompressed_size = readDecompressedBlockSize(source);
     doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
-    return decompressed_size;
 
+    return decompressed_size;
 }
 
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)

@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -68,7 +69,7 @@ public:
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
             return;
 
-        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], arena);
+        this->data(place).value.push_back(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -119,14 +120,14 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
 
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         offsets_to.push_back(offsets_to.back() + size);
 
         if (size)
         {
-            typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
             data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
         }
     }
@@ -191,7 +192,7 @@ struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNo
     /// Create node from string
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        StringRef string = static_cast<const ColumnString &>(column).getDataAt(row_num);
+        StringRef string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
         node->next = nullptr;
@@ -203,7 +204,7 @@ struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNo
 
     void insertInto(IColumn & column)
     {
-        static_cast<ColumnString &>(column).insertData(data(), size);
+        assert_cast<ColumnString &>(column).insertData(data(), size);
     }
 };
 
@@ -253,8 +254,8 @@ class GroupArrayGeneralListImpl final
     UInt64 max_elems;
 
 public:
-    GroupArrayGeneralListImpl(const DataTypePtr & data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>({data_type}, {})
+    GroupArrayGeneralListImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>({data_type_}, {})
         , data_type(this->argument_types[0]), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
@@ -374,7 +375,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & column_array = static_cast<ColumnArray &>(to);
+        auto & column_array = assert_cast<ColumnArray &>(to);
 
         auto & offsets = column_array.getOffsets();
         offsets.push_back(offsets.back() + data(place).elems);
@@ -383,7 +384,7 @@ public:
 
         if (std::is_same_v<Node, GroupArrayListNodeString>)
         {
-            auto & string_offsets = static_cast<ColumnString &>(column_data).getOffsets();
+            auto & string_offsets = assert_cast<ColumnString &>(column_data).getOffsets();
             string_offsets.reserve(string_offsets.size() + data(place).elems);
         }
 

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <mutex>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <mutex>
+#include <IO/ConnectionTimeouts.h>
 
 namespace DB
 {
@@ -26,11 +27,14 @@ public:
         std::vector<IConnectionPool::Entry> && connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
+    /// Send all scalars to replicas.
+    void sendScalarsData(Scalars & data);
     /// Send all content of external tables to replicas.
     void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
     /// Send request to replicas.
     void sendQuery(
+        const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id = "",
         UInt64 stage = QueryProcessingStage::Complete,

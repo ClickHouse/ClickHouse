@@ -173,6 +173,12 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, c
         s.insert(rb.position(), end);
 }
 
+template <>
+inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
+{
+    s.insert(rb.position(), end);
+}
+
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -187,6 +193,25 @@ void readStringInto(Vector & s, ReadBuffer & buf)
             return;
     }
 }
+
+template <typename Vector>
+void readNullTerminated(Vector & s, ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
+
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            break;
+    }
+    buf.ignore();
+}
+
+template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
+template void readNullTerminated<String>(String & s, ReadBuffer & buf);
 
 void readString(String & s, ReadBuffer & buf)
 {

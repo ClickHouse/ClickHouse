@@ -12,6 +12,7 @@ class Context;
 
 class StorageSystemModels : public ext::shared_ptr_helper<StorageSystemModels>, public IStorageSystemOneBlock<StorageSystemModels>
 {
+    friend struct ext::shared_ptr_helper<StorageSystemModels>;
 public:
     std::string getName() const override { return "SystemModels"; }
 

@@ -1,5 +1,10 @@
 #pragma once
 
+// Include this first, because `#define _asan_poison_address` from
+// llvm/Support/Compiler.h conflicts with its forward declaration in
+// sanitizer/asan_interface.h
+#include <Common/Arena.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
@@ -18,7 +23,7 @@
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
-#include <Common/Arena.h>
+#include <Common/assert_cast.h>
 #include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -433,7 +438,7 @@ public:
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool CanBeExecutedOnDefaultArguments = true>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
     const Context & context;
@@ -538,25 +543,24 @@ class FunctionBinaryArithmetic : public IFunction
         if (WhichDataType(block.getByPosition(new_arguments[1]).type).isAggregateFunction())
             std::swap(new_arguments[0], new_arguments[1]);
 
-        if (!block.getByPosition(new_arguments[1]).column->isColumnConst())
+        if (!isColumnConst(*block.getByPosition(new_arguments[1]).column))
             throw Exception{"Illegal column " + block.getByPosition(new_arguments[1]).column->getName()
                 + " of argument of aggregation state multiply. Should be integer constant", ErrorCodes::ILLEGAL_COLUMN};
 
         const IColumn & agg_state_column = *block.getByPosition(new_arguments[0]).column;
-        bool agg_state_is_const = agg_state_column.isColumnConst();
+        bool agg_state_is_const = isColumnConst(agg_state_column);
         const ColumnAggregateFunction & column = typeid_cast<const ColumnAggregateFunction &>(
-            agg_state_is_const ? static_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
+            agg_state_is_const ? assert_cast<const ColumnConst &>(agg_state_column).getDataColumn() : agg_state_column);
 
         AggregateFunctionPtr function = column.getAggregateFunction();
 
-        auto arena = std::make_shared<Arena>();
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function, Arenas(1, arena));
+        auto column_to = ColumnAggregateFunction::create(function);
         column_to->reserve(size);
 
-        auto column_from = ColumnAggregateFunction::create(function, Arenas(1, arena));
+        auto column_from = ColumnAggregateFunction::create(function);
         column_from->reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -569,6 +573,12 @@ class FunctionBinaryArithmetic : public IFunction
         auto & vec_from = column_from->getData();
 
         UInt64 m = typeid_cast<const ColumnConst *>(block.getByPosition(new_arguments[1]).column.get())->getValue<UInt64>();
+
+        // Since we merge the function states by ourselves, we have to have an
+        // Arena for this. Pass it to the resulting column so that the arena
+        // has a proper lifetime.
+        auto arena = std::make_shared<Arena>();
+        column_to->addArena(arena);
 
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
@@ -600,13 +610,13 @@ class FunctionBinaryArithmetic : public IFunction
         const IColumn & lhs_column = *block.getByPosition(arguments[0]).column;
         const IColumn & rhs_column = *block.getByPosition(arguments[1]).column;
 
-        bool lhs_is_const = lhs_column.isColumnConst();
-        bool rhs_is_const = rhs_column.isColumnConst();
+        bool lhs_is_const = isColumnConst(lhs_column);
+        bool rhs_is_const = isColumnConst(rhs_column);
 
         const ColumnAggregateFunction & lhs = typeid_cast<const ColumnAggregateFunction &>(
-            lhs_is_const ? static_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
+            lhs_is_const ? assert_cast<const ColumnConst &>(lhs_column).getDataColumn() : lhs_column);
         const ColumnAggregateFunction & rhs = typeid_cast<const ColumnAggregateFunction &>(
-            rhs_is_const ? static_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
+            rhs_is_const ? assert_cast<const ColumnConst &>(rhs_column).getDataColumn() : rhs_column);
 
         AggregateFunctionPtr function = lhs.getAggregateFunction();
 
@@ -934,7 +944,7 @@ public:
     }
 #endif
 
-    bool canBeExecutedOnDefaultArguments() const override { return CanBeExecutedOnDefaultArguments; }
+    bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
 };
 
 }

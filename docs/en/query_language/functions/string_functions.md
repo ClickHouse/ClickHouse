@@ -64,7 +64,7 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
-```
+```sql
 toValidUTF8( input_string )
 ```
 
@@ -85,6 +85,42 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 └───────────────────────┘
 ```
 
+## repeat {#repeat}
+
+Repeats a string as many times as specified and concatenates the replicated values as a single string.
+
+**Syntax**
+
+```sql
+repeat(s, n)
+```
+
+**Parameters**
+
+- `s` — The string to repeat. [String](../../data_types/string.md).
+- `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
+
+**Returned value**
+
+The single string, which contains the string  `s` repeated `n` times. If `n` < 1, the function returns empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT repeat('abc', 10)
+```
+
+Result:
+
+```text
+┌─repeat('abc', 10)──────────────┐
+│ abcabcabcabcabcabcabcabcabcabc │
+└────────────────────────────────┘
+```
 
 ## reverse
 
@@ -100,13 +136,16 @@ Formatting constant pattern with the string listed in the arguments. `pattern` i
 
 ```sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
-
+```
+```text
 ┌─format('{1} {0} {1}', 'World', 'Hello')─┐
 │ Hello World Hello                       │
 └─────────────────────────────────────────┘
-
+```
+```sql
 SELECT format('{} {}', 'Hello', 'World')
-
+```
+```text
 ┌─format('{} {}', 'Hello', 'World')─┐
 │ Hello World                       │
 └───────────────────────────────────┘
@@ -145,13 +184,38 @@ Decode base64-encoded string 's' into original string. In case of failure raises
 ## tryBase64Decode(s)
 Similar to base64Decode, but in case of error an empty string would be returned.
 
-## endsWith(s, suffix)
+## endsWith(s, suffix) {#function-endswith}
 
 Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
-## startsWith(s, prefix)
+## startsWith(str, prefix) {#function-startswith}
 
-Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
+Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
+
+```sql
+SELECT startsWith('Spider-Man', 'Spi');
+```
+
+**Returned values**
+
+- 1, if the string starts with the specified prefix.
+- 0, if the string doesn't start with the specified prefix.
+
+**Example**
+
+Query:
+
+```sql
+SELECT startsWith('Hello, world!', 'He');
+```
+
+Result:
+
+```text
+┌─startsWith('Hello, world!', 'He')─┐
+│                                 1 │
+└───────────────────────────────────┘
+```
 
 ## trimLeft(s)
 
@@ -164,5 +228,23 @@ Returns a string that removes the whitespace characters on right side.
 ## trimBoth(s)
 
 Returns a string that removes the whitespace characters on either side.
+
+## CRC32(s)
+
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
+
+The result type is UInt32.
+
+## CRC32IEEE(s)
+
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
+
+The result type is UInt32.
+
+## CRC64(s)
+
+Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
+
+The result type is UInt64.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->

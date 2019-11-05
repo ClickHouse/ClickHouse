@@ -50,6 +50,13 @@ struct BlockStreamProfileInfo
     /// If skip_block_size_info if true, then rows, bytes and block fields are ignored.
     void setFrom(const BlockStreamProfileInfo & rhs, bool skip_block_size_info);
 
+    /// Only for Processors.
+    void setRowsBeforeLimit(size_t rows_before_limit_)
+    {
+        applied_limit = true;
+        rows_before_limit = rows_before_limit_;
+    }
+
 private:
     void calculateRowsBeforeLimit() const;
 

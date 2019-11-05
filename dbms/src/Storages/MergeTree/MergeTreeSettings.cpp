@@ -4,6 +4,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
+#include <Core/SettingsCollectionImpl.h>
 
 
 namespace DB
@@ -67,7 +68,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 
 #define ADD_IF_ABSENT(NAME)                                                                                   \
     if (std::find_if(changes.begin(), changes.end(),                                                          \
-                  [](const SettingChange & c) { return c.name == #NAME; })                              \
+                  [](const SettingChange & c) { return c.name == #NAME; })                                    \
             == changes.end())                                                                                 \
         changes.push_back(SettingChange{#NAME, NAME.value});
 

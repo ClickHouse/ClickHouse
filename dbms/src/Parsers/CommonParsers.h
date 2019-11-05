@@ -30,7 +30,7 @@ class ParserToken : public IParserBase
 private:
     TokenType token_type;
 public:
-    ParserToken(TokenType token_type) : token_type(token_type) {}
+    ParserToken(TokenType token_type_) : token_type(token_type_) {}
 protected:
     const char * getName() const override { return "token"; }
 
@@ -138,6 +138,15 @@ protected:
         /// one of ParserKeyword already made ++pos
         return true;
     }
+};
+
+// Parser always returns true and do nothing.
+class ParserNothing : public IParserBase
+{
+public:
+    const char * getName() const override { return "nothing"; }
+
+    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override { return true; }
 };
 
 }
