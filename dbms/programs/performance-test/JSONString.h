@@ -22,7 +22,7 @@ public:
     void set(const std::string & key, std::string value, bool wrap = true);
 
     template <typename T>
-    std::enable_if_t<std::is_arithmetic_v<T>> set(const std::string key, T value)
+    std::enable_if_t<is_arithmetic_v<T>> set(const std::string key, T value)
     {
         set(key, std::to_string(value), /*wrap= */ false);
     }

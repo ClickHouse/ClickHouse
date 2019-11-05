@@ -1,4 +1,4 @@
-#include <Interpreters/SettingsConstraints.h>
+#include <Access/SettingsConstraints.h>
 #include <Core/Settings.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
@@ -29,22 +29,118 @@ void SettingsConstraints::clear()
 }
 
 
-void SettingsConstraints::setReadOnly(const String & name, bool read_only)
+void SettingsConstraints::setMinValue(const StringRef & name, const Field & min_value)
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    getConstraintRef(setting_index).min_value = Settings::valueToCorrespondingType(setting_index, min_value);
+}
+
+
+Field SettingsConstraints::getMinValue(const StringRef & name) const
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    const auto * ptr = tryGetConstraint(setting_index);
+    if (ptr)
+        return ptr->min_value;
+    else
+        return {};
+}
+
+
+void SettingsConstraints::setMaxValue(const StringRef & name, const Field & max_value)
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    getConstraintRef(setting_index).max_value = Settings::valueToCorrespondingType(setting_index, max_value);
+}
+
+
+Field SettingsConstraints::getMaxValue(const StringRef & name) const
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    const auto * ptr = tryGetConstraint(setting_index);
+    if (ptr)
+        return ptr->max_value;
+    else
+        return {};
+}
+
+
+void SettingsConstraints::setReadOnly(const StringRef & name, bool read_only)
 {
     size_t setting_index = Settings::findIndexStrict(name);
     getConstraintRef(setting_index).read_only = read_only;
 }
 
-void SettingsConstraints::setMinValue(const String & name, const Field & min_value)
+
+bool SettingsConstraints::isReadOnly(const StringRef & name) const
 {
     size_t setting_index = Settings::findIndexStrict(name);
-    getConstraintRef(setting_index).min_value = Settings::castValueWithoutApplying(setting_index, min_value);
+    const auto * ptr = tryGetConstraint(setting_index);
+    if (ptr)
+        return ptr->read_only;
+    else
+        return false;
 }
 
-void SettingsConstraints::setMaxValue(const String & name, const Field & max_value)
+
+void SettingsConstraints::set(const StringRef & name, const Field & min_value, const Field & max_value, bool read_only)
 {
     size_t setting_index = Settings::findIndexStrict(name);
-    getConstraintRef(setting_index).max_value = Settings::castValueWithoutApplying(setting_index, max_value);
+    auto & ref = getConstraintRef(setting_index);
+    ref.min_value = min_value;
+    ref.max_value = max_value;
+    ref.read_only = read_only;
+}
+
+
+void SettingsConstraints::get(const StringRef & name, Field & min_value, Field & max_value, bool & read_only) const
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    const auto * ptr = tryGetConstraint(setting_index);
+    if (ptr)
+    {
+        min_value = ptr->min_value;
+        max_value = ptr->max_value;
+        read_only = ptr->read_only;
+    }
+    else
+    {
+        min_value = Field{};
+        max_value = Field{};
+        read_only = false;
+    }
+}
+
+
+void SettingsConstraints::merge(const SettingsConstraints & other)
+{
+    for (const auto & [setting_index, other_constraint] : other.constraints_by_index)
+    {
+        auto & constraint = constraints_by_index[setting_index];
+        if (!other_constraint.min_value.isNull())
+            constraint.min_value = other_constraint.min_value;
+        if (!other_constraint.max_value.isNull())
+            constraint.max_value = other_constraint.max_value;
+        if (other_constraint.read_only)
+            constraint.read_only = true;
+    }
+}
+
+
+SettingsConstraints::Infos SettingsConstraints::getInfo() const
+{
+    Infos result;
+    result.reserve(constraints_by_index.size());
+    for (const auto & [setting_index, constraint] : constraints_by_index)
+    {
+        result.emplace_back();
+        Info & info = result.back();
+        info.name = Settings::getName(setting_index);
+        info.min = constraint.min_value;
+        info.max = constraint.max_value;
+        info.read_only = constraint.read_only;
+    }
+    return result;
 }
 
 
@@ -55,7 +151,7 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     if (setting_index == Settings::npos)
         return;
 
-    Field new_value = Settings::castValueWithoutApplying(setting_index, change.value);
+    Field new_value = Settings::valueToCorrespondingType(setting_index, change.value);
     Field current_value = current_settings.get(setting_index);
 
     /// Setting isn't checked if value wasn't changed.
@@ -159,4 +255,15 @@ void SettingsConstraints::loadFromConfig(const String & path_to_constraints, con
     }
 }
 
+
+bool SettingsConstraints::Constraint::operator==(const Constraint & rhs) const
+{
+    return (read_only == rhs.read_only) && (min_value == rhs.min_value) && (max_value == rhs.max_value);
+}
+
+
+bool operator ==(const SettingsConstraints & lhs, const SettingsConstraints & rhs)
+{
+    return lhs.constraints_by_index == rhs.constraints_by_index;
+}
 }

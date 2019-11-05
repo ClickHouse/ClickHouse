@@ -312,9 +312,7 @@ void registerOutputFormatProcessorXML(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
 void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
 void registerOutputFormatProcessorNull(FormatFactory & factory);
-#if USE_SSL
 void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
-#endif
 
 /// Input only formats.
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
@@ -366,9 +364,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver(*this);
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
-#if USE_SSL
     registerOutputFormatProcessorMySQLWrite(*this);
-#endif
 }
 
 FormatFactory & FormatFactory::instance()

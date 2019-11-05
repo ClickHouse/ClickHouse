@@ -306,9 +306,9 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
 
-    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
+    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`.
 
-    The following functions can use it: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md).
+    The following functions can use it: [equals](../../query_language/functions/comparison_functions.md), [notEquals](../../query_language/functions/comparison_functions.md), [in](../../query_language/functions/in_functions.md), [notIn](../../query_language/functions/in_functions.md), [has](../../query_language/functions/array_functions.md).
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4

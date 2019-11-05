@@ -109,7 +109,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     // Since only unsinged int has granted 2-compliment overflow handling, we are doing math here on unsigned types.
     // To simplify and booletproof code, we operate enforce ValueType to be unsigned too.
-    static_assert(std::is_unsigned_v<ValueType>, "ValueType must be unsigned.");
+    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
 
     // We use signed delta type to turn huge unsigned values into smaller signed:
@@ -189,7 +189,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 template <typename ValueType>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    static_assert(std::is_unsigned_v<ValueType>, "ValueType must be unsigned.");
+    static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
     using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
 
