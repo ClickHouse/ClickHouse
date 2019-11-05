@@ -192,8 +192,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 {
     time_t current_time = time(nullptr);
 
-    context.makeQueryContext();
-    CurrentThread::attachQueryContext(context);
+    /// If we already executing query and it requires to execute internal query, than
+    /// don't replace thread context with given (it can be temporary). Otherwise, attach context to thread.
+    if (!internal)
+    {
+        context.makeQueryContext();
+        CurrentThread::attachQueryContext(context);
+    }
 
     const Settings & settings = context.getSettingsRef();
 
@@ -558,9 +563,18 @@ BlockIO executeQuery(
     bool may_have_embedded_data,
     bool allow_processors)
 {
+    ASTPtr ast;
     BlockIO streams;
-    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
+    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
         internal, stage, !may_have_embedded_data, nullptr, allow_processors);
+    if (streams.in)
+    {
+        const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+        String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
+                ? getIdentifierName(ast_query_with_output->format) : context.getDefaultFormat();
+        if (format_name == "Null")
+            streams.null_format = true;
+    }
     return streams;
 }
 

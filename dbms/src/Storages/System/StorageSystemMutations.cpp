@@ -43,7 +43,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
         if (db.second->getEngineName() == "Lazy")
             continue;
         if (context.hasDatabaseAccessRights(db.first))
-            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
                 if (dynamic_cast<const MergeTreeData *>(iterator->table().get()))
                     merge_tree_tables[db.first][iterator->name()] = iterator->table();
     }

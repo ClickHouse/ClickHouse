@@ -54,7 +54,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/misc.h>
 
 #include <Interpreters/ActionsVisitor.h>
 
