@@ -85,6 +85,42 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 └───────────────────────┘
 ```
 
+## repeat {#repeat}
+
+Repeats a string as many times as specified and concatenates the replicated values as a single string.
+
+**Syntax**
+
+```sql
+repeat(s, n)
+```
+
+**Parameters**
+
+- `s` — The string to repeat. [String](../../data_types/string.md).
+- `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
+
+**Returned value**
+
+The single string, which contains the string  `s` repeated `n` times. If `n` < 1, the function returns empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT repeat('abc', 10)
+```
+
+Result:
+
+```text
+┌─repeat('abc', 10)──────────────┐
+│ abcabcabcabcabcabcabcabcabcabc │
+└────────────────────────────────┘
+```
 
 ## reverse
 
@@ -195,7 +231,20 @@ Returns a string that removes the whitespace characters on either side.
 
 ## CRC32(s)
 
-Returns the CRC32 checksum of a string
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
+
 The result type is UInt32.
+
+## CRC32IEEE(s)
+
+Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
+
+The result type is UInt32.
+
+## CRC64(s)
+
+Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
+
+The result type is UInt64.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->

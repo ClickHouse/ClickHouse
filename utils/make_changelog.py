@@ -35,7 +35,7 @@ def http_get_json(url, token, max_retries, retry_timeout):
                         logging.warning(msg)
                         time.sleep(retry_timeout)
                         continue
-                except:
+                except Exception:
                     pass
 
             raise Exception(msg)
@@ -60,7 +60,7 @@ def get_merge_base(first, second, project_root):
         sha = tuple(filter(len, text.split()))[0]
         check_sha(sha)
         return sha
-    except:
+    except Exception:
         logging.error('Cannot find merge base for %s and %s', first, second)
         raise
 
@@ -198,7 +198,7 @@ def process_unknown_commits(commits, commits_info, users):
                 # First, try get name from github user
                 try:
                     name = users[login]['name']
-                except:
+                except KeyError:
                     pass
             else:
                 login = 'Unknown'
@@ -207,7 +207,7 @@ def process_unknown_commits(commits, commits_info, users):
             if not name:
                 try:
                     name = info['commit']['author']['name']
-                except:
+                except KeyError:
                     pass
 
             author = '[{}]({})'.format(name or login, info['author']['html_url'])

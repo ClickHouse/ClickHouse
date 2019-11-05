@@ -136,6 +136,7 @@ StorageS3::StorageS3(
     , table_name(table_name_)
     , min_upload_part_size(min_upload_part_size_)
 {
+    context_global.getRemoteHostFilter().checkURL(uri_);
     setColumns(columns_);
     setConstraints(constraints_);
 }

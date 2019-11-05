@@ -377,26 +377,27 @@ The `system.part_log` table contains the following columns:
 
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
 
-## system.processes
+## system.processes {#system_tables-processes}
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
+
 Columns:
 
-- `user` (String)              – Name of the user who made the request. For distributed query processing, this is the user who helped the requestor server send the query to this server, not the user who made the distributed request on the requestor server.
-- `address` (String)           - The IP address the request was made from. The same for distributed processing.
-- `elapsed` (Float64)          - The time in seconds since request execution started.
-- `rows_read` (UInt64)         - The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
-- `bytes_read` (UInt64)        - The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
-- `total_rows_approx` (UInt64) - The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
-- `memory_usage` (UInt64)      - How much memory the request uses. It might not include some types of dedicated memory.
-- `query` (String)             - The query text. For INSERT, it doesn't include the data to insert.
-- `query_id` (String)          - Query ID, if defined.
+- `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` user. The field contains the username for a specific query, not for a query that this query initiated.
+- `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` on the query requestor server.
+- `elapsed` (Float64) – The time in seconds since request execution started.
+- `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
+- `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory.  See the  [max_memory_usage](../operations/settings/query_complexity.md#settings_max_memory_usage) setting.
+- `query` (String) – The query text. For `INSERT`, it doesn't include the data to insert.
+- `query_id` (String) – Query ID, if defined.
 
 ## system.query_log {#system_tables-query-log}
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
 
-!!! note
+!!! note "Note"
     The table doesn't contain input data for `INSERT` queries.
 
 ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
@@ -410,11 +411,11 @@ The `system.query_log` table registers two kinds of queries:
 
 Columns:
 
-- `type` (UInt8) — Type of event that occurred when executing the query. Possible values:
-    - 1 — Successful start of query execution.
-    - 2 — Successful end of query execution.
-    - 3 — Exception before the start of query execution.
-    - 4 — Exception during the query execution.
+- `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
+    - `'QueryStart' = 1` — Successful start of query execution.
+    - `'QueryFinish' = 2` — Successful end of query execution.
+    - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+    - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `query_start_time` (DateTime) — Start time of query execution.
@@ -756,5 +757,10 @@ If there were problems with mutating some parts, the following columns contain a
 **latest_fail_time** - The time of the most recent part mutation failure.
 
 **latest_fail_reason** - The exception message that caused the most recent part mutation failure.
+
+
+## system.disks {#system_tables-disks}
+
+## system.storage_policies {#system_tables-storage_policies}
 
 [Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->

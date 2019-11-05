@@ -2374,6 +2374,20 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 }
 
 
+size_t MergeTreeData::getTotalActiveSizeInRows() const
+{
+    size_t res = 0;
+    {
+        auto lock = lockParts();
+
+        for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+            res += part->rows_count;
+    }
+
+    return res;
+}
+
+
 size_t MergeTreeData::getPartsCount() const
 {
     auto lock = lockParts();
@@ -2486,7 +2500,7 @@ void MergeTreeData::throwInsertIfNeeded() const
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
-    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/)
+    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
 {
     auto current_state_parts_range = getDataPartsStateRange(state);
 
@@ -2534,13 +2548,13 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 }
 
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info) const
 {
     auto lock = lockParts();
     return getActiveContainingPart(part_info, DataPartState::Committed, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name) const
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     return getActiveContainingPart(part_info);
@@ -2723,10 +2737,20 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
     if (!disk)
         throw Exception("Disk " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
-    for (const auto & part : parts)
+    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
+        {
+            return part_ptr->disk->getName() == disk->getName();
+        }), parts.end());
+
+    if (parts.empty())
     {
-        if (part->disk->getName() == disk->getName())
-            throw Exception("Part " + part->name + " already on disk " + name, ErrorCodes::UNKNOWN_DISK);
+        String no_parts_to_move_message;
+        if (moving_part)
+            no_parts_to_move_message = "Part '" + partition_id + "' is already on disk '" + disk->getName() + "'";
+        else
+            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on disk '" + disk->getName() + "'";
+
+        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
     }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(disk)))
@@ -2758,10 +2782,28 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     if (!volume)
         throw Exception("Volume " + name + " does not exists on policy " + storage_policy->getName(), ErrorCodes::UNKNOWN_DISK);
 
-    for (const auto & part : parts)
-        for (const auto & disk : volume->disks)
-            if (part->disk->getName() == disk->getName())
-                throw Exception("Part " + part->name + " already on volume '" + name + "'", ErrorCodes::UNKNOWN_DISK);
+    parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
+        {
+            for (const auto & disk : volume->disks)
+            {
+                if (part_ptr->disk->getName() == disk->getName())
+                {
+                    return true;
+                }
+            }
+            return false;
+        }), parts.end());
+
+    if (parts.empty())
+    {
+        String no_parts_to_move_message;
+        if (moving_part)
+            no_parts_to_move_message = "Part '" + partition_id + "' is already on volume '" + volume->getName() + "'";
+        else
+            no_parts_to_move_message = "All parts of partition '" + partition_id + "' are already on volume '" + volume->getName() + "'";
+
+        throw Exception(no_parts_to_move_message, ErrorCodes::UNKNOWN_DISK);
+    }
 
     if (!movePartsToSpace(parts, std::static_pointer_cast<const DiskSpace::Space>(volume)))
         throw Exception("Cannot move parts because moves are manually disabled.", ErrorCodes::ABORTED);
@@ -3043,7 +3085,7 @@ DiskSpace::ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size)
     if (reservation)
         return reservation;
 
-    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enought space.",
+    throw Exception("Cannot reserve " + formatReadableSizeWithBinarySuffix(expected_size) + ", not enough space.",
                     ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
@@ -3219,14 +3261,14 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
     return *src_data;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part,
-                                                                      const String & tmp_part_prefix,
-                                                                      const MergeTreePartInfo & dst_part_info)
+MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(const MergeTreeData::DataPartPtr & src_part,
+                                                                                const String & tmp_part_prefix,
+                                                                                const MergeTreePartInfo & dst_part_info)
 {
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpace(src_part->bytes_on_disk);
+    auto reservation = src_part->disk->reserve(src_part->bytes_on_disk);
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
@@ -3313,7 +3355,11 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " + backup_path);
 
         String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
-        String backup_part_absolute_path = backup_path + "data/" + getDatabaseName() + "/" + getTableName() + "/" + part->relative_path;
+        String backup_part_absolute_path = backup_path
+            + "data/"
+            + escapeForFileName(getDatabaseName()) + "/"
+            + escapeForFileName(getTableName()) + "/"
+            + part->relative_path;
         localBackup(part_absolute_path, backup_part_absolute_path);
         part->is_frozen.store(true, std::memory_order_relaxed);
         ++parts_processed;
