@@ -35,31 +35,43 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)),
         data_part_->storage.canUseAdaptiveGranularity())
     , columns_list(columns_list_)
-{
-    init();
-    writer = data_part_->getWriter(columns_list_, default_codec_, writer_settings);
+{ 
+    const auto & global_settings = data_part->storage.global_context.getSettings();
+    writer = data_part_->getWriter(columns_list_, default_codec_, WriterSettings(global_settings));
 }
+
+can_use_adaptive_granularity
+index_granularity
+skip_indices
+blocks_are_granule_size
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_,
-    const MergeTreeData::DataPart::ColumnToSize & /* merged_column_to_size_ */, // FIXME
-    size_t aio_threshold_,
+    const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
+    size_t aio_threshold,
     bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
         data_part_, default_codec_,
-        {
-            data_part_->storage.global_context.getSettings().min_compress_block_size,
-            data_part_->storage.global_context.getSettings().max_compress_block_size,
-            aio_threshold_
-        },
         blocks_are_granules_size_,
         std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)),
         data_part_->storage.canUseAdaptiveGranularity())
     , columns_list(columns_list_)
 {
-    init();
+    WriterSettings writer_settings(data_part->storage.global_context.getSettings());
+    writer_settings.aio_threshold = aio_threshold;
+
+    if (aio_threshold > 0 && !merged_column_to_size.empty())
+    {
+        for (const auto & it : columns_list)
+        {
+            auto it2 = merged_column_to_size.find(it.name);
+            if (it2 != merged_column_to_size.end())
+                writer_settings.estimated_size += it2->second;
+        }
+    }
+
     writer = data_part_->getWriter(columns_list_, default_codec_, writer_settings);
 }
 
@@ -101,33 +113,11 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     /// Finish columns serialization.
     bool write_final_mark = (with_final_mark && rows_count != 0);
     writer->finalize(checksums, write_final_mark);
-
-    if (write_final_mark)
-        index_granularity.appendMark(0); /// last mark
+    writer->finishPrimaryIndexSerialization(checksums, write_final_mark);
+    writer->finishSkipIndicesSerialization(checksums);
 
     if (!total_column_list)
         total_column_list = &columns_list;
-
-    if (index_stream)
-    {
-        if (with_final_mark && rows_count != 0)
-        {
-            for (size_t j = 0; j < index_columns.size(); ++j)
-            {
-                auto & column = *last_index_row[j].column;
-                index_columns[j]->insertFrom(column, 0); /// it has only one element
-                last_index_row[j].type->serializeBinary(column, 0, *index_stream);
-            }
-            last_index_row.clear();
-        }
-
-        index_stream->next();
-        checksums.files["primary.idx"].file_size = index_stream->count();
-        checksums.files["primary.idx"].file_hash = index_stream->getHash();
-        index_stream = nullptr;
-    }
-
-    finishSkipIndicesSerialization(checksums);
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -179,16 +169,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
 void MergedBlockOutputStream::init()
 {
-    Poco::File(part_path).createDirectories();
-
-    if (storage.hasPrimaryKey())
-    {
-        index_file_stream = std::make_unique<WriteBufferFromFile>(
-            part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-        index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
-    }
-
-    initSkipIndices();
 }
 
 
@@ -242,66 +222,14 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
-    if (index_columns.empty())
-    {
-        index_columns.resize(primary_key_column_names.size());
-        last_index_row.resize(primary_key_column_names.size());
-        for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
-        {
-            last_index_row[i] = primary_key_block.getByPosition(i).cloneEmpty();
-            index_columns[i] = last_index_row[i].column->cloneEmpty();
-        }
-    }
+    writer->write(block, permutation, current_mark, index_offset, index_granularity, primary_key_block, skip_indexes_block);
+    writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
+    writer->calculateAndSerializePrimaryIndex(primary_index_block);
+    writer->next();
 
-    size_t new_index_offset = writer->write(block, permutation, current_mark, index_offset, index_granularity, primary_key_block, skip_indexes_block).second;
     rows_count += rows;
 
-    /// Should be written before index offset update, because we calculate,
-    /// indices of currently written granules
-    calculateAndSerializeSkipIndices(skip_indexes_block, rows);
-
-    {
-        /** While filling index (index_columns), disable memory tracker.
-          * Because memory is allocated here (maybe in context of INSERT query),
-          *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
-          * And otherwise it will look like excessively growing memory consumption in context of query.
-          *  (observed in long INSERT SELECTs)
-          */
-        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
-        /// Write index. The index contains Primary Key value for each `index_granularity` row.
-        for (size_t i = index_offset; i < rows;)
-        {
-            if (storage.hasPrimaryKey())
-            {
-                for (size_t j = 0, size = primary_key_block.columns(); j < size; ++j)
-                {
-                    const auto & primary_column = primary_key_block.getByPosition(j);
-                    index_columns[j]->insertFrom(*primary_column.column, i);
-                    primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
-                }
-            }
-
-            ++current_mark;
-            if (current_mark < index_granularity.getMarksCount())
-                i += index_granularity.getMarkRows(current_mark);
-            else
-                break;
-        }
-    }
-
-    /// store last index row to write final mark at the end of column
-    for (size_t j = 0, size = primary_key_block.columns(); j < size; ++j)
-    {
-        const IColumn & primary_column = *primary_key_block.getByPosition(j).column.get();
-        auto mutable_column = std::move(*last_index_row[j].column).mutate();
-        if (!mutable_column->empty())
-            mutable_column->popBack(1);
-        mutable_column->insertFrom(primary_column, rows - 1);
-        last_index_row[j].column = std::move(mutable_column);
-    }
-
-    index_offset = new_index_offset;
+    // index_offset = new_index_offset;
 }
 
 }

@@ -344,7 +344,8 @@ void IMergeTreeDataPart::assertState(const std::initializer_list<IMergeTreeDataP
 void IMergeTreeDataPart::assertOnDisk() const
 {
     if (!isStoredOnDisk())
-        throw Exception("Data part '" + name + "' is not stored on disk", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Data part '" + name + "' with type '"
+            + typeToString(getType()) + "' is not stored on disk", ErrorCodes::LOGICAL_ERROR);
 }
 
 

@@ -63,8 +63,10 @@ public:
 
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const WriterSettings & writer_settings) const = 0;
+        const WriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
      
     virtual bool isStoredOnDisk() const = 0;
 

@@ -158,19 +158,6 @@ String MergeTreeDataPartWide::getColumnNameWithMinumumCompressedSize() const
     return *minimum_size_column;
 }
 
-UInt64 MergeTreeDataPartWide::calculateTotalSizeOnDisk(const String & from)
-{
-    Poco::File cur(from);
-    if (cur.isFile())
-        return cur.getSize();
-    std::vector<std::string> files;
-    cur.list(files);
-    UInt64 res = 0;
-    for (const auto & file : files)
-        res += calculateTotalSizeOnDisk(from + file);
-    return res;
-}
-
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     String full_path = getFullPath();
@@ -224,7 +211,6 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 //         }, path);
 //     }
 // }
-
 
 
 // bool MergeTreeDataPartWide::hasColumnFiles(const String & column_name, const IDataType & type) const

@@ -22,20 +22,9 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
         default_codec_, settings_)
     , can_use_adaptive_granularity(storage_.canUseAdaptiveGranularity())
 {
-    size_t total_size = 0;
-    if (settings.aio_threshold > 0 && !merged_column_to_size.empty())
-    {
-        for (const auto & it : columns_list)
-        {
-            auto it2 = merged_column_to_size.find(it.name);
-            if (it2 != merged_column_to_size.end())
-                total_size += it2->second;
-        }
-    }
-
     const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
-        addStreams(it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec), total_size, false);
+        addStreams(it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec), settings.estimated_size, false);
 }
 
 void MergeTreeDataPartWriterWide::addStreams(
@@ -100,13 +89,13 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(cons
     {
         serialization_states.reserve(columns_list.size());
         WrittenOffsetColumns tmp_offset_columns;
-        IDataType::SerializeBinaryBulkSettings settings;
+        IDataType::SerializeBinaryBulkSettings serialize_settings;
 
         for (const auto & col : columns_list)
         {
-            settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
+            serialize_settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
             serialization_states.emplace_back(nullptr);
-            col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
+            col.type->serializeBinaryBulkStatePrefix(serialize_settings, serialization_states.back());
         }
     }
 
@@ -174,7 +163,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 
          writeIntBinary(stream.plain_hashing.count(), stream.marks);
          writeIntBinary(stream.compressed.offset(), stream.marks);
-         if (can_use_adaptive_granularity)
+         if (settings.can_use_adaptive_granularity)
              writeIntBinary(number_of_rows, stream.marks);
      }, path);
 }
@@ -290,10 +279,13 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
         }
     }, serialize_settings.path);
 
+    next_mark = current_column_mark;
+    next_index_offset = current_row - total_rows;
+
     return std::make_pair(current_column_mark, current_row - total_rows);
 }
 
-void MergeTreeDataPartWriterWide::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
+void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
 {
     const auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;

@@ -24,7 +24,7 @@ public:
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {},
         bool skip_offsets = false, const WrittenOffsetColumns & already_written_offset_columns = {}) override;
 
-    void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) override;
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 

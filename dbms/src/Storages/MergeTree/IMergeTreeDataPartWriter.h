@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/IBlockOutputStream.h>
 // #include <Storages/MergeTree/MergeTreeData.h>
-// #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 
 namespace DB
@@ -62,9 +62,11 @@ public:
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc, 
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
-        const WriterSettings & settings);
+        const WriterSettings & settings,
+        const MergeTreeIndexGranularity & index_granularity);
 
     virtual MarkWithOffset write(
         const Block & block, const IColumn::Permutation * permutation,
@@ -73,9 +75,20 @@ public:
         const Block & primary_key_block = {}, const Block & skip_indexes_block = {},
         bool skip_offsets = false, const WrittenOffsetColumns & already_written_offset_columns = {}) = 0;
 
-    virtual void finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) = 0;
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) = 0;
 
     virtual ~IMergeTreeDataPartWriter();
+
+    /// Count index_granularity for block and store in `index_granularity`
+    void fillIndexGranularity(const Block & block);
+
+    void initSkipIndices();
+    void initPrimaryIndex();
+    void calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows);
+    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows);
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool write_final_mark);
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
+    void next();
 
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
@@ -86,7 +99,37 @@ protected:
     NamesAndTypesList columns_list;
     const String marks_file_extension;
 
+    MergeTreeIndexGranularity index_granularity;
+
     CompressionCodecPtr default_codec;
+
+    bool can_use_adaptive_granularity;
+    bool blocks_are_granules_size;
+    bool compute_granularity;
+    bool with_final_mark;
+
+    size_t current_mark = 0;
+    size_t index_offset = 0;
+
+    size_t next_mark = 0;
+    size_t next_index_offset = 0;
+
+    /// Number of mark in data from which skip indices have to start
+    /// aggregation. I.e. it's data mark number, not skip indices mark.
+    size_t skip_index_data_mark = 0;
+
+    std::vector<MergeTreeIndexPtr> skip_indices;
+    std::vector<std::unique_ptr<IMergeTreeDataPartWriter::ColumnStream>> skip_indices_streams;
+    MergeTreeIndexAggregators skip_indices_aggregators;
+    std::vector<size_t> skip_index_filling;
+
+    std::unique_ptr<WriteBufferFromFile> index_file_stream;
+    std::unique_ptr<HashingWriteBuffer> index_stream;
+    MutableColumns index_columns;
+    DataTypes index_types;
+    /// Index columns values from the last row from the last block
+    /// It's written to index file in the `writeSuffixAndFinalizePart` method
+    Row last_index_row;
 
     WriterSettings settings;
 };
