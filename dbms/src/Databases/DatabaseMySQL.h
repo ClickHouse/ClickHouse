@@ -32,11 +32,6 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
-    DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context &, const FilterByNameFunction & = {}) override
-    {
-        return std::make_unique<DatabaseDictionariesSnapshotIterator>();
-    }
-
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     bool isTableExist(const Context & context, const String & name) const override;
