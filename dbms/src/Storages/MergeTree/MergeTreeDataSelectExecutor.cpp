@@ -540,7 +540,15 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         if (data.hasPrimaryKey())
             ranges.ranges = markRangesFromPKRange(part, key_condition, settings);
         else
-            ranges.ranges = MarkRanges{MarkRange{0, part->getMarksCount()}};
+        {
+            size_t total_marks_count = part->getMarksCount();
+            if (total_marks_count)
+            {
+                if (part->index_granularity.hasFinalMark())
+                    --total_marks_count;
+                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+            }
+        }
 
         for (const auto & index_and_condition : useful_indices)
             ranges.ranges = filterMarksUsingIndex(
