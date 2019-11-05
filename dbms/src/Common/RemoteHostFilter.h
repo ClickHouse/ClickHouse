@@ -10,19 +10,21 @@ namespace DB
 {
 class RemoteHostFilter
 {
+/**
+ * This class checks if url is allowed.
+ * If primary_hosts and regexp_hosts are empty all urls are allowed.
+ */
 public:
-    void checkURL(const Poco::URI &uri) const; /// If URL not allowed in config.xml throw UNACCEPTABLE_URL Exception
+    void checkURL(const Poco::URI & uri) const; /// If URL not allowed in config.xml throw UNACCEPTABLE_URL Exception
 
-    void setValuesFromConfig(const Poco::Util::AbstractConfiguration &config);
+    void setValuesFromConfig(const Poco::Util::AbstractConfiguration & config);
 
-    void checkHostAndPort(const std::string & host, const std::string & port) const;
-
-    RemoteHostFilter() {}
+    void checkHostAndPort(const std::string & host, const std::string & port) const; /// Does the same as checkURL, but for host and port.
 
 private:
     std::unordered_set<std::string> primary_hosts;      /// Allowed primary (<host>) URL from config.xml
     std::vector<std::string> regexp_hosts;              /// Allowed regexp (<hots_regexp>) URL from config.xml
 
-    bool checkString(const std::string &host) const;
+    bool checkForDirectEntry(const std::string & str) const; /// Checks if the primary_hosts and regexp_hosts contain str. If primary_hosts and regexp_hosts are empty return true.
 };
 }

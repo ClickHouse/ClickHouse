@@ -13,11 +13,13 @@ const int DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT = 2;
 ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
     const ConnectionTimeouts & timeouts,
     const Poco::Net::HTTPBasicCredentials & credentials,
-    size_t buffer_size_)
+    size_t buffer_size_,
+    const RemoteHostFilter & remote_host_filter_)
     : ReadBuffer(nullptr, 0)
     , uri {uri_}
     , method {Poco::Net::HTTPRequest::HTTP_GET}
     , session {makeHTTPSession(uri_, timeouts)}
+    , remote_host_filter {remote_host_filter_}
 {
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
@@ -50,6 +52,7 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
             break;
 
         uri = location_iterator->second;
+        remote_host_filter.checkURL(uri);
         session = makeHTTPSession(uri, timeouts);
     }
 
