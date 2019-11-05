@@ -65,13 +65,6 @@ bool DatabaseDictionary::isTableExist(
     return context.getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
 }
 
-DatabaseDictionariesIteratorPtr DatabaseDictionary::getDictionariesIterator(
-    const Context & /*context*/,
-    const FilterByNameFunction & /*filter_by_dictionary_name*/)
-{
-    return std::make_unique<DatabaseDictionariesSnapshotIterator>();
-}
-
 StoragePtr DatabaseDictionary::tryGetTable(
     const Context & context,
     const String & table_name) const

@@ -93,7 +93,7 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 
 
 DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithOwnTablesBase(std::move(name_))
+    : DatabaseWithDictionaries(std::move(name_))
     , metadata_path(metadata_path_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
     , log(&Logger::get("DatabaseOrdinary (" + database_name + ")"))

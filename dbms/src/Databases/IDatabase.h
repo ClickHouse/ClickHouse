@@ -134,7 +134,10 @@ public:
     virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
-    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) = 0;
+    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & /*context*/, [[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
+    {
+        return std::make_unique<DatabaseDictionariesSnapshotIterator>();
+    }
 
     /// Get an iterator to pass through all the tables and dictionary tables.
     virtual DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name = {})
