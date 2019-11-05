@@ -1,4 +1,4 @@
-## ClickHouse release v19.16.2.2, 30-10-2019
+## ClickHouse release v19.16.2.2, 2019-10-30
 
 ### Backward Incompatible Change
 * Add missing arity validation for count/counIf.
