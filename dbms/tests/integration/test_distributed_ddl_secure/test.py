@@ -49,6 +49,9 @@ def insert_reliable(instance, query_insert):
 
     raise last_exception
 
+def sync_replicas(table, timeout=5):
+    for instance in cluster.instances.values():
+        instance.query("SYSTEM SYNC REPLICA {}".format(table), timeout=timeout)
 
 cluster = ClickHouseCluster(__file__)
 
@@ -76,8 +79,9 @@ def init_cluster(cluster):
 
         cluster.start()
 
+        # TODO: Fix ON CLUSTER alters when nodes have different configs. Need to canonicalize node identity.
         # Replace config files for testing ability to set host in DNS and IP formats
-        replace_domains_to_ip_addresses_in_cluster_config(['ch1', 'ch3'])
+        # replace_domains_to_ip_addresses_in_cluster_config(['ch1', 'ch3'])
 
         # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
         sacrifice = cluster.instances['ch4']
@@ -220,6 +224,8 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
         k = (i / 2) * 2
         insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO merge_for_alter (i) VALUES ({})({})".format(k, k+1))
 
+    sync_replicas("merge_for_alter")
+
     assert TSV(instance.query("SELECT i FROM all_merge_32 ORDER BY i")) == TSV(''.join(['{}\n'.format(x) for x in xrange(4)]))
 
 
@@ -232,6 +238,8 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
     for i in xrange(4):
         k = (i / 2) * 2 + 4
         insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO merge_for_alter (p, i) VALUES (31, {})(31, {})".format(k, k+1))
+
+    sync_replicas("merge_for_alter")
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(8)]))
 
