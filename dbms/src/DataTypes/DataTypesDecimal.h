@@ -33,9 +33,9 @@ public:
     using typename Base::ColumnType;
     using Base::Base;
 
-    static constexpr auto familyName = "Decimal";
+    static constexpr auto family_name = "Decimal";
 
-    const char * getFamilyName() const override { return familyName; }
+    const char * getFamilyName() const override { return family_name; }
     std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeId<T>::value; }
     bool canBePromoted() const override { return true; }
@@ -100,7 +100,7 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
     {
         converted_value = DataTypeDecimal<MaxFieldType>::getScaleMultiplier(scale_to - scale_from);
         if (common::mulOverflow(static_cast<MaxNativeType>(value), converted_value, converted_value))
-            throw Exception(std::string(ToDataType::familyName) + " convert overflow",
+            throw Exception(std::string(ToDataType::family_name) + " convert overflow",
                             ErrorCodes::DECIMAL_OVERFLOW);
     }
     else
@@ -110,7 +110,7 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
     {
         if (converted_value < std::numeric_limits<typename ToFieldType::NativeType>::min() ||
             converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
-            throw Exception(std::string(ToDataType::familyName) + " convert overflow",
+            throw Exception(std::string(ToDataType::family_name) + " convert overflow",
                             ErrorCodes::DECIMAL_OVERFLOW);
     }
 
@@ -136,7 +136,7 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             {
                 if (converted_value < std::numeric_limits<ToFieldType>::min() ||
                     converted_value > std::numeric_limits<ToFieldType>::max())
-                    throw Exception(std::string(FromDataType::familyName) + " convert overflow",
+                    throw Exception(std::string(FromDataType::family_name) + " convert overflow",
                                     ErrorCodes::DECIMAL_OVERFLOW);
             }
             else
@@ -145,7 +145,7 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 
                 if (converted_value < 0 ||
                     converted_value > static_cast<CastIntType>(std::numeric_limits<ToFieldType>::max()))
-                    throw Exception(std::string(FromDataType::familyName) + " convert overflow",
+                    throw Exception(std::string(FromDataType::family_name) + " convert overflow",
                                     ErrorCodes::DECIMAL_OVERFLOW);
             }
         }
@@ -163,7 +163,7 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
         if (!std::isfinite(value))
-            throw Exception(std::string(ToDataType::familyName) + " convert overflow. Cannot convert infinity or NaN to decimal",
+            throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
                             ErrorCodes::DECIMAL_OVERFLOW);
 
         auto out = value * ToDataType::getScaleMultiplier(scale);
@@ -172,13 +172,13 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
             static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
             if (out <= static_cast<ToNativeType>(min_int128) || out >= static_cast<ToNativeType>(max_int128))
-                throw Exception(std::string(ToDataType::familyName) + " convert overflow. Float is out of Decimal range",
+                throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
                                 ErrorCodes::DECIMAL_OVERFLOW);
         }
         else
         {
             if (out <= std::numeric_limits<ToNativeType>::min() || out >= std::numeric_limits<ToNativeType>::max())
-                throw Exception(std::string(ToDataType::familyName) + " convert overflow. Float is out of Decimal range",
+                throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
                                 ErrorCodes::DECIMAL_OVERFLOW);
         }
         return out;
