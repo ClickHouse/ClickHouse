@@ -200,15 +200,6 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 {
     auto writePadding = [&]()
     {
-//        if (pad_to_width < value_width)
-//            return;
-        if (pad_to_width < value_width)
-        {
-            std::cout << "pad_to_width and value_width  " << pad_to_width << " " << value_width << std::endl;
-            std::cout << StackTrace().toString() << std::endl;
-            return;
-        }
-
         for (size_t k = 0; k < pad_to_width - value_width; ++k)
             writeChar(' ', out);
     };
