@@ -9,9 +9,9 @@ node1 = cluster.add_instance('node1', main_configs=['configs/config_with_hosts.x
 node2 = cluster.add_instance('node2', main_configs=['configs/config_with_only_primary_hosts.xml'])
 node3 = cluster.add_instance('node3', main_configs=['configs/config_with_only_regexp_hosts.xml'])
 node4 = cluster.add_instance('node4', main_configs=['configs/config_without_allowed_hosts.xml'])
-node5 = cluster.add_instance('node5', main_configs=['configs/config_without_block_of_allowed_hosts.xml'])
 node6 = cluster.add_instance('node6', main_configs=['configs/config_for_remote.xml'])
 node7 = cluster.add_instance('node7', main_configs=['configs/config_for_redirect.xml'], with_hdfs=True)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -26,11 +26,6 @@ def test_config_with_hosts(start_cluster):
     assert node1.query("CREATE TABLE table_test_1_2 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
     assert "not allowed" in node1.query_and_get_error("CREATE TABLE table_test_1_4 (word String) Engine=URL('https://host:123', S3)")
     assert "not allowed" in node1.query_and_get_error("CREATE TABLE table_test_1_4 (word String) Engine=URL('https://yandex2.ru', CSV)")
-    assert "not allowed in config.xml" not in node1.query_and_get_error("SELECT * FROM remoteSecure('host:80', system, events)")
-    assert "not allowed in config.xml" not in node1.query_and_get_error("SELECT * FROM remote('yandex.ru', system, events)")
-    assert "not allowed" in node1.query_and_get_error("SELECT * FROM remoteSecure('host:123', system, events)")
-    assert "not allowed" in node1.query_and_get_error("SELECT * FROM remoteSecure('yandex2.ru', system, events)")
-
 
 def test_config_with_only_primary_hosts(start_cluster):
     assert node2.query("CREATE TABLE table_test_2_1 (word String) Engine=URL('https://host:80', CSV)") == ""
@@ -40,44 +35,20 @@ def test_config_with_only_primary_hosts(start_cluster):
     assert "not allowed" in node2.query_and_get_error("CREATE TABLE table_test_2_5 (word String) Engine=URL('https://host', HDFS)")
     assert "not allowed" in node2.query_and_get_error("CREATE TABLE table_test_2_5 (word String) Engine=URL('https://host:234', CSV)")
     assert "not allowed" in node2.query_and_get_error("CREATE TABLE table_test_2_6 (word String) Engine=URL('https://yandex2.ru', S3)")
-    assert "not allowed in config.xml" not in node2.query_and_get_error("SELECT * FROM remoteSecure('host:80', system, events)")
-    assert "not allowed in config.xml" not in node2.query_and_get_error("SELECT * FROM remoteSecure('yandex.ru', system, events)")
-    assert "not allowed in config.xml" not in node2.query_and_get_error("SELECT * FROM remoteSecure('host:123', system, events)")
-    assert "not allowed in config.xml" not in node2.query_and_get_error("SELECT * FROM remoteSecure('yandex.ru:87', system, events)")
-    assert "not allowed" in node2.query_and_get_error("SELECT * FROM remote('host', system, events)")
-    assert "not allowed" in node2.query_and_get_error("SELECT * FROM remote('host:234', system, metrics)")
-    assert "not allowed" in node2.query_and_get_error("SELECT * FROM remoteSecure('yandex2.ru', system, events)")
 
 def test_config_with_only_regexp_hosts(start_cluster):
     assert node3.query("CREATE TABLE table_test_3_1 (word String) Engine=URL('https://host:80', HDFS)") == ""
     assert node3.query("CREATE TABLE table_test_3_2 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
     assert "not allowed" in node3.query_and_get_error("CREATE TABLE table_test_3_3 (word String) Engine=URL('https://host', CSV)")
-    assert "not allowed" in node3.query_and_get_error("CREATE TABLE table_test_3_4 (word String) Engine=URL('https://yandex2.ru', S3)")
-    assert "not allowed in config.xml" not in node3.query_and_get_error("SELECT * FROM remote('host:80', system, events)")
-    assert "not allowed in config.xml" not in node3.query_and_get_error("SELECT * FROM remoteSecure('yandex.ru', system, metrics)")
-    assert "not allowed" in node3.query_and_get_error("SELECT * FROM remote('host', system, events)")
-    assert "not allowed" in node3.query_and_get_error("SELECT * FROM remoteSecure('yandex2.ru', system, events)")
-    
+    assert "not allowed" in node3.query_and_get_error("CREATE TABLE table_test_3_4 (word String) Engine=URL('https://yandex2.ru', S3)") 
 
 def test_config_without_allowed_hosts(start_cluster):
     assert node4.query("CREATE TABLE table_test_4_1 (word String) Engine=URL('https://host:80', CSV)") == ""
     assert node4.query("CREATE TABLE table_test_4_2 (word String) Engine=URL('https://host', HDFS)") == ""
     assert node4.query("CREATE TABLE table_test_4_3 (word String) Engine=URL('https://yandex.ru', CSV)") == ""
     assert node4.query("CREATE TABLE table_test_4_4 (word String) Engine=URL('ftp://something.com', S3)") == ""
-    assert "not allowed in config.xml" not in node4.query_and_get_error("SELECT * FROM remote('host:80', system, events)")
-    assert "not allowed in config.xml" not in node4.query_and_get_error("SELECT * FROM remoteSecure('something.com', system, metrics)")
-    assert "not allowed in config.xml" not in node4.query_and_get_error("SELECT * FROM remote('yandex.ru', system, numbers(100))")
 
-def test_config_without_block_of_allowed_hosts(start_cluster):
-    assert node5.query("CREATE TABLE table_test_5_1 (word String) Engine=URL('https://host:80', HDFS)") == ""
-    assert node5.query("CREATE TABLE table_test_5_2 (word String) Engine=URL('https://host', CSV)") == ""
-    assert node5.query("CREATE TABLE table_test_5_3 (word String) Engine=URL('https://yandex.ru', S3)") == ""
-    assert node5.query("CREATE TABLE table_test_5_4 (word String) Engine=URL('ftp://something.com', CSV)") == ""
-    assert "not allowed in config.xml" not in node5.query_and_get_error("SELECT * FROM remoteSecure('host:80', system, events)")
-    assert "not allowed in config.xml" not in node5.query_and_get_error("SELECT * FROM remote('something.com', system, metrics)")
-    assert "not allowed in config.xml" not in node5.query_and_get_error("SELECT * FROM remote('yandex.ru', system, events)")
-
-def test_table_function_remote_on_config_for_remote(start_cluster):
+def test_table_function_remote(start_cluster):
     assert node6.query("SELECT * FROM remote('localhost', system, events)") != ""
     assert node6.query("SELECT * FROM remoteSecure('localhost', system, metrics)") != ""
     assert "URL \"localhost:800\" is not allowed in config.xml" in node6.query_and_get_error("SELECT * FROM remoteSecure('localhost:800', system, events)")
@@ -95,5 +66,9 @@ def test_redirect(start_cluster):
     hdfs_api = HDFSApi("root")
     hdfs_api.write_data("/simple_storage", "1\t\n")
     assert hdfs_api.read_data("/simple_storage") == "1\t\n"
-    node7.query("CREATE TABLE table_test_7 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)")
-    assert "not allowed" in node7.query_and_get_error("SET max_http_get_redirects=1; SELECT * from table_test_7")
+    node7.query("CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)")
+    assert "not allowed" in node7.query_and_get_error("SET max_http_get_redirects=1; SELECT * from table_test_7_1")
+
+def test_HDFS(start_cluster):
+    assert "not allowed" in node7.query_and_get_error("CREATE TABLE table_test_7_2 (word String) ENGINE=HDFS('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'CSV')")
+    assert "not allowed" in node7.query_and_get_error("SELECT * FROM hdfs('http://hdfs1:50075/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'word String')")
