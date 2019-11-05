@@ -23,7 +23,7 @@ namespace DB
   * calculation. If the right string size is big (more than 2**15 bytes),
   * the strings are not similar at all and we return 1.
   */
-template <size_t N, class CodePoint, bool UTF8, bool CaseInsensitive, bool Symmetric>
+template <size_t N, class CodePoint, bool UTF8, bool case_insensitive, bool symmetric>
 struct NgramDistanceImpl
 {
     using ResultType = Float32;
@@ -61,8 +61,7 @@ struct NgramDistanceImpl
 #endif
     }
 
-
-    template <bool SaveNgrams>
+    template <bool save_ngrams>
     static ALWAYS_INLINE inline size_t calculateNeedleStats(
         const char * data,
         const size_t size,
@@ -85,7 +84,7 @@ struct NgramDistanceImpl
             {
                 ++len;
                 UInt16 hash = hash_functor(cp + i);
-                if constexpr (SaveNgrams)
+                if constexpr (save_ngrams)
                     *ngram_storage++ = hash;
                 ++ngram_stats[hash];
             }
@@ -95,7 +94,7 @@ struct NgramDistanceImpl
         return len;
     }
 
-    template <bool ReuseStats>
+    template <bool reuse_stats>
     static ALWAYS_INLINE inline UInt64 calculateHaystackStatsAndMetric(
         const char * data,
         const size_t size,
@@ -123,9 +122,9 @@ struct NgramDistanceImpl
                 /// For symmetric version we should add when we can't subtract to get symmetric difference.
                 if (static_cast<Int16>(ngram_stats[hash]) > 0)
                     --distance;
-                else if constexpr (Symmetric)
+                else if constexpr (symmetric)
                     ++distance;
-                if constexpr (ReuseStats)
+                if constexpr (reuse_stats)
                     ngram_storage[ngram_cnt] = hash;
                 ++ngram_cnt;
                 --ngram_stats[hash];
@@ -134,7 +133,7 @@ struct NgramDistanceImpl
         } while (start < end && (found = read_code_points(cp, start, end)));
 
         /// Return the state of hash map to its initial.
-        if constexpr (ReuseStats)
+        if constexpr (reuse_stats)
         {
             for (size_t i = 0; i < ngram_cnt; ++i)
                 ++ngram_stats[ngram_storage[i]];
@@ -165,17 +164,16 @@ struct NgramDistanceImpl
         size_t distance = second_size;
         if (data_size <= max_string_size)
         {
-            size_t first_size
-                = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
-            /// For !Symmetric version we should not use first_size.
-            if constexpr (Symmetric)
+            size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
+            /// For !symmetric version we should not use first_size.
+            if constexpr (symmetric)
                 res = distance * 1.f / std::max(first_size + second_size, size_t(1));
             else
                 res = 1.f - distance * 1.f / std::max(second_size, size_t(1));
         }
         else
         {
-            if constexpr (Symmetric)
+            if constexpr (symmetric)
                 res = 1.f;
             else
                 res = 0.f;
@@ -226,8 +224,8 @@ struct NgramDistanceImpl
                 /// For now, common stats is a zero array.
 
 
-                /// For !Symmetric version we should not use haystack_stats_size.
-                if constexpr (Symmetric)
+                /// For !symmetric version we should not use haystack_stats_size.
+                if constexpr (symmetric)
                     res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
                 else
                     res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, size_t(1));
@@ -236,7 +234,7 @@ struct NgramDistanceImpl
             {
                 /// Strings are too big, we are assuming they are not the same. This is done because of limiting number
                 /// of bigrams added and not allocating too much memory.
-                if constexpr (Symmetric)
+                if constexpr (symmetric)
                     res[i] = 1.f;
                 else
                     res[i] = 0.f;
@@ -254,7 +252,7 @@ struct NgramDistanceImpl
         PaddedPODArray<Float32> & res)
     {
         /// For symmetric version it is better to use vector_constant
-        if constexpr (Symmetric)
+        if constexpr (symmetric)
         {
             vector_constant(needle_data, needle_offsets, std::move(haystack), res);
         }
@@ -338,8 +336,8 @@ struct NgramDistanceImpl
                     common_stats,
                     distance,
                     ngram_storage.get());
-                /// For !Symmetric version we should not use haystack_stats_size.
-                if constexpr (Symmetric)
+                /// For !symmetric version we should not use haystack_stats_size.
+                if constexpr (symmetric)
                     res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
                 else
                     res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, size_t(1));
@@ -347,7 +345,7 @@ struct NgramDistanceImpl
             else
             {
                 /// if the strings are too big, we say they are completely not the same
-                if constexpr (Symmetric)
+                if constexpr (symmetric)
                     res[i] = 1.f;
                 else
                     res[i] = 0.f;

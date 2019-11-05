@@ -787,8 +787,8 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const bool sparse = name == "sparse_hashed";
         return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
-    factory.registerLayout("hashed", create_layout);
-    factory.registerLayout("sparse_hashed", create_layout);
+    factory.registerLayout("hashed", create_layout, false);
+    factory.registerLayout("sparse_hashed", create_layout, false);
 }
 
 }
