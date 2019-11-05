@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNACCEPTABLE_URL;
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -34,6 +35,7 @@ IStorageURLBase::IStorageURLBase(
     const ConstraintsDescription & constraints_)
     : uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
 {
+    context_global.getRemoteHostFilter().checkURL(uri);
     setColumns(columns_);
     setConstraints(constraints_);
 }
@@ -54,7 +56,16 @@ namespace
             const ConnectionTimeouts & timeouts)
             : name(name_)
         {
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, method, callback, timeouts, context.getSettingsRef().max_http_get_redirects);
+            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri,
+                    method,
+                    callback,
+                    timeouts,
+                    context.getSettingsRef().max_http_get_redirects,
+                    Poco::Net::HTTPBasicCredentials(),
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    std::vector<std::tuple<std::string, std::string>>(),
+                    context.getRemoteHostFilter());
+
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
