@@ -61,7 +61,7 @@ public:
               pool(builder.max_threads_to_use),
               file_segmentation_engine(builder.file_segmentation_engine)
     {
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream()"), "Constructor");
+        //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream()"), "Constructor");
         segments.resize(max_threads_to_use);
         blocks.resize(max_threads_to_use);
         exceptions.resize(max_threads_to_use);
@@ -92,7 +92,7 @@ public:
 
     void cancel(bool kill) override
     {
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::cancel()"), "Try to cancel.");
+        //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::cancel()"), "Try to cancel.");
         if (kill)
             is_killed = true;
         bool old_val = false;
@@ -104,7 +104,7 @@ public:
                 reader->cancel(kill);
 
         waitForAllThreads();
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::cancel()"), "Cancelled succsessfully.");
+        //LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::cancel()"), "Cancelled succsessfully.");
     }
 
     Block getHeader() const override
@@ -113,12 +113,6 @@ public:
     }
 
 protected:
-    //void readPrefix() override {}
-
-    void readSuffix() override {
-        readers[segmentator_ticket_number % max_threads_to_use]->readPrefix();
-        LOG_TRACE(&Poco::Logger::get("ParallelParsingBLockInputStream::readSuffix()"), "ReadSuffix");
-    }
 
     //Reader routine
     Block readImpl() override;
