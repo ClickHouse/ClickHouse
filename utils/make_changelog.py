@@ -230,7 +230,7 @@ def parse_one_pull_request(item):
 
     if lines:
         for i in range(len(lines) - 1):
-            if re.match(r'(?i)^\**Category', lines[i]):
+            if re.match(r'(?i)category.*:$', lines[i]):
                 cat_pos = i
             if re.match(r'(?i)^\**\s*(Short description|Change\s*log entry)', lines[i]):
                 short_descr_pos = i
