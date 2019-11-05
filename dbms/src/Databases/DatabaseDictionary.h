@@ -39,8 +39,6 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
 
-    DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name = {}) override;
-
     bool empty(const Context & context) const override;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;

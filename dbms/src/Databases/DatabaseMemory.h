@@ -33,8 +33,6 @@ public:
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
-    //FIXME isDictionaryExist(...)
-
 private:
     Poco::Logger * log;
 };

@@ -79,13 +79,6 @@ void DatabaseLazy::removeTable(
     DatabaseOnDisk::removeTable(*this, context, table_name, log);
 }
 
-DatabaseDictionariesIteratorPtr DatabaseLazy::getDictionariesIterator(
-    const Context & /*context*/,
-    const FilterByNameFunction & /*filter_by_dictionary_name*/)
-{
-    return std::make_unique<DatabaseDictionariesSnapshotIterator>();
-}
-
 void DatabaseLazy::renameTable(
     const Context & context,
     const String & table_name,
