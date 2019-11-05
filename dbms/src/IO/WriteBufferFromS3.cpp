@@ -108,6 +108,7 @@ void WriteBufferFromS3::initiate()
     {
         initiate_uri.addQueryParameter(param.first, param.second);
     }
+    LOG_DEBUG(&Poco::Logger::get("DebugLogger"), "???Write "+ uri.toString() + " ???");
 
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_PUT_REDIRECT; ++i)
     {
@@ -139,6 +140,7 @@ void WriteBufferFromS3::initiate()
             break;
 
         initiate_uri = location_iterator->second;
+        LOG_DEBUG(&Poco::Logger::get("DebugLogger"), "!!!Write " + initiate_uri.toString() + " !!!");
         remote_host_filter.checkURL(initiate_uri);
     }
     assertResponseIsOk(*request_ptr, response, *istr);
