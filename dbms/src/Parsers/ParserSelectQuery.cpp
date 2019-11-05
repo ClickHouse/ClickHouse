@@ -259,7 +259,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         throw Exception("Can not use WITH TIES without ORDER BY", ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY);
 
     /// WITH TIES was used alongside LIMIT BY
-    if (limit_by_length && select_query->limit_with_ties)
+    if (limit_by_length && !limit_length && select_query->limit_with_ties)
         throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
 
     /// SETTINGS key1 = value1, key2 = value2, ...
