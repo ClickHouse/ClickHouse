@@ -16,15 +16,15 @@ namespace ErrorCodes
 
 void RemoteHostFilter::checkURL(const Poco::URI & uri) const
 {
-    if (!checkString(uri.getHost()) &&
-        !checkString(uri.getHost() + ":" + toString(uri.getPort())))
+    if (!checkForDirectEntry(uri.getHost()) &&
+        !checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
         throw Exception("URL \"" + uri.toString() + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
 }
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
-    if (!checkString(host) &&
-        !checkString(host + ":" + port))
+    if (!checkForDirectEntry(host) &&
+        !checkForDirectEntry(host + ":" + port))
         throw Exception("URL \"" + host + ":" + port + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
 }
 
@@ -44,14 +44,14 @@ void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
     }
 }
 
-bool RemoteHostFilter::checkString(const std::string &host) const
+bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const
 {
     if (!primary_hosts.empty() || !regexp_hosts.empty())
     {
-        if (primary_hosts.find(host) == primary_hosts.end())
+        if (primary_hosts.find(str) == primary_hosts.end())
         {
             for (size_t i = 0; i < regexp_hosts.size(); ++i)
-                if (re2::RE2::FullMatch(host, regexp_hosts[i]))
+                if (re2::RE2::FullMatch(str, regexp_hosts[i]))
                     return true;
             return false;
         }

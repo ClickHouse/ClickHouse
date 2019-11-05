@@ -32,7 +32,8 @@ WriteBufferFromS3::WriteBufferFromS3(
     const Poco::URI & uri_,
     size_t minimum_upload_part_size_,
     const ConnectionTimeouts & timeouts_,
-    const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_
+    const Poco::Net::HTTPBasicCredentials & credentials, size_t buffer_size_,
+    const RemoteHostFilter & remote_host_filter_
 )
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , uri {uri_}
@@ -41,6 +42,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , auth_request {Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
     , temporary_buffer {std::make_unique<WriteBufferFromString>(buffer_string)}
     , last_part_size {0}
+    , remote_host_filter(remote_host_filter_)
 {
     if (!credentials.getUsername().empty())
         credentials.authenticate(auth_request);
@@ -137,6 +139,7 @@ void WriteBufferFromS3::initiate()
             break;
 
         initiate_uri = location_iterator->second;
+        remote_host_filter.checkURL(initiate_uri);
     }
     assertResponseIsOk(*request_ptr, response, *istr);
 

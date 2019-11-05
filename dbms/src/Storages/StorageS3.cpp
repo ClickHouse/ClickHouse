@@ -38,7 +38,7 @@ namespace
             const ConnectionTimeouts & timeouts)
             : name(name_)
         {
-            read_buf = std::make_unique<ReadBufferFromS3>(uri, timeouts);
+            read_buf = std::make_unique<ReadBufferFromS3>(uri, timeouts, Poco::Net::HTTPBasicCredentials(), DBMS_DEFAULT_BUFFER_SIZE, context.getRemoteHostFilter());
 
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
@@ -85,7 +85,7 @@ namespace
             const ConnectionTimeouts & timeouts)
             : sample_block(sample_block_)
         {
-            write_buf = std::make_unique<WriteBufferFromS3>(uri, min_upload_part_size, timeouts);
+            write_buf = std::make_unique<WriteBufferFromS3>(uri, min_upload_part_size, timeouts, Poco::Net::HTTPBasicCredentials(), DBMS_DEFAULT_BUFFER_SIZE, context.getRemoteHostFilter());
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
