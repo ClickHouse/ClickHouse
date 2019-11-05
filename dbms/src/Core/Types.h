@@ -150,9 +150,6 @@ struct Decimal
     T value;
 };
 
-extern template struct Decimal<Int32>;
-extern template struct Decimal<Int64>;
-extern template struct Decimal<Int128>;
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
