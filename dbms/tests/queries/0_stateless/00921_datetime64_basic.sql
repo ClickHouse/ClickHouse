@@ -9,14 +9,14 @@ SELECT CAST(1 as DateTime64(3, 'qqq')); -- { serverError 1000 } # invalid timezo
 SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'qqq'); -- { serverError 1000 } # invalid timezone
 SELECT toDateTime64('2019-09-16 19:20', 3, 'qqq'); -- { serverError 1000 } # invalid timezone
 
-SELECT toDateTime64('2019-09-16 19:20:11', 3), ignore(now64(3));
+-- SELECT toDateTime64('2019-09-16 19:20:11', 3), ignore(now64(3));
 
 CREATE TABLE A(t DateTime64(3, 'UTC')) ENGINE = MergeTree() ORDER BY t;
-INSERT INTO A(t) VALUES (1556879125123456789), ('2019-05-03 11:25:25.123456789');
+INSERT INTO A(t) VALUES ('2019-05-03 11:25:25.123456789');
 
 SELECT toString(t, 'UTC'), toDate(t), toStartOfDay(t), toStartOfQuarter(t), toTime(t), toStartOfMinute(t) FROM A ORDER BY t;
 
-SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk'), toDateTime64('2019-09-16 19:20:11.234', 3), toDateTime64(1234567891011, 3);
+SELECT toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk');
 
 
 
