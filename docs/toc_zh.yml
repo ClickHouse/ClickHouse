@@ -25,6 +25,7 @@ nav:
   - '输入输出格式': 'interfaces/formats.md'
   - 'JDBC 驱动': 'interfaces/jdbc.md'
   - 'ODBC 驱动': 'interfaces/odbc.md'
+  - 'C ++客户端库': 'interfaces/cpp.md'
   - '第三方':
     - '客户端库': 'interfaces/third-party/client_libraries.md'
     - '集成': 'interfaces/third-party/integrations.md'

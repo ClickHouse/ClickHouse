@@ -14,9 +14,9 @@ SELECT count() FROM merge_tree;
 SET max_rows_to_read = 900000;
 
 SET merge_tree_uniform_read_distribution = 1;
-SELECT count() FROM merge_tree; -- { serverError 158 }
+SELECT count() FROM merge_tree WHERE not ignore(); -- { serverError 158 }
 
 SET merge_tree_uniform_read_distribution = 0;
-SELECT count() FROM merge_tree; -- { serverError 158 }
+SELECT count() FROM merge_tree WHERE not ignore(); -- { serverError 158 }
 
 DROP TABLE merge_tree;

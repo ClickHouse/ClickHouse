@@ -49,9 +49,9 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     for (size_t index = 0; index < index_columns_name.size(); ++index)
     {
         const auto & column_and_type = block.getByName(index_columns_name[index]);
-        const auto & index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
+        auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
-        granule_index_block.insert({std::move(index_column), std::make_shared<DataTypeUInt64>(), column_and_type.name});
+        granule_index_block.insert({index_column, std::make_shared<DataTypeUInt64>(), column_and_type.name});
     }
 
     *pos += max_read_rows;

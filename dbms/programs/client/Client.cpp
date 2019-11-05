@@ -89,6 +89,40 @@
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
 
+#if USE_READLINE && RL_VERSION_MAJOR >= 7
+
+#define BRACK_PASTE_PREF "\033[200~"
+#define BRACK_PASTE_SUFF "\033[201~"
+
+#define BRACK_PASTE_LAST '~'
+#define BRACK_PASTE_SLEN 6
+
+/// Make sure we don't get ^J for the enter character.
+/// This handler also bypasses some unused macro/event checkings.
+static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
+{
+    std::string buf;
+    buf.reserve(128);
+
+    RL_SETSTATE(RL_STATE_MOREINPUT);
+    SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
+    char c;
+    while ((c = rl_read_key()) >= 0)
+    {
+        if (c == '\r' || c == '\n')
+            c = '\n';
+        buf.push_back(c);
+        if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
+        {
+            buf.resize(buf.size() - BRACK_PASTE_SLEN);
+            break;
+        }
+    }
+    return static_cast<size_t>(rl_insert_text(buf.c_str())) == buf.size() ? 0 : 1;
+}
+
+#endif
+
 namespace DB
 {
 
@@ -462,6 +496,18 @@ private:
             if (rl_initialize())
                 throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
 
+#if RL_VERSION_MAJOR >= 7
+            /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
+            ///  that the program can differentiate pasted text from typed-in text. This helps
+            ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
+            ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
+            ///  more details.
+            rl_variable_bind("enable-bracketed-paste", "on");
+
+            /// Use our bracketed paste handler to get better user experience. See comments above.
+            rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
+#endif
+
             auto clear_prompt_or_exit = [](int)
             {
                 /// This is signal safe.
@@ -632,7 +678,8 @@ private:
                     /// If the user restarts the client then after pressing the "up" button
                     /// every line of the query will be displayed separately.
                     std::string logged_query = input;
-                    std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
+                    if (config().has("multiline"))
+                        std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
                     add_history(logged_query.c_str());
 
 #if USE_READLINE && HAVE_READLINE_HISTORY
