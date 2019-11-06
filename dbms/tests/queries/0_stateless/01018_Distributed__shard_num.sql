@@ -48,11 +48,10 @@ FROM (SELECT *, _shard_num FROM dist_1) a
 JOIN system.clusters b
 ON a._shard_num = b.shard_num
 WHERE b.cluster = 'test_cluster_two_shards_localhost';
--- Requires toUInt32() otherwise Type mismatch of columns (53)
 SELECT _shard_num, key, b.host_name, b.host_address, b.port
 FROM dist_1 a
 JOIN system.clusters b
-ON toUInt32(_shard_num) = b.shard_num
+ON _shard_num = b.shard_num
 WHERE b.cluster = 'test_cluster_two_shards_localhost';
 
 -- rewrite does not work with aliases, hence Missing columns (47)

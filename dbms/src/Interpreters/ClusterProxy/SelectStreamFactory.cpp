@@ -105,7 +105,7 @@ void SelectStreamFactory::createForShard(
 {
     auto modified_query_ast = query_ast->clone();
     if (has_virtual_shard_num_column)
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num);
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_shard_num", shard_info.shard_num, "toUInt32");
 
     auto emplace_local_stream = [&]()
     {
