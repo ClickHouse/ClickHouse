@@ -12,12 +12,8 @@ namespace DB
 {
 
 class Context;
-class CustomExecutor;
 struct HTTPInputStreams;
 struct HTTPOutputStreams;
-
-using duration = std::chrono::steady_clock::duration;
-using HTTPMatchExecutorPtr = std::shared_ptr<CustomExecutor>;
 
 class CustomExecutor
 {
@@ -37,5 +33,7 @@ public:
     using QueryExecutors = std::vector<QueryExecutor>;
     virtual QueryExecutors getQueryExecutor(Context & context, HTTPServerRequest & request, HTMLForm & params, const HTTPInputStreams & input_streams) const = 0;
 };
+
+using CustomExecutorPtr = std::shared_ptr<CustomExecutor>;
 
 }

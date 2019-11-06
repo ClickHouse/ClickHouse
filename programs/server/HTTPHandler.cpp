@@ -192,7 +192,7 @@ HTTPHandler::SessionContextHolder::SessionContextHolder(IServer & accepted_serve
     if (!session_id.empty())
     {
         session_timeout = parseSessionTimeout(accepted_server.config(), params);
-        session_context = context->acquireSession(session_id, session_timeout, params.check("session_check", "1"));
+        session_context = context->acquireSession(session_id, session_timeout, params.check<String>("session_check", "1"));
 
         context = std::make_unique<Context>(*session_context);
         context->setSessionContext(*session_context);
@@ -241,31 +241,26 @@ void HTTPHandler::SessionContextHolder::authentication(HTTPServerRequest & reque
     context->setCurrentQueryId(query_id);
 }
 
-void HTTPHandler::processQuery(HTTPRequest & request, HTMLForm & params, HTTPResponse & response, SessionContextHolder & holder)
+void HTTPHandler::processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response)
 {
-    const auto & [name, custom_executor] = holder.context->getCustomExecutor(request/*, params*/);
+    const auto & name_with_custom_executor = context.getCustomExecutor(request/*, params*/);
+    LOG_TRACE(log, "Using " << name_with_custom_executor.first << " to execute URI: " << request.getURI());
 
-    LOG_TRACE(log, "Using " << name << " to execute URI: " << request.getURI());
+    ExtractorClientInfo{context.getClientInfo()}.extract(request);
+    ExtractorContextChange{context, name_with_custom_executor.second}.extract(request, params);
 
-    ExtractorClientInfo{holder.context->getClientInfo()}.extract(request);
-    ExtractorContextChange{*holder.context.get(), custom_executor}.extract(request, params);
+    HTTPInputStreams input_streams{context, request, params};
+    HTTPOutputStreams output_streams = HTTPOutputStreams(context, request, response, params, getKeepAliveTimeout());
 
-    auto & config = server.config();
-    HTTPInputStreams input_streams{*holder.context, request, params};
-    HTTPOutputStreams output_streams(*holder.context, request, response, params, config.getUInt("keep_alive_timeout", 10));
-
-    const auto & query_executors = custom_executor->getQueryExecutor(*holder.context, request, params, input_streams);
+    const auto & query_executors = name_with_custom_executor.second->getQueryExecutor(context, request, params, input_streams);
     for (const auto & query_executor : query_executors)
         query_executor(output_streams, response);
 
     output_streams.finalize(); /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
-
-    LOG_INFO(log, "Done processing query");
 }
 
-void HTTPHandler::trySendExceptionToClient(const std::string & message, int exception_code,
-    Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
-    HTTPOutputStreams & used_output)
+void HTTPHandler::trySendExceptionToClient(
+    const std::string & message, int exception_code, Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, bool compression)
 {
     try
     {
@@ -273,57 +268,25 @@ void HTTPHandler::trySendExceptionToClient(const std::string & message, int exce
 
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-            && response.getKeepAlive()
-            && !request.stream().eof()
-            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
-        {
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
+                && !request.stream().eof() && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
             request.stream().ignore(std::numeric_limits<std::streamsize>::max());
-        }
 
-        bool auth_fail = exception_code == ErrorCodes::UNKNOWN_USER ||
-                         exception_code == ErrorCodes::WRONG_PASSWORD ||
-                         exception_code == ErrorCodes::REQUIRED_PASSWORD;
-
-        if (auth_fail)
+        if (exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD ||
+            exception_code == ErrorCodes::REQUIRED_PASSWORD || exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
             response.requireAuthentication("ClickHouse server HTTP API");
+            response.send() << message << std::endl;
         }
         else
         {
             response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-        }
+            HTTPOutputStreams output_streams(request, response, compression, getKeepAliveTimeout());
 
-        if (!response.sent() && !used_output.out_maybe_compressed)
-        {
-            /// If nothing was sent yet and we don't even know if we must compress the response.
-            response.send() << message << std::endl;
-        }
-        else if (used_output.out_maybe_compressed)
-        {
-            /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
-            if (used_output.out_maybe_delayed_and_compressed != used_output.out_maybe_compressed)
-                used_output.out_maybe_delayed_and_compressed.reset();
+            writeString(message, *output_streams.out_maybe_compressed);
+            writeChar('\n', *output_streams.out_maybe_compressed);
 
-            /// Send the error message into already used (and possibly compressed) stream.
-            /// Note that the error message will possibly be sent after some data.
-            /// Also HTTP code 200 could have already been sent.
-
-            /// If buffer has data, and that data wasn't sent yet, then no need to send that data
-            bool data_sent = used_output.out->count() != used_output.out->offset();
-
-            if (!data_sent)
-            {
-                used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
-                used_output.out->position() = used_output.out->buffer().begin();
-            }
-
-            writeString(message, *used_output.out_maybe_compressed);
-            writeChar('\n', *used_output.out_maybe_compressed);
-
-            used_output.out_maybe_compressed->next();
-            used_output.out->next();
-            used_output.out->finalize();
+            output_streams.finalize();
         }
     }
     catch (...)
@@ -337,10 +300,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    HTTPOutputStreams used_output;
-
     /// In case of exception, send stack trace to client.
-    bool with_stacktrace = false;
+    bool with_stacktrace = false, internal_compression = false;
 
     try
     {
@@ -353,6 +314,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
         HTMLForm params(request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
+        internal_compression = params.getParsed<bool>("compress", false);
 
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
@@ -363,7 +325,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             CurrentThread::QueryScope query_scope(*holder.context);
 
             holder.authentication(request, params);
-            processQuery(request, params, response, holder);
+            processQuery(*holder.context, request, params, response);
+            LOG_INFO(log, "Done processing query");
         }
     }
     catch (...)
@@ -375,8 +338,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
           */
         int exception_code = getCurrentExceptionCode();
         std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-
-        trySendExceptionToClient(exception_message, exception_code, request, response, HTTPOutputStreams{});
+        trySendExceptionToClient(exception_message, exception_code, request, response, internal_compression);
     }
 }
 
