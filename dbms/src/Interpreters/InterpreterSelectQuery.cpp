@@ -15,6 +15,7 @@
 #include <DataStreams/DistinctBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/TotalsHavingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
@@ -1129,7 +1130,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
                 if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
                 {
-                    if (auto stream = join->createStreamWithNonJoinedRows(header_before_join, settings.max_block_size))
+                    Block join_result_sample = ExpressionBlockInputStream(
+                        std::make_shared<OneBlockInputStream>(header_before_join), expressions.before_join).getHeader();
+
+                    if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                     {
                         if constexpr (pipeline_with_processors)
                         {
