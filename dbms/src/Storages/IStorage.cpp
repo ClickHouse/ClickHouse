@@ -5,6 +5,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/quoteString.h>
 
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
+
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 
@@ -422,6 +424,25 @@ void IStorage::alter(
         context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
         setColumns(std::move(new_columns));
     }
+}
+
+BlockInputStreams IStorage::read(
+    const Names & column_names,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned num_streams)
+{
+    auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+
+    BlockInputStreams res;
+    res.reserve(pipes.size());
+
+    for (auto & pipe : pipes)
+        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
+
+    return res;
 }
 
 }
