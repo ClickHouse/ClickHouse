@@ -364,7 +364,7 @@ struct JavaHashUTF16LEImpl
         size_t size = raw_size;
 
         // Remove Byte-order-mark(0xFFFE) for UTF-16LE
-        if (size >= 2 && data[0] == -1 && data[1] == -2)
+        if (size >= 2 && data[0] == '\xFF' && data[1] == '\xFE')
         {
             data += 2;
             size -= 2;
@@ -373,11 +373,11 @@ struct JavaHashUTF16LEImpl
         if (size % 2 != 0)
             throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::LOGICAL_ERROR);
 
-        UInt32 h = 0;
+        Int32 h = 0;
         for (size_t i = 0; i < size; i += 2)
-            h = 31 * h + static_cast<UInt32>((data[i] & 0xFF) << HI_BYTE_SHIFT | (data[i + 1] & 0xFF) << LO_BYTE_SHIFT);
+            h = 31 * h + static_cast<UInt16>(static_cast<UInt8>(data[i]) | static_cast<UInt8>(data[i + 1]) << 8);
 
-        return static_cast<Int32>(h);
+        return h;
     }
 
     static Int32 combineHashes(Int32, Int32)
@@ -386,8 +386,6 @@ struct JavaHashUTF16LEImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
-    static constexpr int HI_BYTE_SHIFT = 0;
-    static constexpr int LO_BYTE_SHIFT = 8;
 };
 
 /// This is just JavaHash with zeroed out sign bit.
