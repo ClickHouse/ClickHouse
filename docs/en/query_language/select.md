@@ -964,7 +964,7 @@ External sorting works much less effectively than sorting in RAM.
 
 ### SELECT Clause {#select-select}
 
-[Expressions](syntax.md#syntax-expressions) specified in the `SELECT` clause are analyzed after the calculations for all the clauses listed above are completed. More specifically, expressions above the aggregate functions are analyzed, provided there are aggregate functions. The aggregate functions and everything below them are calculated during aggregation (`GROUP BY`). These expressions work as if they were applied to separate rows in the result.
+[Expressions](syntax.md#syntax-expressions) specified in the `SELECT` clause are analyzed after the calculations for all the clauses that described above in this text. More specifically, expressions above the aggregate functions are analyzed, provided there are aggregate functions. The aggregate functions and everything below them are calculated during aggregation (`GROUP BY`). These expressions work as if they were applied to separate rows in the result.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
@@ -991,6 +991,8 @@ SELECT COLUMNS('a') FROM col_names
 └────┴────┘
 ```
 
+The selected columns are returned not in the alphabetical order.
+
 You can use multiple `COLUMNS` expressions in a query and apply functions to them.
 
 For example:
@@ -1004,7 +1006,7 @@ SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 └────┴────┴────┴────────────────┘
 ```
 
-Be careful when using functions because the `COLUMNS` expression returns a variable number of columns, and, if a function doesn't support this number of arguments, ClickHouse throws an exception.
+Each column returned by the `COLUMNS` expression is passed to the function as a separate argument. Also you can pass other arguments to the function if it supports them. Be careful when using functions. If a function doesn't support the number of arguments you have passed to it, ClickHouse throws an exception.
 
 For example:
 
