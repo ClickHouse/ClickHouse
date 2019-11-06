@@ -1025,7 +1025,7 @@ public:
     }
 
     template <typename T>
-    void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, size_t HEX_LENGTH)
+    void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t HEX_LENGTH)
     {
         auto col_str = ColumnString::create();
 
@@ -1057,7 +1057,28 @@ public:
         if (col_vec)
         {
             const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
-            executeFloatAndDecimal<typename ColumnVector<T>::Container>(in_vec, col_res, sizeof(T) * 2 + 1);
+            const size_t HEX_LENGTH = sizeof(T) * 2 + 1;
+            auto col_str = ColumnString::create();
+
+            ColumnString::Chars & out_vec = col_str->getChars();
+            ColumnString::Offsets & out_offsets = col_str->getOffsets();
+
+            size_t size = in_vec.size();
+            out_offsets.resize(size);
+            out_vec.resize(size * HEX_LENGTH);
+
+            size_t pos = 0;
+            char * out = reinterpret_cast<char *>(&out_vec[0]);
+            for (size_t i = 0; i < size; ++i)
+            {
+                const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
+                executeOneString(in_pos, in_pos + sizeof(T), out);
+
+                pos += HEX_LENGTH;
+                out_offsets[i] = pos;
+            }
+
+            col_res = std::move(col_str);
             return true;
         }
         else
