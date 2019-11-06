@@ -1071,7 +1071,6 @@ public:
     {
         if (col_dec)
         {
-            std::cerr << "ENTER in tryExecuteDecimal " << sizeof(T) << std::endl;
             const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
             executeFloatAndDecimal<typename ColumnDecimal<T>::Container>(in_vec, col_res, sizeof(T) * 2 + 1);
             return true;
