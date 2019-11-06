@@ -12,8 +12,8 @@
 
 namespace DB
 {
-//used by FunctionsStringSimilarity and FunctionsStringHash
-//includes exacting ASCII ngram, UTF8 ngram, ASCII word and UTF8 word
+// used by FunctionsStringSimilarity and FunctionsStringHash
+// includes exacting ASCII ngram, UTF8 ngram, ASCII word and UTF8 word
 template <size_t N, bool CaseInsensitive>
 struct ExtractStringImpl
 {
@@ -47,14 +47,14 @@ struct ExtractStringImpl
         return default_padding;
     }
 
-    //used by FunctionsStringHash
-    //it's not easy to add padding for ColumnString, so we need safety check each memcpy
+    // used by FunctionsStringHash
+    // it's not easy to add padding for ColumnString, so we need safety check each memcpy
     static ALWAYS_INLINE size_t readASCIICodePointsNoPadding(UInt8 * code_points, const char *& pos, const char * end)
     {
         constexpr size_t padding_offset = default_padding - N + 1;
         memcpy(code_points, code_points + padding_offset, roundUpToPowerOfTwoOrZero(N - 1) * sizeof(UInt8));
 
-        //safety check
+        // safety check
         size_t cpy_size = (pos + padding_offset > end) ? end - pos : padding_offset;
 
         memcpy(code_points + (N - 1), pos, cpy_size * sizeof(UInt8));
@@ -69,12 +69,12 @@ struct ExtractStringImpl
         return default_padding;
     }
 
-    //read a ASCII word from pos to word
-    //if the word size exceeds max_word_size, only read max_word_size byte
-    //in  FuntionsStringHash, the default value of max_word_size is 128
+    // read a ASCII word from pos to word
+    // if the word size exceeds max_word_size, only read max_word_size byte
+    // in  FuntionsStringHash, the default value of max_word_size is 128
     static ALWAYS_INLINE inline size_t readOneASCIIWord(UInt8 * word, const char *& pos, const char * end, const size_t & max_word_size)
     {
-        //jump seperators
+        // jump seperators
         while (pos < end && !isAlphaNum(*pos))
             ++pos;
 
@@ -105,14 +105,14 @@ struct ExtractStringImpl
         return num;
     }
 
-    //read one UTF8 word from pos to word
-    //also, we assume that one word size cann't exceed max_word_size with default value 128
+    // read one UTF8 word from pos to word
+    // also, we assume that one word size cann't exceed max_word_size with default value 128
     static ALWAYS_INLINE inline size_t readOneUTF8Word(UInt32 * word, const char *& pos, const char * end, const size_t & max_word_size)
     {
         // jump UTF8 seperator
         while (pos < end && isUTF8Sep(*pos))
             ++pos;
-        //UTF8 word's character number
+        // UTF8 word's character number
         size_t num = 0;
         while (pos < end && num < max_word_size && !isUTF8Sep(*pos))
         {
@@ -133,7 +133,7 @@ private:
         ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
     }
 
-    //we use ASCII non-alphanum character as UTF8 seperator
+    // we use ASCII non-alphanum character as UTF8 seperator
     static ALWAYS_INLINE inline bool isUTF8Sep(const UInt8 c) { return c < 128 && !isAlphaNum(c); }
 
     // read one UTF8 character and return it

@@ -15,14 +15,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
-//FunctionStringHash
-//Simhash: String -> UInt64
-//Minhash: String -> (UInt64, UInt64)
+// FunctionStringHash
+// Simhash: String -> UInt64
+// Minhash: String -> (UInt64, UInt64)
 template <typename Impl, typename Name, bool IsSimhash>
 class FunctionsStringHash : public IFunction
 {
@@ -103,7 +101,7 @@ public:
             }
             else
             {
-                //non const string
+                // non const string
                 auto col_h1 = ColumnVector<ResultType>::create();
                 auto col_h2 = ColumnVector<ResultType>::create();
                 typename ColumnVector<ResultType>::Container & vec_h1 = col_h1->getData();
