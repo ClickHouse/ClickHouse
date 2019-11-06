@@ -60,11 +60,11 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Параметры**
 
-- `bitmap` – [битовый массив](#bitmap_functions-bitmapbuild).
+- `bitmap` – [битовый массив](#bitmap_functions-bitmapbuild) для преобразования.
 - `range_start` – нижняя граница диапазона. [UInt32](https://clickhouse.yandex/docs/ru/data_types/int_uint/).
 - `range_end` – верхняя граница диапазона (исключена). [UInt32](https://clickhouse.yandex/docs/ru/data_types/int_uint/).
 
-**Возвращаеме значение**
+**Возвращаемые значения**
 
 Возвращает целочисленные значения, которые больше или равны `range_start` и меньше `range_end`.
 
