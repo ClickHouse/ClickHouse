@@ -187,6 +187,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    bool limit_with_ties_occured = false;
+
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
     {
@@ -205,7 +207,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             if (s_with_ties.ignore(pos, expected))
+            {
+                limit_with_ties_occured = true;
                 select_query->limit_with_ties = true;
+            }
         }
         else if (s_offset.ignore(pos, expected))
         {
@@ -213,10 +218,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
         else if (s_with_ties.ignore(pos, expected))
+        {
+            limit_with_ties_occured = true;
             select_query->limit_with_ties = true;
+        }
 
         if (s_by.ignore(pos, expected))
         {
+            /// WITH TIES was used alongside LIMIT BY
+            /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
+            /// So we have to ignore WITH TIES exactly in LIMIT BY state.
+            if (limit_with_ties_occured)
+                throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
+
             limit_by_length = limit_length;
             limit_by_offset = limit_offset;
             limit_length = nullptr;
@@ -230,7 +244,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES]
     if (s_limit.ignore(pos, expected))
     {
-        if (!limit_by_length|| limit_length)
+        if (!limit_by_length || limit_length)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
@@ -257,10 +271,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// WITH TIES was used without ORDER BY
     if (!order_expression_list && select_query->limit_with_ties)
         throw Exception("Can not use WITH TIES without ORDER BY", ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY);
-
-    /// WITH TIES was used alongside LIMIT BY
-    if (limit_by_length && !limit_length && select_query->limit_with_ties)
-        throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
 
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))
