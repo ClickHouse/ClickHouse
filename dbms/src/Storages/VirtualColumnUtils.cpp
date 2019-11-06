@@ -61,13 +61,7 @@ ASTPtr buildWhereExpression(const ASTs & functions)
         return nullptr;
     if (functions.size() == 1)
         return functions[0];
-    ASTPtr new_query = std::make_shared<ASTFunction>();
-    auto & new_function = new_query->as<ASTFunction &>();
-    new_function.name = "and";
-    new_function.arguments = std::make_shared<ASTExpressionList>();
-    new_function.arguments->children = functions;
-    new_function.children.push_back(new_function.arguments);
-    return new_query;
+    return makeASTFunction("and", functions);
 }
 
 }
