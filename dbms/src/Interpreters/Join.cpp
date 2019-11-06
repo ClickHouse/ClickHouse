@@ -690,8 +690,8 @@ void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & cur
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-template <bool _add_missing, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool _has_null_map>
-void NO_INLINE joinRightIndexedColumns(const Map & map, AddedColumns & added_columns)
+template <ASTTableJoin::Strictness STRICTNESS, bool _add_missing, typename KeyGetter, typename Map, bool _has_null_map>
+void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
 {
     size_t rows = added_columns.rows_to_add;
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
@@ -759,26 +759,27 @@ void NO_INLINE joinRightIndexedColumns(const Map & map, AddedColumns & added_col
     added_columns.applyLazyDefaults();
 }
 
-template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-void joinRightColumns(const Map & map, AddedColumns & added_columns)
+template <ASTTableJoin::Strictness STRICTNESS, bool left_or_full, typename KeyGetter, typename Map>
+void joinRightColumnsSwitchNullability(const Map & map, AddedColumns & added_columns)
+{
+    if (added_columns.null_map)
+        joinRightColumns<STRICTNESS, left_or_full, KeyGetter, Map, true>(map, added_columns);
+    else
+        joinRightColumns<STRICTNESS, left_or_full, KeyGetter, Map, false>(map, added_columns);
+}
+
+template <ASTTableJoin::Strictness STRICTNESS, ASTTableJoin::Kind KIND, typename Maps>
+void switchJoinRightColumns(const Maps & maps_, AddedColumns & added_columns, Join::Type type)
 {
     constexpr bool left_or_full = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
 
-    if (added_columns.null_map)
-        joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, true>(map, added_columns);
-    else
-        joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, false>(map, added_columns);
-}
-
-template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-void switchJoinRightColumns(const Maps & maps_, AddedColumns & added_columns, Join::Type type)
-{
     switch (type)
     {
     #define M(TYPE) \
         case Join::Type::TYPE: \
-            joinRightColumns<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
-                *maps_.TYPE, added_columns); \
+            joinRightColumnsSwitchNullability<STRICTNESS, left_or_full,\
+                typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
+                *maps_.TYPE, added_columns);\
             break;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
@@ -831,7 +832,7 @@ void Join::joinBlockImpl(Block & block, const Names & key_names_left, const Bloc
     if (!joinDispatch(kind, strictness, maps,
         [&](auto kind_, auto strictness_, auto & maps_)
         {
-            switchJoinRightColumns<kind_, strictness_>(maps_, added_columns, type);
+            switchJoinRightColumns<strictness_, kind_>(maps_, added_columns, type);
         }))
         throw Exception("Logical error: unknown combination of JOIN", ErrorCodes::LOGICAL_ERROR);
 
