@@ -51,7 +51,7 @@ public:
     void joinBlock(Block &) override;
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
-    bool hasTotals() const override { return totals; }
+    bool hasTotals() const override;
     size_t getTotalRowCount() const override { return right_blocks_row_count; }
 
 private:

@@ -1013,6 +1013,7 @@ void Join::joinBlock(Block & block)
 
 void Join::joinTotals(Block & block) const
 {
+    std::shared_lock lock(rwlock);
     JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, key_names_right, block);
 }
 

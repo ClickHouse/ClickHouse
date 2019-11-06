@@ -144,10 +144,18 @@ public:
     /// Used by joinGet function that turns StorageJoin into a dictionary
     void joinGet(Block & block, const String & column_name) const;
 
-    /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
-      */
-    void setTotals(const Block & block) override { totals = block; }
-    bool hasTotals() const override { return totals; }
+    /// Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
+    void setTotals(const Block & block) override
+    {
+        std::unique_lock lock(rwlock);
+        totals = block;
+    }
+
+    bool hasTotals() const override
+    {
+        std::shared_lock lock(rwlock);
+        return totals;
+    }
 
     void joinTotals(Block & block) const override;
 

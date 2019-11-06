@@ -468,12 +468,20 @@ MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & ri
 
 void MergeJoin::setTotals(const Block & totals_block)
 {
+    std::unique_lock lock(rwlock);
     totals = totals_block;
     mergeRightBlocks();
 }
 
+bool MergeJoin::hasTotals() const
+{
+    std::shared_lock lock(rwlock);
+    return totals;
+}
+
 void MergeJoin::joinTotals(Block & block) const
 {
+    std::shared_lock lock(rwlock);
     JoinCommon::joinTotals(totals, right_columns_to_add, table_join->keyNamesRight(), block);
 }
 
