@@ -37,13 +37,15 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    BlockInputStreams read(
+    Pipes readWithProcessors(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
+
+    std::optional<UInt64> totalRows() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
