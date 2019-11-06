@@ -1027,6 +1027,8 @@ public:
     template <typename T>
     void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, size_t HEX_LENGTH)
     {
+        std::cerr << "!!! "<< HEX_LENGTH << " !!!" << std::endl;
+
         auto col_str = ColumnString::create();
 
         ColumnString::Chars & out_vec = col_str->getChars();
@@ -1057,26 +1059,34 @@ public:
         static constexpr size_t FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1; /// Including trailing zero byte.
         if (col_vec)
         {
+            std::cerr << "ENTER in tryExecuteFloat " << sizeof(T) << std::endl;
             const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
             executeFloatAndDecimal<typename ColumnVector<T>::Container>(in_vec, col_res, FLOAT_HEX_LENGTH);
             return true;
         }
-        return false;
+        else
+        {
+            return false;
+        }
     }
 
     template <typename T>
     bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res) {
         const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
 
-        static constexpr size_t DECIMAL_HEX_LENGTH = sizeof(T) * 2 + 1;
+        static constexpr size_t DECIMAL_HEX_LENGTH = sizeof(T) * 2 + 1; /// Including trailing zero byte.
 
         if (col_dec)
         {
+            std::cerr << "ENTER in tryExecuteDecimal " << sizeof(T) << std::endl;
             const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
             executeFloatAndDecimal<typename ColumnDecimal<T>::Container>(in_vec, col_res, DECIMAL_HEX_LENGTH);
             return true;
         }
-        return false;
+        else
+        {
+            return false;
+        }
     }
 
 
