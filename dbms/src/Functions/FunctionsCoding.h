@@ -1025,84 +1025,59 @@ public:
     }
 
     template <typename T>
-    bool tryExecuteFloat(const IColumn * col, ColumnPtr & col_res)
+    void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, size_t HEX_LENGTH)
     {
-        const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
+        auto col_str = ColumnString::create();
 
-        static constexpr size_t FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
+        ColumnString::Chars & out_vec = col_str->getChars();
+        ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-        if (col_vec)
+        size_t size = in_vec.size();
+        out_offsets.resize(size);
+        out_vec.resize(size * HEX_LENGTH);
+
+        size_t pos = 0;
+        char * out = reinterpret_cast<char *>(&out_vec[0]);
+        for (size_t i = 0; i < size; ++i)
         {
-            auto col_str = ColumnString::create();
-            ColumnString::Chars & out_vec = col_str->getChars();
-            ColumnString::Offsets & out_offsets = col_str->getOffsets();
+            const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
+            executeOneString(in_pos, in_pos + sizeof(T), out);
 
-            const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
-
-            size_t size = in_vec.size();
-            out_offsets.resize(size);
-            out_vec.resize(size * FLOAT_HEX_LENGTH);
-
-            size_t pos = 0;
-            char * out = reinterpret_cast<char *>(&out_vec[0]);
-            for (size_t i = 0; i < size; ++i)
-            {
-                const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-                executeOneString(in_pos, in_pos + sizeof(T), out);
-
-                pos += FLOAT_HEX_LENGTH;
-                out_offsets[i] = pos;
-            }
-
-            col_res = std::move(col_str);
-            return true;
+            pos += HEX_LENGTH;
+            out_offsets[i] = pos;
         }
-        else
-        {
-            return false;
-        }
+
+        col_res = std::move(col_str);
     }
 
     template <typename T>
-    bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res)
+    bool tryExecuteFloat(const IColumn * col, ColumnPtr & col_res)
     {
+        const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
+        static constexpr size_t FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1; /// Including trailing zero byte.
+        if (col_vec)
+        {
+            const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
+            executeFloatAndDecimal<typename ColumnVector<T>::Container>(in_vec, col_res, FLOAT_HEX_LENGTH);
+            return true;
+        }
+        return false;
+    }
+
+    template <typename T>
+    bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res) {
         const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
 
-        static constexpr size_t DECIMAL_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
+        static constexpr size_t DECIMAL_HEX_LENGTH = sizeof(T) * 2 + 1;
 
         if (col_dec)
         {
-            auto col_str = ColumnString::create();
-            ColumnString::Chars & out_vec = col_str->getChars();
-            ColumnString::Offsets & out_offsets = col_str->getOffsets();
-
             const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
-
-            size_t size = in_vec.size();
-            out_offsets.resize(size);
-            out_vec.resize(size * DECIMAL_HEX_LENGTH);
-
-            size_t pos = 0;
-            char * out = reinterpret_cast<char *>(&out_vec[0]);
-            for (size_t i = 0; i < size; ++i)
-            {
-                const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
-                executeOneString(in_pos, in_pos + sizeof(T), out);
-
-                pos += DECIMAL_HEX_LENGTH;
-                out_offsets[i] = pos;
-            }
-
-            col_res = std::move(col_str);
+            executeFloatAndDecimal<typename ColumnDecimal<T>::Container>(in_vec, col_res, DECIMAL_HEX_LENGTH);
             return true;
         }
-        else
-        {
-            return false;
-        }
+        return false;
     }
-
-
 
 
     void executeOneString(const UInt8 * pos, const UInt8 * end, char *& out)
