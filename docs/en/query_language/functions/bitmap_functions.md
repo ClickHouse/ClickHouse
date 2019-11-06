@@ -325,18 +325,17 @@ Returns the smallest value in a bitmap.
 **Syntax**
 
 ```sql
-bitmapMin(bitmap);
+bitmapMin(bitmap)
 ```
 
 **Parameters**
 
 - `bitmap` — [Bitmap object](#bitmap_functions-bitmapbuild).
 
-**Returned value**
+**Returned values**
 
 - The smallest value in `bitmap`, if the set is not empty. Type: `UInt64`.
 - Maximum UInt32 number (4294967295), if the set is empty. Type: `UInt32`. 
-
 
 **Example**
 
@@ -361,7 +360,7 @@ Returns the greatest value in a bitmap.
 **Syntax**
 
 ```sql
-bitmapMax(bitmap);
+bitmapMax(bitmap)
 ```
 
 **Parameters**
