@@ -75,10 +75,12 @@ bool castType(const IDataType * type, F && f)
 template <typename F>
 static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
 {
-    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
+    return castType(left, [&](const auto & left_) {
+        return castType(right, [&](const auto & right_) { return f(left_, right_); });
+    });
 }
 
-//bitHammingDistance function: (Integer, Integer) -> UInt8
+// bitHammingDistance function: (Integer, Integer) -> UInt8
 class FunctionBitHammingDistance : public IFunction
 {
 public:
@@ -105,7 +107,8 @@ public:
     {
         auto * left_generic = block.getByPosition(arguments[0]).type.get();
         auto * right_generic = block.getByPosition(arguments[1]).type.get();
-        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right) {
+        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
+        {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
@@ -122,7 +125,7 @@ public:
             {
                 if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
                 {
-                    //constant integer - constant integer
+                    // constant integer - constant integer
                     auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>());
                     block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
                     return true;
@@ -148,10 +151,10 @@ public:
             else if (auto col_left = checkAndGetColumn<ColVecT0>(col_left_raw))
             {
                 if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
-                    //non-constant integer - non-constant integer
+                    // non-constant integer - non-constant integer
                     OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
                 else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                    //non-constant integer - constant integer
+                    // non-constant integer - constant integer
                     OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
                 else
                     return false;

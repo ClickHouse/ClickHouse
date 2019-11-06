@@ -83,13 +83,15 @@ bool castType(const IDataType * type, F && f)
 template <typename F>
 static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
 {
-    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
+    return castType(left, [&](const auto & left_) {
+        return castType(right, [&](const auto & right_) { return f(left_, right_); });
+    });
 }
 
-//tupleHammingDistance function: (Tuple(Integer, Integer), Tuple(Integer, Integer))->UInt8
-//in order to avoid code bloating, for non-constant tuple, we make sure that the elements
-//in the tuple should have same data type, and for constant tuple, elements can be any integer
-//data type, we cast all of them into UInt64
+// tupleHammingDistance function: (Tuple(Integer, Integer), Tuple(Integer, Integer))->UInt8
+// in order to avoid code bloating, for non-constant tuple, we make sure that the elements
+// in the tuple should have same data type, and for constant tuple, elements can be any integer
+// data type, we cast all of them into UInt64
 class FunctionTupleHammingDistance : public IFunction
 {
 public:
@@ -124,7 +126,8 @@ public:
             throw Exception(
                 "Illegal column of arguments of function " + getName() + ", tuple should have exactly two elements.",
                 ErrorCodes::ILLEGAL_COLUMN);
-        bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right) {
+        bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right)
+        {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
