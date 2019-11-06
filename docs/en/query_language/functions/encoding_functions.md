@@ -1,7 +1,7 @@
 # Encoding functions
 
 ## char
-Accepts multiple arguments of `Number` types. Returns a string, each char of the results corresponds to the ascii character of the input numbers. It'll cast the first byte from the number, if the byte overflows the range of ascii(which is 127), it returns an unrecognized character(�).
+Accepts multiple arguments of numberic types. Returns a string with the length as the number of passed arguments and each byte has the value of corresponding argument.
 
 ## hex
 
