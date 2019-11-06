@@ -24,7 +24,7 @@ HTTPInputStreams::HTTPInputStreams(Context & context, HTTPServerRequest & reques
     /// checksums of client data compressed with internal algorithm are not checked.
     if (context.getSettingsRef().http_native_compression_disable_checksumming_on_decompress)
     {
-        if(CompressedReadBuffer * compressed_buffer = typeid_cast<CompressedReadBuffer *>(in_maybe_internal_compressed.get()))
+        if (CompressedReadBuffer * compressed_buffer = typeid_cast<CompressedReadBuffer *>(in_maybe_internal_compressed.get()))
             compressed_buffer->disableChecksumming();
     }
 }
