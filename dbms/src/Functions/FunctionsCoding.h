@@ -1028,7 +1028,7 @@ public:
     void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t type_size_in_bytes)
     {
         const size_t hex_length = type_size_in_bytes * 2 + 1; /// Including trailing zero byte.
-        auto col_str = ColumnString::create();;
+        auto col_str = ColumnString::create();
 
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
