@@ -38,7 +38,7 @@ public:
 
     StoragePtr tryGetTable(const Context & context, const String & name) const override;
 
-    time_t getObjectMetadataModificationTime(const Context & context, const String & name) override;
+    time_t getObjectMetadataModificationTime(const String & name) const override;
 
     void shutdown() override;
 

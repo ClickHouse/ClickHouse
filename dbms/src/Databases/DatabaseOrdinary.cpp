@@ -44,7 +44,6 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_PARSE_TEXT;
-    extern const int EMPTY_LIST_OF_ATTRIBUTES_PASSED;
 }
 
 
@@ -82,6 +81,7 @@ namespace
     }
 
 
+    //TODO
     void tryAttachDictionary(
         Context & context,
         const ASTCreateQuery & query,
@@ -114,11 +114,8 @@ namespace
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithDictionaries(std::move(name_))
-    , metadata_path(metadata_path_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
-    , log(&Logger::get("DatabaseOrdinary (" + database_name + ")"))
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
+    : DatabaseWithDictionaries(name_, metadata_path_,"DatabaseOrdinary (" + name_ + ")")
 {
     Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
@@ -137,7 +134,7 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    DatabaseOnDisk::iterateMetadataFiles(*this, log, context, [&file_names, &total_dictionaries, this](const String & file_name)
+    iterateMetadataFiles(context, [&file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = metadata_path + "/" + file_name;
         try
@@ -237,70 +234,6 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
     thread_pool.wait();
 }
 
-void DatabaseOrdinary::createTable(
-    const Context & context,
-    const String & table_name,
-    const StoragePtr & table,
-    const ASTPtr & query)
-{
-    DatabaseOnDisk::createTable(*this, context, table_name, table, query);
-}
-
-void DatabaseOrdinary::createDictionary(
-    const Context & context,
-    const String & dictionary_name,
-    const ASTPtr & query)
-{
-    DatabaseOnDisk::createDictionary(*this, context, dictionary_name, query);
-}
-
-void DatabaseOrdinary::removeTable(
-    const Context & context,
-    const String & table_name)
-{
-    DatabaseOnDisk::removeTable(*this, context, table_name, log);
-}
-
-void DatabaseOrdinary::removeDictionary(
-    const Context & context,
-    const String & table_name)
-{
-    DatabaseOnDisk::removeDictionary(*this, context, table_name, log);
-}
-
-void DatabaseOrdinary::renameTable(
-    const Context & context,
-    const String & table_name,
-    IDatabase & to_database,
-    const String & to_table_name,
-    TableStructureWriteLockHolder & lock)
-{
-    DatabaseOnDisk::renameTable<DatabaseOrdinary>(*this, context, table_name, to_database, to_table_name, lock);
-}
-
-
-time_t DatabaseOrdinary::getObjectMetadataModificationTime(
-    const Context & /* context */,
-    const String & table_name)
-{
-    return DatabaseOnDisk::getObjectMetadataModificationTime(*this, table_name);
-}
-
-ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
-{
-    return DatabaseOnDisk::getCreateTableQueryImpl(*this, context, table_name, throw_on_error);
-}
-
-ASTPtr DatabaseOrdinary::getCreateDictionaryQueryImpl(const Context & context, const String & dictionary_name, bool throw_on_error) const
-{
-    return DatabaseOnDisk::getCreateDictionaryQueryImpl(*this, context, dictionary_name, throw_on_error);
-}
-
-ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & context) const
-{
-    return DatabaseOnDisk::getCreateDatabaseQuery(*this, context);
-}
-
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
@@ -359,28 +292,6 @@ void DatabaseOrdinary::alterTable(
         Poco::File(table_metadata_tmp_path).remove();
         throw;
     }
-}
-
-
-void DatabaseOrdinary::drop(const Context & context)
-{
-    DatabaseOnDisk::drop(*this, context);
-}
-
-
-String DatabaseOrdinary::getDataPath() const
-{
-    return data_path;
-}
-
-String DatabaseOrdinary::getMetadataPath() const
-{
-    return metadata_path;
-}
-
-String DatabaseOrdinary::getObjectMetadataPath(const String & table_name) const
-{
-    return DatabaseOnDisk::getObjectMetadataPath(*this, table_name);
 }
 
 }

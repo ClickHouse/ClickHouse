@@ -22,7 +22,7 @@ namespace DB
 class DatabaseDictionary : public IDatabase
 {
 public:
-    DatabaseDictionary(String name_);
+    DatabaseDictionary(const String & name_);
 
     String getEngineName() const override
     {

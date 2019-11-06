@@ -22,8 +22,8 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-DatabaseDictionary::DatabaseDictionary(String name_)
-    : IDatabase(std::move(name_)),
+DatabaseDictionary::DatabaseDictionary(const String & name_)
+    : IDatabase(name_),
       log(&Logger::get("DatabaseDictionary(" + database_name + ")"))
 {
 }
