@@ -1639,6 +1639,8 @@ void InterpreterSelectQuery::executeFetchColumns(
                 if (query_info.prewhere_info->remove_columns_actions)
                     pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), query_info.prewhere_info->remove_columns_actions));
             }
+
+            pipes.emplace_back(std::move(pipe));
         }
 
         for (auto & stream : streams)
