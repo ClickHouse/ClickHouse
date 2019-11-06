@@ -12,7 +12,7 @@ namespace DB
 class ExtractorContextChange
 {
 public:
-    ExtractorContextChange(Context & context_, const HTTPMatchExecutorPtr & executor_) : context(context_), executor(executor_) {}
+    ExtractorContextChange(Context & context_, const CustomExecutorPtr & executor_) : context(context_), executor(executor_) {}
 
     void extract(Poco::Net::HTTPServerRequest & request, HTMLForm & params)
     {
@@ -91,7 +91,7 @@ public:
 
 private:
     Context & context;
-    const HTTPMatchExecutorPtr & executor;
+    const CustomExecutorPtr & executor;
 
 };
 

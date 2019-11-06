@@ -52,10 +52,17 @@ namespace
     }
 }
 
+HTTPOutputStreams::HTTPOutputStreams(HTTPServerRequest & request, HTTPServerResponse & response, bool internal_compress, size_t keep_alive_timeout)
+    : out(createResponseOut(request, response, keep_alive_timeout))
+    , out_maybe_compressed(createMaybeCompressionOut(internal_compress, out))
+    , out_maybe_delayed_and_compressed(out_maybe_compressed)
+{
+}
+
 HTTPOutputStreams::HTTPOutputStreams(
     Context & context, HTTPServerRequest & request, HTTPServerResponse & response, HTMLForm & form, size_t keep_alive_timeout)
     : out(createResponseOut(request, response, keep_alive_timeout))
-    , out_maybe_compressed(createMaybeCompressionOut(form, out))
+    , out_maybe_compressed(createMaybeCompressionOut(form.getParsed<bool>("compress", false), out))
     , out_maybe_delayed_and_compressed(createMaybeDelayedAndCompressionOut(context, form, out_maybe_compressed))
 {
     Settings & settings = context.getSettingsRef();
@@ -68,8 +75,7 @@ HTTPOutputStreams::HTTPOutputStreams(
 
     out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
-    /// Add CORS header if 'add_http_cors_header' setting is turned on and the client passed
-    /// Origin header.
+    /// Add CORS header if 'add_http_cors_header' setting is turned on and the client passed Origin header.
     out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
@@ -84,8 +90,7 @@ HTTPOutputStreams::HTTPOutputStreams(
     }
 }
 
-std::shared_ptr<WriteBufferFromHTTPServerResponse> HTTPOutputStreams::createResponseOut(
-    HTTPServerRequest &request, HTTPServerResponse &response, size_t keep_alive_timeout)
+HTTPResponseBufferPtr HTTPOutputStreams::createResponseOut(HTTPServerRequest & request, HTTPServerResponse & response, size_t keep_alive)
 {
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -96,27 +101,26 @@ std::shared_ptr<WriteBufferFromHTTPServerResponse> HTTPOutputStreams::createResp
         /// NOTE parsing of the list of methods is slightly incorrect.
         if (std::string::npos != http_response_compression_methods.find("gzip"))
             return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive_timeout, true, CompressionMethod::Gzip, DBMS_DEFAULT_BUFFER_SIZE);
+                request, response, keep_alive, true, CompressionMethod::Gzip, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
             return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive_timeout, true, CompressionMethod::Zlib, DBMS_DEFAULT_BUFFER_SIZE);
+                request, response, keep_alive, true, CompressionMethod::Zlib, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
 #if USE_BROTLI
         else if (http_response_compression_methods == "br")
             return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive_timeout, true, CompressionMethod::Brotli, DBMS_DEFAULT_BUFFER_SIZE);
+                request, response, keep_alive, true, CompressionMethod::Brotli, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
 #endif
     }
 
-    return std::make_shared<WriteBufferFromHTTPServerResponse>(
-        request, response, keep_alive_timeout, false, CompressionMethod{}, DBMS_DEFAULT_BUFFER_SIZE);
+    return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, false, CompressionMethod{}, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
 }
 
-WriteBufferPtr HTTPOutputStreams::createMaybeCompressionOut(HTMLForm & form, std::shared_ptr<WriteBufferFromHTTPServerResponse> & out_)
+WriteBufferPtr HTTPOutputStreams::createMaybeCompressionOut(bool compression, HTTPResponseBufferPtr & out_)
 {
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
-    bool internal_compression = form.getParsed<bool>("compress", false);
-    return internal_compression ? std::make_shared<CompressedWriteBuffer>(*out_) : WriteBufferPtr(out_);
+//    bool internal_compression = form.getParsed<bool>("compress", false);
+    return compression ? std::make_shared<CompressedWriteBuffer>(*out_) : WriteBufferPtr(out_);
 }
 
 WriteBufferPtr HTTPOutputStreams::createMaybeDelayedAndCompressionOut(Context & context, HTMLForm & form, WriteBufferPtr & out_)
@@ -172,6 +176,20 @@ WriteBufferPtr HTTPOutputStreams::createMaybeDelayedAndCompressionOut(Context & 
     return out_;
 }
 
+HTTPOutputStreams::~HTTPOutputStreams()
+{
+    /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
+    if (out_maybe_delayed_and_compressed != out_maybe_compressed)
+        out_maybe_delayed_and_compressed.reset();
+
+    /// If buffer has data, and that data wasn't sent yet, then no need to send that data
+    if (out->count() == out->offset())
+    {
+        out_maybe_compressed->position() = out_maybe_compressed->buffer().begin();
+        out->position() = out->buffer().begin();
+    }
+}
+
 void HTTPOutputStreams::finalize() const
 {
     if (out_maybe_delayed_and_compressed != out_maybe_compressed)
@@ -208,8 +226,9 @@ void HTTPOutputStreams::finalize() const
         copyData(concat_read_buffer, *out_maybe_compressed);
     }
 
-    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
-    /// the client.
+    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
+    out_maybe_compressed->next();
+    out->next();
     out->finalize();
 }
 

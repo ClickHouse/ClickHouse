@@ -153,13 +153,17 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerResponse & response_,
     unsigned keep_alive_timeout_,
     bool compress_,
-    CompressionMethod compression_method_)
-    : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
+    CompressionMethod compression_method_,
+    size_t size,
+    bool finish_send_headers_)
+    : BufferWithOwnMemory<WriteBuffer>(size)
     , request(request_)
     , response(response_)
     , keep_alive_timeout(keep_alive_timeout_)
     , compress(compress_)
     , compression_method(compression_method_)
+    , headers_started_sending(finish_send_headers_)
+    , headers_finished_sending(finish_send_headers_)
 {
 }
 

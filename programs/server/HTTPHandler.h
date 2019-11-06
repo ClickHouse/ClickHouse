@@ -56,11 +56,11 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
-    /// Also initializes 'used_output'.
-    void processQuery(HTTPRequest & request, HTMLForm & params, HTTPResponse & response, SessionContextHolder & holder);
+    size_t getKeepAliveTimeout() { return server.config().getUInt("keep_alive_timeout", 10); }
 
-    void trySendExceptionToClient(
-        const std::string & message, int exception_code, HTTPRequest & request, HTTPResponse & response, HTTPOutputStreams & used_output);
+    void processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response);
+
+    void trySendExceptionToClient(const std::string & message, int exception_code, HTTPRequest & request, HTTPResponse & response, bool compression);
 
 };
 

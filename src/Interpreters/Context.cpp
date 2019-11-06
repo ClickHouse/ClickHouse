@@ -2044,9 +2044,9 @@ void Context::resetInputCallbacks()
         input_blocks_reader = {};
 }
 
-std::pair<String, HTTPMatchExecutorPtr> Context::getCustomExecutor(Poco::Net::HTTPServerRequest & /*request*/)
+std::pair<String, CustomExecutorPtr> Context::getCustomExecutor(Poco::Net::HTTPServerRequest & /*request*/)
 {
-    return std::pair<String, HTTPMatchExecutorPtr>("Default", std::shared_ptr<CustomExecutorDefault>());
+    return std::pair<String, CustomExecutorPtr>("Default", std::make_shared<CustomExecutorDefault>());
 }
 
 
