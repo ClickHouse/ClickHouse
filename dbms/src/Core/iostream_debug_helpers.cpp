@@ -18,15 +18,17 @@
 
 namespace DB
 {
-std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
+
+template <>
+std::ostream & operator<< <Field>(std::ostream & stream, const Field & what)
 {
-    stream << "IBlockInputStream(name = " << what.getName() << ")";
+    stream << applyVisitor(FieldVisitorDump(), what);
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const Field & what)
+std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
-    stream << applyVisitor(FieldVisitorDump(), what);
+    stream << "IBlockInputStream(name = " << what.getName() << ")";
     return stream;
 }
 
@@ -99,14 +101,6 @@ std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what
         stream << "exception = " << what.exception.get();
     // TODO: profile_info
     stream << ") {" << what.block << "}";
-    return stream;
-}
-
-std::ostream & operator<<(std::ostream & stream, const IAST & what)
-{
-    stream << "IAST{";
-    what.dumpTree(stream);
-    stream << "}";
     return stream;
 }
 
