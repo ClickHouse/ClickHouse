@@ -1065,7 +1065,8 @@ public:
     }
 
     template <typename T>
-    bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res) {
+    bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res)
+    {
         const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
 
         static constexpr size_t DECIMAL_HEX_LENGTH = sizeof(T) * 2 + 1;
