@@ -2,6 +2,8 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageDictionary.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -17,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, const Context & context, bool load)
+void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, const Context & context, bool reload)
 {
     const auto & external_loader = context.getExternalDictionariesLoader();
 
@@ -31,7 +33,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
                     ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
-    if (load)
+    if (reload)
         external_loader.reload(full_name, true);
 }
 
@@ -48,6 +50,82 @@ void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name, 
     if (reload)
         context.getExternalDictionariesLoader().reload(getDatabaseName() + "." + dictionary_name);
 
+}
+
+void DatabaseWithDictionaries::createDictionary( const Context & context, const String & dictionary_name, const ASTPtr & query)
+{
+    const auto & settings = context.getSettingsRef();
+
+    /** The code is based on the assumption that all threads share the same order of operations
+      * - creating the .sql.tmp file;
+      * - adding a dictionary to `dictionaries`;
+      * - rename .sql.tmp to .sql.
+      */
+
+    /// A race condition would be possible if a dictionary with the same name is simultaneously created using CREATE and using ATTACH.
+    /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
+    if (isDictionaryExist(context, dictionary_name))
+        throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+
+    if (isTableExist(context, dictionary_name))
+        throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+
+    String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
+    String dictionary_metadata_tmp_path = dictionary_metadata_path + ".tmp";
+    String statement;
+
+    {
+        statement = getObjectDefinitionFromCreateQuery(query);
+
+        /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
+        WriteBufferFromFile out(dictionary_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(statement, out);
+        out.next();
+        if (settings.fsync_metadata)
+            out.sync();
+        out.close();
+    }
+
+    try
+    {
+        /// Do not load it now because we want more strict loading
+        attachDictionary(dictionary_name, context, false);
+        /// Load dictionary
+        bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
+        String dict_name = getDatabaseName() + "." + dictionary_name;
+        context.getExternalDictionariesLoader().addDictionaryWithConfig(
+                dict_name, getDatabaseName(), query->as<const ASTCreateQuery &>(), !lazy_load);
+
+        /// If it was ATTACH query and file with dictionary metadata already exist
+        /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
+        Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
+
+    }
+    catch (...)
+    {
+        detachDictionary(dictionary_name, context);
+        Poco::File(dictionary_metadata_tmp_path).remove();
+        throw;
+    }
+}
+
+void DatabaseWithDictionaries::removeDictionary(const Context & context, const String & dictionary_name)
+{
+    detachDictionary(dictionary_name, context);
+
+    String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
+
+    try
+    {
+        Poco::File(dictionary_metadata_path).remove();
+    }
+    catch (...)
+    {
+        /// If remove was not possible for some reason
+        attachDictionary(dictionary_name, context);
+        throw;
+    }
 }
 
 StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const String & table_name) const
@@ -119,6 +197,28 @@ StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const Context & contex
         return StorageDictionary::create(database_name, table_name, ColumnsDescription{columns}, context, true, dict_name);
     }
     return nullptr;
+}
+
+ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
+        const Context & context,
+        const String & dictionary_name,
+        bool throw_on_error) const
+{
+    ASTPtr ast;
+
+    auto dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
+    ast = getCreateQueryFromMetadata(dictionary_metadata_path, throw_on_error);
+    if (!ast && throw_on_error)
+    {
+        /// Handle system.* tables for which there are no table.sql files.
+        bool has_dictionary = isDictionaryExist(context, dictionary_name);
+
+        auto msg = has_dictionary ? "There is no CREATE DICTIONARY query for table " : "There is no metadata file for dictionary ";
+
+        throw Exception(msg + backQuote(dictionary_name), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);
+    }
+
+    return ast;
 }
 
 }

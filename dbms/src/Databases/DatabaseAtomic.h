@@ -15,11 +15,11 @@ public:
 
     String getEngineName() const override { return "Atomic"; }
 
-    void renameTable(const Context & context,
-                     const String & table_name,
-                     IDatabase & to_database,
-                     const String & to_table_name,
-                     TableStructureWriteLockHolder &) override;
+    //void renameTable(const Context & context,
+    //                 const String & table_name,
+    //                 IDatabase & to_database,
+    //                 const String & to_table_name,
+    //                 TableStructureWriteLockHolder &) override;
 
 
 };

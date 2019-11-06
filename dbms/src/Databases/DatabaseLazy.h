@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Databases/DatabasesCommon.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -15,10 +15,11 @@ class DatabaseLazyIterator;
   * Works like DatabaseOrdinary, but stores in memory only cache.
   * Can be used only with *Log engines.
   */
-class DatabaseLazy : public IDatabase
+class DatabaseLazy : public DatabaseOnDisk
 {
+    //TODO rewrite it all
 public:
-    DatabaseLazy(String name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
+    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
 
     String getEngineName() const override { return "Lazy"; }
 
@@ -51,17 +52,7 @@ public:
         const ConstraintsDescription & constraints,
         const ASTModifier & engine_modifier) override;
 
-    time_t getObjectMetadataModificationTime(
-        const Context & context,
-        const String & table_name) override;
-
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
-
-    String getDataPath() const override;
-    String getMetadataPath() const override;
-    String getObjectMetadataPath(const String & table_name) const override;
-
-    void drop(const Context & context) override;
+    time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
     bool isTableExist(
         const Context & context,
@@ -82,9 +73,6 @@ public:
     void shutdown() override;
 
     ~DatabaseLazy() override;
-
-protected:
-    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const override;
 
 private:
     struct CacheExpirationQueueElement
@@ -113,17 +101,10 @@ private:
 
     using TablesCache = std::unordered_map<String, CachedTable>;
 
-
-    const String metadata_path;
-    const String data_path;
-
     const time_t expiration_time;
 
-    mutable std::mutex tables_mutex;
     mutable TablesCache tables_cache;
     mutable CacheExpirationQueue cache_expiration_queue;
-
-    Poco::Logger * log;
 
     StoragePtr loadTable(const Context & context, const String & table_name) const;
 

@@ -235,7 +235,7 @@ public:
     }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
-    virtual time_t getObjectMetadataModificationTime(const Context & /*context*/, const String & /*name*/)
+    virtual time_t getObjectMetadataModificationTime(const String & /*name*/) const
     {
         return static_cast<time_t>(0);
     }
