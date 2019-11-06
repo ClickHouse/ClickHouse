@@ -353,6 +353,43 @@ struct JavaHashImpl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+struct JavaHashUTF16LEImpl
+{
+    static constexpr auto name = "javaHashUTF16LE";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * raw_data, const size_t raw_size)
+    {
+        char * data = const_cast<char *>(raw_data);
+        size_t size = raw_size;
+
+        // Remove Byte-order-mark(0xFFFE) for UTF-16LE
+        if (size >= 2 && data[0] == -1 && data[1] == -2)
+        {
+            data += 2;
+            size -= 2;
+        }
+
+        if (size % 2 != 0)
+            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::LOGICAL_ERROR);
+
+        UInt32 h = 0;
+        for (size_t i = 0; i < size; i += 2)
+            h = 31 * h + static_cast<UInt32>((data[i] & 0xFF) << HI_BYTE_SHIFT | (data[i+1] & 0xFF) << LO_BYTE_SHIFT);
+
+        return static_cast<Int32>(h);
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+    static constexpr int HI_BYTE_SHIFT = 0;
+    static constexpr int LO_BYTE_SHIFT = 8;
+};
+
 /// This is just JavaHash with zeroed out sign bit.
 /// This function is used in Hive for versions before 3.0,
 ///  after 3.0, Hive uses murmur-hash3.
@@ -1102,6 +1139,7 @@ using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
+using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 #if USE_XXHASH
