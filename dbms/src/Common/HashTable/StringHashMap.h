@@ -8,43 +8,60 @@ template <typename Key, typename TMapped>
 struct StringHashMapCell : public HashMapCell<Key, TMapped, StringHashTableHash, HashTableNoState>
 {
     using Base = HashMapCell<Key, TMapped, StringHashTableHash, HashTableNoState>;
+    using value_type = typename Base::value_type;
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
+    // external
+    const StringRef getKey() const { return toStringRef(this->value.first); }
+    // internal
+    static const Key & getKey(const value_type & value_) { return value_.first; }
 };
-
-template<typename Key, typename Mapped>
-auto lookupResultGetMapped(StringHashMapCell<Key, Mapped> * cell) { return &cell->getSecond(); }
 
 template <typename TMapped>
 struct StringHashMapCell<StringKey16, TMapped> : public HashMapCell<StringKey16, TMapped, StringHashTableHash, HashTableNoState>
 {
     using Base = HashMapCell<StringKey16, TMapped, StringHashTableHash, HashTableNoState>;
+    using value_type = typename Base::value_type;
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
     bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
     // Assuming String does not contain zero bytes. NOTE: Cannot be used in serialized method
     static bool isZero(const StringKey16 & key, const HashTableNoState & /*state*/) { return key.low == 0; }
     void setZero() { this->value.first.low = 0; }
+    // external
+    const StringRef getKey() const { return toStringRef(this->value.first); }
+    // internal
+    static const StringKey16 & getKey(const value_type & value_) { return value_.first; }
 };
 
 template <typename TMapped>
 struct StringHashMapCell<StringKey24, TMapped> : public HashMapCell<StringKey24, TMapped, StringHashTableHash, HashTableNoState>
 {
     using Base = HashMapCell<StringKey24, TMapped, StringHashTableHash, HashTableNoState>;
+    using value_type = typename Base::value_type;
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
     bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
     // Assuming String does not contain zero bytes. NOTE: Cannot be used in serialized method
     static bool isZero(const StringKey24 & key, const HashTableNoState & /*state*/) { return key.a == 0; }
     void setZero() { this->value.first.a = 0; }
+    // external
+    const StringRef getKey() const { return toStringRef(this->value.first); }
+    // internal
+    static const StringKey24 & getKey(const value_type & value_) { return value_.first; }
 };
 
 template <typename TMapped>
 struct StringHashMapCell<StringRef, TMapped> : public HashMapCellWithSavedHash<StringRef, TMapped, StringHashTableHash, HashTableNoState>
 {
     using Base = HashMapCellWithSavedHash<StringRef, TMapped, StringHashTableHash, HashTableNoState>;
+    using value_type = typename Base::value_type;
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
+    // external
+    using Base::getKey;
+    // internal
+    static const StringRef & getKey(const value_type & value_) { return value_.first; }
 };
 
 template <typename TMapped, typename Allocator>
@@ -61,13 +78,10 @@ template <typename TMapped, typename Allocator = HashTableAllocator>
 class StringHashMap : public StringHashTable<StringHashMapSubMaps<TMapped, Allocator>>
 {
 public:
+    using Key = StringRef;
     using Base = StringHashTable<StringHashMapSubMaps<TMapped, Allocator>>;
     using Self = StringHashMap;
-    using Key = StringRef;
-    using key_type = StringRef;
-    using mapped_type = TMapped;
-    using value_type = typename Base::Ts::value_type;
-    using LookupResult = mapped_type *;
+    using LookupResult = typename Base::LookupResult;
 
     using Base::Base;
 
@@ -80,18 +94,13 @@ public:
     template <typename Func>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        if (this->m0.hasZero())
+        if (this->m0.hasZero() && that.m0.hasZero())
+            func(that.m0.zeroValue()->getMapped(), this->m0.zeroValue()->getMapped(), false);
+        else if (this->m0.hasZero())
         {
-            const bool emplace_new_zero = !that.m0.hasZero();
-            if (emplace_new_zero)
-            {
-                that.m0.setHasZero();
-            }
-
-            func(that.m0.zeroValue()->getSecond(), this->m0.zeroValue()->getSecond(),
-                 emplace_new_zero);
+            that.m0.setHasZero();
+            func(that.m0.zeroValue()->getMapped(), this->m0.zeroValue()->getMapped(), true);
         }
-
         this->m1.mergeToViaEmplace(that.m1, func);
         this->m2.mergeToViaEmplace(that.m2, func);
         this->m3.mergeToViaEmplace(that.m3, func);
@@ -106,32 +115,25 @@ public:
     template <typename Func>
     void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
     {
-        if (this->m0.hasZero())
-        {
-            if (that.m0.hasZero())
-            {
-                func(that.m0.zeroValue()->getSecond(), this->m0.zeroValue()->getSecond(), true);
-            }
-            else
-            {
-                func(this->m0.zeroValue()->getSecond(), this->m0.zeroValue()->getSecond(), false);
-            }
-        }
-
+        if (this->m0.size() && that.m0.size())
+            func(that.m0.zeroValue()->getMapped(), this->m0.zeroValue()->getMapped(), true);
+        else if (this->m0.size())
+            func(this->m0.zeroValue()->getMapped(), this->m0.zeroValue()->getMapped(), false);
         this->m1.mergeToViaFind(that.m1, func);
         this->m2.mergeToViaFind(that.m2, func);
         this->m3.mergeToViaFind(that.m3, func);
         this->ms.mergeToViaFind(that.ms, func);
     }
 
-    mapped_type & ALWAYS_INLINE operator[](Key x)
+    TMapped & ALWAYS_INLINE operator[](const Key & x)
     {
+        LookupResult it;
         bool inserted;
-        LookupResult it = nullptr;
-        emplace(x, it, inserted);
+        this->emplace(x, it, inserted);
         if (inserted)
-            new (it) mapped_type();
-        return *it;
+            new (&it->getMapped()) TMapped();
+
+        return it->getMapped();
     }
 
     template <typename Func>
@@ -139,27 +141,27 @@ public:
     {
         if (this->m0.size())
         {
-            func(StringRef{}, this->m0.zeroValue()->getSecond());
+            func(StringRef{}, this->m0.zeroValue()->getMapped());
         }
 
         for (auto & v : this->m1)
         {
-            func(toStringRef(v.getFirst()), v.getSecond());
+            func(v.getKey(), v.getMapped());
         }
 
         for (auto & v : this->m2)
         {
-            func(toStringRef(v.getFirst()), v.getSecond());
+            func(v.getKey(), v.getMapped());
         }
 
         for (auto & v : this->m3)
         {
-            func(toStringRef(v.getFirst()), v.getSecond());
+            func(v.getKey(), v.getMapped());
         }
 
         for (auto & v : this->ms)
         {
-            func(v.getFirst(), v.getSecond());
+            func(v.getKey(), v.getMapped());
         }
     }
 
@@ -167,14 +169,14 @@ public:
     void ALWAYS_INLINE forEachMapped(Func && func)
     {
         if (this->m0.size())
-            func(this->m0.zeroValue()->getSecond());
+            func(this->m0.zeroValue()->getMapped());
         for (auto & v : this->m1)
-            func(v.getSecond());
+            func(v.getMapped());
         for (auto & v : this->m2)
-            func(v.getSecond());
+            func(v.getMapped());
         for (auto & v : this->m3)
-            func(v.getSecond());
+            func(v.getMapped());
         for (auto & v : this->ms)
-            func(v.getSecond());
+            func(v.getMapped());
     }
 };
