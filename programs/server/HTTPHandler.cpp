@@ -243,7 +243,7 @@ void HTTPHandler::SessionContextHolder::authentication(HTTPServerRequest & reque
 
 void HTTPHandler::processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response)
 {
-    const auto & name_with_custom_executor = context.getCustomExecutor(request/*, params*/);
+    const auto & name_with_custom_executor = context.getCustomExecutor(request, params);
     LOG_TRACE(log, "Using " << name_with_custom_executor.first << " to execute URI: " << request.getURI());
 
     ExtractorClientInfo{context.getClientInfo()}.extract(request);
@@ -251,12 +251,7 @@ void HTTPHandler::processQuery(Context & context, HTTPRequest & request, HTMLFor
 
     HTTPInputStreams input_streams{context, request, params};
     HTTPOutputStreams output_streams = HTTPOutputStreams(context, request, response, params, getKeepAliveTimeout());
-
-    const auto & query_executors = name_with_custom_executor.second->getQueryExecutor(context, request, params, input_streams);
-    for (const auto & query_executor : query_executors)
-        query_executor(output_streams, response);
-
-    output_streams.finalize(); /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
+    name_with_custom_executor.second->executeQuery(context, request, response, params, input_streams, output_streams);
 }
 
 void HTTPHandler::trySendExceptionToClient(

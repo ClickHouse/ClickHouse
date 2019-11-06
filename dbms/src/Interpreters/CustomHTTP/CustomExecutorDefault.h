@@ -5,45 +5,51 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/CustomHTTP/HTTPInputStreams.h>
 #include <Interpreters/CustomHTTP/HTTPOutputStreams.h>
-#include "HTTPInputStreams.h"
 
 
 namespace DB
 {
 
-class CustomExecutorDefault : public CustomExecutor
+class CustomExecutorDefault : public CustomExecutor::CustomMatcher, public CustomExecutor::CustomQueryExecutor
 {
 public:
     bool match(HTTPServerRequest & /*request*/, HTMLForm & /*params*/) const override { return true; }
 
-    bool canBeParseRequestBody(HTTPServerRequest & /*request*/, HTMLForm & /*params*/) override { return false; }
+    bool canBeParseRequestBody(HTTPServerRequest & /*request*/, HTMLForm & /*params*/) const override { return false; }
 
-    bool isQueryParam(const String & param_name) const override
+    bool isQueryParam(const String & param_name) const override { return param_name == "query" || startsWith(param_name, "param_"); }
+
+    void executeQueryImpl(
+        Context & context, HTTPRequest & request, HTTPResponse & response,
+        HTMLForm & params, const HTTPInputStreams & input_streams, const HTTPOutputStreams & output_streams) const override
     {
-        return param_name == "query" || startsWith(param_name, "param_");
+        const auto & execute_query = prepareQuery(context, params);
+        ReadBufferPtr execute_query_buf = std::make_shared<ReadBufferFromString>(execute_query);
+
+        ReadBufferPtr temp_query_buf;
+        if (!startsWith(request.getContentType().data(), "multipart/form-data"))
+        {
+            temp_query_buf = execute_query_buf; /// we create a temporary reference for not to be destroyed
+            execute_query_buf = std::make_unique<ConcatReadBuffer>(*temp_query_buf, *input_streams.in_maybe_internal_compressed);
+        }
+
+        executeQuery(
+            *execute_query_buf, *output_streams.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
+            [&response] (const String & content_type) { response.setContentType(content_type); },
+            [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); }
+        );
     }
 
-    QueryExecutors getQueryExecutor(Context & context, HTTPServerRequest & request, HTMLForm & params, const HTTPInputStreams & input_streams) const override
+    static CustomExecutorPtr createDefaultCustomExecutor()
     {
-        return {[&](HTTPOutputStreams & output, HTTPServerResponse & response)
-        {
-            const auto & execute_query = prepareQuery(context, params);
-            ReadBufferPtr execute_query_buf = std::make_shared<ReadBufferFromString>(execute_query);
+        const auto & default_custom_executor = std::make_shared<CustomExecutorDefault>();
 
-            ReadBufferPtr temp_query_buf;
-            if (!startsWith(request.getContentType().data(), "multipart/form-data"))
-            {
-                temp_query_buf = execute_query_buf; /// we create a temporary reference for not to be destroyed
-                execute_query_buf = std::make_unique<ConcatReadBuffer>(*temp_query_buf, *input_streams.in_maybe_internal_compressed);
-            }
+        std::vector<CustomExecutor::CustomMatcherPtr> custom_matchers{default_custom_executor};
+        std::vector<CustomExecutor::CustomQueryExecutorPtr> custom_query_executors{default_custom_executor};
 
-            executeQuery(
-                *execute_query_buf, *output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-                [&response] (const String & content_type) { response.setContentType(content_type); },
-                [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); }
-            );
-        }};
+        return std::make_shared<CustomExecutor>(custom_matchers, custom_query_executors);
     }
 
 private:
