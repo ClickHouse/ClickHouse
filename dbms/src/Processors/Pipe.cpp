@@ -92,7 +92,7 @@ void Pipe::setLimits(const ISourceWithProgress::LocalLimits & limits)
 {
     for (auto & processor : processors)
     {
-        if (auto * source_with_progress = typeid_cast<ISourceWithProgress *>(processor.get()))
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source_with_progress->setLimits(limits);
     }
 }
@@ -101,7 +101,7 @@ void Pipe::setQuota(QuotaForIntervals & quota)
 {
     for (auto & processor : processors)
     {
-        if (auto * source_with_progress = typeid_cast<ISourceWithProgress *>(processor.get()))
+        if (auto * source_with_progress = dynamic_cast<ISourceWithProgress *>(processor.get()))
             source_with_progress->setQuota(quota);
     }
 }
@@ -110,7 +110,7 @@ void Pipe::pinSources(size_t executor_number)
 {
     for (auto & processor : processors)
     {
-        if (auto * source = typeid_cast<ISource *>(processor.get()))
+        if (auto * source = dynamic_cast<ISource *>(processor.get()))
             source->setStream(executor_number);
     }
 }
