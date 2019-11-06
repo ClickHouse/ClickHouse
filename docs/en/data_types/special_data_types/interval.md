@@ -2,7 +2,7 @@
 
 Represents time and date intervals. The resulting type of the `INTERVAL` operator.
 
-!!!warning "Warning"
+!!! warning "Warning"
     You can't use the `Interval` data type for storing values in tables.
 
 Structure:
