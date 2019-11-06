@@ -18,12 +18,9 @@ class Context;
 class MutationsInterpreter
 {
 public:
-    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_)
-        : storage(std::move(storage_))
-        , commands(std::move(commands_))
-        , context(context_)
-    {
-    }
+    /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
+    /// use can_execute = true, in other cases (validation, amount of commands) it can be false
+    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_, bool can_execute_);
 
     void validate(TableStructureReadLockHolder & table_lock_holder);
 
@@ -50,6 +47,13 @@ private:
     StoragePtr storage;
     std::vector<MutationCommand> commands;
     const Context & context;
+    bool can_execute;
+
+    ASTPtr mutation_ast;
+
+    /// We have to store interpreter because it use own copy of context
+    /// and some streams from execute method may use it.
+    std::unique_ptr<InterpreterSelectQuery> select_interpreter;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the

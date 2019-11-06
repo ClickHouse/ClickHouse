@@ -943,7 +943,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                             command.partition, context_for_reading);
             });
 
-    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading);
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
 
     if (!mutations_interpreter.isStorageTouchedByMutations())
     {
