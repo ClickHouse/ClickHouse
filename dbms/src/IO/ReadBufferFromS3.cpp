@@ -24,8 +24,6 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
     Poco::Net::HTTPResponse response;
     std::unique_ptr<Poco::Net::HTTPRequest> request;
 
-    LOG_DEBUG(&Poco::Logger::get("DebugLogger"), "???? " + uri.toString() + " ????");
-
     for (int i = 0; i < DEFAULT_S3_MAX_FOLLOW_GET_REDIRECT; ++i)
     {
         // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -54,7 +52,6 @@ ReadBufferFromS3::ReadBufferFromS3(Poco::URI uri_,
             break;
 
         uri = location_iterator->second;
-        LOG_DEBUG(&Poco::Logger::get("DebugLogger"), "!!!! " + uri.toString() + "!!!!");
         remote_host_filter.checkURL(uri);
         session = makeHTTPSession(uri, timeouts);
     }
