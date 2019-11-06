@@ -1056,12 +1056,11 @@ public:
     bool tryExecuteFloat(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
-        static constexpr size_t FLOAT_HEX_LENGTH = sizeof(T) * 2 + 1; /// Including trailing zero byte.
         if (col_vec)
         {
             std::cerr << "ENTER in tryExecuteFloat " << sizeof(T) << std::endl;
             const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
-            executeFloatAndDecimal<typename ColumnVector<T>::Container>(in_vec, col_res, FLOAT_HEX_LENGTH);
+            executeFloatAndDecimal<typename ColumnVector<T>::Container>(in_vec, col_res, sizeof(T) * 2 + 1);
             return true;
         }
         else
@@ -1075,13 +1074,11 @@ public:
     {
         const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
 
-        static constexpr size_t DECIMAL_HEX_LENGTH = sizeof(T) * 2 + 1; /// Including trailing zero byte.
-
         if (col_dec)
         {
             std::cerr << "ENTER in tryExecuteDecimal " << sizeof(T) << std::endl;
             const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
-            executeFloatAndDecimal<typename ColumnDecimal<T>::Container>(in_vec, col_res, DECIMAL_HEX_LENGTH);
+            executeFloatAndDecimal<typename ColumnDecimal<T>::Container>(in_vec, col_res, sizeof(T) * 2 + 1);
             return true;
         }
         else
