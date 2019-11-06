@@ -347,17 +347,11 @@ private:
     void initRightBlockStructure();
     void initRequiredRightKeys();
 
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-    void joinBlockImpl(
-        Block & block,
+    void joinBlockImpl(Block & block,
         const Names & key_names_left,
-        const Block & block_with_columns_to_add,
-        const Maps & maps) const;
+        const Block & block_with_columns_to_add) const;
 
     void joinBlockImplCross(Block & block) const;
-
-    template <typename Maps>
-    void joinGetImpl(Block & block, const String & column_name, const Maps & maps) const;
 };
 
 }
