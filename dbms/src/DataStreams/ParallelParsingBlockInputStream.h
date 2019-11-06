@@ -87,6 +87,7 @@ public:
 
     ~ParallelParsingBlockInputStream() override
     {
+        executed = true;
         waitForAllThreads();
     }
 
