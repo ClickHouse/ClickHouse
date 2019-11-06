@@ -91,6 +91,21 @@ std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & 
 }
 };
 
+MutationsInterpreter::MutationsInterpreter(
+    StoragePtr storage_,
+    std::vector<MutationCommand> commands_,
+    const Context & context_,
+    bool can_execute_)
+    : storage(std::move(storage_))
+    , commands(std::move(commands_))
+    , context(context_)
+    , can_execute(can_execute_)
+{
+    mutation_ast = prepare(!can_execute);
+    auto limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
+    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, limits);
+}
+
 
 bool MutationsInterpreter::isStorageTouchedByMutations() const
 {
@@ -103,12 +118,17 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
             return true;
     }
 
-    auto context_copy = context;
+    Context context_copy = context;
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    const ASTPtr & select_query = prepareQueryAffectedAST();
-    BlockInputStreamPtr in = InterpreterSelectQuery(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits()).execute().in;
+    ASTPtr select_query = prepareQueryAffectedAST();
+
+    /// Interpreter must be alive, when we use result of execute() method.
+    /// For some reason it may copy context and and give it into ExpressionBlockInputStream
+    /// after that we will use context from destroyed stack frame in our stream.
+    InterpreterSelectQuery interpreter(select_query, context_copy, storage, SelectQueryOptions().ignoreLimits());
+    BlockInputStreamPtr in = interpreter.execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -520,19 +540,18 @@ void MutationsInterpreter::validate(TableStructureReadLockHolder &)
         }
     }
 
-    const auto & select_query = prepare(/* dry_run = */ true);
-    InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ true).ignoreLimits()};
     /// Do not use getSampleBlock in order to check the whole pipeline.
-    Block first_stage_header = interpreter.execute().in->getHeader();
+    Block first_stage_header = select_interpreter->execute().in->getHeader();
     BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
     addStreamsForLaterStages(stages, in)->getHeader();
 }
 
 BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &)
 {
-    const auto & select_query = prepare(/* dry_run = */ false);
-    InterpreterSelectQuery interpreter{select_query, context, storage, SelectQueryOptions().analyze(/* dry_run = */ false).ignoreLimits()};
-    BlockInputStreamPtr in = interpreter.execute().in;
+    if (!can_execute)
+        throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
+
+    BlockInputStreamPtr in = select_interpreter->execute().in;
     auto result_stream = addStreamsForLaterStages(stages, in);
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
@@ -581,9 +600,9 @@ size_t MutationsInterpreter::evaluateCommandsSize()
 {
     for (const MutationCommand & command : commands)
         if (unlikely(!command.predicate)) /// The command touches all rows.
-            return prepare(/* dry_run = */ true)->size();
+            return mutation_ast->size();
 
-    return std::max(prepareQueryAffectedAST()->size(), prepare(/* dry_run = */ true)->size());
+    return std::max(prepareQueryAffectedAST()->size(), mutation_ast->size());
 }
 
 }
