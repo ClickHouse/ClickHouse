@@ -20,6 +20,11 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
 }
 
+DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger)
+        : IDatabase(name_), log(&Logger::get(logger))
+{
+}
+
 bool DatabaseWithOwnTablesBase::isTableExist(
     const Context & /*context*/,
     const String & table_name) const
@@ -109,7 +114,7 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
 {
     try
     {
-        shutdown();
+        DatabaseWithOwnTablesBase::shutdown();
     }
     catch (...)
     {

@@ -17,7 +17,7 @@ namespace DB
 class DatabaseMemory : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(String name_);
+    DatabaseMemory(const String & name_);
 
     String getEngineName() const override { return "Memory"; }
 
@@ -32,9 +32,6 @@ public:
         const String & table_name) override;
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
-
-private:
-    Poco::Logger * log;
 };
 
 }

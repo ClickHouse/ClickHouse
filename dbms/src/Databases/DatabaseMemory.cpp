@@ -13,9 +13,8 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-DatabaseMemory::DatabaseMemory(String name_)
-    : DatabaseWithOwnTablesBase(std::move(name_))
-    , log(&Logger::get("DatabaseMemory(" + database_name + ")"))
+DatabaseMemory::DatabaseMemory(const String & name_)
+    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
 {}
 
 void DatabaseMemory::createTable(
