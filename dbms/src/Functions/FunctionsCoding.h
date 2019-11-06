@@ -1069,6 +1069,7 @@ public:
     template <typename T>
     bool tryExecuteDecimal(const IColumn * col, ColumnPtr & col_res)
     {
+        const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
         if (col_dec)
         {
             const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
