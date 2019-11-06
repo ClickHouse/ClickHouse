@@ -1,28 +1,43 @@
 #pragma once
 
-#include <Interpreters/CustomHTTP/CustomExecutor.h>
+#include <Core/Types.h>
+#include <Common/HTMLForm.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CustomHTTP/HTTPInputStreams.h>
 #include <Interpreters/CustomHTTP/HTTPOutputStreams.h>
-
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
 
 namespace DB
 {
 
-class CustomExecutorDefault : public CustomExecutor::CustomMatcher, public CustomExecutor::CustomQueryExecutor
+class CustomQueryExecutor
 {
 public:
-    bool match(HTTPServerRequest & /*request*/, HTMLForm & /*params*/) const override { return true; }
+    virtual ~CustomQueryExecutor() = default;
 
-    bool canBeParseRequestBody(HTTPServerRequest & /*request*/, HTMLForm & /*params*/) const override { return false; }
+    virtual bool isQueryParam(const String &) const = 0;
+    virtual bool canBeParseRequestBody(Poco::Net::HTTPServerRequest &, HTMLForm &) const = 0;
 
+    virtual void executeQueryImpl(
+        Context & context, Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
+        HTMLForm & params, const HTTPInputStreams & input_streams, const HTTPOutputStreams & output_streams) const = 0;
+};
+
+using CustomQueryExecutorPtr = std::shared_ptr<CustomQueryExecutor>;
+
+class ExtractQueryParamCustomQueryExecutor : public CustomQueryExecutor
+{
+public:
     bool isQueryParam(const String & param_name) const override { return param_name == "query" || startsWith(param_name, "param_"); }
 
+    bool canBeParseRequestBody(Poco::Net::HTTPServerRequest & /*request*/, HTMLForm & /*form*/) const override { return false; }
+
     void executeQueryImpl(
-        Context & context, HTTPRequest & request, HTTPResponse & response,
+        Context & context, Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
         HTMLForm & params, const HTTPInputStreams & input_streams, const HTTPOutputStreams & output_streams) const override
     {
         const auto & execute_query = prepareQuery(context, params);
@@ -40,16 +55,6 @@ public:
             [&response] (const String & content_type) { response.setContentType(content_type); },
             [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); }
         );
-    }
-
-    static CustomExecutorPtr createDefaultCustomExecutor()
-    {
-        const auto & default_custom_executor = std::make_shared<CustomExecutorDefault>();
-
-        std::vector<CustomExecutor::CustomMatcherPtr> custom_matchers{default_custom_executor};
-        std::vector<CustomExecutor::CustomQueryExecutorPtr> custom_query_executors{default_custom_executor};
-
-        return std::make_shared<CustomExecutor>(custom_matchers, custom_query_executors);
     }
 
 private:

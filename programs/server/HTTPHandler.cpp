@@ -244,7 +244,7 @@ void HTTPHandler::SessionContextHolder::authentication(HTTPServerRequest & reque
 void HTTPHandler::processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response)
 {
     const auto & name_with_custom_executor = context.getCustomExecutor(request, params);
-    LOG_TRACE(log, "Using " << name_with_custom_executor.first << " to execute URI: " << request.getURI());
+    LOG_TRACE(log, "Using '" << name_with_custom_executor.first << "' CustomExecutor to execute URI: " << request.getURI());
 
     ExtractorClientInfo{context.getClientInfo()}.extract(request);
     ExtractorContextChange{context, name_with_custom_executor.second}.extract(request, params);

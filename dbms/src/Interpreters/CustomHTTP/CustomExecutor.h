@@ -10,14 +10,15 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/CustomHTTP/HTTPInputStreams.h>
+#include <Interpreters/CustomHTTP/HTTPOutputStreams.h>
+#include <Interpreters/CustomHTTP/CustomQueryExecutors.h>
+#include <Interpreters/CustomHTTP/CustomExecutorMatchers.h>
 
 namespace DB
 {
-
-class Context;
 class CustomExecutor;
-struct HTTPInputStreams;
-struct HTTPOutputStreams;
 
 using HTTPRequest = Poco::Net::HTTPServerRequest;
 using HTTPResponse = Poco::Net::HTTPServerResponse;
@@ -32,14 +33,22 @@ public:
     CustomExecutors(const CustomExecutors &) = delete;
     CustomExecutors & operator=(const CustomExecutors &) = delete;
 
+    using QueryExecutorCreator = std::function<CustomQueryExecutorPtr(const Configuration &, const String &)>;
+    void registerQueryExecutor(const String & query_executor_name, const QueryExecutorCreator & creator);
+
+    using CustomMatcherCreator = const std::function<CustomExecutorMatcherPtr(const Configuration &, const String &)>;
+    void registerCustomMatcher(const String & matcher_name, const CustomMatcherCreator & creator);
+
     void updateCustomExecutors(const Configuration & config, const Settings & settings, const String & config_prefix);
 
-    std::pair<String, CustomExecutorPtr> getCustomExecutor(Poco::Net::HTTPServerRequest & request, HTMLForm & params) const;
+    std::pair<String, CustomExecutorPtr> getCustomExecutor(Context & context, Poco::Net::HTTPServerRequest & request, HTMLForm & params) const;
 private:
     mutable std::shared_mutex rwlock;
-    std::unordered_map<String, CustomExecutorPtr> custom_executors;
+    std::vector<std::pair<String, CustomExecutorPtr>> custom_executors;
+    std::unordered_map<String, QueryExecutorCreator> query_executor_creators;
+    std::unordered_map<String, CustomMatcherCreator> custom_matcher_creators;
 
-    CustomExecutorPtr createCustomExecutor(const Configuration & config, const Settings & settings, const String & config_prefix);
+    CustomExecutorPtr createCustomExecutor(const Configuration & config, const String & config_prefix);
 };
 
 class CustomExecutor
@@ -47,45 +56,19 @@ class CustomExecutor
 public:
     bool isQueryParam(const String & param_name) const;
 
-    bool match(HTTPRequest & request, HTMLForm & params) const;
-
     bool canBeParseRequestBody(HTTPRequest & request, HTMLForm & params) const;
+
+    bool match(Context & context, HTTPRequest & request, HTMLForm & params) const;
 
     void executeQuery(
         Context & context, HTTPRequest & request, HTTPResponse & response,
         HTMLForm & params, const HTTPInputStreams & input_streams, const HTTPOutputStreams & output_streams
     );
 
-public:
-    class CustomMatcher
-    {
-    public:
-        virtual ~CustomMatcher() = default;
-
-        virtual bool match(HTTPRequest & request, HTMLForm & params) const = 0;
-    };
-
-    class CustomQueryExecutor
-    {
-    public:
-        virtual ~CustomQueryExecutor() = default;
-
-        virtual bool isQueryParam(const String &) const = 0;
-        virtual bool canBeParseRequestBody(HTTPRequest &, HTMLForm &) const = 0;
-
-        virtual void executeQueryImpl(
-            Context & context, HTTPRequest & request, HTTPResponse & response,
-            HTMLForm & params, const HTTPInputStreams & input_streams, const HTTPOutputStreams & output_streams) const = 0;
-    };
-
-public:
-    using CustomMatcherPtr = std::shared_ptr<CustomMatcher>;
-    using CustomQueryExecutorPtr = std::shared_ptr<CustomQueryExecutor>;
-
-    CustomExecutor(const std::vector<CustomMatcherPtr> & matchers_, const std::vector<CustomQueryExecutorPtr> & query_executors_);
+    CustomExecutor(const std::vector<CustomExecutorMatcherPtr> & matchers_, const std::vector<CustomQueryExecutorPtr> & query_executors_);
 
 private:
-    std::vector<CustomMatcherPtr> matchers;
+    std::vector<CustomExecutorMatcherPtr> matchers;
     std::vector<CustomQueryExecutorPtr> query_executors;
 };
 

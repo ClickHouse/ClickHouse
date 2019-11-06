@@ -42,7 +42,7 @@ namespace zkutil
     class ZooKeeper;
 }
 
-class HTMLForm;
+struct HTMLForm;
 
 namespace DB
 {
@@ -492,7 +492,7 @@ public:
     Compiler & getCompiler();
 
     void setCustomExecutorConfig(const ConfigurationPtr & config, const String & config_prefix = "CustomHTTP");
-    std::pair<String, CustomExecutorPtr> getCustomExecutor(Poco::Net::HTTPServerRequest &request, HTMLForm & params) const;
+    std::pair<String, CustomExecutorPtr> getCustomExecutor(Poco::Net::HTTPServerRequest &request, HTMLForm & params);
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
