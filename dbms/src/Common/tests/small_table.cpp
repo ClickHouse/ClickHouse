@@ -42,7 +42,7 @@ int main(int, char **)
         cont[1] = "Goodbye.";
 
         for (auto x : cont)
-            std::cerr << x.getFirst() << " -> " << x.getSecond() << std::endl;
+            std::cerr << x.getKey() << " -> " << x.getMapped() << std::endl;
 
         DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);

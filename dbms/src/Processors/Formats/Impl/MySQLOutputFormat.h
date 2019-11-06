@@ -1,9 +1,5 @@
 #pragma once
 
-#include "config_core.h"
-
-#if USE_SSL
-
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
 
@@ -44,5 +40,3 @@ private:
 };
 
 }
-
-#endif

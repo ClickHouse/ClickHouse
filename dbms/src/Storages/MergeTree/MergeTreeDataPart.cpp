@@ -43,6 +43,17 @@ static ReadBufferFromFile openForReading(const String & path)
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
 
+static String getFileNameForColumn(const NameAndTypePair & column)
+{
+    String filename;
+    column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        if (filename.empty())
+            filename = IDataType::getFileNameForStream(column.name, substream_path);
+    });
+    return filename;
+}
+
 void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const String & part_path)
 {
     size_t minmax_idx_size = data.minmax_idx_column_types.size();
@@ -577,8 +588,9 @@ void MergeTreeDataPart::loadIndexGranularity()
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
+
     /// We can use any column, it doesn't matter
-    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + escapeForFileName(columns.front().name));
+    std::string marks_file_path = index_granularity_info.getMarksFilePath(full_path + getFileNameForColumn(columns.front()));
     if (!Poco::File(marks_file_path).exists())
         throw Exception("Marks file '" + marks_file_path + "' doesn't exist", ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -808,7 +820,7 @@ void MergeTreeDataPart::loadColumns(bool require)
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : storage.getColumns().getAllPhysical())
-            if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
+            if (Poco::File(getFullPath() + getFileNameForColumn(column) + ".bin").exists())
                 columns.push_back(column);
 
         if (columns.empty())

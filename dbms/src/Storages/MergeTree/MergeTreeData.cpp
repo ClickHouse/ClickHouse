@@ -2375,6 +2375,20 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 }
 
 
+size_t MergeTreeData::getTotalActiveSizeInRows() const
+{
+    size_t res = 0;
+    {
+        auto lock = lockParts();
+
+        for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+            res += part->rows_count;
+    }
+
+    return res;
+}
+
+
 size_t MergeTreeData::getPartsCount() const
 {
     auto lock = lockParts();
@@ -2487,7 +2501,7 @@ void MergeTreeData::throwInsertIfNeeded() const
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
-    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/)
+    const MergeTreePartInfo & part_info, MergeTreeData::DataPartState state, DataPartsLock & /*lock*/) const
 {
     auto current_state_parts_range = getDataPartsStateRange(state);
 
@@ -2535,13 +2549,13 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 }
 
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info) const
 {
     auto lock = lockParts();
     return getActiveContainingPart(part_info, DataPartState::Committed, lock);
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name) const
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
     return getActiveContainingPart(part_info);
@@ -3248,14 +3262,14 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
     return *src_data;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part,
-                                                                      const String & tmp_part_prefix,
-                                                                      const MergeTreePartInfo & dst_part_info)
+MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(const MergeTreeData::DataPartPtr & src_part,
+                                                                                const String & tmp_part_prefix,
+                                                                                const MergeTreePartInfo & dst_part_info)
 {
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpace(src_part->bytes_on_disk);
+    auto reservation = src_part->disk->reserve(src_part->bytes_on_disk);
     String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
@@ -3342,7 +3356,11 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " + backup_path);
 
         String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
-        String backup_part_absolute_path = backup_path + "data/" + getDatabaseName() + "/" + getTableName() + "/" + part->relative_path;
+        String backup_part_absolute_path = backup_path
+            + "data/"
+            + escapeForFileName(getDatabaseName()) + "/"
+            + escapeForFileName(getTableName()) + "/"
+            + part->relative_path;
         localBackup(part_absolute_path, backup_part_absolute_path);
         part->is_frozen.store(true, std::memory_order_relaxed);
         ++parts_processed;
