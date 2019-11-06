@@ -789,5 +789,32 @@ SELECT arrayReverse([1, 2, 3])
 
 Synonym for ["arrayReverse"](#array_functions-arrayreverse)
 
+## flatten {#flatten}
+
+Converts array of arrays to flat array.
+
+**Syntax** 
+```sql
+flatten (array_of_arrays)
+```
+
+Alias: `arrayFlatten`.
+
+**Parameters**
+
+- `array_of_arrays` — Array of arrays is a structure consisting of one or more arrays as elements of other [Array](../../data_types/array.md). For example: `[[1,2,3], [4,5]]`
+
+
+**Example**
+
+```sql
+SELECT flatten([[1, 2, 3], [4, 5]])
+```
+
+```text
+┌─flatten(array([1, 2, 3], [4, 5]))─┐
+│ [1,2,3,4,5]                       │
+└───────────────────────────────────┘
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
