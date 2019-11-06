@@ -373,11 +373,11 @@ struct JavaHashUTF16LEImpl
         if (size % 2 != 0)
             throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::LOGICAL_ERROR);
 
-        Int32 h = 0;
+        UInt32 h = 0;
         for (size_t i = 0; i < size; i += 2)
             h = 31 * h + static_cast<UInt16>(static_cast<UInt8>(data[i]) | static_cast<UInt8>(data[i + 1]) << 8);
 
-        return h;
+        return static_cast<Int32>(h);
     }
 
     static Int32 combineHashes(Int32, Int32)
