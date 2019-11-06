@@ -64,6 +64,18 @@ def get_merge_base(first, second, project_root):
         logging.error('Cannot find merge base for %s and %s', first, second)
         raise
 
+def rev_parse(rev, project_root):
+    try:
+        command = "git rev-parse {}".format(rev)
+        text = subprocess.check_output(command, shell=True, cwd=project_root)
+        text = text.decode('utf-8', 'ignore')
+        sha = tuple(filter(len, text.split()))[0]
+        check_sha(sha)
+        return sha
+    except Exception:
+        logging.error('Cannot find revision %s', rev)
+        raise
+
 
 # Get list of commits from branch to base_sha. Update commits_info.
 def get_commits_from_branch(repo, branch, base_sha, commits_info, max_pages, token, max_retries, retry_timeout):
@@ -230,7 +242,7 @@ def parse_one_pull_request(item):
 
     if lines:
         for i in range(len(lines) - 1):
-            if re.match(r'(?i)category.*:$', lines[i]):
+            if re.match(r'(?i).*category.*:$', lines[i]):
                 cat_pos = i
             if re.match(r'(?i)^\**\s*(Short description|Change\s*log entry)', lines[i]):
                 short_descr_pos = i
@@ -460,5 +472,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
     repo_folder = os.path.expanduser(repo_folder)
+    new_release_tag = rev_parse(new_release_tag, repo_folder)
+    prev_release_tag = rev_parse(prev_release_tag, repo_folder)
 
     make_changelog(new_release_tag, prev_release_tag, pull_requests, repo, repo_folder, state_file, token, max_retry, retry_timeout)
