@@ -34,7 +34,7 @@ def put_communication_data(started_cluster, body):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        instance = cluster.add_instance("dummy")
+        instance = cluster.add_instance("dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"])
         cluster.start()
 
         cluster.communication_port = 10000
@@ -157,3 +157,16 @@ def test_multipart_put(started_cluster):
     received_data = data["multipart_received_data"]
     assert received_data[-1].decode() == "".join([ "{},{},{}\n".format(x, y, z) for x, y, z in long_data ])
     assert 1 < data["multipart_parts"] < 10000
+
+def test_remote_host_filter(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    put_communication_data(started_cluster, "=== RemoteHostFilter test ===")
+    query = "select *, column1*column2*column3 from s3('http://{}:{}/', 'CSV', '{}')".format("invalid_host", started_cluster.redirecting_to_http_port, format)
+    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+
+    other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
+    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format("invalid_host", started_cluster.redirecting_preserving_data_port, started_cluster.bucket, format, other_values)
+    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+
