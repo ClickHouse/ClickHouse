@@ -48,6 +48,44 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
+## bitmapSubsetInRange {#bitmapsubsetinrange}
+
+Преобразует битовый массив в массив целочисленных значений. Возвращает только значения, которые указаны в диапазоне, не включая верхнюю границу.
+
+**Синтаксис** 
+
+```sql
+bitmapSubsetInRange(bitmap, range_start, range_end)
+```
+
+**Параметры**
+
+- `bitmap` – [битовый массив](#bitmap_functions-bitmapbuild).
+- `range_start` – нижняя граница диапазона. [UInt32](https://clickhouse.yandex/docs/ru/data_types/int_uint/).
+- `range_end` – верхняя граница диапазона (исключена). [UInt32](https://clickhouse.yandex/docs/ru/data_types/int_uint/).
+
+**Возвращаеме значение**
+
+Возвращает целочисленные значения, которые больше или равны `range_start` и меньше `range_end`.
+
+Тип: `Bitmap`.
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(30), toUInt32(200))) AS res
+```
+
+Ответ:
+
+```text
+┌─res───────────────┐
+│ [30,31,32,33,100] │
+└───────────────────┘
+```
+
 ## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Проверяет вхождение элемента в битовый массив.
