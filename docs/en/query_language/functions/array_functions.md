@@ -819,4 +819,20 @@ SELECT flatten([[1, 2, 3], [4, 5]])
 └───────────────────────────────────┘
 ```
 
+## arrayCompact(arr) {#array_functions-arraycompact}
+
+Takes an array, returns an array with consecutive duplicate elements removed.
+
+Example:
+
+```sql
+SELECT arrayCompact([1, 2, 2, 3, 2, 3, 3])
+```
+
+```text
+┌─arrayCompact([1, 2, 2, 3, 2, 3, 3])──┐
+│ [1,2,3,2,3]                          │
+└──────────────────────────────────────┘
+```
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->

@@ -398,7 +398,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
 {
     if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
-    else /*if constexpr (std::is_integral_v<typename DataType::FieldType>)*/
+    else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
 }
 
@@ -1233,7 +1233,7 @@ struct ToNumberMonotonicity
         /// Integer cases.
 
         const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
-        const bool to_is_unsigned = std::is_unsigned_v<T>;
+        const bool to_is_unsigned = is_unsigned_v<T>;
 
         const size_t size_of_from = type.getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);

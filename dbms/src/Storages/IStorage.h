@@ -43,6 +43,13 @@ class AlterCommands;
 class MutationCommands;
 class PartitionCommands;
 
+class IProcessor;
+using ProcessorPtr = std::shared_ptr<IProcessor>;
+using Processors = std::vector<ProcessorPtr>;
+
+class Pipe;
+using Pipes = std::vector<Pipe>;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -237,8 +244,20 @@ public:
       *  if the storage can return a different number of streams.
       *
       * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+      *
+      * Default implementation calls `readWithProcessors` and wraps into TreeExecutor.
       */
     virtual BlockInputStreams read(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/);
+
+    /** The same as read, but returns processors.
+     */
+    virtual Pipes readWithProcessors(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,

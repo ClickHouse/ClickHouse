@@ -57,7 +57,7 @@
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
 #include <Common/SensitiveDataMasker.h>
-
+#include "MySQLHandlerFactory.h"
 
 #if defined(OS_LINUX)
 #include <Common/hasLinuxCapability.h>
@@ -65,7 +65,6 @@
 #endif
 
 #if USE_POCO_NETSSL
-#include "MySQLHandlerFactory.h"
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
