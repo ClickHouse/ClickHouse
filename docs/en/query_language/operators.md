@@ -133,6 +133,19 @@ You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/bl
 
 Creates an [Interval](../data_types/special_data_types/interval.md)-type value that should be used in arithmetical operations with [Date](../data_types/date.md) and [DateTime](../data_types/datetime.md)-type values.
 
+Types of intervals:
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
+
+!!! warning "Warning"
+    Intervals of different types can't be combined. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in the units that smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. Also you can use consequtive operations like in the example below.
+
 Example:
 
 ```sql

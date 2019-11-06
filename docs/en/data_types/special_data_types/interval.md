@@ -1,27 +1,27 @@
 # Interval {#data-type-interval}
 
-Represents time and date intervals. The resulting type of the `INTERVAL` operator.
+The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../query_language/operators.md#operator-interval) operator.
 
 !!! warning "Warning"
-    You can't use the `Interval` data type for storing values in tables.
+    You can't use the `Interval` data types for storing values in tables.
 
 Structure:
 
-- Unsigned integer value of interval.
-- Type of interval.
+- Time interval as unsigned integer value.
+- Type of an interval.
 
 Supported interval types:
 
-- SECOND
-- MINUTE
-- HOUR
-- DAY
-- WEEK
-- MONTH
-- QUARTER
-- YEAR
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
 
-For each interval type, there is the separated data type. For example, the DAY interval is expressed as the `IntervalDay` data type:
+For each interval type, there is the separated data type. For example, the `DAY` interval is expressed as the `IntervalDay` data type:
 
 ```sql
 SELECT toTypeName(INTERVAL 4 DAY)
@@ -45,7 +45,7 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 └─────────────────────┴───────────────────────────────┘
 ```
 
-Intervals of different types can't be combined in one `INTERVAL` operator. You can't use the expressions like `INTERVAL 4 DAY 1 HOUR`, so you need to express intervals in the minimal units. For example, `1 day and an hour` interval should be expressed as `INTERVAL 25 HOUR`.
+Intervals of different types can't be combined. You can't use intervals like `4 DAY 1 HOUR`, express intervals in the units that smaller or equal the the smallest unit of the interval. For example, `1 day and an hour` interval can be expressed as `25 HOUR` or `90000 SECOND`.
 
 You can't perform arithmetical operations with the `Interval`-type values, but you can add intervals of different types consequently to some value. For example:
 
