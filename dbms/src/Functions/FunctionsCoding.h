@@ -1027,27 +1027,34 @@ public:
     template <typename T>
     void executeFloatAndDecimal(const T & in_vec, ColumnPtr & col_res, const size_t HEX_LENGTH)
     {
+        std::cerr << "\n\n1!!!\n\n" << std::endl;
         auto col_str = ColumnString::create();
-
+        std::cerr << "\n\n2!!!\n\n" << std::endl;
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
-
+        std::cerr << "\n\n3!!!\n\n" << std::endl;
         size_t size = in_vec.size();
+        std::cerr << "\n\n4!!!\n\n" << std::endl;
         out_offsets.resize(size);
+        std::cerr << "\n\n5!!!\n\n" << std::endl;
         out_vec.resize(size * HEX_LENGTH);
-
+        std::cerr << "\n\n6!!!\n\n" << std::endl;
         size_t pos = 0;
         char * out = reinterpret_cast<char *>(&out_vec[0]);
+        std::cerr << "\n\n7!!!\n\n" << std::endl;
         for (size_t i = 0; i < size; ++i)
         {
+            std::cerr << "\n\n??" << i << "\n\n" << std::endl;
             const UInt8 * in_pos = reinterpret_cast<const UInt8 *>(&in_vec[i]);
+            std::cerr << "\n\n8!!!\n\n" << std::endl;
             executeOneString(in_pos, in_pos + sizeof(T), out);
-
+            std::cerr << "\n\n9!!!\n\n" << std::endl;
             pos += HEX_LENGTH;
             out_offsets[i] = pos;
+            std::cerr << "\n\n10!!!\n\n" << std::endl;
         }
-
         col_res = std::move(col_str);
+        std::cerr << "\n\n11!!!\n\n" << std::endl;
     }
 
     template <typename T>
@@ -1093,7 +1100,9 @@ public:
         const ColumnDecimal<T> * col_dec = checkAndGetColumn<ColumnDecimal<T>>(col);
         if (col_dec)
         {
+            std::cerr << "1" << std::endl;
             const typename ColumnDecimal<T>::Container & in_vec = col_dec->getData();
+            std::cerr << "2" << std::endl;
             executeFloatAndDecimal<typename ColumnDecimal<T>::Container>(in_vec, col_res, sizeof(T) * 2 + 1);
             return true;
         }
