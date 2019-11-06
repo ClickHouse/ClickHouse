@@ -375,7 +375,7 @@ struct JavaHashUTF16LEImpl
 
         UInt32 h = 0;
         for (size_t i = 0; i < size; i += 2)
-            h = 31 * h + static_cast<UInt32>((data[i] & 0xFF) << HI_BYTE_SHIFT | (data[i+1] & 0xFF) << LO_BYTE_SHIFT);
+            h = 31 * h + static_cast<UInt32>((data[i] & 0xFF) << HI_BYTE_SHIFT | (data[i + 1] & 0xFF) << LO_BYTE_SHIFT);
 
         return static_cast<Int32>(h);
     }
