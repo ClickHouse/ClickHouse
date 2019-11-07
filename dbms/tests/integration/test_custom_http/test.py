@@ -1,31 +1,21 @@
 import pytest
-import requests
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/custom_http.xml'])
+test_instance = cluster.add_instance('node', main_configs=['configs/custom_http_config.xml'])
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
         cluster.start()
-        node.query('''
-CREATE DATABASE `test`;
-
-CREATE TABLE `test`.`test_custom_http` (`id` UInt8) Engine=Memory;
-        ''')
-
+        test_instance.query('CREATE DATABASE `test`')
+        test_instance.query('CREATE TABLE `test`.`test` (`id` UInt8) Engine = Memory')
         yield cluster
     finally:
         cluster.shutdown()
 
-def test(started_cluster):
-    node_ip = cluster.get_instance_ip(node)
-    url = 'http://%s:8123/test/a/1/test_custom_http' % node_ip
-    data="(1)"
-    params = {'id':1}
-    response = requests.post(url, params = params, data = data)
 
-    assert response.text == '\n1\n1\n'
+def test_for_single_insert(started_cluster):
+    assert test_instance.http_query('/test_for_single_insert', data='(1)(2)(3)') == '\n'
