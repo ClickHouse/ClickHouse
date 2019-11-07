@@ -512,7 +512,6 @@
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 
-
     <!-- Uncomment to use query masking rules.
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
@@ -524,6 +523,15 @@
             <replace>000-00-0000</replace>
         </rule>
     </query_masking_rules>
+    -->
+
+    <!-- Uncomment to use custom http.
+    <custom_http>
+        <test_select_single>
+            <url><![cdata[/test/(?p<test_url_value>\w+)]]></url>
+            <query>select {test_url_value:uint64}, {test_query_param_value:string}, {test_query_post_value:string}</query>
+        </test_select_single>
+    </custom_http>
     -->
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->

@@ -491,7 +491,7 @@ public:
 
     Compiler & getCompiler();
 
-    void setCustomExecutorConfig(const ConfigurationPtr & config, const String & config_prefix = "CustomHTTP");
+    void setCustomExecutorConfig(const ConfigurationPtr & config, const String & config_prefix = "custom_http");
     std::pair<String, CustomExecutorPtr> getCustomExecutor(Poco::Net::HTTPServerRequest &request, HTMLForm & params);
 
     /// Call after initialization before using system logs. Call for global context.
