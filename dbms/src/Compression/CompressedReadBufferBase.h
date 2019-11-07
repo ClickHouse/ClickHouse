@@ -47,10 +47,17 @@ public:
         disable_checksum = true;
     }
 
-    void setSharedStatData(LZ4::PerformanceStatistics::SharedData * data_) { codec->setSharedStatData(data_); }
+    void setSharedStatData(LZ4::PerformanceStatistics::SharedData * data_)
+    {
+        data = data_;
+
+        if (codec)
+            codec->setSharedStatData(data_);
+    }
 
 public:
     CompressionCodecPtr codec;
+    LZ4::PerformanceStatistics::SharedData * data = nullptr;
 };
 
 }

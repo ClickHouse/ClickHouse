@@ -156,7 +156,11 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     UInt8 method = ICompressionCodec::readMethod(compressed_buffer);
 
     if (!codec)
+    {
         codec = CompressionCodecFactory::instance().get(method);
+        if (data)
+            codec->setSharedStatData(data);
+    }
     else if (codec->getMethodByte() != method)
         throw Exception("Data compressed with different methods, given method byte "
                         + getHexUIntLowercase(method)
