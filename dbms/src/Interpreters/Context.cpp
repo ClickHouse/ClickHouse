@@ -140,6 +140,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
+    std::optional<BackgroundProcessingPool> move_pool;      /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -287,6 +288,7 @@ struct ContextShared
         external_dictionaries_loader.reset();
         external_models_loader.reset();
         background_pool.reset();
+        move_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
 
@@ -1487,6 +1489,14 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     if (!shared->background_pool)
         shared->background_pool.emplace(settings.background_pool_size);
     return *shared->background_pool;
+}
+
+BackgroundProcessingPool & Context::getMovePool()
+{
+    auto lock = getLock();
+    if (!shared->move_pool)
+        shared->move_pool.emplace(settings.move_pool_size);
+    return *shared->move_pool;
 }
 
 BackgroundSchedulePool & Context::getSchedulePool()
