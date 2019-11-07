@@ -574,7 +574,7 @@ Cofiguration examples:
 </policies>
 ```
 
-In the given example, the `hdd_in_order` policy implements the [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) approach. Since the policy defines only one volume (`single`), the data are stored on all its disks in circular order. Such a policy can be quite useful if there are several similar disks mounted to the system. 
+In given example, the `hdd_in_order` policy implements the [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) approach. Thus this policy defines only one volume (`single`), the data parts are stored on all its disks in circular order. Such policy can be quite useful if there are several similar disks are mounted to the system, but RAID is not configured. Keep in mind that each individual disk drive is not reliable and you might want to compensate it with replication factor of 3 or more.
 
 If there are different disks, the policy `moving_from_ssd_to_hdd` can be used instead. The volume `hot` consists of an SSD disk (`fast_ssd`), and the maximum size of a part that can be stored on this volume is 1GB. All the parts with the size larger than 1GB will be stored directly on the `cold` volume, which contains an HDD disk `disk1`. 
 Also, once the disk `fast_ssd` gets filled by more than 80%, data will be transferred to the `disk1` by a background process.
