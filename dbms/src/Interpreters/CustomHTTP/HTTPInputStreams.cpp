@@ -1,7 +1,9 @@
+#include <Common/config.h>
 #include <Interpreters/CustomHTTP/HTTPInputStreams.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 
+#include <IO/BrotliReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <Compression/CompressedReadBuffer.h>

@@ -525,11 +525,18 @@
     </query_masking_rules>
     -->
 
+    <custom_http>
+        <default>
+            <dynamic_query />
+            <always_matched />
+        </default>
+    </custom_http>
     <!-- Uncomment to use custom http.
     <custom_http>
         <test_select_single>
-            <url><![cdata[/test/(?p<test_url_value>\w+)]]></url>
-            <query>select {test_url_value:uint64}, {test_query_param_value:string}, {test_query_post_value:string}</query>
+            <method>GET</method>
+            <URL><![CDATA[/test/(?P<test_url_value>\w+)]]></URL>
+            <query><![CDATA[SELECT {test_url_value:UInt64}, {test_query_param_value:String}, {test_query_post_value:String}]]></query>
         </test_select_single>
     </custom_http>
     -->

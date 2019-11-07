@@ -57,9 +57,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
 
-    skipWhitespaceIfAny(read_buffer); /// Skip white space on both sides
     data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);
-    skipWhitespaceIfAny(read_buffer); /// Skip white space on both sides
 
     if (!read_buffer.eof())
         throw Exception("Value " + value + " cannot be parsed as " + type_name + " for query parameter '"  + ast_param.name + "'"

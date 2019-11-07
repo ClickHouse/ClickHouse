@@ -34,15 +34,13 @@ struct HTTPOutputStreams
 
     void finalize() const;
 
-    WriteBufferPtr createMaybeDelayedAndCompressionOut(Context &context, HTMLForm &form, WriteBufferPtr &out_);
+    WriteBufferPtr createMaybeDelayedAndCompressionOut(Context & context, HTMLForm & form, WriteBufferPtr & out_);
 
     WriteBufferPtr createMaybeCompressionOut(bool compression, std::shared_ptr<WriteBufferFromHTTPServerResponse> & out_);
 
-    HTTPResponseBufferPtr createResponseOut(HTTPServerRequest & request, HTTPServerResponse & response, size_t keep_alive);
+    HTTPOutputStreams(HTTPResponseBufferPtr & raw_out, bool internal_compress);
 
-    HTTPOutputStreams(HTTPServerRequest & request, HTTPServerResponse & response, bool internal_compress, size_t keep_alive_timeout);
-
-    HTTPOutputStreams(Context & context, HTTPServerRequest & request, HTTPServerResponse & response, HTMLForm & form, size_t keep_alive_timeout);
+    HTTPOutputStreams(HTTPResponseBufferPtr & raw_out, Context & context, HTTPServerRequest & request, HTMLForm & form);
 };
 
 using HTTPOutputStreamsPtr = std::unique_ptr<HTTPOutputStreams>;
