@@ -338,6 +338,7 @@ Columns:
 - `table` (`String`) – Name of the table.
 - `engine` (`String`) – Name of the table engine without parameters.
 - `path` (`String`) – Absolute path to the folder with data part files.
+- `disk` (`String`) – Name of a disk that stores the data part.
 - `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
 - `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
 - `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
@@ -354,11 +355,12 @@ This table contains information about events that occurred with [data parts](tab
 The `system.part_log` table contains the following columns:
 
 - `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values:
-    - `NEW_PART` — inserting
-    - `MERGE_PARTS` — merging
-    - `DOWNLOAD_PART` — downloading
-    - `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition)
-    - `MUTATE_PART` — updating.
+    - `NEW_PART` — Inserting of a new data part.
+    - `MERGE_PARTS` — Merging of data parts.
+    - `DOWNLOAD_PART` — Downloading a data part.
+    - `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    - `MUTATE_PART` — Mutating of a data part.
+    - `MOVE_PART` — Moving the data part from the one disk to another one.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `duration_ms` (UInt64) — Duration.
@@ -761,6 +763,30 @@ If there were problems with mutating some parts, the following columns contain a
 
 ## system.disks {#system_tables-disks}
 
+Contains information about disks defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). 
+
+Columns:
+
+- `name` ([String](../data_types/string.md)) — Name of a disk in the server configuration.
+- `path` ([String](../data_types/string.md)) — Path to the mount point in the file system.
+- `free_space` ([UInt64](../data_types/int_uint.md)) — Free space on disk in bytes.
+- `total_space` ([UInt64](../data_types/int_uint.md)) — Disk volume in bytes.
+- `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` parameter of disk configuration.
+
+
 ## system.storage_policies {#system_tables-storage_policies}
+
+Contains information about storage policies and volumes defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+
+Columns:
+
+- `policy_name` ([String](../data_types/string.md)) — Name of the storage policy.
+- `volume_name` ([String](../data_types/string.md)) — Volume name defined in the storage policy.
+- `volume_priority` ([UInt64](../data_types/int_uint.md)) — Volume order number in the configuration.
+- `disks` ([Array(String)](../data_types/array.md)) — Disk names, defined in the storage policy.
+- `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
+- `move_factor` ([Float64](..data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+
+If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->
