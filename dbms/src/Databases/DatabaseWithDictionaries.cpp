@@ -52,7 +52,7 @@ void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name, 
 
 }
 
-void DatabaseWithDictionaries::createDictionary( const Context & context, const String & dictionary_name, const ASTPtr & query)
+void DatabaseWithDictionaries::createDictionary(const Context & context, const String & dictionary_name, const ASTPtr & query)
 {
     const auto & settings = context.getSettingsRef();
 

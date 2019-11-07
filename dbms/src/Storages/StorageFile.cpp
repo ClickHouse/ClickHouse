@@ -101,7 +101,7 @@ static std::string getTablePath(const std::string & table_dir_path, const std::s
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-static void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path)
+static void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
@@ -358,7 +358,7 @@ void registerStorageFile(StorageFactory & factory)
         String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         StorageFile::CommonArguments common_args{args.database_name, args.table_name, format_name,
-                                                 args.columns, args.constraints,args.context};
+                                                 args.columns, args.constraints, args.context};
 
         if (engine_args.size() == 1)    /// Table in database
             return StorageFile::create(args.relative_data_path, common_args);
