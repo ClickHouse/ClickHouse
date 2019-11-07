@@ -1734,12 +1734,12 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
 
             /// Pin sources for merge tree tables.
-            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
-            if (pin_sources)
-            {
-                for (size_t i = 0; i < pipes.size(); ++i)
-                    pipes[i].pinSources(i);
-            }
+//            bool pin_sources = dynamic_cast<const MergeTreeData *>(storage.get()) != nullptr;
+//            if (pin_sources)
+//            {
+//                for (size_t i = 0; i < pipes.size(); ++i)
+//                    pipes[i].pinSources(i);
+//            }
 
             pipeline.init(std::move(pipes));
         }
@@ -1895,7 +1895,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     if (pipeline.getNumMainStreams() > 1)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
-        pipeline.resize(pipeline.getNumMainStreams(), true);
+        pipeline.resize(pipeline.getNumMainStreams()); // , true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumMainStreams());
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
