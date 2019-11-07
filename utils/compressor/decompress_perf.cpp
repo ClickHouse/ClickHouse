@@ -51,6 +51,7 @@ protected:
 
     LZ4::StreamStatistics stream_stat;
     LZ4::PerformanceStatistics perf_stat;
+    LZ4::PerformanceStatistics::SharedData perf_stat_data;
 
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
     {
@@ -112,7 +113,7 @@ protected:
                     throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
             }
             else
-                LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
+                LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat, perf_stat_data);
         }
         else
             throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);

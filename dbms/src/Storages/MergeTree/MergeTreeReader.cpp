@@ -41,6 +41,7 @@ MergeTreeReader::MergeTreeReader(
     MarkRanges all_mark_ranges_,
     size_t aio_threshold_,
     size_t max_read_buffer_size_,
+    LZ4StatsPtr lz4stats_,
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
@@ -54,6 +55,7 @@ MergeTreeReader::MergeTreeReader(
     , all_mark_ranges(std::move(all_mark_ranges_))
     , aio_threshold(aio_threshold_)
     , max_read_buffer_size(max_read_buffer_size_)
+    , lz4stats(std::move(lz4stats_))
 {
     try
     {
@@ -194,13 +196,17 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
         if (!data_file_exists)
             return;
 
-        streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
+        auto res = streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             aio_threshold, max_read_buffer_size,
             &data_part->index_granularity_info,
             profile_callback, clock_type));
+
+        std::unique_lock lock(lz4stats->mutex);
+        auto & data = lz4stats->stats[stream_name];
+        res.first->second->setSharedStatData(&data);
     };
 
     IDataType::SubstreamPath substream_path;

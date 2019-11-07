@@ -25,7 +25,8 @@ public:
         const bool use_uncompressed_cache_,
         const PrewhereInfoPtr & prewhere_info_,
         const Settings & settings_,
-        const Names & virt_column_names_);
+        const Names & virt_column_names_,
+        MergeTreeReader::LZ4StatsPtr lz4stats_);
 
     String getName() const override { return "MergeTreeThread"; }
 
@@ -46,6 +47,9 @@ private:
     std::string last_readed_part_path;
     /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
+
+    MergeTreeReader::LZ4StatsPtr lz4stats;
+
 };
 
 }

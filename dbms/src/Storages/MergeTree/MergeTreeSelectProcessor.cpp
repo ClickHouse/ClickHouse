@@ -45,6 +45,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     size_t min_bytes_to_use_direct_io_,
     size_t max_read_buffer_size_,
     bool save_marks_in_cache_,
+    MergeTreeReader::LZ4StatsPtr lz4stats_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
     bool quiet)
@@ -60,7 +61,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns_),
-    path(data_part->getFullPath())
+    path(data_part->getFullPath()),
+    lz4stats(std::move(lz4stats_))
 {
     /// Let's estimate total number of rows for progress bar.
     for (const auto & range : all_mark_ranges)
@@ -122,13 +124,13 @@ try
         reader = std::make_unique<MergeTreeReader>(
             path, data_part, task_columns.columns, owned_uncompressed_cache.get(),
             owned_mark_cache.get(), save_marks_in_cache, storage,
-            all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+            all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, lz4stats);
 
         if (prewhere_info)
             pre_reader = std::make_unique<MergeTreeReader>(
                 path, data_part, task_columns.pre_columns, owned_uncompressed_cache.get(),
                 owned_mark_cache.get(), save_marks_in_cache, storage,
-                all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+                all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, lz4stats);
     }
 
     return true;

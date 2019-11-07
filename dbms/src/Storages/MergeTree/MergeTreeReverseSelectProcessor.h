@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeReader.h>
 
 namespace DB
 {
@@ -30,6 +31,7 @@ public:
         size_t min_bytes_to_use_direct_io,
         size_t max_read_buffer_size,
         bool save_marks_in_cache,
+        MergeTreeReader::LZ4StatsPtr lz4stats_,
         const Names & virt_column_names = {},
         size_t part_index_in_query = 0,
         bool quiet = false);
@@ -72,6 +74,8 @@ private:
     String path;
 
     Chunks chunks;
+
+    MergeTreeReader::LZ4StatsPtr lz4stats;
 
     Logger * log = &Logger::get("MergeTreeReverseSelectProcessor");
 };

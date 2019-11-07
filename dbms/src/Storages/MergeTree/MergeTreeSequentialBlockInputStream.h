@@ -67,6 +67,8 @@ private:
     /// current row at which we stop reading
     size_t current_row = 0;
 
+    MergeTreeReader::LZ4StatsPtr lz4stats;
+
 private:
     void fixHeader(Block & header_block) const;
 

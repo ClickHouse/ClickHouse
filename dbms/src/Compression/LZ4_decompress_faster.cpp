@@ -532,7 +532,8 @@ void decompress(
     char * const dest,
     size_t source_size,
     size_t dest_size,
-    PerformanceStatistics & statistics [[maybe_unused]])
+    PerformanceStatistics & statistics [[maybe_unused]],
+    PerformanceStatistics::SharedData & statistics_data [[maybe_unused]])
 {
     if (source_size == 0 || dest_size == 0)
         return;
@@ -540,7 +541,7 @@ void decompress(
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {
-        size_t best_variant = statistics.select();
+        size_t best_variant = statistics.select(statistics_data);
 
         /// Run the selected method and measure time.
 
@@ -558,7 +559,7 @@ void decompress(
 
         /// Update performance statistics.
 
-        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);
+        statistics_data.data[best_variant].update(watch.elapsedSeconds(), dest_size);
     }
     else
     {

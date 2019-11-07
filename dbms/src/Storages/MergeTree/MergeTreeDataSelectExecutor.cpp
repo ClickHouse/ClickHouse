@@ -723,6 +723,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
     Pipes res;
 
+    MergeTreeReader::LZ4StatsPtr lz4stats = std::make_shared<MergeTreeReader::LZ4Stats>();
+
     if (sum_marks > 0 && settings.merge_tree_uniform_read_distribution == 1)
     {
         /// Reduce the number of num_streams if the data is small.
@@ -741,7 +743,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
                 i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
-                query_info.prewhere_info, settings, virt_columns);
+                query_info.prewhere_info, settings, virt_columns, lz4stats);
 
             if (i == 0)
             {
@@ -820,7 +822,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
-                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query);
+                    settings.max_read_buffer_size, true, lz4stats, virt_columns, part.part_index_in_query);
 
                 res.emplace_back(std::move(source_processor));
             }
@@ -934,6 +936,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
     const size_t min_marks_per_stream = (sum_marks - 1) / num_streams + 1;
 
+
+    MergeTreeReader::LZ4StatsPtr lz4stats = std::make_shared<MergeTreeReader::LZ4Stats>();
+
     for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
     {
         size_t need_marks = min_marks_per_stream;
@@ -1004,7 +1009,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
-                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query));
+                    settings.max_read_buffer_size, true, lz4stats, virt_columns, part.part_index_in_query));
             }
             else
             {
@@ -1012,7 +1017,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io,
-                    settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query));
+                    settings.max_read_buffer_size, true, lz4stats, virt_columns, part.part_index_in_query));
 
                 pipes.back().addSimpleTransform(std::make_shared<ReverseTransform>(pipes.back().getHeader()));
             }
@@ -1077,6 +1082,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
     Pipes pipes;
 
+    MergeTreeReader::LZ4StatsPtr lz4stats = std::make_shared<MergeTreeReader::LZ4Stats>();
+
     /// NOTE `merge_tree_uniform_read_distribution` is not used for FINAL
 
     for (size_t part_index = 0; part_index < parts.size(); ++part_index)
@@ -1087,7 +1094,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             query_info.prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
-            virt_columns, part.part_index_in_query);
+            lz4stats, virt_columns, part.part_index_in_query);
 
         Pipe pipe(std::move(source_processor));
         pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_expr));

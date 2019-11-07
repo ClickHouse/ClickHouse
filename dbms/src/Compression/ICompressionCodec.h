@@ -59,6 +59,8 @@ public:
     /// Some codecs may use information about column type which appears after codec creation
     virtual void useInfoAboutType(DataTypePtr /* data_type */) { }
 
+    virtual void setSharedStatData(LZ4::PerformanceStatistics::SharedData *) {}
+
 protected:
 
     /// Return size of compressed data without header

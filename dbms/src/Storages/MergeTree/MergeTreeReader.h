@@ -19,6 +19,14 @@ public:
     using ValueSizeMap = std::map<std::string, double>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
+    struct LZ4Stats
+    {
+        std::mutex mutex;
+        std::map<std::string, LZ4::PerformanceStatistics::SharedData> stats;
+    };
+
+    using LZ4StatsPtr = std::shared_ptr<LZ4Stats>;
+
     MergeTreeReader(String path_, /// Path to the directory containing the part
         MergeTreeData::DataPartPtr data_part_,
         NamesAndTypesList columns_,
@@ -29,6 +37,7 @@ public:
         MarkRanges all_mark_ranges_,
         size_t aio_threshold_,
         size_t max_read_buffer_size_,
+        LZ4StatsPtr lz4stats_,
         ValueSizeMap avg_value_size_hints_ = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_ = ReadBufferFromFileBase::ProfileCallback{},
         clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE);
@@ -82,6 +91,8 @@ private:
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;
+
+    LZ4StatsPtr lz4stats;
 
     void addStreams(const String & name, const IDataType & type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);

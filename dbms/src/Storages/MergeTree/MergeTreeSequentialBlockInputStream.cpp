@@ -21,6 +21,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     , columns_to_read(columns_to_read_)
     , read_with_direct_io(read_with_direct_io_)
     , mark_cache(storage.global_context.getMarkCache())
+    , lz4stats(std::make_shared<MergeTreeReader::LZ4Stats>())
 {
     if (!quiet)
     {
@@ -57,7 +58,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* bytes to use AIO (this is hack) */
         read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
-        DBMS_DEFAULT_BUFFER_SIZE);
+        DBMS_DEFAULT_BUFFER_SIZE, lz4stats);
 }
 
 

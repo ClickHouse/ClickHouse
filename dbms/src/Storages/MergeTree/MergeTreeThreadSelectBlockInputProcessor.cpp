@@ -18,14 +18,16 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
     const bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     const Settings & settings,
-    const Names & virt_column_names_)
+    const Names & virt_column_names_,
+    MergeTreeReader::LZ4StatsPtr lz4stats_)
     :
     MergeTreeBaseSelectProcessor{pool_->getHeader(), storage_, prewhere_info_, max_block_size_rows_,
                                  preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
                                  settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size,
                                  use_uncompressed_cache_, true, virt_column_names_},
     thread{thread_},
-    pool{pool_}
+    pool{pool_},
+    lz4stats(std::move(lz4stats_))
 {
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
@@ -73,13 +75,13 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
 
         reader = std::make_unique<MergeTreeReader>(
             path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
-            storage, rest_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
+            storage, rest_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, lz4stats, MergeTreeReader::ValueSizeMap{}, profile_callback);
 
         if (prewhere_info)
             pre_reader = std::make_unique<MergeTreeReader>(
                 path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
                 storage, rest_mark_ranges, min_bytes_to_use_direct_io,
-                max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
+                max_read_buffer_size, lz4stats, MergeTreeReader::ValueSizeMap{}, profile_callback);
     }
     else
     {
@@ -90,14 +92,14 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
             /// retain avg_value_size_hints
             reader = std::make_unique<MergeTreeReader>(
                 path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
-                storage, rest_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
+                storage, rest_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, lz4stats,
                 reader->getAvgValueSizeHints(), profile_callback);
 
             if (prewhere_info)
                 pre_reader = std::make_unique<MergeTreeReader>(
                     path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
                     storage, rest_mark_ranges, min_bytes_to_use_direct_io,
-                    max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
+                    max_read_buffer_size, lz4stats, pre_reader->getAvgValueSizeHints(), profile_callback);
         }
     }
     last_readed_part_path = path;

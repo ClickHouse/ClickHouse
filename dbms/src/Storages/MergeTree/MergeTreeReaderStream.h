@@ -29,6 +29,15 @@ public:
 
     ReadBuffer * data_buffer;
 
+    void setSharedStatData(LZ4::PerformanceStatistics::SharedData * data_)
+    {
+        if (cached_buffer)
+            cached_buffer->setSharedStatData(data_);
+        else
+            non_cached_buffer->setSharedStatData(data_);
+
+    }
+
 private:
     /// NOTE: lazily loads marks from the marks cache.
     const MarkInCompressedFile & getMark(size_t index);

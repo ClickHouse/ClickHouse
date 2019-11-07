@@ -32,6 +32,7 @@ protected:
 
     void decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
+
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     CompressedReadBufferBase(ReadBuffer * in = nullptr);
@@ -45,6 +46,8 @@ public:
     {
         disable_checksum = true;
     }
+
+    void setSharedStatData(LZ4::PerformanceStatistics::SharedData * data_) { codec->setSharedStatData(data_); }
 
 public:
     CompressionCodecPtr codec;

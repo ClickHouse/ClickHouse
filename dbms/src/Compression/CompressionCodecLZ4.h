@@ -18,6 +18,8 @@ public:
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER; }
 
+    void setSharedStatData(LZ4::PerformanceStatistics::SharedData * data_) override { data = data_; }
+
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
@@ -27,6 +29,8 @@ private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     mutable LZ4::PerformanceStatistics lz4_stat;
+    LZ4::PerformanceStatistics::SharedData local_data;
+    LZ4::PerformanceStatistics::SharedData * data = &local_data;
 };
 
 class CompressionCodecLZ4HC : public CompressionCodecLZ4

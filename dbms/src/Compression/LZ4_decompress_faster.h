@@ -3,6 +3,7 @@
 #include <cmath>
 #include <random>
 #include <pcg_random.hpp>
+#include <atomic>
 
 
 namespace LZ4
@@ -44,54 +45,65 @@ static constexpr size_t ADDITIONAL_BYTES_AT_END_OF_BUFFER = 64;
   */
 struct PerformanceStatistics
 {
-    struct Element
+    struct SharedData
     {
-        double count = 0;
-        double sum = 0;
 
-        double adjustedCount() const
+        struct Element
         {
-            return count - NUM_INVOCATIONS_TO_THROW_OFF;
-        }
+            std::atomic<uint64_t> count = 0;
+            std::atomic<double> sum = 0;
 
-        double mean() const
-        {
-            return sum / adjustedCount();
-        }
+            double adjustedCount() const
+            {
+                return count - NUM_INVOCATIONS_TO_THROW_OFF;
+            }
 
-        /// For better convergence, we don't use proper estimate of stddev.
-        /// We want to eventually separate between two algorithms even in case
-        ///  when there is no statistical significant difference between them.
-        double sigma() const
-        {
-            return mean() / sqrt(adjustedCount());
-        }
+            double mean() const
+            {
+                return sum / adjustedCount();
+            }
 
-        void update(double seconds, double bytes)
-        {
-            ++count;
+            /// For better convergence, we don't use proper estimate of stddev.
+            /// We want to eventually separate between two algorithms even in case
+            ///  when there is no statistical significant difference between them.
+            double sigma() const
+            {
+                return mean() / sqrt(adjustedCount());
+            }
 
-            if (count > NUM_INVOCATIONS_TO_THROW_OFF)
-                sum += seconds / bytes;
-        }
+            void update(double seconds, double bytes)
+            {
+                ++count;
 
-        double sample(pcg64 & stat_rng) const
-        {
-            /// If there is a variant with not enough statistics, always choose it.
-            /// And in that case prefer variant with less number of invocations.
+                if (count > NUM_INVOCATIONS_TO_THROW_OFF)
+                {
+                    double add = seconds / bytes;
+                    double expected = sum.load();
 
-            if (adjustedCount() < 2)
-                return adjustedCount() - 1;
-            else
-                return std::normal_distribution<>(mean(), sigma())(stat_rng);
-        }
+                    while (!sum.compare_exchange_weak(expected, expected + add));
+                }
+            }
+
+            double sample(pcg64 & stat_rng) const
+            {
+                /// If there is a variant with not enough statistics, always choose it.
+                /// And in that case prefer variant with less number of invocations.
+
+                if (adjustedCount() < 2)
+                    return adjustedCount() - 1;
+                else
+                    return std::normal_distribution<>(mean(), sigma())(stat_rng);
+            }
+        };
+
+        /// Number of different algorithms to select from.
+        static constexpr size_t NUM_ELEMENTS = 4;
+
+        /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.
+        static constexpr double NUM_INVOCATIONS_TO_THROW_OFF = 2;
+
+        Element data[NUM_ELEMENTS];
     };
-
-    /// Number of different algorithms to select from.
-    static constexpr size_t NUM_ELEMENTS = 4;
-
-    /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.
-    static constexpr double NUM_INVOCATIONS_TO_THROW_OFF = 2;
 
     /// How to select method to run.
     /// -1 - automatically, based on statistics (default);
@@ -99,24 +111,23 @@ struct PerformanceStatistics
     /// -2 - choose methods in round robin fashion (for performance testing).
     ssize_t choose_method = -1;
 
-    Element data[NUM_ELEMENTS];
 
     /// It's Ok that generator is not seeded.
     pcg64 rng;
 
     /// To select from different algorithms we use a kind of "bandits" algorithm.
     /// Sample random values from estimated normal distributions and choose the minimal.
-    size_t select()
+    size_t select(const SharedData & data)
     {
         if (choose_method < 0)
         {
-            double samples[NUM_ELEMENTS];
-            for (size_t i = 0; i < NUM_ELEMENTS; ++i)
+            double samples[SharedData::NUM_ELEMENTS];
+            for (size_t i = 0; i < SharedData::NUM_ELEMENTS; ++i)
                 samples[i] = choose_method == -1
-                    ? data[i].sample(rng)
-                    : data[i].adjustedCount();
+                    ? data.data[i].sample(rng)
+                    : data.data[i].adjustedCount();
 
-            return std::min_element(samples, samples + NUM_ELEMENTS) - samples;
+            return std::min_element(samples, samples + SharedData::NUM_ELEMENTS) - samples;
         }
         else
             return choose_method;
@@ -134,7 +145,8 @@ void decompress(
     char * const dest,
     size_t source_size,
     size_t dest_size,
-    PerformanceStatistics & statistics);
+    PerformanceStatistics & statistics,
+    PerformanceStatistics::SharedData & statistics_data);
 
 
 /** Obtain statistics about LZ4 block useful for development.
