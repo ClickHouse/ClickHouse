@@ -204,9 +204,12 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
             &data_part->index_granularity_info,
             profile_callback, clock_type));
 
-        std::unique_lock lock(lz4stats->mutex);
-        auto & data = lz4stats->stats[stream_name];
-        res.first->second->setSharedStatData(&data);
+        if (res.second)
+        {
+            std::unique_lock lock(lz4stats->mutex);
+            auto & data = lz4stats->stats[stream_name];
+            res.first->second->setSharedStatData(&data);
+        }
     };
 
     IDataType::SubstreamPath substream_path;
