@@ -538,7 +538,7 @@ Storage policies configuration markup:
 </policies>
 ```
 
-Тэги:
+Tags:
 
 - `policy_name_N` — Policy name. Policy names must be unique.
 - `volume_name_N` — Volume name. Volume names must be unique.
