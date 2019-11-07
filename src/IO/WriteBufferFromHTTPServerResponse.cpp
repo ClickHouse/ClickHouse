@@ -31,6 +31,11 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
             response.set("Access-Control-Allow-Origin", "*");
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
+
+#if defined(POCO_CLICKHOUSE_PATCH)
+        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+            std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
+#endif
     }
 }
 
@@ -91,12 +96,19 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 }
 
 
-void WriteBufferFromHTTPServerResponse::choiceSendEncode()
+void WriteBufferFromHTTPServerResponse::nextImpl()
 {
-    if (!out && request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
     {
-        if (!compress)
+        std::lock_guard lock(mutex);
+
+        startSendHeaders();
+
+        if (!out && request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
         {
+            if (compress)
+            {
+                if (compression_method == CompressionMethod::Gzip)
+                {
 #if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: gzip\r\n";
 #else
@@ -112,8 +124,8 @@ void WriteBufferFromHTTPServerResponse::choiceSendEncode()
 #if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: deflate\r\n";
 #else
-            /// Newline autosent by response.send()
-            response_body_ostr = &(response.send());
+                    response.set("Content-Encoding", "gzip");
+                    response_body_ostr = &(response.send());
 #endif
                     out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr);
                     deflating_buf.emplace(std::move(out_raw), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
@@ -123,9 +135,7 @@ void WriteBufferFromHTTPServerResponse::choiceSendEncode()
                 else if (compression_method == CompressionMethod::Brotli)
                 {
 #if defined(POCO_CLICKHOUSE_PATCH)
-                std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
-                if (headers_started_sending && !headers_finished_sending)
-                    *response_header_ostr << "Content-Encoding: " << encoding_type << "\r\n";
+                    *response_header_ostr << "Content-Encoding: deflate\r\n";
 #else
                 response.set("Content-Encoding", content_encoding_name);
 #endif
@@ -134,37 +144,23 @@ void WriteBufferFromHTTPServerResponse::choiceSendEncode()
                 /// This may result in an extra empty line in the response body
                 response_body_ostr = &(response.send());
 #endif
-            };
 
                 out_raw = std::make_unique<WriteBufferFromOStream>(*response_body_ostr, working_buffer.size(), working_buffer.begin());
                 out = &*out_raw;
             }
-#if USE_BROTLI
-            else if (compression_method == CompressionMethod::Brotli)
-            {
-                set_encoding_type("br");
-                out_raw.emplace(*response_body_ostr);
-                brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
-                out = &*brotli_buf;
-            }
-#endif
             else
-                throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
-                                ErrorCodes::LOGICAL_ERROR);
-            /// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
+            {
+#if !defined(POCO_CLICKHOUSE_PATCH)
+                response_body_ostr = &(response.send());
+#endif
+
+                out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
+                out = &*out_raw;
+            }
         }
-    }
-}
 
-
-void WriteBufferFromHTTPServerResponse::nextImpl()
-{
-    {
-        std::lock_guard lock(mutex);
-
-        startSendHeaders();
-        choiceSendEncode();
         finishSendHeaders();
+
     }
 
     if (out)
@@ -182,16 +178,13 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     unsigned keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_,
-    size_t size,
-    bool finish_send_headers_)
+    size_t size)
     : BufferWithOwnMemory<WriteBuffer>(size)
     , request(request_)
     , response(response_)
     , keep_alive_timeout(keep_alive_timeout_)
     , compress(compress_)
     , compression_method(compression_method_)
-    , headers_started_sending(finish_send_headers_)
-    , headers_finished_sending(finish_send_headers_)
 {
 }
 
@@ -234,6 +227,7 @@ void WriteBufferFromHTTPServerResponse::finalize()
         finishSendHeaders();
     }
 }
+
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {

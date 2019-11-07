@@ -41,13 +41,13 @@
         </test_for_url_match>
 
         <test_for_method_match>
-            <URL>PUT</URL>
+            <method>PUT</method>
             <query>SELECT 'Matched test_for_method_match'</query>
         </test_for_method_match>
 
         <test_for_multiple_match>
-            <URL>/test_for_multiple_match</URL>
             <method>GET</method>
+            <URL>/test_for_multiple_match</URL>
             <query>SELECT 'Matched test_for_multiple_match'</query>
         </test_for_multiple_match>
     </custom_http>

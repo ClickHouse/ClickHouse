@@ -38,12 +38,12 @@ private:
     {
         ~SessionContextHolder();
 
-        SessionContextHolder(IServer & accepted_server, HTMLForm & params);
-
         void authentication(HTTPServerRequest & request, HTMLForm & params);
 
+        SessionContextHolder(Context & query_context_, HTTPRequest & request, HTMLForm & params);
+
         String session_id;
-        std::unique_ptr<Context> context = nullptr;
+        Context & query_context;
         std::shared_ptr<Context> session_context = nullptr;
         std::chrono::steady_clock::duration session_timeout;
     };
@@ -58,9 +58,13 @@ private:
 
     size_t getKeepAliveTimeout() { return server.config().getUInt("keep_alive_timeout", 10); }
 
-    void processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response);
+    HTTPResponseBufferPtr createResponseOut(HTTPServerRequest & request, HTTPServerResponse & response);
 
-    void trySendExceptionToClient(const std::string & message, int exception_code, HTTPRequest & request, HTTPResponse & response, bool compression);
+    void processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response, HTTPResponseBufferPtr & response_out);
+
+    void trySendExceptionToClient(
+        const std::string & message, int exception_code, HTTPRequest & request,
+        HTTPResponse & response, HTTPResponseBufferPtr response_out, bool compression);
 
 };
 

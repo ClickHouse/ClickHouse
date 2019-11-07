@@ -87,8 +87,6 @@ private:
     /// This method finish headers with \r\n, allowing to start to send body.
     void finishSendHeaders();
 
-    void choiceSendEncode();
-
     void nextImpl() override;
 
 public:
@@ -98,8 +96,7 @@ public:
         unsigned keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::Gzip,
-        size_t size = DBMS_DEFAULT_BUFFER_SIZE,
-        bool finish_send_headers_ = false);
+        size_t size = DBMS_DEFAULT_BUFFER_SIZE);
 
     /// Writes progess in repeating HTTP headers.
     void onProgress(const Progress & progress);

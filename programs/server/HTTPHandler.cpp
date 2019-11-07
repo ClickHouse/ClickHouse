@@ -90,6 +90,7 @@ namespace ErrorCodes
 
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
+    extern const int UNKNOW_QUERY_EXECUTOR;
 }
 
 
@@ -117,7 +118,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::INCORRECT_DATA ||
              exception_code == ErrorCodes::TYPE_MISMATCH)
         return HTTPResponse::HTTP_BAD_REQUEST;
-    else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
+    else if (exception_code == ErrorCodes::UNKNOW_QUERY_EXECUTOR ||
+             exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_IDENTIFIER ||
              exception_code == ErrorCodes::UNKNOWN_TYPE ||
@@ -184,18 +186,22 @@ HTTPHandler::SessionContextHolder::~SessionContextHolder()
 }
 
 
-HTTPHandler::SessionContextHolder::SessionContextHolder(IServer & accepted_server, HTMLForm & params)
+HTTPHandler::SessionContextHolder::SessionContextHolder(Context & query_context_, HTTPRequest & request, HTMLForm & params)
+    : query_context(query_context_)
 {
-    session_id = params.get("session_id", "");
-    context = std::make_unique<Context>(accepted_server.context());
+    authentication(request, params);
 
-    if (!session_id.empty())
     {
-        session_timeout = parseSessionTimeout(accepted_server.config(), params);
-        session_context = context->acquireSession(session_id, session_timeout, params.check<String>("session_check", "1"));
+        session_id = params.get("session_id", "");
 
-        context = std::make_unique<Context>(*session_context);
-        context->setSessionContext(*session_context);
+        if (!session_id.empty())
+        {
+            session_timeout = parseSessionTimeout(query_context.getConfigRef(), params);
+            session_context = query_context.acquireSession(session_id, session_timeout, params.check<String>("session_check", "1"));
+
+            query_context = *session_context;
+            query_context.setSessionContext(*session_context);
+        }
     }
 }
 
@@ -237,11 +243,11 @@ void HTTPHandler::SessionContextHolder::authentication(HTTPServerRequest & reque
     }
 
     std::string query_id = params.get("query_id", "");
-    context->setUser(user, password, request.clientAddress(), quota_key);
-    context->setCurrentQueryId(query_id);
+    query_context.setUser(user, password, request.clientAddress(), quota_key);
+    query_context.setCurrentQueryId(query_id);
 }
 
-void HTTPHandler::processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response)
+void HTTPHandler::processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response, HTTPResponseBufferPtr & response_out)
 {
     const auto & name_with_custom_executor = context.getCustomExecutor(request, params);
     LOG_TRACE(log, "Using '" << name_with_custom_executor.first << "' CustomExecutor to execute URI: " << request.getURI());
@@ -250,12 +256,13 @@ void HTTPHandler::processQuery(Context & context, HTTPRequest & request, HTMLFor
     ExtractorContextChange{context, name_with_custom_executor.second}.extract(request, params);
 
     HTTPInputStreams input_streams{context, request, params};
-    HTTPOutputStreams output_streams = HTTPOutputStreams(context, request, response, params, getKeepAliveTimeout());
+    HTTPOutputStreams output_streams = HTTPOutputStreams(response_out, context, request, params);
     name_with_custom_executor.second->executeQuery(context, request, response, params, input_streams, output_streams);
 }
 
 void HTTPHandler::trySendExceptionToClient(
-    const std::string & message, int exception_code, Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, bool compression)
+    const std::string & message, int exception_code, HTTPRequest & request,
+    HTTPResponse & response, HTTPResponseBufferPtr response_out, bool compression)
 {
     try
     {
@@ -265,22 +272,25 @@ void HTTPHandler::trySendExceptionToClient(
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && response.getKeepAlive()
                 && !request.stream().eof() && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
-            request.stream().ignore(std::numeric_limits<std::streamsize>::max());
-
-        if (exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD
-            || exception_code == ErrorCodes::REQUIRED_PASSWORD || exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
-            if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
-                response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-            else
-                response.requireAuthentication("ClickHouse server HTTP API");
+            request.stream().ignore(std::numeric_limits<std::streamsize>::max());
+        }
 
-            response.send() << message << std::endl;
+        if (exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD ||
+            exception_code == ErrorCodes::REQUIRED_PASSWORD)
+        {
+            response.requireAuthentication("ClickHouse server HTTP API");
         }
         else
         {
             response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-            HTTPOutputStreams output_streams(request, response, compression, getKeepAliveTimeout());
+        }
+
+        if (!response_out && !response.sent())
+            response.send() << message << std::endl;
+        else
+        {
+            HTTPOutputStreams output_streams(response_out, compression);
 
             writeString(message, *output_streams.out_maybe_compressed);
             writeChar('\n', *output_streams.out_maybe_compressed);
@@ -300,10 +310,12 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     ThreadStatus thread_status;
 
     /// In case of exception, send stack trace to client.
+    HTTPResponseBufferPtr response_out;
     bool with_stacktrace = false, internal_compression = false;
 
     try
     {
+        response_out = createResponseOut(request, response);
         response.set("Content-Type", "text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
@@ -316,15 +328,22 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         internal_compression = params.getParsed<bool>("compress", false);
 
         /// Workaround. Poco does not detect 411 Length Required case.
+<<<<<<< HEAD:programs/server/HTTPHandler.cpp
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
             throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
+=======
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                && !request.getChunkedTransferEncoding()
+                && !request.hasContentLength())
+            throw Exception("There is neither Transfer-Encoding header nor Content-Length header", ErrorCodes::HTTP_LENGTH_REQUIRED);
+>>>>>>> ISSUES-5436 fix build failure & fix test failure:dbms/programs/server/HTTPHandler.cpp
 
         {
-            SessionContextHolder holder{server, params};
-            CurrentThread::QueryScope query_scope(*holder.context);
+            Context query_context = server.context();
+            CurrentThread::QueryScope query_scope(query_context);
 
-            holder.authentication(request, params);
-            processQuery(*holder.context, request, params, response);
+            SessionContextHolder holder{query_context, request, params};
+            processQuery(holder.query_context, request, params, response, response_out);
             LOG_INFO(log, "Done processing query");
         }
     }
@@ -337,8 +356,34 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
           */
         int exception_code = getCurrentExceptionCode();
         std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-        trySendExceptionToClient(exception_message, exception_code, request, response, internal_compression);
+        trySendExceptionToClient(exception_message, exception_code, request, response, response_out, internal_compression);
     }
+}
+
+HTTPResponseBufferPtr HTTPHandler::createResponseOut(HTTPServerRequest & request, HTTPServerResponse & response)
+{
+    size_t keep_alive = server.config().getUInt("keep_alive_timeout", 10);
+    /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
+    String http_response_compression_methods = request.get("Accept-Encoding", "");
+
+    if (!http_response_compression_methods.empty())
+    {
+        /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
+        /// NOTE parsing of the list of methods is slightly incorrect.
+        if (std::string::npos != http_response_compression_methods.find("gzip"))
+            return std::make_shared<WriteBufferFromHTTPServerResponse>(
+                request, response, keep_alive, true, CompressionMethod::Gzip, DBMS_DEFAULT_BUFFER_SIZE);
+        else if (std::string::npos != http_response_compression_methods.find("deflate"))
+            return std::make_shared<WriteBufferFromHTTPServerResponse>(
+                request, response, keep_alive, true, CompressionMethod::Zlib, DBMS_DEFAULT_BUFFER_SIZE);
+#if USE_BROTLI
+        else if (http_response_compression_methods == "br")
+            return std::make_shared<WriteBufferFromHTTPServerResponse>(
+                request, response, keep_alive, true, CompressionMethod::Brotli, DBMS_DEFAULT_BUFFER_SIZE);
+#endif
+    }
+
+    return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, false, CompressionMethod{}, DBMS_DEFAULT_BUFFER_SIZE);
 }
 
 }

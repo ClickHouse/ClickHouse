@@ -52,16 +52,15 @@ namespace
     }
 }
 
-HTTPOutputStreams::HTTPOutputStreams(HTTPServerRequest & request, HTTPServerResponse & response, bool internal_compress, size_t keep_alive_timeout)
-    : out(createResponseOut(request, response, keep_alive_timeout))
+HTTPOutputStreams::HTTPOutputStreams(HTTPResponseBufferPtr & raw_out, bool internal_compress)
+    : out(raw_out)
     , out_maybe_compressed(createMaybeCompressionOut(internal_compress, out))
     , out_maybe_delayed_and_compressed(out_maybe_compressed)
 {
 }
 
-HTTPOutputStreams::HTTPOutputStreams(
-    Context & context, HTTPServerRequest & request, HTTPServerResponse & response, HTMLForm & form, size_t keep_alive_timeout)
-    : out(createResponseOut(request, response, keep_alive_timeout))
+HTTPOutputStreams::HTTPOutputStreams(HTTPResponseBufferPtr & raw_out, Context & context, HTTPServerRequest & request, HTMLForm & form)
+    : out(raw_out)
     , out_maybe_compressed(createMaybeCompressionOut(form.getParsed<bool>("compress", false), out))
     , out_maybe_delayed_and_compressed(createMaybeDelayedAndCompressionOut(context, form, out_maybe_compressed))
 {
@@ -90,36 +89,10 @@ HTTPOutputStreams::HTTPOutputStreams(
     }
 }
 
-HTTPResponseBufferPtr HTTPOutputStreams::createResponseOut(HTTPServerRequest & request, HTTPServerResponse & response, size_t keep_alive)
-{
-    /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
-    String http_response_compression_methods = request.get("Accept-Encoding", "");
-
-    if (!http_response_compression_methods.empty())
-    {
-        /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
-        /// NOTE parsing of the list of methods is slightly incorrect.
-        if (std::string::npos != http_response_compression_methods.find("gzip"))
-            return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive, true, CompressionMethod::Gzip, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
-        else if (std::string::npos != http_response_compression_methods.find("deflate"))
-            return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive, true, CompressionMethod::Zlib, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
-#if USE_BROTLI
-        else if (http_response_compression_methods == "br")
-            return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive, true, CompressionMethod::Brotli, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
-#endif
-    }
-
-    return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, false, CompressionMethod{}, DBMS_DEFAULT_BUFFER_SIZE, response.sent());
-}
-
 WriteBufferPtr HTTPOutputStreams::createMaybeCompressionOut(bool compression, HTTPResponseBufferPtr & out_)
 {
     /// Client can pass a 'compress' flag in the query string. In this case the query result is
     /// compressed using internal algorithm. This is not reflected in HTTP headers.
-//    bool internal_compression = form.getParsed<bool>("compress", false);
     return compression ? std::make_shared<CompressedWriteBuffer>(*out_) : WriteBufferPtr(out_);
 }
 
@@ -178,13 +151,18 @@ WriteBufferPtr HTTPOutputStreams::createMaybeDelayedAndCompressionOut(Context & 
 
 HTTPOutputStreams::~HTTPOutputStreams()
 {
-    /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
+    /// This could be a broken HTTP Request
+    /// Because it does not call finalize or writes some data to output stream after call finalize
+    /// In this case we need to clean up its broken state to ensure that they are not sent to the client
+
+    /// For delayed stream, we destory CascadeBuffer and without sending any data to client.
     if (out_maybe_delayed_and_compressed != out_maybe_compressed)
         out_maybe_delayed_and_compressed.reset();
 
-    /// If buffer has data, and that data wasn't sent yet, then no need to send that data
     if (out->count() == out->offset())
     {
+        /// If buffer has data and server never sends data to client
+        /// no need to send that data
         out_maybe_compressed->position() = out_maybe_compressed->buffer().begin();
         out->position() = out->buffer().begin();
     }
