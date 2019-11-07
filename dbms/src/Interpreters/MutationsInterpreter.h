@@ -29,7 +29,6 @@ public:
 
     size_t evaluateCommandsSize();
 
-
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
 
