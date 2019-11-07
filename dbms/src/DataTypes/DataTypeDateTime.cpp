@@ -17,8 +17,6 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <optional>
-
 namespace
 {
 using namespace DB;
@@ -159,8 +157,8 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 
 void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-//    if (value_index)
-//        return;
+    if (value_index)
+        return;
     value_index = static_cast<bool>(protobuf.writeDateTime(assert_cast<time_t>(assert_cast<const ColumnType &>(column).getData()[row_num])));
 }
 

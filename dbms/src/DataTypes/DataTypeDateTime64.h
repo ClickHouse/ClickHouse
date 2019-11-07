@@ -9,7 +9,7 @@ class DateLUTImpl;
 namespace DB
 {
 
-/** DateTime64 is same as DateTime, but it stores values as UInt64 and has configurable sub-second part.
+/** DateTime64 is same as DateTime, but it stores values as Int64 and has configurable sub-second part.
  *
  * `scale` determines number of decimal places for sub-second part of the DateTime64.
   */
