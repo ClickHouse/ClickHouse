@@ -94,7 +94,7 @@ private:
         time_t metadata_modification_time;
         CacheExpirationQueue::iterator expiration_iterator;
 
-        CachedTable() {}
+        CachedTable() = delete;
         CachedTable(const StoragePtr & table_, time_t last_touched_, time_t metadata_modification_time_)
             : table(table_), last_touched(last_touched_), metadata_modification_time(metadata_modification_time_) {}
     };

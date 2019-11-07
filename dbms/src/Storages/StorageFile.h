@@ -49,7 +49,7 @@ public:
         const std::string & format_name;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
-        Context & context;
+        const Context & context;
     };
 
 protected:
@@ -71,7 +71,7 @@ private:
     std::string table_name;
     std::string database_name;
     std::string format_name;
-    Context & context_global;
+    const Context & context_global;
 
     int table_fd = -1;
 
