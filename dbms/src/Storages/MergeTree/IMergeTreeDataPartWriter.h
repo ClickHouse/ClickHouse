@@ -68,12 +68,10 @@ public:
         const WriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
-    virtual MarkWithOffset write(
+    virtual void write(
         const Block & block, const IColumn::Permutation * permutation,
-        size_t from_mark, size_t offset, MergeTreeIndexGranularity & index_granularity,
         /* Blocks with already sorted index columns */
-        const Block & primary_key_block = {}, const Block & skip_indexes_block = {},
-        bool skip_offsets = false, const WrittenOffsetColumns & already_written_offset_columns = {}) = 0;
+        const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
 
     virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) = 0;
 
@@ -81,6 +79,14 @@ public:
 
     /// Count index_granularity for block and store in `index_granularity`
     void fillIndexGranularity(const Block & block);
+
+    const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
+
+    /// FIXME
+    MutableColumns && getIndexColumns()
+    {
+        return std::move(index_columns);
+    }
 
     void initSkipIndices();
     void initPrimaryIndex();
@@ -92,7 +98,7 @@ public:
 
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
-    using SerializationStates = std::vector<SerializationState>;
+    using SerializationStates = std::unordered_map<String, SerializationState>;
 
     String part_path;
     const MergeTreeData & storage;
@@ -103,8 +109,11 @@ protected:
 
     CompressionCodecPtr default_codec;
 
-    bool can_use_adaptive_granularity;
-    bool blocks_are_granules_size;
+    std::vector<MergeTreeIndexPtr> skip_indices;
+
+    WriterSettings settings;
+
+
     bool compute_granularity;
     bool with_final_mark;
 
@@ -118,7 +127,6 @@ protected:
     /// aggregation. I.e. it's data mark number, not skip indices mark.
     size_t skip_index_data_mark = 0;
 
-    std::vector<MergeTreeIndexPtr> skip_indices;
     std::vector<std::unique_ptr<IMergeTreeDataPartWriter::ColumnStream>> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
@@ -131,7 +139,8 @@ protected:
     /// It's written to index file in the `writeSuffixAndFinalizePart` method
     Row last_index_row;
 
-    WriterSettings settings;
+    bool data_written = false;
+
 };
 
 using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;

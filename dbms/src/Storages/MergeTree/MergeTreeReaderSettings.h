@@ -1,8 +1,10 @@
 #pragma once
-#include <cstddef>
+#include <cstddef>  
+#include <Core/Settings.h>
 
 namespace DB
 {
+
 struct ReaderSettings
 {
     size_t min_bytes_to_use_direct_io = 0;
@@ -12,22 +14,12 @@ struct ReaderSettings
 
 struct WriterSettings
 {
-    WriterSettings(const Settings & settings, bool can_use_adaptive_granularity_, bool blocks_are_granules_size_ = false)
-        : min_compress_block_size(settings.min_compress_block_size)
-        , max_compress_block_size(settings.max_compress_block_size)
-        , aio_threshold(settings.min_bytes_to_use_direct_io)
+    WriterSettings(const Settings & global_settings, bool can_use_adaptive_granularity_, bool blocks_are_granules_size_ = false)
+        : min_compress_block_size(global_settings.min_compress_block_size)
+        , max_compress_block_size(global_settings.min_compress_block_size)
+        , aio_threshold(global_settings.min_bytes_to_use_direct_io)
         , can_use_adaptive_granularity(can_use_adaptive_granularity_)
         , blocks_are_granules_size(blocks_are_granules_size_) {}
-
-    WriterSettings & setAdaptive(bool value)
-    {
-        can_use_adaptive_granularity = value;
-    }
-
-    WriterSettings & setAioThreshHold(size_t value)
-    {
-        
-    }
 
     size_t min_compress_block_size;
     size_t max_compress_block_size;

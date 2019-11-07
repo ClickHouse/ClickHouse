@@ -450,6 +450,11 @@ public:
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
 
+    std::vector<MergeTreeIndexPtr> getSkipIndices() const
+    {
+        return std::vector<MergeTreeIndexPtr>(std::begin(skip_indices), std::end(skip_indices));
+    }
+
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
 

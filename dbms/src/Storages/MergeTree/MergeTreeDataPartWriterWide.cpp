@@ -12,14 +12,14 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_, 
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const WriterSettings & settings_,
-    const ColumnToSize & merged_column_to_size)
+    const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(part_path_,
-        storage_, columns_list_,
-        marks_file_extension_,
-        default_codec_, settings_)
+        storage_, columns_list_, indices_to_recalc_,
+        marks_file_extension_, default_codec_, settings_, index_granularity_)
     , can_use_adaptive_granularity(storage_.canUseAdaptiveGranularity())
 {
     const auto & columns = storage.getColumns();
@@ -79,27 +79,31 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     };
 }
 
-IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(const Block & block, 
-    const IColumn::Permutation * permutation, size_t from_mark, size_t index_offset,
-    MergeTreeIndexGranularity & index_granularity,
-    const Block & primary_key_block, const Block & skip_indexes_block,
-    bool skip_offsets, const WrittenOffsetColumns & already_written_offset_columns)
+void MergeTreeDataPartWriterWide::write(const Block & block, 
+    const IColumn::Permutation * permutation,
+    const Block & primary_key_block, const Block & skip_indexes_block)
 {
-    if (serialization_states.empty())
-    {
-        serialization_states.reserve(columns_list.size());
-        WrittenOffsetColumns tmp_offset_columns;
-        IDataType::SerializeBinaryBulkSettings serialize_settings;
+    // if (serialization_states.empty())
+    // {
+    //     serialization_states.reserve(columns_list.size());
+    //     WrittenOffsetColumns tmp_offset_columns;
+    //     IDataType::SerializeBinaryBulkSettings serialize_settings;
 
-        for (const auto & col : columns_list)
-        {
-            serialize_settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
-            serialization_states.emplace_back(nullptr);
-            col.type->serializeBinaryBulkStatePrefix(serialize_settings, serialization_states.back());
-        }
-    }
+    //     for (const auto & col : columns_list)
+    //     {
+    //         serialize_settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
+    //         serialization_states.emplace_back(nullptr);
+    //         col.type->serializeBinaryBulkStatePrefix(serialize_settings, serialization_states.back());
+    //     }
+    // }
 
-    WrittenOffsetColumns offset_columns = already_written_offset_columns;
+    /// Fill index granularity for this block
+    /// if it's unknown (in case of insert data or horizontal merge,
+    /// but not in case of vertical merge)
+    if (compute_granularity)
+        fillIndexGranularity(block);
+
+    WrittenOffsetColumns offset_columns;
     MarkWithOffset result;
 
     auto it = columns_list.begin();
@@ -112,27 +116,25 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterWide::write(cons
             if (primary_key_block.has(it->name))
             {
                 const auto & primary_column = *primary_key_block.getByName(it->name).column;
-                result = writeColumn(column.name, *column.type, primary_column, index_granularity, offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, primary_column, offset_columns);
             }
             else if (skip_indexes_block.has(it->name))
             {
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
-                result = writeColumn(column.name, *column.type, index_column, index_granularity, offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, index_column, offset_columns);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                result = writeColumn(column.name, *column.type, *permuted_column, index_granularity, offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
+                result = writeColumn(column.name, *column.type, *permuted_column, offset_columns);
             }
         }
         else
         {
-            result = writeColumn(column.name, *column.type, *column.column, index_granularity,  offset_columns, skip_offsets, serialization_states[i], from_mark, index_offset);
+            result = writeColumn(column.name, *column.type, *column.column, offset_columns);
         }
     }
-
-    return result;
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(
@@ -210,16 +212,19 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     const String & name,
     const IDataType & type,
     const IColumn & column,
-    MergeTreeIndexGranularity & index_granularity,
     WrittenOffsetColumns & offset_columns,
-    bool skip_offsets,
-    IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-    size_t from_mark,
-    size_t index_offset)
+    bool skip_offsets)
 {
+    auto [it, inserted] = serialization_states.emplace(name, nullptr);
+    if (inserted)
+    {
+        IDataType::SerializeBinaryBulkSettings serialize_settings;
+        serialize_settings.getter = createStreamGetter(name, offset_columns, false);
+        type.serializeBinaryBulkStatePrefix(serialize_settings, it->second);
+    }
+
     std::cerr << "(writeColumn) table: " << storage.getTableName() << "\n";
     std::cerr << "(writeColumn) column: " << name << "\n";
-    std::cerr << "(writeColumn) from_mark: " << from_mark << "\n";
     std::cerr << "(writeColumn) index_offset: " << index_offset << "\n";
     auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -229,7 +234,7 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
 
     size_t total_rows = column.size();
     size_t current_row = 0;
-    size_t current_column_mark = from_mark;
+    size_t current_column_mark = current_mark;
     while (current_row < total_rows)
     {
         size_t rows_to_write;
@@ -251,13 +256,16 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
             rows_to_write = index_granularity.getMarkRows(current_column_mark);
         }
 
+        if (rows_to_write != 0)
+            data_written = true;
+
         current_row = writeSingleGranule(
             name,
             type,
             column,
             offset_columns,
             skip_offsets,
-            serialization_state,
+            it->second,
             serialize_settings,
             current_row,
             rows_to_write,
@@ -268,7 +276,6 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
             current_column_mark++;
     }
 
-    /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
@@ -300,7 +307,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
             if (!serialization_states.empty())
             {
                 serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
-                it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+                it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }
 
             if (write_final_mark)

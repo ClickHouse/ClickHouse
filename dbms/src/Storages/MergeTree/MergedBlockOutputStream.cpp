@@ -20,46 +20,30 @@ namespace ErrorCodes
 
 
 MergedBlockOutputStream::MergedBlockOutputStream(
-    const MergeTreeDataPartPtr & data_part_,
+    const MergeTreeDataPartPtr & data_part,
     const NamesAndTypesList & columns_list_,
-    CompressionCodecPtr default_codec_,
-    bool blocks_are_granules_size_)
-    : IMergedBlockOutputStream(
-        data_part_, default_codec_,
-        {
-            data_part_->storage.global_context.getSettings().min_compress_block_size,
-            data_part_->storage.global_context.getSettings().max_compress_block_size,
-            data_part_->storage.global_context.getSettings().min_bytes_to_use_direct_io
-        },
-        blocks_are_granules_size_,
-        std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)),
-        data_part_->storage.canUseAdaptiveGranularity())
+    CompressionCodecPtr default_codec,
+    bool blocks_are_granules_size)
+    : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
 { 
-    const auto & global_settings = data_part->storage.global_context.getSettings();
-    writer = data_part_->getWriter(columns_list_, default_codec_, WriterSettings(global_settings));
+    WriterSettings writer_settings(data_part->storage.global_context.getSettings(),
+        data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
+    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
 }
 
-can_use_adaptive_granularity
-index_granularity
-skip_indices
-blocks_are_granule_size
-
 MergedBlockOutputStream::MergedBlockOutputStream(
-    const MergeTreeDataPartPtr & data_part_,
+    const MergeTreeDataPartPtr & data_part,
     const NamesAndTypesList & columns_list_,
-    CompressionCodecPtr default_codec_,
+    CompressionCodecPtr default_codec,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
     size_t aio_threshold,
-    bool blocks_are_granules_size_)
-    : IMergedBlockOutputStream(
-        data_part_, default_codec_,
-        blocks_are_granules_size_,
-        std::vector<MergeTreeIndexPtr>(std::begin(data_part_->storage.skip_indices), std::end(data_part_->storage.skip_indices)),
-        data_part_->storage.canUseAdaptiveGranularity())
+    bool blocks_are_granules_size)
+    : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
 {
-    WriterSettings writer_settings(data_part->storage.global_context.getSettings());
+    WriterSettings writer_settings(data_part->storage.global_context.getSettings(),
+        data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
     writer_settings.aio_threshold = aio_threshold;
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
@@ -72,7 +56,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
-    writer = data_part_->getWriter(columns_list_, default_codec_, writer_settings);
+    writer = data_part->getWriter(columns_list,
+        data_part->storage.getSkipIndices(), default_codec, writer_settings);
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -111,8 +96,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    bool write_final_mark = (with_final_mark && rows_count != 0);
-    writer->finalize(checksums, write_final_mark);
+    bool write_final_mark = true; /// FIXME
+    writer->finishDataSerialization(checksums, write_final_mark);
     writer->finishPrimaryIndexSerialization(checksums, write_final_mark);
     writer->finishSkipIndicesSerialization(checksums);
 
@@ -161,10 +146,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
     new_part->columns = *total_column_list;
+    /// FIXME
+    auto index_columns = writer->getIndexColumns();
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     new_part->checksums = checksums;
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
-    new_part->index_granularity = index_granularity;
+    new_part->index_granularity = writer->getIndexGranularity();
 }
 
 void MergedBlockOutputStream::init()
@@ -178,12 +165,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     size_t rows = block.rows();
     if (!rows)
         return;
-
-    /// Fill index granularity for this block
-    /// if it's unknown (in case of insert data or horizontal merge,
-    /// but not in case of vertical merge)
-    if (compute_granularity)
-        fillIndexGranularity(block);
 
     Block primary_key_block;
     Block skip_indexes_block;
@@ -222,9 +203,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
-    writer->write(block, permutation, current_mark, index_offset, index_granularity, primary_key_block, skip_indexes_block);
+    writer->write(block, permutation, primary_key_block, skip_indexes_block);
     writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
-    writer->calculateAndSerializePrimaryIndex(primary_index_block);
+    writer->calculateAndSerializePrimaryIndex(primary_key_block, rows);
     writer->next();
 
     rows_count += rows;

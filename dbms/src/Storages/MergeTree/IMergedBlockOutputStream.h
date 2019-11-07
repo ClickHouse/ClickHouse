@@ -17,14 +17,14 @@ class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part,
-        CompressionCodecPtr codec_,
-        const WriterSettings & writer_settings_,
-        bool blocks_are_granules_size_,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        bool can_use_adaptive_granularity_);
+        const MergeTreeDataPartPtr & data_part);
 
     using WrittenOffsetColumns = std::set<std::string>;
+
+    const MergeTreeIndexGranularity & getIndexGranularity()
+    {
+        return writer->getIndexGranularity();
+    }
 
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
@@ -35,13 +35,10 @@ protected:
 protected:
     const MergeTreeData & storage;
 
-    SerializationStates serialization_states;
     String part_path;
 
     /// The offset to the first row of the block for which you want to write the index.
     // size_t index_offset = 0;
-
-    WriterSettings writer_settings;
 
     // size_t current_mark = 0;
 
@@ -56,7 +53,6 @@ protected:
     // MergeTreeIndexGranularity index_granularity;
 
     // const bool compute_granularity;
-    CompressionCodecPtr codec;
 
     // std::vector<MergeTreeIndexPtr> skip_indices;
     // std::vector<std::unique_ptr<IMergeTreeDataPartWriter::ColumnStream>> skip_indices_streams;
@@ -65,7 +61,7 @@ protected:
 
     MergeTreeWriterPtr writer;
 
-    const bool with_final_mark;
+    // const bool with_final_mark;
 };
 
 }

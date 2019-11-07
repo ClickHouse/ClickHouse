@@ -70,13 +70,13 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     : part_path(part_path_)
     , storage(storage_)
     , columns_list(columns_list_)
-    , skip_indices(indices_to_recalc_)
     , marks_file_extension(marks_file_extension_)
-    , default_codec(default_codec_)
-    , settings(settings_)
     , index_granularity(index_granularity_)
-    , compute_granularity(index_granularity.empty)
-    , with_final_mark(storage.getSettings()->write_final_mark && can_use_adaptive_granularity)
+    , default_codec(default_codec_)
+    , skip_indices(indices_to_recalc_)
+    , settings(settings_)
+    , compute_granularity(index_granularity.empty())
+    , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
@@ -314,8 +314,8 @@ void IMergeTreeDataPartWriter::finishSkipIndicesSerialization(
         stream->finalize();
         stream->addToChecksums(checksums);
     }
-    skip_indices_streams.clear();
 
+    skip_indices_streams.clear();
     skip_indices_aggregators.clear();
     skip_index_filling.clear();
 }

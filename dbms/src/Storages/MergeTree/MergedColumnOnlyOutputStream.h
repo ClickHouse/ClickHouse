@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 
 namespace DB
 {
@@ -35,6 +36,8 @@ private:
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns & already_written_offset_columns;
+
+    MergeTreeDataPartWriterWide * writer_wide;
 };
 
 
