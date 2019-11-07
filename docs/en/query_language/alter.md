@@ -369,7 +369,7 @@ ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_n
 The `ALTER TABLE t MOVE` query:
 
 - Not replicated, because different replicas can have different storage policies.
-- Returns an error if the configuration contains nonexistent disk or volume. The query also returns an error if the conditions of data moving, that specified in the storage policy, can't be applied.
+- Returns an error if the specified disk or volume is not configured. Query also returns an error if conditions of data moving, that specified in the storage policy, can't be applied.
 - Can return an error in the case, when data to be moved is already moved by a background process, concurrent `ALTER TABLE t MOVE` query or as a result of background data merging. A user shouldn't perform any additional actions in this case.
 
 Example:
