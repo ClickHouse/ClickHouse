@@ -28,7 +28,7 @@ class CustomExecutors
 {
 public:
     using Configuration = Poco::Util::AbstractConfiguration;
-    CustomExecutors(const Configuration & config, const Settings & settings, const String & config_prefix = "CustomHTTP");
+    CustomExecutors(const Configuration & config, const Settings & settings, const String & config_prefix = "custom_http");
 
     CustomExecutors(const CustomExecutors &) = delete;
     CustomExecutors & operator=(const CustomExecutors &) = delete;
@@ -36,7 +36,7 @@ public:
     using QueryExecutorCreator = std::function<CustomQueryExecutorPtr(const Configuration &, const String &)>;
     void registerQueryExecutor(const String & query_executor_name, const QueryExecutorCreator & creator);
 
-    using CustomMatcherCreator = const std::function<CustomExecutorMatcherPtr(const Configuration &, const String &)>;
+    using CustomMatcherCreator = std::function<CustomExecutorMatcherPtr(const Configuration &, const String &)>;
     void registerCustomMatcher(const String & matcher_name, const CustomMatcherCreator & creator);
 
     void updateCustomExecutors(const Configuration & config, const Settings & settings, const String & config_prefix);
@@ -49,6 +49,9 @@ private:
     std::unordered_map<String, CustomMatcherCreator> custom_matcher_creators;
 
     CustomExecutorPtr createCustomExecutor(const Configuration & config, const String & config_prefix);
+
+    void checkCustomMatchersAndQueryExecutors(std::vector<CustomExecutorMatcherPtr> & matchers, std::vector<CustomQueryExecutorPtr> & query_executors);
+
 };
 
 class CustomExecutor

@@ -9,6 +9,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int DUPLICATE_CUSTOM_EXECUTOR;
+    extern const int TOO_MANY_INPUT_CUSTOM_EXECUTOR;
 }
 
 bool CustomExecutor::match(Context & context, HTTPRequest & request, HTMLForm & params) const
@@ -69,7 +71,7 @@ static CustomExecutorPtr createDefaultCustomExecutor()
     return std::make_shared<CustomExecutor>(custom_matchers, custom_query_executors);
 }
 
-void CustomExecutors::updateCustomExecutors(const Configuration & config, const Settings & settings, const String & config_prefix)
+void CustomExecutors::updateCustomExecutors(const Configuration & config, const Settings & /*settings*/, const String & config_prefix)
 {
     Configuration::Keys custom_executors_keys;
     config.keys(config_prefix, custom_executors_keys);
@@ -82,6 +84,11 @@ void CustomExecutors::updateCustomExecutors(const Configuration & config, const 
             throw Exception("CustomExecutor cannot be 'Default'.", ErrorCodes::SYNTAX_ERROR);
         else if (custom_executor_key.find('.') != String::npos)
             throw Exception("CustomExecutor names with dots are not supported: '" + custom_executor_key + "'", ErrorCodes::SYNTAX_ERROR);
+
+        const auto & exists_executor = [&](auto & ele) { return ele.first == custom_executor_key; };
+        if (std::count_if(new_custom_executors.begin(), new_custom_executors.end(), exists_executor))
+            throw Exception("CustomExecutor name '" + custom_executor_key + "' already exists in system.",
+                            ErrorCodes::DUPLICATE_CUSTOM_EXECUTOR);
 
         new_custom_executors.push_back(
             std::make_pair(custom_executor_key, createCustomExecutor(config, config_prefix + "." + custom_executor_key)));
@@ -146,10 +153,21 @@ CustomExecutorPtr CustomExecutors::createCustomExecutor(const Configuration & co
             custom_query_executors.push_back(query_executor_creator_it->second(config, config_prefix + "." + matcher_or_query_executor_type));
     }
 
-    for (const auto & custom_executor_matcher : custom_executor_matchers)
-        custom_executor_matcher->checkQueryExecutor(custom_query_executors);
-
+    checkCustomMatchersAndQueryExecutors(custom_executor_matchers, custom_query_executors);
     return std::make_shared<CustomExecutor>(custom_executor_matchers, custom_query_executors);
+}
+
+void CustomExecutors::checkCustomMatchersAndQueryExecutors(
+    std::vector<CustomExecutorMatcherPtr> & matchers, std::vector<CustomQueryExecutorPtr> & query_executors)
+{
+    const auto & sum_func = [&](auto & ele) { return !ele->canBeParseRequestBody(); };
+    const auto & need_post_data_count = std::count_if(query_executors.begin(), query_executors.end(), sum_func);
+
+    if (need_post_data_count > 1)
+        throw Exception("The CustomExecutor can only contain one insert query.", ErrorCodes::TOO_MANY_INPUT_CUSTOM_EXECUTOR);
+
+    for (const auto & matcher : matchers)
+        matcher->checkQueryExecutors(query_executors);
 }
 
 std::pair<String, CustomExecutorPtr> CustomExecutors::getCustomExecutor(Context & context, Poco::Net::HTTPServerRequest & request, HTMLForm & params) const
@@ -165,8 +183,14 @@ std::pair<String, CustomExecutorPtr> CustomExecutors::getCustomExecutor(Context 
 
 CustomExecutors::CustomExecutors(const Configuration & config, const Settings & settings, const String & config_prefix)
 {
-    registerCustomMatcher("URL", [&](const auto & config, const auto & prefix)
-        { return std::make_shared<HTTPURLCustomExecutorMatcher>(config, prefix); });
+    registerCustomMatcher("URL", [&](const auto & matcher_config, const auto & prefix)
+        { return std::make_shared<HTTPURLCustomExecutorMatcher>(matcher_config, prefix); });
+
+    registerCustomMatcher("method", [&](const auto & matcher_config, const auto & prefix)
+        { return std::make_shared<HTTPMethodCustomExecutorMatcher>(matcher_config, prefix); });
+
+    registerQueryExecutor("query", [&](const auto & matcher_config, const auto & prefix)
+        { return std::make_shared<ConstQueryCustomQueryExecutor>(matcher_config, prefix); });
 
     updateCustomExecutors(config, settings, config_prefix);
 }

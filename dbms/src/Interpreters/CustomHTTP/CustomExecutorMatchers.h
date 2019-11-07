@@ -22,7 +22,7 @@ class CustomExecutorMatcher
 public:
     virtual ~CustomExecutorMatcher() = default;
 
-    virtual bool checkQueryExecutor(const std::vector<CustomQueryExecutorPtr> & check_executors) const = 0;
+    virtual bool checkQueryExecutors(const std::vector<CustomQueryExecutorPtr> &check_executors) const = 0;
 
     virtual bool match(Context & context, Poco::Net::HTTPServerRequest & request, HTMLForm & params) const = 0;
 };
@@ -33,63 +33,88 @@ using CustomExecutorMatcherPtr = std::shared_ptr<CustomExecutorMatcher>;
 class AlwaysMatchedCustomExecutorMatcher : public CustomExecutorMatcher
 {
 public:
-    bool checkQueryExecutor(const std::vector<CustomQueryExecutorPtr> & /*check_executors*/) const override { return true; }
+    bool checkQueryExecutors(const std::vector<CustomQueryExecutorPtr> & /*check_executors*/) const override { return true; }
 
     bool match(Context & /*context*/, Poco::Net::HTTPServerRequest & /*request*/, HTMLForm & /*params*/) const override { return true; }
+};
+
+class HTTPMethodCustomExecutorMatcher : public CustomExecutorMatcher
+{
+public:
+
+    HTTPMethodCustomExecutorMatcher(const Poco::Util::AbstractConfiguration & configuration, const String & method_config_key)
+    {
+        match_method = Poco::toLower(configuration.getString(method_config_key));
+    }
+
+    bool checkQueryExecutors(const std::vector<CustomQueryExecutorPtr> & /*check_executors*/) const override { return true; }
+
+    bool match(Context & /*context*/, Poco::Net::HTTPServerRequest & request, HTMLForm & /*params*/) const override
+    {
+        return Poco::toLower(request.getMethod()) == match_method;
+    }
+
+private:
+    String match_method;
 };
 
 class HTTPURLCustomExecutorMatcher : public CustomExecutorMatcher
 {
 public:
     HTTPURLCustomExecutorMatcher(const Poco::Util::AbstractConfiguration & configuration, const String & url_config_key)
-        : url_match_searcher(analyzeURLPatten(configuration.getString(url_config_key, ""), params_name_extract_from_url))
     {
+        regex_matcher = std::make_unique<re2_st::RE2>(configuration.getString(url_config_key));
     }
 
-    bool checkQueryExecutor(const std::vector<CustomQueryExecutorPtr> & custom_query_executors) const override
+    bool checkQueryExecutors(const std::vector<CustomQueryExecutorPtr> & custom_query_executors) const override
     {
-        for (const auto & param_name_from_url : params_name_extract_from_url)
-        {
-            bool found_param_name = false;
-            for (const auto & custom_query_executor : custom_query_executors)
-            {
-                if (custom_query_executor->isQueryParam(param_name_from_url))
-                {
-                    found_param_name = true;
-                    break;
-                }
-            }
-
-            if (!found_param_name)
-                throw Exception("The param name '" + param_name_from_url + "' is uselessed.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        }
+        for (const auto & named_capturing_group : regex_matcher->NamedCapturingGroups())
+            if (!checkQueryExecutors(named_capturing_group.first, custom_query_executors))
+                throw Exception("The param name '" + named_capturing_group.first + "' is uselessed.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return true;
     }
 
-    bool match(Context & /*context*/, Poco::Net::HTTPServerRequest & request, HTMLForm & /*params*/) const override
+    bool match(Context & context, Poco::Net::HTTPServerRequest & request, HTMLForm & /*params*/) const override
     {
         const String request_uri = request.getURI();
-        re2_st::StringPiece query_params_matches[params_name_extract_from_url.size()];
+        int num_captures = regex_matcher->NumberOfCapturingGroups() + 1;
 
-//        re2_st::StringPiece input;
-//        if (url_match_searcher.Match(input, start_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, query_params_matches, num_captures))
-//        {
-//
-//        }
+        re2_st::StringPiece matches[num_captures];
+        re2_st::StringPiece input(request_uri.data(), request_uri.size());
+        if (regex_matcher->Match(input, 0, request_uri.size(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
+        {
+            const auto & full_match = matches[0];
+            const char * url_end = request_uri.data() + request_uri.size();
+            const char * not_matched_begin = request_uri.data() + full_match.size();
+
+            if (not_matched_begin != url_end && *not_matched_begin == '/')
+                ++not_matched_begin;
+
+            if (not_matched_begin == url_end || *not_matched_begin == '?')
+            {
+                for (const auto & named_capturing_group : regex_matcher->NamedCapturingGroups())
+                {
+                    const auto & capturing_value = matches[named_capturing_group.second];
+                    context.setQueryParameter(named_capturing_group.first, String(capturing_value.data(), capturing_value.size()));
+                }
+
+                return true;
+            }
+        }
         return false;
     }
 
 private:
-    re2_st::RE2 url_match_searcher;
-    std::vector<String> params_name_extract_from_url;
+    std::unique_ptr<re2_st::RE2> regex_matcher;
 
-    String analyzeURLPatten(const String & /*url_patten*/, std::vector<String> & /*matches*/)
+    bool checkQueryExecutors(const String & param_name, const std::vector<CustomQueryExecutorPtr> & custom_query_executors) const
     {
-        return ".+";
-        /// TODO: first we replace all capture group
-        /// TODO: second we replace all ${identifier}
+        for (const auto & custom_query_executor : custom_query_executors)
+            if (custom_query_executor->isQueryParam(param_name))
+                return true;
+
+        return false;
     }
 };
 

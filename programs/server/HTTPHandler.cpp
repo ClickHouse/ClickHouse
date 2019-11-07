@@ -267,10 +267,14 @@ void HTTPHandler::trySendExceptionToClient(
                 && !request.stream().eof() && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
             request.stream().ignore(std::numeric_limits<std::streamsize>::max());
 
-        if (exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD ||
-            exception_code == ErrorCodes::REQUIRED_PASSWORD || exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
+        if (exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD
+            || exception_code == ErrorCodes::REQUIRED_PASSWORD || exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
-            response.requireAuthentication("ClickHouse server HTTP API");
+            if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
+                response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
+            else
+                response.requireAuthentication("ClickHouse server HTTP API");
+
             response.send() << message << std::endl;
         }
         else

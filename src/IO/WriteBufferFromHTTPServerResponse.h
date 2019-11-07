@@ -87,6 +87,8 @@ private:
     /// This method finish headers with \r\n, allowing to start to send body.
     void finishSendHeaders();
 
+    void choiceSendEncode();
+
     void nextImpl() override;
 
 public:
