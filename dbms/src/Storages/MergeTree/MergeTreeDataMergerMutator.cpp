@@ -991,10 +991,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
-        WriterSettings writer_settings;
-        auto part_writer = new_data_part->getWriter(all_columns, compression_codec, blocks_are_granules_size, )
-
-        MergedBlockOutputStream out(new_data_part, all_columns, compression_codec);
+        MergedBlockOutputStream out{
+            new_data_part,
+            all_columns,
+            compression_codec};
 
         in->readPrefix();
         out.writePrefix();

@@ -60,8 +60,10 @@ public:
     
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
-        const CompressionCodecPtr & default_codec,
-        const WriterSettings & writer_settings) const override;
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const CompressionCodecPtr & default_codec_,
+        const WriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity = {}) const override;
 
     bool isStoredOnDisk() const override { return true; }
 

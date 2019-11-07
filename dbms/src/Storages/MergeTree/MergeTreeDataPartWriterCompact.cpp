@@ -14,13 +14,15 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const String & part_path_,
     const MergeTreeData & storage_,
     const NamesAndTypesList & columns_list_,
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_, 
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const WriterSettings & settings_)
+    const WriterSettings & settings_,
+    const MergeTreeIndexGranularity & index_granularity_)
 : IMergeTreeDataPartWriter(part_path_,
     storage_, columns_list_,
-    marks_file_extension_,
-    default_codec_, settings_)
+    indices_to_recalc_, marks_file_extension_,
+    default_codec_, settings_, index_granularity_)
 {
     stream = std::make_unique<ColumnStream>(
         DATA_FILE_NAME,
@@ -32,19 +34,19 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         settings.aio_threshold);
 }
 
-IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
+void MergeTreeDataPartWriterCompact::write(
     const Block & block, const IColumn::Permutation * permutation,
-    size_t from_mark, size_t index_offset,
-    MergeTreeIndexGranularity & index_granularity,
-    const Block & primary_key_block, const Block & skip_indexes_block,
-    bool skip_offsets, const WrittenOffsetColumns & already_written_offset_columns)
+    const Block & primary_key_block, const Block & skip_indexes_block)
 {
-    UNUSED(skip_offsets);
-    UNUSED(already_written_offset_columns);
-
     size_t total_rows = block.rows();  
-    size_t current_mark = from_mark;
+    size_t from_mark = current_mark;
     size_t current_row = 0;
+
+    /// Fill index granularity for this block
+    /// if it's unknown (in case of insert data or horizontal merge,
+    /// but not in case of vertical merge)
+    if (compute_granularity)
+        fillIndexGranularity(block);
 
     ColumnsWithTypeAndName columns_to_write(columns_list.size());
     auto it = columns_list.begin();
@@ -68,8 +70,6 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
 
     std::cerr << "(MergeTreeDataPartWriterCompact::write) total_rows: " << total_rows << "\n";
 
-    UNUSED(index_offset);
-
     while (current_row < total_rows)
     {
         std::cerr << "(MergeTreeDataPartWriterCompact::write) current_row: " << current_row << "\n";
@@ -78,6 +78,9 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
         // size_t rows_to_write = std::min(total_rows, index_granularity.getMarkRows(current_mark));
         size_t rows_to_write = total_rows;
         index_granularity.appendMark(total_rows);
+
+        if (rows_to_write)
+            data_written = true;
 
         // if (current_row == 0 && index_offset != 0)
         // {
@@ -106,7 +109,7 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
                 writeIntBinary(stream->compressed.offset(), stream->marks);
                 next_row = writeColumnSingleGranule(columns_to_write[i], current_row, rows_to_write);
             }
-            ++current_mark;
+            ++from_mark;
         }
         else
         {
@@ -117,7 +120,8 @@ IMergeTreeDataPartWriter::MarkWithOffset MergeTreeDataPartWriterCompact::write(
         current_row = next_row;
     }
 
-    return {current_mark, total_rows - current_row};
+    next_mark = from_mark;
+    next_index_offset = total_rows - current_row;
 }
 
 size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTypeAndName & column, size_t from_row, size_t number_of_rows)
@@ -140,9 +144,11 @@ size_t MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWith
     return from_row + number_of_rows;
 }
 
-void MergeTreeDataPartWriterCompact::finalize(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
+void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync)
 {
-    if (write_final_mark)
+    UNUSED(write_final_mark);
+
+    if (with_final_mark && data_written)
     {
         writeIntBinary(0ULL, stream->marks);
         for (size_t i = 0; i < columns_list.size(); ++i)

@@ -13,16 +13,14 @@ public:
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc, 
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const WriterSettings & settings,
-        const ColumnToSize & merged_column_to_size = {});
+        const MergeTreeIndexGranularity & index_granularity);
 
-    MarkWithOffset write(const Block & block, const IColumn::Permutation * permutation,
-        size_t from_mark, size_t index_offset, 
-        MergeTreeIndexGranularity & index_granularity,
-        const Block & primary_key_block = {}, const Block & skip_indexes_block = {},
-        bool skip_offsets = false, const WrittenOffsetColumns & already_written_offset_columns = {}) override;
+    void write(const Block & block, const IColumn::Permutation * permutation,
+        const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) override;
 
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool write_final_mark, bool sync = false) override;
 
@@ -35,12 +33,8 @@ public:
         const String & name,
         const IDataType & type,
         const IColumn & column,
-        MergeTreeIndexGranularity & index_granularity,
         WrittenOffsetColumns & offset_columns,
-        bool skip_offsets,
-        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
-        size_t from_mark,
-        size_t index_offset);
+        bool skip_offsets = false);
 
 private:
     /// Write single granule of one column (rows between 2 marks)
