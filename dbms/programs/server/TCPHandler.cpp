@@ -463,6 +463,9 @@ void TCPHandler::processOrdinaryQuery()
               */
             if (!block && !isQueryCancelled())
             {
+                /// Wait till inner thread finish to avoid possible race with getTotals.
+                async_in.waitInnerThread();
+
                 sendTotals(state.io.in->getTotals());
                 sendExtremes(state.io.in->getExtremes());
                 sendProfileInfo(state.io.in->getProfileInfo());
