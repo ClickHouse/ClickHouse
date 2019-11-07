@@ -99,7 +99,7 @@ void registerStorageJoin(StorageFactory & factory)
         const String strictness_str = Poco::toLower(*opt_strictness_id);
         ASTTableJoin::Strictness strictness;
         if (strictness_str == "any")
-            strictness = ASTTableJoin::Strictness::Any;
+            strictness = ASTTableJoin::Strictness::RightAny;
         else if (strictness_str == "all")
             strictness = ASTTableJoin::Strictness::All;
         else
@@ -329,7 +329,7 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
+            if constexpr (STRICTNESS == ASTTableJoin::Strictness::RightAny)
             {
                 for (size_t j = 0; j < columns.size(); ++j)
                     if (j == key_pos)
@@ -337,6 +337,11 @@ private:
                     else
                         columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
                 ++rows_added;
+            }
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
+            {
+                throw Exception("New ANY join storage is not implemented yet (set any_join_distinct_right_table_keys=1 to use old one)",
+                                ErrorCodes::NOT_IMPLEMENTED);
             }
             else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
             {

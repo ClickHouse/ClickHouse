@@ -45,6 +45,16 @@ struct WithFlags<T, true> : T
     mutable std::atomic<bool> used {};
     void setUsed() const { used.store(true, std::memory_order_relaxed); }    /// Could be set simultaneously from different threads.
     bool getUsed() const { return used; }
+
+    bool setUsedOnce() const
+    {
+        /// fast check to prevent heavy CAS with seq_cst order
+        if (used.load(std::memory_order_relaxed))
+            return false;
+
+        bool expected = false;
+        return used.compare_exchange_strong(expected, true);
+    }
 };
 
 template <typename T>
@@ -55,13 +65,14 @@ struct WithFlags<T, false> : T
 
     void setUsed() const {}
     bool getUsed() const { return true; }
+    bool setUsedOnce() const { return true; }
 };
 
-using MappedAny =       WithFlags<RowRef, false>;
-using MappedAll =       WithFlags<RowRefList, false>;
-using MappedAnyFull =   WithFlags<RowRef, true>;
-using MappedAllFull =   WithFlags<RowRefList, true>;
-using MappedAsof =      WithFlags<AsofRowRefs, false>;
+using MappedOne =        WithFlags<RowRef, false>;
+using MappedAll =        WithFlags<RowRefList, false>;
+using MappedOneFlagged = WithFlags<RowRef, true>;
+using MappedAllFlagged = WithFlags<RowRefList, true>;
+using MappedAsof =       WithFlags<AsofRowRefs, false>;
 
 }
 
@@ -265,13 +276,13 @@ public:
         }
     };
 
-    using MapsAny =             MapsTemplate<JoinStuff::MappedAny>;
+    using MapsOne =             MapsTemplate<JoinStuff::MappedOne>;
     using MapsAll =             MapsTemplate<JoinStuff::MappedAll>;
-    using MapsAnyFull =         MapsTemplate<JoinStuff::MappedAnyFull>;
-    using MapsAllFull =         MapsTemplate<JoinStuff::MappedAllFull>;
+    using MapsOneFlagged =      MapsTemplate<JoinStuff::MappedOneFlagged>;
+    using MapsAllFlagged =      MapsTemplate<JoinStuff::MappedAllFlagged>;
     using MapsAsof =            MapsTemplate<JoinStuff::MappedAsof>;
 
-    using MapsVariant = std::variant<MapsAny, MapsAll, MapsAnyFull, MapsAllFull, MapsAsof>;
+    using MapsVariant = std::variant<MapsOne, MapsAll, MapsOneFlagged, MapsAllFlagged, MapsAsof>;
 
 private:
     friend class NonJoinedBlockInputStream;

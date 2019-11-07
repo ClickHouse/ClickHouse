@@ -140,6 +140,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
         {
             case Strictness::Unspecified:
                 break;
+            case Strictness::RightAny:
             case Strictness::Any:
                 settings.ostr << "ANY ";
                 break;
