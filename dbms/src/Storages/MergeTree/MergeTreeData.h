@@ -635,7 +635,7 @@ public:
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
 
-    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(
+    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix, const MergeTreePartInfo & dst_part_info);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
@@ -678,7 +678,7 @@ public:
 
     MergeTreeDataFormatVersion format_version;
 
-    Context global_context;
+    Context & global_context;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;

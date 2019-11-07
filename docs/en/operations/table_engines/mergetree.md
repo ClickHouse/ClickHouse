@@ -79,8 +79,8 @@ For a description of parameters, see the [CREATE query description](../../query_
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
-    - `index_granularity_bytes` — Maximum size of data granule in bytes. Default value: 10Mb. To restrict the size of granule only by number of rows set 0 (not recommended). See [Data Storage](#mergetree-data-storage).
-    - `enable_mixed_granularity_parts` — Enables or disables transition to controlling the granule size with the `index_granularity_bytes` setting. Before the version 19.11 there was the only `index_granularity` setting for the granule size restriction. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from the tables with big rows (tens and hundreds of megabytes). So if you have tables with big rows, you can turn the setting on for the tables to get better efficiency of your `SELECT` queries.
+    - `index_granularity_bytes` — Maximum size of data granules in bytes. Default value: 10Mb. To restrict the granule size only by number of rows, set to 0 (not recommended). See [Data Storage](#mergetree-data-storage).
+    - `enable_mixed_granularity_parts` — Enables or disables transitioning to control the granule size with the `index_granularity_bytes` setting. Before version 19.11, there was only the `index_granularity` setting for restricting granule size. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from tables with big rows (tens and hundreds of megabytes). If you have tables with big rows, you can enable this setting for the tables to improve the efficiency of `SELECT` queries.
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in "Server configuration parameters".
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
     <a name="mergetree_setting-merge_with_ttl_timeout"></a>
@@ -139,9 +139,9 @@ When data is inserted in a table, separate data parts are created and each of th
 
 Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged. The merge mechanism does not guarantee that all rows with the same primary key will be in the same data part.
 
-Each data part is logically divided by granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse doesn't split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for this row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it is in the primary key or not, ClickHouse also stores the same marks. These marks allow finding the data directly in the columns.
+Each data part is logically divided into granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse doesn't split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for the row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it's in the primary key or not, ClickHouse also stores the same marks. These marks let you find data directly in column files.
 
-The size of a granule is restricted by the `index_granularity` and `index_granularity_bytes` settings of the table engine. The number of rows in granule lays in the `[1, index_granularity]` range, depending on the size of rows. The size of a granule can exceed `index_granularity_bytes` if the size of the single row is greater than the value of the setting. In this case, the size of the granule equals the size of the row.
+The granule size is restricted by the `index_granularity` and `index_granularity_bytes` settings of the table engine. The number of rows in a granule lays in the `[1, index_granularity]` range, depending on the size of the rows. The size of a granule can exceed `index_granularity_bytes` if the size of a single row is greater than the value of the setting. In this case, the size of the granule equals the size of the row.
 
 ## Primary Keys and Indexes in Queries {#primary-keys-and-indexes-in-queries}
 
@@ -166,7 +166,7 @@ The examples above show that it is always more effective to use an index than a 
 
 A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read.
 
-Sparse indexes allow you to work with a very large number of table rows, because such indexes fit the computer's RAM in the very most cases.
+Sparse indexes allow you to work with a very large number of table rows, because in most cases, such indexes fit in the computer's RAM.
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
@@ -177,7 +177,7 @@ The number of columns in the primary key is not explicitly limited. Depending on
 - Improve the performance of an index.
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
-    
+
     - There are queries with a condition on column `c`.
     - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 

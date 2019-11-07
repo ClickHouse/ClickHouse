@@ -580,11 +580,9 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## remote_servers
+## remote_servers {#server_settings_remote_servers}
 
-Конфигурация кластеров, которые использует движок таблиц Distributed.
-
-Пример настройки смотрите в разделе "[Движки таблиц/Distributed](../../operations/table_engines/distributed.md)".
+Конфигурация кластеров, которые использует движок таблиц [Distributed](../../operations/table_engines/distributed.md) и табличная функция `cluster`.
 
 **Пример**
 
@@ -595,6 +593,9 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../configuration_files.md#configuration_files)".
 
 
+**Смотрите также**
+
+ - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
 ## timezone
 

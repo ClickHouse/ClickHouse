@@ -15,6 +15,7 @@
 #include <DataStreams/DistinctBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/TotalsHavingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
@@ -26,7 +27,6 @@
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -384,6 +384,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
         }
 
+        if (!options.only_analyze && storage && filter_info && query.prewhere())
+            throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
+
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
     };
@@ -393,18 +396,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool need_analyze_again = false;
     if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
     {
-        auto constant = std::make_shared<ASTLiteral>(0u);
         if (analysis_result.prewhere_constant_filter_description.always_true)
-            constant->value = 1u;
-        query.setExpression(ASTSelectQuery::Expression::PREWHERE, constant);
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+        else
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
     if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
     {
-        auto constant = std::make_shared<ASTLiteral>(0u);
         if (analysis_result.where_constant_filter_description.always_true)
-            constant->value = 1u;
-        query.setExpression(ASTSelectQuery::Expression::WHERE, constant);
+            query.setExpression(ASTSelectQuery::Expression::WHERE, {});
+        else
+            query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
     if (need_analyze_again)
@@ -1035,9 +1038,6 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         else
             pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
 
-        if (storage && expressions.filter_info && expressions.prewhere_info)
-            throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
-
         if (expressions.prewhere_info)
         {
             if constexpr (pipeline_with_processors)
@@ -1179,7 +1179,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
                 if (JoinPtr join = expressions.before_join->getTableJoinAlgo())
                 {
-                    if (auto stream = join->createStreamWithNonJoinedRows(header_before_join, settings.max_block_size))
+                    Block join_result_sample = ExpressionBlockInputStream(
+                        std::make_shared<OneBlockInputStream>(header_before_join), expressions.before_join).getHeader();
+
+                    if (auto stream = join->createStreamWithNonJoinedRows(join_result_sample, settings.max_block_size))
                     {
                         if constexpr (pipeline_with_processors)
                         {
