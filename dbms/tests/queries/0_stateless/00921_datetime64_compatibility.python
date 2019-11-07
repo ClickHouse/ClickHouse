@@ -178,19 +178,15 @@ def escape_string(s):
 def execute_functions_for_types(functions, types):
     # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
     for func in functions:
-        print("""SELECT 'SELECT {func}'""".format(func=escape_string(func)))    # for debug only
+        print("""SELECT 'SELECT {func}';""".format(func=escape_string(func)))
         for dt in types:
             prologue = "\
 WITH \
 toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, \
 toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, \
 toDate('2019-09-16') as D, {X} as N".format(X=dt)
-            # dt64 = func.format(datetime=dt)
-            # f = "'values match:', ({dt32}) == ({dt64}), 'types match:', toTypeName({dt32}) == toTypeName({dt64})".format(dt32=dt32, dt64=dt64)
-            print("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV""".format(prologue=prologue, func=func))
-            # print("""SELECT toTypeName(r), {dt64} as r""".format(dt64=dt64)) # for debug only
-    #        print("""SELECT {f};""".format(f=f))
-        print("""SELECT '------------------------------------------'""") # for debug only
+            print("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV;""".format(prologue=prologue, func=func))
+        print("""SELECT '------------------------------------------';""")
 
 def main():
     def parse_args():
