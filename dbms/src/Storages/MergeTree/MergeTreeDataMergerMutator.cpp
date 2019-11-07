@@ -943,9 +943,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                             command.partition, context_for_reading);
             });
 
-    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
 
-    if (!mutations_interpreter.isStorageTouchedByMutations())
+    if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
@@ -973,6 +972,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     Poco::File(new_part_tmp_path).createDirectories();
 
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
     auto in = mutations_interpreter.execute(table_lock_holder);
     const auto & updated_header = mutations_interpreter.getUpdatedHeader();
 
