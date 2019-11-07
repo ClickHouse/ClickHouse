@@ -934,7 +934,7 @@ public:
         else
         {
             UInt8 timezone_arg_position = 1;
-            UInt32 scale = DataTypeDateTime64::default_scale;
+            UInt32 scale [[maybe_unused]] = DataTypeDateTime64::default_scale;
 
             // DateTime64 requires more arguments: scale and timezone. Since timezone is optional, scale should be first.
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
