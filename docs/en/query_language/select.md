@@ -964,7 +964,7 @@ External sorting works much less effectively than sorting in RAM.
 
 ### SELECT Clause {#select-select}
 
-[Expressions](syntax.md#syntax-expressions) specified in the `SELECT` clause are analyzed after the calculations for all the clauses that described above in this text. More specifically, expressions above the aggregate functions are analyzed, provided there are aggregate functions. The aggregate functions and everything below them are calculated during aggregation (`GROUP BY`). These expressions work as if they were applied to separate rows in the result.
+[Expressions](syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](#select-group-by-clause) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
