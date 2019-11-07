@@ -128,10 +128,37 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
 SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
 
+
+DROP TABLE IF EXISTS bitmap_column_expr_test3;
+CREATE TABLE bitmap_column_expr_test3
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32),
+    replace Nested (
+        from UInt32,
+        to UInt32
+    )
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+DROP TABLE IF EXISTS numbers10;
+CREATE VIEW numbers10 AS SELECT number FROM system.numbers LIMIT 10;
+
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag1', groupBitmapState(toUInt32(number)), cast([] as Array(UInt32)), cast([] as Array(UInt32)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag2', groupBitmapState(toUInt32(number)), cast([0] as Array(UInt32)), cast([2] as Array(UInt32)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag3', groupBitmapState(toUInt32(number)), cast([0,7] as Array(UInt32)), cast([3,101] as Array(UInt32)) FROM numbers10;
+INSERT INTO bitmap_column_expr_test3(tag_id, z, replace.from, replace.to) SELECT 'tag4', groupBitmapState(toUInt32(number)), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)) FROM numbers10;
+
+SELECT tag_id, bitmapToArray(z), replace.from, replace.to, bitmapToArray(bitmapTransform(z, replace.from, replace.to)) FROM bitmap_column_expr_test3 ORDER BY tag_id;
+
+
 DROP TABLE IF EXISTS bitmap_test;
 DROP TABLE IF EXISTS bitmap_state_test;
 DROP TABLE IF EXISTS bitmap_column_expr_test;
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
+DROP TABLE IF EXISTS numbers10;
+DROP TABLE IF EXISTS bitmap_column_expr_test3;
 
 -- bitmapHasAny:
 ---- Empty

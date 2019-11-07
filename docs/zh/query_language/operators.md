@@ -82,6 +82,92 @@
 
 条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](functions/array_join.md#functions_arrayjoin) 函数，则不管表达式a是真是假，每行都会被复制展开。
 
+
+## Operators for Working with Dates and Times {#operators-datetime}
+
+### EXTRACT {#operator-extract}
+
+```sql
+EXTRACT(part FROM date);
+```
+
+Extracts a part from a given date. For example, you can retrieve a month from a given date, or a second from a time.
+
+The `part` parameter specifies which part of the date to retrieve. The following values are available:
+
+- `DAY` — The day of the month. Possible values: 1–31.
+- `MONTH` — The number of a month. Possible values: 1–12.
+- `YEAR` — The year.
+- `SECOND` — The second. Possible values: 0–59.
+- `MINUTE` — The minute. Possible values: 0–59.
+- `HOUR` — The hour. Possible values: 0–23.
+
+The `part` parameter is case-insensitive.
+
+The `date` parameter specifies the date or the time to process. Either [Date](../data_types/date.md) or [DateTime](../data_types/datetime.md) type is supported.
+
+Examples:
+
+```sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+```
+
+In the following example we create a table and insert into it a value with the `DateTime` type.
+
+```sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64,
+    OrderName String,
+    OrderDate DateTime
+)
+ENGINE = Log;
+```
+
+```sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+```sql
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+```
+```text
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+
+### INTERVAL {#operator-interval}
+
+Creates an [Interval](../data_types/special_data_types/interval.md)-type value that should be used in arithmetical operations with [Date](../data_types/date.md) and [DateTime](../data_types/datetime.md)-type values.
+
+Example:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
+```
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [Interval](../data_types/special_data_types/interval.md) data type
+- [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
+
+
 ## CASE条件表达式 {#operator_case}
 
 ``` sql
