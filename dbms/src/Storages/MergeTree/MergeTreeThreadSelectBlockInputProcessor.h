@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeReader.h>
 
 
 namespace DB
