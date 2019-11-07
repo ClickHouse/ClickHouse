@@ -180,7 +180,21 @@
                      <port>9000</port>
                  </replica>
              </shard>
-         </test_cluster_two_shards_localhost>
+        </test_cluster_two_shards_localhost>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
         <test_shard_localhost_secure>
             <shard>
                 <replica>

@@ -32,6 +32,22 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
         convertColumnToNullable(block.getByPosition(i));
 }
 
+/// @warning It assumes that every NULL has default value in nested column (or it does not matter)
+void removeColumnNullability(ColumnWithTypeAndName & column)
+{
+    if (!column.type->isNullable())
+        return;
+
+    column.type = static_cast<const DataTypeNullable &>(*column.type).getNestedType();
+    if (column.column)
+    {
+        auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
+        ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
+        MutableColumnPtr mutable_column = (*std::move(nested_column)).mutate();
+        column.column = std::move(mutable_column);
+    }
+}
+
 ColumnRawPtrs temporaryMaterializeColumns(const Block & block, const Names & names, Columns & materialized)
 {
     ColumnRawPtrs ptrs;

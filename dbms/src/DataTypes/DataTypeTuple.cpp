@@ -188,6 +188,13 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
         }
     });
 
+    // Special format for one element tuple (1,)
+    if (1 == elems.size())
+    {
+        skipWhitespaceIfAny(istr);
+        // Allow both (1) and (1,)
+        checkChar(',', istr);
+    }
     skipWhitespaceIfAny(istr);
     assertChar(')', istr);
 }

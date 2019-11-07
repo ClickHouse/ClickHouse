@@ -226,6 +226,9 @@ public:
     auto & getInputs() { return inputs; }
     auto & getOutputs() { return outputs; }
 
+    const auto & getInputs() const { return inputs; }
+    const auto & getOutputs() const { return outputs; }
+
     /// Debug output.
     void dump() const;
 
