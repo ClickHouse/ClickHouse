@@ -13,6 +13,9 @@ namespace DB
 
 class Context;
 
+/// Return false if the data isn't going to be changed by mutations.
+bool isStorageTouchedByMutations(StoragePtr storage, const std::vector<MutationCommand> & commands, Context context_copy);
+
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
@@ -26,8 +29,6 @@ public:
 
     size_t evaluateCommandsSize();
 
-    /// Return false if the data isn't going to be changed by mutations.
-    bool isStorageTouchedByMutations() const;
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     BlockInputStreamPtr execute(TableStructureReadLockHolder & table_lock_holder);
@@ -40,7 +41,6 @@ private:
 
     struct Stage;
 
-    ASTPtr prepareQueryAffectedAST() const;
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
     BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
