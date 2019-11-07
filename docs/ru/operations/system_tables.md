@@ -329,7 +329,8 @@ SELECT * FROM system.metrics LIMIT 10
 - `database` (`String`) – имя базы данных.
 - `table` (`String`) – имя таблицы.
 - `engine` (`String`) – имя движка таблицы, без параметров.
-- `path` (`String`) – абсолютный путь к папке с файлами кусков данных..
+- `path` (`String`) – абсолютный путь к папке с файлами кусков данных.
+- `disk` (`String`) – имя диска, на котором находится кусок данных.
 - `hash_of_all_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) для сжатых файлов.
 - `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
 - `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
@@ -345,21 +346,27 @@ SELECT * FROM system.metrics LIMIT 10
 
 Столбцы:
 
-- `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений: `NEW_PART` — вставка нового куска; `MERGE_PARTS` — слияние кусков; `DOWNLOAD_PART` — загрузка с реплики; `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition); `MUTATE_PART` — изменение куска; `MOVE_PART` — перемещение куска между дисками.
-- `event_date` (Date) — дата события;
-- `event_time` (DateTime) — время события;
-- `duration_ms` (UInt64) — длительность;
-- `database` (String) — имя базы данных, в которой находится кусок;
-- `table` (String) — имя таблицы, в которой находится кусок;
-- `part_name` (String) — имя куска;
-- `partition_id` (String) — идентификатор партиции, в которую был добавлен кусок. В столбце будет значение 'all', если таблица партициируется по выражению `tuple()`;
-- `rows` (UInt64) — число строк в куске;
-- `size_in_bytes` (UInt64) — размер куска данных в байтах;
-- `merged_from` (Array(String)) — массив имён кусков, из которых образован текущий кусок в результате слияния (также столбец заполняется в случае скачивания уже смерженного куска);
-- `bytes_uncompressed` (UInt64) — количество прочитанных разжатых байт;
-- `read_rows` (UInt64) — сколько было прочитано строк при слиянии кусков;
-- `read_bytes` (UInt64) — сколько было прочитано байт при слиянии кусков;
-- `error` (UInt16) — код ошибки, возникшей при текущем событии;
+- `event_type` (Enum) — тип события. Столбец может содержать одно из следующих значений:
+    - `NEW_PART` — вставка нового куска.
+    - `MERGE_PARTS` — слияние кусков.
+    - `DOWNLOAD_PART` — загрузка с реплики.
+    - `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    - `MUTATE_PART` — изменение куска.
+    - `MOVE_PART` — перемещение куска между дисками.
+- `event_date` (Date) — дата события.
+- `event_time` (DateTime) — время события.
+- `duration_ms` (UInt64) — длительность.
+- `database` (String) — имя базы данных, в которой находится кусок.
+- `table` (String) — имя таблицы, в которой находится кусок.
+- `part_name` (String) — имя куска.
+- `partition_id` (String) — идентификатор партиции, в которую был добавлен кусок. В столбце будет значение 'all', если таблица партициируется по выражению `tuple()`.
+- `rows` (UInt64) — число строк в куске.
+- `size_in_bytes` (UInt64) — размер куска данных в байтах.
+- `merged_from` (Array(String)) — массив имён кусков, из которых образован текущий кусок в результате слияния (также столбец заполняется в случае скачивания уже смерженного куска).
+- `bytes_uncompressed` (UInt64) — количество прочитанных разжатых байт.
+- `read_rows` (UInt64) — сколько было прочитано строк при слиянии кусков.
+- `read_bytes` (UInt64) — сколько было прочитано байт при слиянии кусков.
+- `error` (UInt16) — код ошибки, возникшей при текущем событии.
 - `exception` (String) — текст ошибки.
 
 Системная таблица `system.part_log` будет создана после первой вставки данных в таблицу `MergeTree`.
@@ -747,26 +754,32 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 **latest_fail_reason** — причина последней ошибки мутации.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->
-
 ## system.disks {#system_tables-disks}
 
-Таблица содержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Имеет следующие столбцы:
+Cодержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). 
 
-- `name String` — имя диска в конфигурации сервера.
-- `path String` — путь к точке монтирования на файловой системе.
-- `free_space UInt64` — свободное место на диске в данный момент времени в байтах.
-- `total_space UInt64` — общее количество места на диске в данный момент времени в байтах.
-- `keep_free_space UInt64` — количество байт, которое должно оставаться свободным (задается в конфигурации).
+Столбцы:
+
+- `name` ([String](../data_types/string.md)) — имя диска в конфигурации сервера.
+- `path` ([String](../data_types/string.md)) — путь к точке монтирования в файловой системе.
+- `free_space` ([UInt64](../data_types/int_uint.md)) — свободное место на диске в байтах.
+- `total_space` ([UInt64](../data_types/int_uint.md)) — объём диска в байтах.
+- `keep_free_space` ([UInt64](../data_types/int_uint.md)) — место, которое должно остаться свободным на диске в байтах. Задаётся значением параметра `keep_free_space_bytes` конфигурации дисков.
 
 
 ## system.storage_policies {#system_tables-storage_policies}
 
-Таблица содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). Данные в таблице денормализованны, имя одной политики хранения может содержаться несколько раз, по количеству томов в ней. Имеет следующие столбцы:
+Содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
-- `policy_name String` — имя политики хранения в конфигурации сервера.
-- `volume_name String` — имя тома, который содержится в данной политике хранения.
-- `volume_priority UInt64` — порядковый номер тома, согласно конфигурации.
-- `disks Array(String)` — имена дисков, содержащихся в данной политике хранения.
-- `max_data_part_size UInt64` — максимальный размер куска, который может храниться на дисках этого тома (0 — без ограничений).
-- `move_factor Float64` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.
+Столбцы:
+
+- `policy_name` ([String](../data_types/string.md)) — имя политики хранения.
+- `volume_name` ([String](../data_types/string.md)) — имя тома, который содержится в политике хранения.
+- `volume_priority` ([UInt64](../data_types/int_uint.md)) — порядковый номер тома согласно конфигурации.
+- `disks` ([Array(String)](../data_types/array.md)) — имена дисков, содержащихся в политике хранения.
+- `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — максимальный размер куска данных, который может храниться на дисках тома (0 — без ограничений).
+- `move_factor` ([Float64](..data_types/float.md))` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.
+
+Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->
