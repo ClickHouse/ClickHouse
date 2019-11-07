@@ -249,6 +249,8 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
         if (!set->insertFromBlock(block))
             return;
     }
+
+    set->finishInsert();
     res.in->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
