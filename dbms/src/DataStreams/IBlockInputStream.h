@@ -5,6 +5,7 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/ExecutionSpeedLimits.h>
 #include <IO/Progress.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Common/TypePromotion.h>
@@ -137,7 +138,7 @@ public:
       * The function takes the number of rows in the last block, the number of bytes in the last block.
       * Note that the callback can be called from different threads.
       */
-    void setProgressCallback(const ProgressCallback & callback);
+    virtual void setProgressCallback(const ProgressCallback & callback);
 
 
     /** In this method:
@@ -162,11 +163,11 @@ public:
       * Based on this information, the quota and some restrictions will be checked.
       * This information will also be available in the SHOW PROCESSLIST request.
       */
-    void setProcessListElement(QueryStatus * elem);
+    virtual void setProcessListElement(QueryStatus * elem);
 
     /** Set the approximate total number of rows to read.
       */
-    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
+    virtual void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.
@@ -201,20 +202,13 @@ public:
 
         SizeLimits size_limits;
 
-        Poco::Timespan max_execution_time = 0;
-        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
+        ExecutionSpeedLimits speed_limits;
 
-        /// in rows per second
-        size_t min_execution_speed = 0;
-        size_t max_execution_speed = 0;
-        size_t min_execution_speed_bytes = 0;
-        size_t max_execution_speed_bytes = 0;
-        /// Verify that the speed is not too low after the specified time has elapsed.
-        Poco::Timespan timeout_before_checking_execution_speed = 0;
+        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
     };
 
     /** Set limitations that checked on each block. */
-    void setLimits(const LocalLimits & limits_)
+    virtual void setLimits(const LocalLimits & limits_)
     {
         limits = limits_;
     }
@@ -227,7 +221,7 @@ public:
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    void setQuota(QuotaForIntervals & quota_)
+    virtual void setQuota(QuotaForIntervals & quota_)
     {
         quota = &quota_;
     }

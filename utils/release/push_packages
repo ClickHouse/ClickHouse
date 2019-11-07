@@ -165,7 +165,7 @@ def clear_old_incoming_packages(ssh_connection, user):
                         user=user, pkg=pkg, release_type=release_type))
                 else:
                     ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/*".format(
-                        user=user, pkg=pkg, release_type=release_type))
+                        user=user, pkg=pkg))
             except Exception:
                 logging.info("rm is not required")
 

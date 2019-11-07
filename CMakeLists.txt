@@ -13,7 +13,10 @@ foreach(policy
 endforeach()
 
 project(ClickHouse)
+
+include (cmake/arch.cmake)
 include (cmake/target.cmake)
+include (cmake/tools.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -25,8 +28,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
-
-include (cmake/arch.cmake)
 
 option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
 if(ENABLE_IPO)
@@ -230,7 +231,6 @@ include(cmake/dbms_glob_sources.cmake)
 if (OS_LINUX)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
-    include(cmake/darwin/sdk.cmake)
     include(cmake/darwin/default_libs.cmake)
 endif ()
 

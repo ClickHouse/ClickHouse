@@ -1,6 +1,13 @@
 
 # 航班飞行数据
 
+航班飞行数据有以下两个方式获取：
+
+- 从原始数据导入
+- 下载预处理好的分区数据
+
+## 从原始数据导入
+
 下载数据：
 
 ```bash
@@ -134,39 +141,75 @@ CREATE TABLE `ontime` (
 加载数据：
 
 ```bash
-for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
+$ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-查询：
+## 下载预处理好的分区数据
+
+```bash
+$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+$ # check permissions of unpacked data, fix if required
+$ sudo service clickhouse-server restart
+$ clickhouse-client --query "select count(*) from datasets.ontime"
+```
+!!!info
+    如果要运行下面的SQL查询，必须使用完整的表名，
+    `datasets.ontime`。
+
+## 查询：
 
 Q0.
 
 ```sql
-select avg(c1) from (select Year, Month, count(*) as c1 from ontime group by Year, Month);
+SELECT avg(c1)
+FROM
+(
+    SELECT Year, Month, count(*) AS c1
+    FROM ontime
+    GROUP BY Year, Month
+);
 ```
 
 Q1. 查询从2000年到2008年每天的航班数
 
 ```sql
-SELECT DayOfWeek, count(*) AS c FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC;
+SELECT DayOfWeek, count(*) AS c
+FROM ontime
+WHERE Year>=2000 AND Year<=2008
+GROUP BY DayOfWeek
+ORDER BY c DESC;
 ```
 
 Q2. 查询从2000年到2008年每周延误超过10分钟的航班数。
 
 ```sql
-SELECT DayOfWeek, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC
+SELECT DayOfWeek, count(*) AS c
+FROM ontime
+WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
+GROUP BY DayOfWeek
+ORDER BY c DESC;
 ```
 
 Q3. 查询2000年到2008年每个机场延误超过10分钟以上的次数
 
 ```sql
-SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
+SELECT Origin, count(*) AS c
+FROM ontime
+WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
+GROUP BY Origin
+ORDER BY c DESC
+LIMIT 10;
 ```
 
 Q4. 查询2007年各航空公司延误超过10分钟以上的次数
 
 ```sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*)
+FROM ontime
+WHERE DepDelay>10 AND Year=2007
+GROUP BY Carrier
+ORDER BY count(*) DESC;
 ```
 
 Q5. 查询2007年各航空公司延误超过10分钟以上的百分比
@@ -198,7 +241,11 @@ ORDER BY c3 DESC;
 更好的查询版本：
 
 ```sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay>10)*100 AS c3
+FROM ontime
+WHERE Year=2007
+GROUP BY Carrier
+ORDER BY Carrier
 ```
 
 Q6. 同上一个查询一致,只是查询范围扩大到2000年到2008年
@@ -212,7 +259,7 @@ FROM
         count(*) AS c
     FROM ontime
     WHERE DepDelay>10
-        AND Year >= 2000 AND Year <= 2008
+        AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
 ANY INNER JOIN
@@ -221,7 +268,7 @@ ANY INNER JOIN
         Carrier,
         count(*) AS c2
     FROM ontime
-    WHERE Year >= 2000 AND Year <= 2008
+    WHERE Year>=2000 AND Year<=2008
     GROUP BY Carrier
 ) USING Carrier
 ORDER BY c3 DESC;
@@ -230,7 +277,11 @@ ORDER BY c3 DESC;
 更好的查询版本：
 
 ```sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay>10)*100 AS c3
+FROM ontime
+WHERE Year>=2000 AND Year<=2008
+GROUP BY Carrier
+ORDER BY Carrier;
 ```
 
 Q7. 每年航班延误超过10分钟的百分比
@@ -254,41 +305,50 @@ ANY INNER JOIN
     from ontime
     GROUP BY Year
 ) USING (Year)
-ORDER BY Year
+ORDER BY Year;
 ```
 
 更好的查询版本：
 
 ```sql
-SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
+SELECT Year, avg(DepDelay>10)
+FROM ontime
+GROUP BY Year
+ORDER BY Year;
 ```
 
 Q8. 每年更受人们喜爱的目的地
 
 ```sql
-SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
+SELECT DestCityName, uniqExact(OriginCityName) AS u
+FROM ontime
+WHERE Year >= 2000 and Year <= 2010
+GROUP BY DestCityName
+ORDER BY u DESC LIMIT 10;
 ```
 
 Q9.
 
 ```sql
-select Year, count(*) as c1 from ontime group by Year;
+SELECT Year, count(*) AS c1
+FROM ontime
+GROUP BY Year;
 ```
 
 Q10.
 
 ```sql
-select
-   min(Year), max(Year), Carrier, count(*) as cnt,
-   sum(ArrDelayMinutes>30) as flights_delayed,
-   round(sum(ArrDelayMinutes>30)/count(*),2) as rate
+SELECT
+   min(Year), max(Year), Carrier, count(*) AS cnt,
+   sum(ArrDelayMinutes>30) AS flights_delayed,
+   round(sum(ArrDelayMinutes>30)/count(*),2) AS rate
 FROM ontime
 WHERE
-   DayOfWeek not in (6,7) and OriginState not in ('AK', 'HI', 'PR', 'VI')
-   and DestState not in ('AK', 'HI', 'PR', 'VI')
-   and FlightDate < '2010-01-01'
+   DayOfWeek NOT IN (6,7) AND OriginState NOT IN ('AK', 'HI', 'PR', 'VI')
+   AND DestState NOT IN ('AK', 'HI', 'PR', 'VI')
+   AND FlightDate < '2010-01-01'
 GROUP by Carrier
-HAVING cnt > 100000 and max(Year) > 1990
+HAVING cnt>100000 and max(Year)>1990
 ORDER by rate DESC
 LIMIT 1000;
 ```
@@ -296,15 +356,39 @@ LIMIT 1000;
 Bonus:
 
 ```sql
-SELECT avg(cnt) FROM (SELECT Year,Month,count(*) AS cnt FROM ontime WHERE DepDel15=1 GROUP BY Year,Month)
+SELECT avg(cnt)
+FROM
+(
+    SELECT Year,Month,count(*) AS cnt
+    FROM ontime
+    WHERE DepDel15=1
+    GROUP BY Year,Month
+);
 
-select avg(c1) from (select Year,Month,count(*) as c1 from ontime group by Year,Month)
+SELECT avg(c1) FROM
+(
+    SELECT Year,Month,count(*) AS c1
+    FROM ontime
+    GROUP BY Year,Month
+);
 
-SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
+SELECT DestCityName, uniqExact(OriginCityName) AS u
+FROM ontime
+GROUP BY DestCityName
+ORDER BY u DESC
+LIMIT 10;
 
-SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCityName, DestCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, DestCityName, count() AS c
+FROM ontime
+GROUP BY OriginCityName, DestCityName
+ORDER BY c DESC
+LIMIT 10;
 
-SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, count() AS c
+FROM ontime
+GROUP BY OriginCityName
+ORDER BY c DESC
+LIMIT 10;
 ```
 
 这个性能测试由Vadim Tkachenko提供。参考：

@@ -438,7 +438,7 @@ public:
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool CanBeExecutedOnDefaultArguments = true>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
     const Context & context;
@@ -944,7 +944,7 @@ public:
     }
 #endif
 
-    bool canBeExecutedOnDefaultArguments() const override { return CanBeExecutedOnDefaultArguments; }
+    bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
 };
 
 }

@@ -39,8 +39,6 @@
 - C#
     - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
-- C++
-    - [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp/)
 - Elixir
     - [clickhousex](https://github.com/appodeal/clickhousex/)
 - Nim
