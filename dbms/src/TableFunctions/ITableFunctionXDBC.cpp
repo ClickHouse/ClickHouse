@@ -71,9 +71,9 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
         columns_info_uri.addQueryParameter("schema", schema_name);
     columns_info_uri.addQueryParameter("table", remote_table_name);
 
-    const auto use_nuls = context.getSettingsRef().external_table_functions_use_nulls;
+    const auto use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls",
-        Poco::NumberFormatter::format(use_nuls));
+        Poco::NumberFormatter::format(use_nulls));
 
     ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
 

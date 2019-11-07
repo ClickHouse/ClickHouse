@@ -63,15 +63,6 @@ namespace
                 return factory.get("String");
         }
     }
-
-    bool parseBool(const std::string & s, bool default_value = false)
-    {
-        bool result;
-        if (Poco::NumberParser::tryParseBool(s, result))
-            return result;
-
-        return default_value;
-    }
 }
 
 namespace ErrorCodes
@@ -105,7 +96,6 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     std::string schema_name = "";
     std::string table_name = params.get("table");
     std::string connection_string = params.get("connection_string");
-    const bool external_table_functions_use_nulls = parseBool(params.get("external_table_functions_use_nulls", "false"));
 
     if (params.has("schema"))
     {
@@ -118,6 +108,8 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
     try
     {
+        const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
+
         POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
         SQLHDBC hdbc = session.dbc().handle();
 
