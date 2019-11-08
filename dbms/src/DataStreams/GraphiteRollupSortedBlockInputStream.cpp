@@ -103,7 +103,7 @@ Graphite::RollupRule GraphiteRollupSortedBlockInputStream::selectPatternForPath(
 
 UInt32 GraphiteRollupSortedBlockInputStream::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
 {
-    static_assert(std::is_signed_v<time_t>, "time_t must be signed type");
+    static_assert(is_signed_v<time_t>, "time_t must be signed type");
 
     for (const auto & retention : retentions)
     {
