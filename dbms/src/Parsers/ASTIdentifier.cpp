@@ -34,10 +34,20 @@ ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_p
     , name_parts(name_parts_)
     , semantic(std::make_shared<IdentifierSemanticImpl>())
 {
+    if (name_parts.size() && name_parts[0] == "")
+        name_parts.erase(name_parts.begin());
+
+    if (name == "")
+    {
+        if (name_parts.size() == 2)
+            name = name_parts[0] + '.' + name_parts[1];
+        else if (name_parts.size() == 1)
+            name = name_parts[0];
+    }
 }
 
 ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
-    : ASTIdentifier(name_parts_.at(0) + '.' + name_parts_.at(1), std::move(name_parts_))
+    : ASTIdentifier("", std::move(name_parts_))
 {}
 
 void ASTIdentifier::setShortName(const String & new_name)

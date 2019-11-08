@@ -4,6 +4,7 @@
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Interpreters/ExternalLoader.h>
 #include <common/logger_useful.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <memory>
 
 namespace DB
@@ -18,9 +19,7 @@ public:
     using DictPtr = std::shared_ptr<const IDictionaryBase>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalDictionariesLoader(
-        ExternalLoaderConfigRepositoryPtr config_repository,
-        Context & context_);
+    ExternalDictionariesLoader(Context & context_);
 
     DictPtr getDictionary(const std::string & name) const
     {
@@ -39,6 +38,18 @@ public:
     /// Override ExternalLoader::reload to reset mysqlxx::PoolFactory.h
     /// since connection parameters might have changed. Inherited method is called afterward
     void reload(bool load_never_loading = false);
+
+    void addConfigRepository(
+        const std::string & repository_name,
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
+
+    /// Starts reloading of a specified object.
+    void addDictionaryWithConfig(
+        const String & dictionary_name,
+        const String & repo_name,
+        const ASTCreateQuery & query,
+        bool load_never_loading = false) const;
+
 
 protected:
     LoadablePtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config,

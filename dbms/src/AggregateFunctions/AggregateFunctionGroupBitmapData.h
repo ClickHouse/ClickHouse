@@ -1,13 +1,17 @@
 #pragma once
 
 #include <algorithm>
-#include <roaring/roaring.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/noncopyable.hpp>
-#include <roaring/roaring.hh>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
+
+// Include this header last, because it is an auto-generated dump of questionable
+// garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
+// TODO: find out what it is. On github, they have proper inteface headers like
+// this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
+#include <roaring/roaring.h>
 
 namespace DB
 {
@@ -575,6 +579,23 @@ public:
             max_val = UInt64(roaring_bitmap_maximum(rb));
         }
         return max_val;
+    }
+
+    /**
+     * Replace value
+     */
+    void rb_replace(const UInt32 * from_vals, const UInt32 * to_vals, size_t num)
+    {
+        if (isSmall())
+            toLarge();
+        for (size_t i = 0; i < num; ++i)
+        {
+            if (from_vals[i] == to_vals[i])
+                continue;
+            bool changed = roaring_bitmap_remove_checked(rb, from_vals[i]);
+            if (changed)
+                roaring_bitmap_add(rb, to_vals[i]);
+        }
     }
 
 private:

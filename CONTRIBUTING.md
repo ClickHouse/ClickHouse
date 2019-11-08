@@ -29,6 +29,6 @@ I hereby agree to the terms of the CLA available at: [link].
 Replace the bracketed text as follows:
 * [link] is the link at the current version of the CLA (you may add here a link https://yandex.ru/legal/cla/?lang=en (in English) or a link https://yandex.ru/legal/cla/?lang=ru (in Russian).
 
-It is enough to provide us such notification at once.
+It is enough to provide us such notification once.
 
 If you don't agree with the CLA, you still can open a pull request to provide your contributions.

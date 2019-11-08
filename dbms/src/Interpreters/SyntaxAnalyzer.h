@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -14,6 +15,7 @@ class ASTFunction;
 class AnalyzedJoin;
 class Context;
 struct SelectQueryOptions;
+using Scalars = std::map<String, Block>;
 
 struct SyntaxAnalyzerResult
 {
@@ -40,14 +42,17 @@ struct SyntaxAnalyzerResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
-    /// For sets created during query execution, check if they are empty after creation.
-    NameSet need_check_empty_sets;
-
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
+    /// Results of scalar sub queries
+    Scalars scalars;
+
+    bool maybe_optimize_trivial_count = false;
+
     void collectUsedColumns(const ASTPtr & query, const NamesAndTypesList & additional_source_columns);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    const Scalars & getScalars() const { return scalars; }
 };
 
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;

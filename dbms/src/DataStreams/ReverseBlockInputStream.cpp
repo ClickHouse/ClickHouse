@@ -1,5 +1,7 @@
 #include "ReverseBlockInputStream.h"
 
+#include <Common/PODArray.h>
+
 namespace DB
 {
     ReverseBlockInputStream::ReverseBlockInputStream(const BlockInputStreamPtr & input)

@@ -140,10 +140,10 @@ Settings:
 - interval – The interval for sending, in seconds.
 - timeout – The timeout for sending data, in seconds.
 - root_path – Prefix for keys.
-- metrics – Sending data from a :ref:`system_tables-system.metrics` table.
-- events – Sending deltas data accumulated for the time period from a :ref:`system_tables-system.events` table
-- events_cumulative – Sending cumulative data from a :ref:`system_tables-system.events` table
-- asynchronous_metrics – Sending data from a :ref:`system_tables-system.asynchronous_metrics` table.
+- metrics – Sending data from a [system.metrics](../system_tables.md#system_tables-metrics) table.
+- events – Sending deltas data accumulated for the time period from a [system.events](../system_tables.md#system_tables-events) table.
+- events_cumulative – Sending cumulative data from a [system.events](../system_tables.md#system_tables-events) table.
+- asynchronous_metrics – Sending data from a [system.asynchronous_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -366,11 +366,14 @@ For more information, see the section "[Creating replicated tables](../../operat
 ```
 
 
-## mark_cache_size
+## mark_cache_size {#server-mark-cache-size}
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md).
+Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../operations/table_engines/mergetree.md) family.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+
+!!! warning "Warning"
+    This parameter could be exceeded by the [mark_cache_min_lifetime](../settings/settings.md#settings-mark_cache_min_lifetime) setting.
 
 **Example**
 
@@ -622,7 +625,7 @@ For the value of the `incl` attribute, see the section "[Configuration files](..
 
 - [skip_unavailable_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone
+## timezone {#server_settings-timezone}
 
 The server's time zone.
 

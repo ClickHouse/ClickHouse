@@ -275,8 +275,7 @@ class ParserWithOptionalAlias : public IParserBase
 {
 public:
     ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
-    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
-    {}
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;

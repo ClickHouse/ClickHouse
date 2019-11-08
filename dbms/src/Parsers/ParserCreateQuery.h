@@ -288,6 +288,64 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+/** Query like this:
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name
+  * (
+  *     name1 type1,
+  *     name2 type2,
+  *     ...
+  *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
+  *     ...
+  * ) ENGINE = engine
+  *
+  * Or:
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
+  *
+  * Or:
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS ENGINE = engine SELECT ...
+  *
+  */
+class ParserCreateTableQuery : public IParserBase
+{
+protected:
+    const char * getName() const { return "CREATE TABLE or ATTACH TABLE query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/// CREATE|ATTACH LIVE VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] AS SELECT ...
+class ParserCreateLiveViewQuery : public IParserBase
+{
+protected:
+    const char * getName() const { return "CREATE LIVE VIEW query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/// CREATE|ATTACH DATABASE db [ENGINE = engine]
+class ParserCreateDatabaseQuery : public IParserBase
+{
+protected:
+    const char * getName() const { return "CREATE DATABASE query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/// CREATE[OR REPLACE]|ATTACH [[MATERIALIZED] VIEW] | [VIEW]] [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+class ParserCreateViewQuery : public IParserBase
+{
+protected:
+    const char * getName() const { return "CREATE VIEW query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/// Parses complete dictionary create query. Uses ParserDictionary and
+/// ParserDictionaryAttributeDeclaration. Produces ASTCreateQuery.
+/// CREATE DICTIONAY [IF NOT EXISTS] [db.]name (attrs) PRIMARY KEY key SOURCE(s(params)) LAYOUT(l(params)) LIFETIME([min v1 max] v2) [RANGE(min v1 max v2)]
+class ParserCreateDictionaryQuery : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CREATE DICTIONARY"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 /** Query like this:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name

@@ -1,12 +1,5 @@
 #pragma once
-
-#include "config_core.h"
-
-#if USE_SSL
-
 #include <ext/scope_guard.h>
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
 #include <random>
 #include <sstream>
 #include <Common/MemoryTracker.h>
@@ -27,6 +20,11 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
+#include "config_core.h"
+#if USE_SSL
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#endif
 
 /// Implementation of MySQL wire protocol.
 /// Works only on little-endian architecture.
@@ -919,10 +917,10 @@ public:
 
         auto user = context.getUser(user_name);
 
-        if (user->password_double_sha1_hex.empty())
+        if (user->authentication.getType() != DB::Authentication::DOUBLE_SHA1_PASSWORD)
             throw Exception("Cannot use " + getName() + " auth plugin for user " + user_name + " since its password isn't specified using double SHA1.", ErrorCodes::UNKNOWN_EXCEPTION);
 
-        Poco::SHA1Engine::Digest double_sha1_value = Poco::DigestEngine::digestFromHex(user->password_double_sha1_hex);
+        Poco::SHA1Engine::Digest double_sha1_value = user->authentication.getPasswordHashBinary();
         assert(double_sha1_value.size() == Poco::SHA1Engine::DIGEST_SIZE);
 
         Poco::SHA1Engine engine;
@@ -941,6 +939,7 @@ private:
     String scramble;
 };
 
+#if USE_SSL
 /// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
 /// https://dev.mysql.com/doc/internals/en/sha256.html
 class Sha256Password : public IPlugin
@@ -1001,7 +1000,6 @@ public:
         if (auth_response == "\1")
         {
             LOG_TRACE(log, "Client requests public key.");
-
             BIO * mem = BIO_new(BIO_s_mem());
             SCOPE_EXIT(BIO_free(mem));
             if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
@@ -1074,10 +1072,9 @@ private:
     Logger * log;
     String scramble;
 };
+#endif
 
 }
 
 }
 }
-
-#endif // USE_SSL
