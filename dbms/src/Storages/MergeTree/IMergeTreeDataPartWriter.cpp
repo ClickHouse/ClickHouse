@@ -80,10 +80,11 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
+    
+    Poco::File part_dir(part_path);
+    if (!part_dir.exists())
+        part_dir.createDirectories();
 
-    Poco::File(part_path).createDirectories();
-    initPrimaryIndex();
-    initSkipIndices();
 }
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
@@ -149,6 +150,8 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
             part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
+
+    primary_index_initialized = true;
 }
 
 void IMergeTreeDataPartWriter::initSkipIndices()
@@ -166,10 +169,15 @@ void IMergeTreeDataPartWriter::initSkipIndices()
         skip_indices_aggregators.push_back(index->createIndexAggregator());
         skip_index_filling.push_back(0);
     }
+
+    skip_indices_initialized = true;
 }
 
 void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & primary_keys_block, size_t rows)
 {
+    if (!primary_index_initialized)
+        throw Exception("Primary index is not initialized", ErrorCodes::LOGICAL_ERROR);
+
     size_t primary_columns_num = primary_keys_block.columns();
     if (index_columns.empty())
     {
@@ -219,6 +227,9 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
 void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
         const Block & skip_indexes_block, size_t rows)
 {
+    if (!skip_indices_initialized)
+        throw Exception("Skip indices are not initialized", ErrorCodes::LOGICAL_ERROR);
+
     size_t skip_index_current_data_mark = 0;
 
     /// Filling and writing skip indices like in IMergeTreeDataPartWriter::writeColumn
@@ -279,6 +290,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
 
 void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool write_final_mark)
 {
+    std::cerr << "finishPrimaryIndexSerialization called...\n";
     if (index_stream)
     {
         if (write_final_mark)
@@ -288,9 +300,12 @@ void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::Da
                 index_columns[j]->insert(last_index_row[j]);
                 index_types[j]->serializeBinary(last_index_row[j], *index_stream);
             }
+
             last_index_row.clear();
-            index_granularity.appendMark(0);
         }
+
+        std::cerr << "(finishPrimaryIndexSerialization) marks_count: " << index_granularity.getMarksCount() << "\n"; 
+        std::cerr << "(finishPrimaryIndexSerialization) write_final_mark: " << write_final_mark << "\n";
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();

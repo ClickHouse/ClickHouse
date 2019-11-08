@@ -55,6 +55,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.aio_threshold);
     };
 
+    std::cerr << "(addStreams) name: " << name << "\n";
+
     IDataType::SubstreamPath stream_path;
     type.enumerateStreams(callback, stream_path);
 }
@@ -102,6 +104,8 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     /// but not in case of vertical merge)
     if (compute_granularity)
         fillIndexGranularity(block);
+    
+    std::cerr << "(MergeTreeDataPartWriterWide::write) marks_count: " << index_granularity.getMarksCount() << "\n";
 
     WrittenOffsetColumns offset_columns;
     MarkWithOffset result;
@@ -226,6 +230,7 @@ std::pair<size_t, size_t> MergeTreeDataPartWriterWide::writeColumn(
     std::cerr << "(writeColumn) table: " << storage.getTableName() << "\n";
     std::cerr << "(writeColumn) column: " << name << "\n";
     std::cerr << "(writeColumn) index_offset: " << index_offset << "\n";
+
     auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
@@ -311,9 +316,15 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
             }
 
             if (write_final_mark)
+            {
                 writeFinalMark(it->name, it->type, offset_columns, false, serialize_settings.path);
+            }
         }
     }
+
+    /// FIXME ??
+    if (compute_granularity && write_final_mark && data_written)
+        index_granularity.appendMark(0);
 
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
     {

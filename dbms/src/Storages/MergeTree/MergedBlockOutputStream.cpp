@@ -30,6 +30,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     WriterSettings writer_settings(data_part->storage.global_context.getSettings(),
         data_part->storage.canUseAdaptiveGranularity(), blocks_are_granules_size);
     writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
+    init();
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -58,6 +59,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     writer = data_part->getWriter(columns_list,
         data_part->storage.getSkipIndices(), default_codec, writer_settings);
+    init();
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -152,10 +154,15 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->checksums = checksums;
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
     new_part->index_granularity = writer->getIndexGranularity();
+    std::cerr << "(writeSuffixAndFinalizePart) part: " << new_part->getFullPath() << "\n";
+    std::cerr << "(writeSuffixAndFinalizePart) marks_count: " << new_part->index_granularity.getMarksCount() << "\n"; 
 }
 
 void MergedBlockOutputStream::init()
 {
+    Poco::File(part_path).createDirectories();
+    writer->initPrimaryIndex();
+    writer->initSkipIndices();
 }
 
 

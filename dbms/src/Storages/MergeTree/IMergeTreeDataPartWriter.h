@@ -140,6 +140,8 @@ protected:
     Row last_index_row;
 
     bool data_written = false;
+    bool primary_index_initialized = false;
+    bool skip_indices_initialized = false;
 
 };
 
