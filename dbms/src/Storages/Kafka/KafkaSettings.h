@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/SettingsCommon.h>
+#include <Core/SettingsCollection.h>
 
 
 namespace DB

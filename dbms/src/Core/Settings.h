@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SettingsCommon.h"
+#include <Core/SettingsCollection.h>
 #include <Core/Defines.h>
 
 
