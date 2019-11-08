@@ -300,7 +300,10 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 break;
             default:
                 x = negative ? -res : res;
-                return ReturnType(true);
+                if (!buf.eof())
+                    throw Exception("Invalid characters used", ErrorCodes::CANNOT_PARSE_NUMBER);
+                else
+                    return ReturnType(true);
         }
         ++buf.position();
     }
