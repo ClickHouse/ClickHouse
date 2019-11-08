@@ -28,20 +28,20 @@ void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState 
 
     if (with_fill)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL" << (settings.hilite ? hilite_none : "");
         if (fill_from)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "FROM " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
             fill_from->formatImpl(settings, state, frame);
         }
         if (fill_to)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "TO " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
             fill_to->formatImpl(settings, state, frame);
         }
         if (fill_step)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "STEP " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STEP " << (settings.hilite ? hilite_none : "");
             fill_step->formatImpl(settings, state, frame);
         }
     }
