@@ -299,11 +299,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 res += *buf.position() - '0';
                 break;
             default:
-                x = negative ? -res : res;
-                if (!buf.eof())
-                    throw Exception("Invalid characters used", ErrorCodes::CANNOT_PARSE_NUMBER);
-                else
-                    return ReturnType(true);
+                throw Exception("Invalid characters used", ErrorCodes::CANNOT_PARSE_NUMBER);
         }
         ++buf.position();
     }
