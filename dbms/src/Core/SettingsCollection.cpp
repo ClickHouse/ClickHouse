@@ -516,6 +516,18 @@ namespace details
         return name;
     }
 
+    void SettingsCollectionUtils::serializeFlag(bool flag, WriteBuffer & buf)
+    {
+        buf.write(flag);
+    }
+
+    bool SettingsCollectionUtils::deserializeFlag(ReadBuffer & buf)
+    {
+        char c;
+        buf.readStrict(c);
+        return c;
+    }
+
     void SettingsCollectionUtils::skipValue(ReadBuffer & buf)
     {
         /// Ignore a string written by the function writeStringBinary().
