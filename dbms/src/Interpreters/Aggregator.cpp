@@ -962,7 +962,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         }
     }
 
-    data.forEachValue([&](const auto & key, auto & mapped)
+    data.forEachCell([&](const auto & key, auto & mapped)
     {
         method.insertKeyIntoColumns(key, key_columns, key_sizes);
 
@@ -993,7 +993,7 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
         }
     }
 
-    data.forEachValue([&](const auto & key, auto & mapped)
+    data.forEachCell([&](const auto & key, auto & mapped)
     {
         method.insertKeyIntoColumns(key, key_columns, key_sizes);
 
@@ -2273,7 +2273,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::destroyImpl(Table & table) const
 {
-    table.forEachMapped([&](AggregateDataPtr & data)
+    table.forEachCell([&](AggregateDataPtr & data)
     {
         /** If an exception (usually a lack of memory, the MemoryTracker throws) arose
           *  after inserting the key into a hash table, but before creating all states of aggregate functions,

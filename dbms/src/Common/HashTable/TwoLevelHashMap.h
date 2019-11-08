@@ -21,13 +21,6 @@ public:
 
     using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>::TwoLevelHashTable;
 
-    template <typename Func>
-    void ALWAYS_INLINE forEachMapped(Func && func)
-    {
-        for (auto i = 0u; i < this->NUM_BUCKETS; ++i)
-            this->impls[i].forEachMapped(func);
-    }
-
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;

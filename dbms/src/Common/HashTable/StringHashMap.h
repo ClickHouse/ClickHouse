@@ -135,48 +135,4 @@ public:
 
         return it->getMapped();
     }
-
-    template <typename Func>
-    void ALWAYS_INLINE forEachValue(Func && func)
-    {
-        if (this->m0.size())
-        {
-            func(StringRef{}, this->m0.zeroValue()->getMapped());
-        }
-
-        for (auto & v : this->m1)
-        {
-            func(v.getKey(), v.getMapped());
-        }
-
-        for (auto & v : this->m2)
-        {
-            func(v.getKey(), v.getMapped());
-        }
-
-        for (auto & v : this->m3)
-        {
-            func(v.getKey(), v.getMapped());
-        }
-
-        for (auto & v : this->ms)
-        {
-            func(v.getKey(), v.getMapped());
-        }
-    }
-
-    template <typename Func>
-    void ALWAYS_INLINE forEachMapped(Func && func)
-    {
-        if (this->m0.size())
-            func(this->m0.zeroValue()->getMapped());
-        for (auto & v : this->m1)
-            func(v.getMapped());
-        for (auto & v : this->m2)
-            func(v.getMapped());
-        for (auto & v : this->m3)
-            func(v.getMapped());
-        for (auto & v : this->ms)
-            func(v.getMapped());
-    }
 };

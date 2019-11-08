@@ -83,20 +83,6 @@ public:
         }
     }
 
-    template <typename Func>
-    void forEachValue(Func && func)
-    {
-        for (auto & v : *this)
-            func(v.getKey(), v.getMapped());
-    }
-
-    template <typename Func>
-    void forEachMapped(Func && func)
-    {
-        for (auto & v : *this)
-            func(v.getMapped());
-    }
-
     Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;

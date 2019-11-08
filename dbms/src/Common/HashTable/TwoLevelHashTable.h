@@ -272,6 +272,25 @@ public:
 
     ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
+    /// No positional variants for TwoLevelHashTable as it's only used for aggregations.
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, const Mapped &); or (2)  void(const Mapped &).
+    template <typename Func>
+    void forEachCell(Func && func) const
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, Mapped &); or (2)  void(Mapped &).
+    template <typename Func>
+    void forEachCell(Func && func)
+    {
+        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+            impls[i].forEachCell(func);
+    }
 
     void write(DB::WriteBuffer & wb) const
     {
