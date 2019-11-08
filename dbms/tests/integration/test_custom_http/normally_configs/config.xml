@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <custom_http>
+        <test_for_only_insert_queries>
+            <method>PUT</method>
+            <URL>/test_for_only_insert_queries</URL>
+            <query>INSERT INTO test.test VALUES</query>
+        </test_for_only_insert_queries>
+
+        <test_for_only_select_queries>
+            <method>POST</method>
+            <URL>/test_for_only_select_queries</URL>
+            <query>SELECT value FROM system.settings WHERE name = 'max_threads'</query>
+            <query>SELECT value FROM system.settings WHERE name = 'max_alter_threads'</query>
+        </test_for_only_select_queries>
+
+        <test_for_hybrid_insert_and_select_queries>
+            <URL>/test_for_hybrid_insert_and_select_queries</URL>
+            <query>INSERT INTO test.test VALUES</query>
+            <query>SELECT * FROM test.test ORDER BY id</query>
+        </test_for_hybrid_insert_and_select_queries>
+
+        <test_for_throw_exception_when_after_select>
+            <URL>/test_for_throw_exception_when_after_select</URL>
+            <query>SELECT * FROM test.test ORDER BY id</query>
+            <query>SELECT throwIf(number = 2, 'Throw Exception') FROM numbers(3)</query>
+        </test_for_throw_exception_when_after_select>
+    </custom_http>
+</yandex>

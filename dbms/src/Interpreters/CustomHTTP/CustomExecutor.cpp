@@ -175,7 +175,7 @@ std::pair<String, CustomExecutorPtr> CustomExecutors::getCustomExecutor(Context 
         if (custom_executor.second->match(context, request, params))
             return custom_executor;
 
-    throw Exception("No query executors matched", ErrorCodes::UNKNOW_QUERY_EXECUTOR);
+    throw Exception("No CustomExecutor match " + request.getURI(), ErrorCodes::UNKNOW_QUERY_EXECUTOR);
 }
 
 CustomExecutors::CustomExecutors(const Configuration & config, const Settings & settings, const String & config_prefix)
