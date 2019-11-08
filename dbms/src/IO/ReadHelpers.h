@@ -663,8 +663,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             c.fractional /= common::exp10_i64(-1 * adjust_scale);
         }
-        datetime64 = decimalFromComponents<DateTime64>(c, scale);
     }
+    datetime64 = decimalFromComponents<DateTime64>(c, scale);
 
     return ReturnType(true);
 }
