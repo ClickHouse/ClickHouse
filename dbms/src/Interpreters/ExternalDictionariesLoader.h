@@ -33,11 +33,11 @@ public:
 
     /// Override ExternalLoader::reload to reset mysqlxx::PoolFactory.h
     /// since connection parameters might have changed. Inherited method is called afterward
-    void reload(const String & name, bool load_never_loading = false);
+    void reload(const String & name, bool load_never_loading = false) const;
 
     /// Override ExternalLoader::reload to reset mysqlxx::PoolFactory.h
     /// since connection parameters might have changed. Inherited method is called afterward
-    void reload(bool load_never_loading = false);
+    void reload(bool load_never_loading = false) const;
 
     void addConfigRepository(
         const std::string & repository_name,
