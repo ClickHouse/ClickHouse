@@ -632,9 +632,12 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].first, type_name[i].second);
     }
 
+    template <bool has_defaults>
     void appendFromBlock(const Block & block, size_t row_num)
     {
-        applyLazyDefaults();
+        if constexpr (has_defaults)
+            applyLazyDefaults();
+
         for (size_t j = 0; j < right_indexes.size(); ++j)
             columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
     }
@@ -676,20 +679,20 @@ private:
     }
 };
 
-template <typename Map>
+template <typename Map, bool add_missing>
 void addFoundRowAll(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset)
 {
     for (auto it = mapped.begin(); it.ok(); ++it)
     {
-        added.appendFromBlock(*it->block, it->row_num);
+        added.appendFromBlock<add_missing>(*it->block, it->row_num);
         ++current_offset;
     }
 };
 
-template <bool _add_missing>
+template <bool add_missing>
 void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & current_offset [[maybe_unused]])
 {
-    if constexpr (_add_missing)
+    if constexpr (add_missing)
     {
         added.appendDefaultRow();
         ++current_offset;
@@ -708,7 +711,7 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
     constexpr bool left_or_full = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
     constexpr bool right = KIND == ASTTableJoin::Kind::Right;
 
-    constexpr bool _add_missing = left_or_full;
+    constexpr bool add_missing = left_or_full;
     constexpr bool need_replication = is_all_join || (is_any_join && right);
 
     size_t rows = added_columns.rows_to_add;
@@ -728,7 +731,7 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
     {
         if (_has_null_map && (*added_columns.null_map)[i])
         {
-            addNotFoundRow<_add_missing>(added_columns, current_offset);
+            addNotFoundRow<add_missing>(added_columns, current_offset);
         }
         else
         {
@@ -745,19 +748,19 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
                     {
                         filter[i] = 1;
                         mapped.setUsed();
-                        added_columns.appendFromBlock(*found->block, found->row_num);
+                        added_columns.appendFromBlock<add_missing>(*found->block, found->row_num);
                     }
                     else
                     {
                         filter[i] = 0;
-                        addNotFoundRow<_add_missing>(added_columns, current_offset);
+                        addNotFoundRow<add_missing>(added_columns, current_offset);
                     }
                 }
                 else if constexpr (is_all_join)
                 {
                     filter[i] = 1;
                     mapped.setUsed();
-                    addFoundRowAll<Map>(mapped, added_columns, current_offset);
+                    addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
                 }
                 else if constexpr (is_any_join && right)
                 {
@@ -765,7 +768,7 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
                     if (mapped.setUsedOnce())
                     {
                         filter[i] = 1;
-                        addFoundRowAll<Map>(mapped, added_columns, current_offset);
+                        addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
                     }
                 }
                 else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Inner)
@@ -774,7 +777,7 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
                     if (mapped.setUsedOnce())
                     {
                         filter[i] = 1;
-                        added_columns.appendFromBlock(*mapped.block, mapped.row_num);
+                        added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
                     }
                 }
                 else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Full)
@@ -785,11 +788,11 @@ void NO_INLINE joinRightColumns(const Map & map, AddedColumns & added_columns)
                 {
                     filter[i] = 1;
                     mapped.setUsed();
-                    added_columns.appendFromBlock(*mapped.block, mapped.row_num);
+                    added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
                 }
             }
             else
-                addNotFoundRow<_add_missing>(added_columns, current_offset);
+                addNotFoundRow<add_missing>(added_columns, current_offset);
         }
 
         if constexpr (need_replication)
