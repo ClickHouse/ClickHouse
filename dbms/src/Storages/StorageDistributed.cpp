@@ -47,6 +47,7 @@
 
 #include <memory>
 #include <filesystem>
+#include "VirtualColumnUtils.h"
 
 
 namespace DB
@@ -319,23 +320,25 @@ BlockInputStreams StorageDistributed::read(
 
     const Settings & settings = context.getSettingsRef();
 
-    const auto & modified_query_ast = rewriteSelectQuery(
-        query_info.query, remote_database, remote_table, remote_table_function_ptr);
+    bool has_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
+
+    auto query_for_header = query_info.query;
+    if (has_shard_num_column)
+        VirtualColumnUtils::rewriteEntityInAst(query_for_header, "_shard_num", 0, "toUInt32");
 
     Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
+        InterpreterSelectQuery(query_for_header, context, SelectQueryOptions(processed_stage)).getSampleBlock();
+
+    auto modified_query_ast = rewriteSelectQuery(
+            query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
-    bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
-    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num"))
-        has_virtual_shard_num_column = false;
-
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
-            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
+            header, processed_stage, remote_table_function_ptr, scalars, has_shard_num_column, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
+            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_shard_num_column, context.getExternalTables());
 
     if (settings.optimize_skip_unused_shards)
     {
