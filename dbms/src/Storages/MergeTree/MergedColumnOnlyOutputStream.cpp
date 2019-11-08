@@ -8,6 +8,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec, bool skip_offsets_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     WrittenOffsetColumns & already_written_offset_columns_,
+    const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
     : IMergedBlockOutputStream(data_part),
     header(header_), sync(sync_), skip_offsets(skip_offsets_),
@@ -19,15 +20,17 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     // if (index_granularity_info_)
     //     std::cerr << "(MergedColumnOnlyOutputStream) index_granularity_info->isAdaptive(): " << index_granularity_info_->is_adaptive << "\n";
 
-    WriterSettings writer_settings(data_part->storage.global_context.getSettings(), false);
-    if (index_granularity_info && !index_granularity_info->is_adaptive)
-        writer_settings.can_use_adaptive_granularity = false;
-    writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc, default_codec, writer_settings);
+    
+    WriterSettings writer_settings(
+        data_part->storage.global_context.getSettings(),
+        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity());
+
+    writer = data_part->getWriter(header.getNamesAndTypesList(), indices_to_recalc, default_codec, writer_settings, index_granularity);
     writer_wide = typeid_cast<MergeTreeDataPartWriterWide *>(writer.get());
     if (!writer_wide)
         throw Exception("MergedColumnOnlyOutputStream can be used only for writing Wide parts", ErrorCodes::LOGICAL_ERROR);
 
-    /// FIXME unnessary init of primary idx
+    writer->initSkipIndices();
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)
@@ -51,7 +54,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!rows)
         return;
 
-    /// FIXME skip_offsets
+    std::cerr << "(MergedColumnOnlyOutputStream::write) writing rows: " << rows << "\n";    
 
     WrittenOffsetColumns offset_columns = already_written_offset_columns;
     for (size_t i = 0; i < header.columns(); ++i)

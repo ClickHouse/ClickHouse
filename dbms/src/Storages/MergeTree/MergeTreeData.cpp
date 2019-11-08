@@ -1678,6 +1678,7 @@ void MergeTreeData::alterDataPart(
             /// Don't recalc indices because indices alter is restricted
             std::vector<MergeTreeIndexPtr>{},
             unused_written_offsets,
+            part->index_granularity,
             &part->index_granularity_info);
 
         in.readPrefix();

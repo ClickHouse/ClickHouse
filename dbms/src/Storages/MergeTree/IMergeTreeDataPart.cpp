@@ -364,7 +364,8 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 
 String IMergeTreeDataPart::getFullPath() const
 {
-    assertOnDisk();
+    /// FIXME
+    // assertOnDisk();
 
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
