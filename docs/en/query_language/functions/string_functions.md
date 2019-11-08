@@ -151,13 +151,104 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
-## concat(s1, s2, ...)
+## concat {#concat}
 
 Concatenates the strings listed in the arguments, without a separator.
 
-## concatAssumeInjective(s1, s2, ...)
+**Syntax** 
 
-Same as [concat](./string_functions.md#concat-s1-s2), the difference is that you need to ensure that concat(s1, s2, s3) -> s4 is injective, it will be used for optimization of GROUP BY
+```sql
+concat(s1, s2, ...)
+```
+Alias: `CONCAT`.
+
+**Parameters** (Optional)
+
+- `s<sub>i</sub>` – can be any [data type](https://clickhouse.yandex/docs/en/data_types/).
+
+**Returned values**
+
+Returns the string that results from concatenating the arguments. 
+
+If either argument is null, `concat` returns null. 
+
+Type: `String`.
+
+**Example**
+
+Input table:
+
+```sql
+CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog
+INSERT INTO key_val VALUES ('Hello, ','World',1)('Hello, ','World',2)('Hello, ','World!',3)('Hello',', World!',2)
+SELECT * FROM key_val
+```
+
+```text
+┌─key1────┬─key2─────┬─value─┐
+│ Hello,  │ World    │     1 │
+│ Hello,  │ World    │     2 │
+│ Hello,  │ World!   │     3 │
+│ Hello   │ , World! │     2 │
+└─────────┴──────────┴───────┘
+```
+
+Query:
+
+```sql
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concat(key1, key2)
+```
+
+Result:
+
+```text
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          5 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+```
+
+## concatAssumeInjective {#concatassumeinjective}
+
+Same as [concat](./string_functions.md#concat), the difference is that you need to ensure that concat(s1, s2, s3) -> s4 is injective, it will be used for optimization of GROUP BY.
+
+**Syntax** 
+
+```sql
+concatAssumeInjective(s1, s2, ...)
+```
+
+**Parameters** (Optional)
+
+- `si` – can be any [data type](https://clickhouse.yandex/docs/en/data_types/).
+
+**Returned values**
+
+Returns the string that results from concatenating the arguments after using GROUP BY.
+
+If either argument is null, `concatAssumeInjective` returns null.
+
+Type: `String`.
+
+**Example**
+
+Input table the same as in [concat](./string_functions.md#concat).
+
+Query:
+
+```sql
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
+```
+
+Result:
+
+```text
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
+```
 
 ## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length)
 
