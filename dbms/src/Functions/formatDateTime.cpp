@@ -31,6 +31,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+// in private namespace to avoid GCC 9 error: "explicit specialization in non-namespace scope"
+template <typename DataType> struct ActionaValueTypeMap {};
+template <> struct ActionaValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
+template <> struct ActionaValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
+// TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
+// TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
+template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
+}
 
 /** formatDateTime(time, 'pattern')
   * Performs formatting of time, according to provided pattern.
@@ -293,13 +303,6 @@ public:
                             + " of function " + getName() + ", must be Date or DateTime",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
-
-    template <typename DataType> struct ActionaValueTypeMap {};
-    template <> struct ActionaValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
-    template <> struct ActionaValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
-    // TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
-    // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
-    template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
 
     template <typename DataType>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
