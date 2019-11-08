@@ -15,7 +15,7 @@ cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 
 instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql = True)
 
 create_table_mysql_template = """
-    CREATE TABLE `test`.`{}` (
+    CREATE TABLE IF NOT EXISTS `test`.`{}` (
         `id` int(11) NOT NULL,
         `value` varchar(50) NOT NULL,
         PRIMARY KEY (`id`)
@@ -23,7 +23,7 @@ create_table_mysql_template = """
     """
 
 create_clickhouse_dictionary_table_template = """
-    CREATE TABLE `test`.`dict_table_{}` (`id` Int32, `value` String) ENGINE = Dictionary({})
+    CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (`id` Int32, `value` String) ENGINE = Dictionary({})
     """
 
 @pytest.fixture(scope="module")
@@ -32,7 +32,9 @@ def started_cluster():
         cluster.start()
         
         # Create a MySQL database
-        create_mysql_db(get_mysql_conn(), 'test')
+        mysql_connection = get_mysql_conn()
+        create_mysql_db(mysql_connection, 'test')
+        mysql_connection.close()
         
         # Create database in ClickHouse
         instance.query("CREATE DATABASE IF NOT EXISTS test")
@@ -61,13 +63,12 @@ def test_load_mysql_dictionaries(started_cluster):
         if (n % 10) == 0:
             query("SYSTEM RELOAD DICTIONARIES")
 
-        # Check number of rows            
-        assert query("SELECT count() FROM `dict_table_`.{}".format('test' + str(n % 5))).rstrip() == '10000'
+        # Check number of row
+        assert query("SELECT count() FROM `test`.`dict_table_{}`".format('test' + str(n % 5))).rstrip() == '10000'
 
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
-        cursor.execute(
-            "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+        cursor.execute("CREATE DATABASE IF NOT EXISTS {} DEFAULT CHARACTER SET 'utf8'".format(name))
 
 def prepare_mysql_table(table_name, index):
     mysql_connection = get_mysql_conn()
