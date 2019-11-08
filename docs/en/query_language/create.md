@@ -55,7 +55,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_fucntion()
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
 Creates a table with the structure and data returned by a [table function](table_functions/index.md).
@@ -225,7 +225,6 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 In order to run these queries correctly, each host must have the same cluster definition (to simplify syncing configs, you can use substitutions from ZooKeeper). They must also connect to the ZooKeeper servers.
 The local version of the query will eventually be implemented on each host in the cluster, even if some hosts are currently not available. The order for executing queries within a single host is guaranteed.
-`ALTER` queries are not yet supported for replicated tables.
 
 ## CREATE VIEW
 

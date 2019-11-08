@@ -14,6 +14,7 @@
 #include <Storages/TableStructureLockHolder.h>
 
 #include <Processors/QueryPipeline.h>
+#include <Columns/FilterDescription.h>
 
 namespace Poco { class Logger; }
 
@@ -171,6 +172,8 @@ private:
         SubqueriesForSets subqueries_for_sets;
         PrewhereInfoPtr prewhere_info;
         FilterInfoPtr filter_info;
+        ConstantFilterDescription prewhere_constant_filter_description;
+        ConstantFilterDescription where_constant_filter_description;
     };
 
     static AnalysisResult analyzeExpressions(
@@ -181,7 +184,8 @@ private:
         const Context & context,
         const StoragePtr & storage,
         bool only_types,
-        const FilterInfoPtr & filter_info);
+        const FilterInfoPtr & filter_info,
+        const Block & source_header);
 
     /** From which table to read. With JOIN, the "left" table is returned.
      */
@@ -214,6 +218,7 @@ private:
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -231,6 +236,7 @@ private:
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     /// Add ConvertingBlockInputStream to specified header.
     void unifyStreams(Pipeline & pipeline, Block header);
@@ -252,9 +258,6 @@ private:
       * But the use of this section is justified if you need to set the settings for one subquery.
       */
     void initSettings();
-
-    /// Whether you need to check if the set is empty before ExpressionActions is executed. Create a CheckNonEmptySetBlockInputStream if needed.
-    BlockInputStreamPtr createCheckNonEmptySetIfNeed(BlockInputStreamPtr stream, const ExpressionActionsPtr & expression) const;
 
     const SelectQueryOptions options;
     ASTPtr query_ptr;

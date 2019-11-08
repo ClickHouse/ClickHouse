@@ -2,6 +2,8 @@
 
 #include <common/logger_useful.h>
 
+#include <cppkafka/cppkafka.h>
+
 namespace DB
 {
 

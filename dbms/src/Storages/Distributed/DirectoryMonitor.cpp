@@ -6,6 +6,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -355,8 +356,19 @@ struct StorageDistributedDirectoryMonitor::Batch
             /// we must try to re-send exactly the same batches.
             /// So we save contents of the current batch into the current_batch_file_path file
             /// and truncate it afterwards if all went well.
-            WriteBufferFromFile out{parent.current_batch_file_path};
-            writeText(out);
+
+            /// Temporary file is required for atomicity.
+            String tmp_file{parent.current_batch_file_path + ".tmp"};
+
+            if (Poco::File{tmp_file}.exists())
+                LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
+
+            {
+                WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
+                writeText(out);
+            }
+
+            Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
         auto connection = parent.pool->get(timeouts);

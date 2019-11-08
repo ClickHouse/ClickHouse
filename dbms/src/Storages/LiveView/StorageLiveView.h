@@ -73,7 +73,7 @@ public:
     }
     /// No users thread mutex, predicate and wake up condition
     void startNoUsersThread(const UInt64 & timeout);
-    std::mutex no_users_thread_mutex;
+    std::mutex no_users_thread_wakeup_mutex;
     bool no_users_thread_wakeup = false;
     std::condition_variable no_users_thread_condition;
     /// Get blocks hash
@@ -149,6 +149,8 @@ private:
     ASTPtr inner_query;
     Context & global_context;
     bool is_temporary = false;
+    /// Mutex to protect access to sample block
+    mutable std::mutex sample_block_lock;
     mutable Block sample_block;
 
     /// Mutex for the blocks and ready condition
@@ -168,6 +170,7 @@ private:
     /// Background thread for temporary tables
     /// which drops this table if there are no users
     static void noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout);
+    std::mutex no_users_thread_mutex;
     std::thread no_users_thread;
     std::atomic<bool> shutdown_called = false;
     std::atomic<bool> start_no_users_thread_called = false;

@@ -14,6 +14,7 @@
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -236,7 +237,7 @@ QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
     }
 
     if (!has_main_pipeline)
-        main_pipeline.init({ std::make_shared<NullSource>(getSampleBlock()) });
+        main_pipeline.init(Pipe(std::make_shared<NullSource>(getSampleBlock())));
 
     if (!pipelines.empty())
     {

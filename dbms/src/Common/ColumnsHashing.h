@@ -359,7 +359,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if constexpr (has_mapped)
         {
-            auto & mapped = *lookupResultGetMapped(it);
+            auto & mapped = it->getMapped();
             if (inserted)
             {
                 new (&mapped) Mapped();
