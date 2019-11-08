@@ -130,6 +130,17 @@ Possible values:
 
 Default value: 0.
 
+## max_http_get_redirects {#setting-max_http_get_redirects}
+
+Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables.
+
+Possible values:
+
+- Positive integer.
+- 0 — Unlimited number of hops.
+
+Default value: 0.
+
 ## input_format_allow_errors_num {#settings-input_format_allow_errors_num}
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
