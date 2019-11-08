@@ -324,7 +324,10 @@ BlockInputStreams StorageDistributed::read(
 
     auto query_for_header = query_info.query;
     if (has_shard_num_column)
+    {
+        query_for_header = query_for_header->clone();
         VirtualColumnUtils::rewriteEntityInAst(query_for_header, "_shard_num", 0, "toUInt32");
+    }
 
     Block header =
         InterpreterSelectQuery(query_for_header, context, SelectQueryOptions(processed_stage)).getSampleBlock();
