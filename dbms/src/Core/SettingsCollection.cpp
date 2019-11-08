@@ -1,4 +1,5 @@
-#include "SettingsCommon.h"
+#include <Core/SettingsCollection.h>
+#include <Core/SettingsCollectionImpl.h>
 
 #include <Core/Field.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -8,10 +9,8 @@
 #include <IO/WriteHelpers.h>
 
 
-
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
@@ -462,14 +461,18 @@ IMPLEMENT_SETTING_ENUM(LogsLevel, LOGS_LEVEL_LIST_OF_NAMES, ErrorCodes::BAD_ARGU
 
 namespace details
 {
+    void SettingsCollectionUtils::serializeName(const StringRef & name, WriteBuffer & buf)
+    {
+        writeBinary(name, buf);
+    }
+
+
     String SettingsCollectionUtils::deserializeName(ReadBuffer & buf)
     {
         String name;
         readBinary(name, buf);
         return name;
     }
-
-    void SettingsCollectionUtils::serializeName(const StringRef & name, WriteBuffer & buf) { writeBinary(name, buf); }
 
     void SettingsCollectionUtils::throwNameNotFound(const StringRef & name)
     {
