@@ -683,42 +683,46 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// If merge is vertical we cannot calculate it
     bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
 
+    UInt64 merge_block_size = data_settings->merge_max_block_size;
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
+                src_streams, sort_description, merge_block_size, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get(), blocks_are_granules_size);
+                src_streams, sort_description, data.merging_params.sign_column,
+                merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Summing:
             merged_stream = std::make_unique<SummingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, data.merging_params.columns_to_sum, merge_block_size);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
             merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
-                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, merge_block_size);
             break;
 
         case MergeTreeData::MergingParams::Replacing:
             merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get(), blocks_are_granules_size);
+                src_streams, sort_description, data.merging_params.version_column,
+                merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
             merged_stream = std::make_unique<GraphiteRollupSortedBlockInputStream>(
-                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE,
+                src_streams, sort_description, merge_block_size,
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing:
             merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get(), blocks_are_granules_size);
+                src_streams, sort_description, data.merging_params.sign_column,
+                merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
     }
 
@@ -939,12 +943,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                             command.partition, context_for_reading);
             });
 
-    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading);
 
-    if (!mutations_interpreter.isStorageTouchedByMutations())
+    if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
-        return data.cloneAndLoadDataPart(source_part, "tmp_clone_", future_part.part_info);
+        return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
     }
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
@@ -969,6 +972,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     Poco::File(new_part_tmp_path).createDirectories();
 
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading, true);
     auto in = mutations_interpreter.execute(table_lock_holder);
     const auto & updated_header = mutations_interpreter.getUpdatedHeader();
 

@@ -231,6 +231,7 @@ public:
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
+    void operator() (const Tuple & x) const;
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
@@ -479,6 +480,7 @@ public:
     bool operator() (Null &) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (String &) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 

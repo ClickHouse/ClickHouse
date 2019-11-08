@@ -194,7 +194,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 - [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
-
+- [MOVE PARTITION|PART](#alter_move-partition) – Move partition/data part to another disk or volume.                                                                                                                   
 #### DETACH PARTITION {#alter_detach-partition}
 
 ```sql
@@ -291,15 +291,18 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 
 This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
 
-Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+!!! note "Note"
+    The entire backup process is performed without stopping the server.
 
-!!! note
-   The entire backup process is performed without stopping the server.
+Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where:
 
 - `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 - `N` is the incremental number of the backup.
+
+!!! note "Note"
+    If you use [a set of disks for data storage in a table](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
 
 The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs 'chmod' for all files, forbidding writing into them.
 
@@ -355,6 +358,27 @@ Before downloading, the system checks if the partition exists and the table stru
 
 Although the query is called `ALTER TABLE`, it does not change the table structure and does not immediately change the data available in the table.
 
+#### MOVE PARTITION|PART {#alter_move-partition}
+
+Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
+
+```sql
+ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+```
+
+The `ALTER TABLE t MOVE` query:
+
+- Not replicated, because different replicas can have different storage policies.
+- Returns an error if the specified disk or volume is not configured. Query also returns an error if conditions of data moving, that specified in the storage policy, can't be applied.
+- Can return an error in the case, when data to be moved is already moved by a background process, concurrent `ALTER TABLE t MOVE` query or as a result of background data merging. A user shouldn't perform any additional actions in this case.
+
+Example:
+
+```sql
+ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
+ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
+```
+
 #### How To Set Partition Expression {#alter-how-to-specify-part-expr}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
@@ -385,9 +409,7 @@ Possible values: `0` – do not wait; `1` – only wait for own execution (defau
 
 ### Mutations {#alter-mutations}
 
-Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table.
-
-The functionality is in beta stage and is available starting with the 1.1.54388 version. Currently `*MergeTree` table engines are supported (both replicated and unreplicated).
+Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table. Supported for the `MergeTree` family of table engines including the engines with replication support.
 
 Existing tables are ready for mutations as-is (no conversion necessary), but after the first mutation is applied to a table, its metadata format becomes incompatible with previous server versions and falling back to a previous version becomes impossible.
 
@@ -397,13 +419,13 @@ Currently available commands:
 ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
-The `filter_expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
+The `filter_expr` must be of type `UInt8`. The query deletes rows in the table for which this expression takes a non-zero value.
 
 ```sql
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
-The command is available starting with the 18.12.14 version. The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
+The `filter_expr` must be of type `UInt8`. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
 
 ```sql
 ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name

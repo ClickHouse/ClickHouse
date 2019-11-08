@@ -1,6 +1,6 @@
 #include <Common/DiskSpaceMonitor.h>
 #include <Common/escapeForFileName.h>
-#include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 
 #include <set>
 
@@ -193,7 +193,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
 
         if (has_space_ratio)
         {
-            auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
+            auto ratio = config.getDouble(disk_config_prefix + ".keep_free_space_ratio");
             if (ratio < 0 || ratio > 1)
                 throw Exception("'keep_free_space_ratio' have to be between 0 and 1",
                                 ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
@@ -292,7 +292,7 @@ Volume::Volume(
                                     formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
     }
     constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
-    if (max_data_part_size < MIN_PART_SIZE)
+    if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(logger, "Volume " << backQuote(name) << " max_data_part_size is too low ("
             << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < "
             << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
