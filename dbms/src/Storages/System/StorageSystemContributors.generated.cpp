@@ -11,6 +11,7 @@ const char * auto_contributors[] {
     "Alex Ryndin",
     "Alex Zatelepin",
     "Alexander Avdonkin",
+    "Alexander Burmak",
     "Alexander Ermolaev",
     "Alexander GQ Gerasiov",
     "Alexander Kazakov",
