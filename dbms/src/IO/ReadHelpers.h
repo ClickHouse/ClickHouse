@@ -253,12 +253,14 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf)
 template <typename T, typename ReturnType = void>
 ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
+    std::cerr << "\n\nEnter in readIntTextImpl function\n\n";
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
     std::make_unsigned_t<T> res = 0;
     if (buf.eof())
     {
+        std::cerr << "\n\nbuf.eof\n\n";
         if constexpr (throw_exception)
             throwReadAfterEOF();
         else
@@ -267,6 +269,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
+        std::cerr << "\n\nDo\n\n";
         switch (*buf.position())
         {
             case '+':
@@ -309,6 +312,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 template <typename T>
 void readIntText(T & x, ReadBuffer & buf)
 {
+    std::cerr << "\n\nEnter in readIntText function\n\n";
     readIntTextImpl<T, void>(x, buf);
 }
 
@@ -669,11 +673,11 @@ inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf);
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
 inline std::enable_if_t<is_integral_v<T>, void>
-readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
+readText(T & x, ReadBuffer & buf) { readIntText(x, buf); std::cerr << "\n\nEnter in readText for integral\n\n";}
 
 template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
-readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); std::cerr << "\n\nEnter in readText for float\n\n";}
 
 inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
