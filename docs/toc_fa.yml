@@ -26,6 +26,7 @@ nav:
   - ' فرمت های Input و Output': 'interfaces/formats.md'
   - ' درایور JDBC': 'interfaces/jdbc.md'
   - ' درایور ODBC': 'interfaces/odbc.md'
+  - 'C ++ کتابخانه مشتری': 'interfaces/cpp.md'
   - 'Third-party':
     - 'کتابخانه های مشتری': 'interfaces/third-party/client_libraries.md'
     - 'یکپارچگی': 'interfaces/third-party/integrations.md'
@@ -56,6 +57,7 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
+    - 'Interval': 'data_types/special_data_types/interval.md'    
   - 'Domains':
     - 'Overview': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'

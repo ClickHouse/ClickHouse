@@ -70,6 +70,7 @@ public:
     size_t getTotalByteCount() const { return data.getTotalByteCount(); }
 
     const DataTypes & getDataTypes() const { return data_types; }
+    const DataTypes & getElementsTypes() const { return set_elements_types; }
 
     bool hasExplicitSetElements() const { return fill_set_elements; }
     Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
@@ -102,6 +103,9 @@ private:
       * When checking for belonging to a set, the types of columns to be checked must match with them.
       */
     DataTypes data_types;
+
+    /// Types for set_elements.
+    DataTypes set_elements_types;
 
     Logger * log;
 
