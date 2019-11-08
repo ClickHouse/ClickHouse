@@ -296,5 +296,8 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 对表的读操作是自动并行的。
 
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
+
+### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
 [来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
