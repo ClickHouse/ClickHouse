@@ -273,7 +273,7 @@ using SettingLogsLevel = SettingEnum<LogsLevel>;
 enum class SettingsBinaryFormat
 {
     OLD,     /// Part of the settings are serialized as strings, and other part as varints. This is the old behaviour.
-    STRINGS, /// All settings are serialized as strings.
+    STRINGS, /// All settings are serialized as strings. Before each value the flag `is_ignorable` is serialized.
     DEFAULT = STRINGS,
 };
 
@@ -285,9 +285,9 @@ enum class SettingsBinaryFormat
   * struct MySettings : public SettingsCollection<MySettings>
   * {
   * #   define APPLY_FOR_MYSETTINGS(M) \
-  *         M(SettingUInt64, a, 100, "Description of a") \
-  *         M(SettingFloat, f, 3.11, "Description of f") \
-  *         M(SettingString, s, "default", "Description of s")
+  *         M(SettingUInt64, a, 100, "Description of a", 0) \
+  *         M(SettingFloat, f, 3.11, "Description of f", IGNORABLE) // IGNORABLE - means the setting can be ignored by older versions) \
+  *         M(SettingString, s, "default", "Description of s", 0)
   *
   *     DECLARE_SETTINGS_COLLECTION(MySettings, APPLY_FOR_MYSETTINGS)
   * };
@@ -316,6 +316,7 @@ private:
 
         StringRef name;
         StringRef description;
+        bool is_ignorable;
         IsChangedFunction is_changed;
         GetStringFunction get_string;
         GetFieldFunction get_field;
@@ -511,6 +512,6 @@ public:
 #define DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS_MACRO) \
     LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
 
-#define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+#define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     TYPE NAME {DEFAULT};
 }

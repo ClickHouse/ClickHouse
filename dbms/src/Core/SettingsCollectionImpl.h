@@ -16,6 +16,8 @@ namespace details
     {
         static void serializeName(const StringRef & name, WriteBuffer & buf);
         static String deserializeName(ReadBuffer & buf);
+        static void serializeFlag(bool flag, WriteBuffer & buf);
+        static bool deserializeFlag(ReadBuffer & buf);
         static void skipValue(ReadBuffer & buf);
         static void warningNameNotFound(const StringRef & name);
         [[noreturn]] static void throwNameNotFound(const StringRef & name);
@@ -251,6 +253,8 @@ void SettingsCollection<Derived>::serialize(WriteBuffer & buf, SettingsBinaryFor
         if (member.is_changed(castToDerived()))
         {
             details::SettingsCollectionUtils::serializeName(member.name, buf);
+            if (format >= SettingsBinaryFormat::STRINGS)
+                details::SettingsCollectionUtils::serializeFlag(member.is_ignorable, buf);
             member.serialize(castToDerived(), buf, format);
         }
     }
@@ -268,11 +272,12 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
         if (name.empty() /* empty string is a marker of the end of settings */)
             break;
         auto * member = the_members.find(name);
+        bool is_ignorable = (format >= SettingsBinaryFormat::STRINGS) ? details::SettingsCollectionUtils::deserializeFlag(buf) : false;
         if (member)
         {
             member->deserialize(castToDerived(), buf, format);
         }
-        else if (format >= SettingsBinaryFormat::STRINGS)
+        else if (is_ignorable)
         {
             details::SettingsCollectionUtils::warningNameNotFound(name);
             details::SettingsCollectionUtils::skipValue(buf);
@@ -283,6 +288,7 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
 }
 
 
+//-V:IMPLEMENT_SETTINGS_COLLECTION:501
 #define IMPLEMENT_SETTINGS_COLLECTION(DERIVED_CLASS_NAME, LIST_OF_SETTINGS_MACRO) \
     template<> \
     SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos::MemberInfos() \
@@ -292,6 +298,8 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
         { \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
         }; \
+        constexpr int IGNORABLE = 1; \
+        UNUSED(IGNORABLE); \
         LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
     } \
     /** \
@@ -301,7 +309,7 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
     template class SettingsCollection<DERIVED_CLASS_NAME>;
 
 
-#define IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+#define IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     static String NAME##_getString(const Derived & collection) { return collection.NAME.toString(); } \
     static Field NAME##_getField(const Derived & collection) { return collection.NAME.toField(); } \
     static void NAME##_setString(Derived & collection, const String & value) { collection.NAME.set(value); } \
@@ -312,8 +320,9 @@ void SettingsCollection<Derived>::deserialize(ReadBuffer & buf, SettingsBinaryFo
     static Field NAME##_valueToCorrespondingType(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); } \
 
 
-#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     add({StringRef(#NAME, strlen(#NAME)), StringRef(DESCRIPTION, strlen(DESCRIPTION)), \
+         FLAGS & IGNORABLE, \
          [](const Derived & d) { return d.NAME.changed; }, \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
          &Functions::NAME##_setString, &Functions::NAME##_setField, \
