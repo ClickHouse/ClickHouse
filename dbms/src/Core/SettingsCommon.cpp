@@ -46,6 +46,7 @@ Field SettingNumber<Type>::toField() const
 template <typename Type>
 void SettingNumber<Type>::set(Type x)
 {
+    std::cerr << "\n\nEnter in set_function_for_type\n\n";
     value = x;
     changed = true;
 }
@@ -53,6 +54,7 @@ void SettingNumber<Type>::set(Type x)
 template <typename Type>
 void SettingNumber<Type>::set(const Field & x)
 {
+    std::cerr << "\n\nEnter in set_function_for_field\n\n";
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
     else
@@ -62,6 +64,7 @@ void SettingNumber<Type>::set(const Field & x)
 template <typename Type>
 void SettingNumber<Type>::set(const String & x)
 {
+    std::cerr << "\n\nEnter in set_function_for_string\n\n";
     set(parse<Type>(x));
 }
 
