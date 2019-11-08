@@ -338,6 +338,7 @@ Columns:
 - `table` (`String`) – Name of the table.
 - `engine` (`String`) – Name of the table engine without parameters.
 - `path` (`String`) – Absolute path to the folder with data part files.
+- `disk` (`String`) – Name of a disk that stores the data part.
 - `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
 - `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
 - `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
@@ -354,11 +355,12 @@ This table contains information about events that occurred with [data parts](tab
 The `system.part_log` table contains the following columns:
 
 - `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values:
-    - `NEW_PART` — inserting
-    - `MERGE_PARTS` — merging
-    - `DOWNLOAD_PART` — downloading
-    - `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition)
-    - `MUTATE_PART` — updating.
+    - `NEW_PART` — Inserting of a new data part.
+    - `MERGE_PARTS` — Merging of data parts.
+    - `DOWNLOAD_PART` — Downloading a data part.
+    - `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    - `MUTATE_PART` — Mutating of a data part.
+    - `MOVE_PART` — Moving the data part from the one disk to another one.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `duration_ms` (UInt64) — Duration.
@@ -377,26 +379,27 @@ The `system.part_log` table contains the following columns:
 
 The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
 
-## system.processes
+## system.processes {#system_tables-processes}
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
+
 Columns:
 
-- `user` (String)              – Name of the user who made the request. For distributed query processing, this is the user who helped the requestor server send the query to this server, not the user who made the distributed request on the requestor server.
-- `address` (String)           - The IP address the request was made from. The same for distributed processing.
-- `elapsed` (Float64)          - The time in seconds since request execution started.
-- `rows_read` (UInt64)         - The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
-- `bytes_read` (UInt64)        - The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
-- `total_rows_approx` (UInt64) - The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
-- `memory_usage` (UInt64)      - How much memory the request uses. It might not include some types of dedicated memory.
-- `query` (String)             - The query text. For INSERT, it doesn't include the data to insert.
-- `query_id` (String)          - Query ID, if defined.
+- `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` user. The field contains the username for a specific query, not for a query that this query initiated.
+- `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` on the query requestor server.
+- `elapsed` (Float64) – The time in seconds since request execution started.
+- `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+- `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
+- `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory.  See the  [max_memory_usage](../operations/settings/query_complexity.md#settings_max_memory_usage) setting.
+- `query` (String) – The query text. For `INSERT`, it doesn't include the data to insert.
+- `query_id` (String) – Query ID, if defined.
 
 ## system.query_log {#system_tables-query-log}
 
 Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
 
-!!! note
+!!! note "Note"
     The table doesn't contain input data for `INSERT` queries.
 
 ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
@@ -410,11 +413,11 @@ The `system.query_log` table registers two kinds of queries:
 
 Columns:
 
-- `type` (UInt8) — Type of event that occurred when executing the query. Possible values:
-    - 1 — Successful start of query execution.
-    - 2 — Successful end of query execution.
-    - 3 — Exception before the start of query execution.
-    - 4 — Exception during the query execution.
+- `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
+    - `'QueryStart' = 1` — Successful start of query execution.
+    - `'QueryFinish' = 2` — Successful end of query execution.
+    - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+    - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `query_start_time` (DateTime) — Start time of query execution.
@@ -756,5 +759,34 @@ If there were problems with mutating some parts, the following columns contain a
 **latest_fail_time** - The time of the most recent part mutation failure.
 
 **latest_fail_reason** - The exception message that caused the most recent part mutation failure.
+
+
+## system.disks {#system_tables-disks}
+
+Contains information about disks defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure). 
+
+Columns:
+
+- `name` ([String](../data_types/string.md)) — Name of a disk in the server configuration.
+- `path` ([String](../data_types/string.md)) — Path to the mount point in the file system.
+- `free_space` ([UInt64](../data_types/int_uint.md)) — Free space on disk in bytes.
+- `total_space` ([UInt64](../data_types/int_uint.md)) — Disk volume in bytes.
+- `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` parameter of disk configuration.
+
+
+## system.storage_policies {#system_tables-storage_policies}
+
+Contains information about storage policies and volumes defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+
+Columns:
+
+- `policy_name` ([String](../data_types/string.md)) — Name of the storage policy.
+- `volume_name` ([String](../data_types/string.md)) — Volume name defined in the storage policy.
+- `volume_priority` ([UInt64](../data_types/int_uint.md)) — Volume order number in the configuration.
+- `disks` ([Array(String)](../data_types/array.md)) — Disk names, defined in the storage policy.
+- `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
+- `move_factor` ([Float64](../data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+
+If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->

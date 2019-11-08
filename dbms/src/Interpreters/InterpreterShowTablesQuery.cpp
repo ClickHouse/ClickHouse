@@ -44,10 +44,21 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     context.assertDatabaseExists(database, false);
 
     std::stringstream rewritten_query;
-    rewritten_query << "SELECT name FROM system.tables WHERE ";
+    rewritten_query << "SELECT name FROM system.";
+
+    if (query.dictionaries)
+        rewritten_query << "dictionaries ";
+    else
+        rewritten_query << "tables ";
+
+    rewritten_query << "WHERE ";
 
     if (query.temporary)
+    {
+        if (query.dictionaries)
+            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
         rewritten_query << "is_temporary";
+    }
     else
         rewritten_query << "database = " << std::quoted(database, '\'');
 

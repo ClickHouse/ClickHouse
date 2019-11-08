@@ -64,7 +64,8 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    if (constant_filter_description.always_false)
+    if (constant_filter_description.always_false
+        || expression->checkColumnIsAlwaysFalse(filter_column_name))
     {
         input.close();
         output.finish();
