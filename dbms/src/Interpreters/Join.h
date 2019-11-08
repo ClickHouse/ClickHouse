@@ -16,6 +16,7 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/HashTable/StringHashMap.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -212,8 +213,8 @@ public:
         std::unique_ptr<FixedHashMap<UInt16, Mapped>> key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
         std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
+        std::unique_ptr<StringHashMap<Mapped>>                                          key_string;
+        std::unique_ptr<StringHashMap<Mapped>>                                          key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
         std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;

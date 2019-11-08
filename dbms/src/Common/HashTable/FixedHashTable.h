@@ -312,6 +312,66 @@ public:
     bool ALWAYS_INLINE has(const Key & x) const { return !buf[x].isZero(*this); }
     bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
 
+
+    using Position = Cell *;
+    using ConstPosition = const Cell *;
+
+    Position startPos() { return buf; }
+    ConstPosition startPos() const { return buf; }
+
+    template <typename TSelf, typename Func, typename TPosition>
+    static bool forEachCell(TSelf & self, Func && func, TPosition & pos)
+    {
+        using TMapped = decltype(std::declval<TSelf>().buf[0].getMapped());
+        static constexpr bool with_key = std::is_invocable_v<Func, const Key &, TMapped>;
+        auto func_wrapper = getFuncWrapper<with_key>(std::forward<Func>(func));
+
+        size_t i = pos - self.buf;
+        for (; i < NUM_CELLS; ++i)
+        {
+            if (!self.buf[i].isZero(self) && func_wrapper(i, self.buf[i].getMapped()))
+            {
+                pos = &self.buf[i + 1];
+                return true;
+            }
+        }
+        pos = &self.buf[i];
+
+        return false;
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, const Mapped &); or (2)  void(const Mapped &).
+    template <typename Func>
+    auto forEachCell(Func && func) const
+    {
+        ConstPosition pos = startPos();
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, Mapped &); or (2)  void(const Mapped &).
+    template <typename Func>
+    auto forEachCell(Func && func)
+    {
+        Position pos = startPos();
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, ConstPosition & pos) const
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, Position & pos)
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
     void write(DB::WriteBuffer & wb) const
     {
         Cell::State::write(wb);

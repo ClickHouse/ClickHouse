@@ -179,22 +179,6 @@ public:
         }
     }
 
-    /// Call func(const Key &, Mapped &) for each hash map element.
-    template <typename Func>
-    void forEachValue(Func && func)
-    {
-        for (auto & v : *this)
-            func(v.getKey(), v.getMapped());
-    }
-
-    /// Call func(Mapped &) for each hash map element.
-    template <typename Func>
-    void forEachMapped(Func && func)
-    {
-        for (auto & v : *this)
-            func(v.getMapped());
-    }
-
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;

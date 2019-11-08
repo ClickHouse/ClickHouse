@@ -45,6 +45,39 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+/// Wrap a function so that it always accepts a key argument and a mapped argument and returns a bool.
+/// It's used to build inner iterative functions.
+template <bool with_key, typename Func>
+auto getFuncWrapper(Func && f)
+{
+    return [func = std::forward<Func>(f)](auto && first, auto &&... args)
+    {
+        if constexpr (with_key)
+        {
+            if constexpr (std::is_same_v<std::invoke_result_t<decltype(func), decltype(first), decltype(args)...>, bool>)
+                return func(std::forward<decltype(first)>(first), std::forward<decltype(args)>(args)...);
+            else
+            {
+                func(std::forward<decltype(first)>(first), std::forward<decltype(args)>(args)...);
+                return false;
+            }
+        }
+        else
+        {
+            if constexpr (std::is_same_v<std::invoke_result_t<decltype(func), decltype(args)...>, bool>)
+                return func(std::forward<decltype(args)>(args)...);
+            else
+            {
+                func(std::forward<decltype(args)>(args)...);
+                return false;
+            }
+        }
+    };
+}
+}
+
 /** The state of the hash table that affects the properties of its cells.
   * Used as a template parameter.
   * For example, there is an implementation of an instantly clearable hash table - ClearableHashMap.
@@ -928,6 +961,77 @@ public:
         return !buf[place_value].isZero(*this);
     }
 
+
+    using Position = Cell *;
+    using ConstPosition = const Cell *;
+
+    Position startPos() { return nullptr; }
+    ConstPosition startPos() const { return nullptr; }
+
+    template <typename TSelf, typename Func, typename TPosition>
+    static bool forEachCell(TSelf & self, Func && func, TPosition & pos)
+    {
+        using TMapped = decltype(std::declval<TSelf>().buf[0].getMapped());
+        using TKey = decltype(std::declval<Cell>().getKey());
+        static constexpr bool with_key = std::is_invocable_v<Func, const TKey &, TMapped>;
+        auto func_wrapper = getFuncWrapper<with_key>(std::forward<Func>(func));
+
+        if (!self.buf || self.empty())
+            return false;
+
+        if (pos == self.startPos())
+        {
+            pos = self.buf;
+            if (self.hasZero() && func_wrapper(self.zeroValue()->getKey(), self.zeroValue()->getMapped()))
+                return true;
+        }
+
+        auto ptr = pos;
+        auto ptr_end = self.buf + self.grower.bufSize();
+        for (; ptr < ptr_end; ++ptr)
+        {
+            if (!ptr->isZero(self) && func_wrapper(ptr->getKey(), ptr->getMapped()))
+            {
+                pos = ptr + 1;
+                return true;
+            }
+        }
+        pos = ptr_end;
+
+        return false;
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, const Mapped &); or (2)  void(const Mapped &).
+    template <typename Func>
+    auto forEachCell(Func && func) const
+    {
+        ConstPosition pos = startPos();
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, Mapped &); or (2)  void(Mapped &).
+    template <typename Func>
+    auto forEachCell(Func && func)
+    {
+        Position pos = nullptr;
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, ConstPosition & pos) const
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, Position & pos)
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
 
     void write(DB::WriteBuffer & wb) const
     {

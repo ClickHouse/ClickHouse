@@ -134,6 +134,64 @@ public:
         return hasZero() ? zeroValue() : nullptr;
     }
 
+
+    using Position = Cell *;
+    using ConstPosition = const Cell *;
+
+    Position startPos() { return nullptr; }
+    ConstPosition startPos() const { return nullptr; }
+
+    template <typename TSelf, typename Func, typename TPosition>
+    static bool forEachCell(TSelf & self, Func && func, TPosition & pos)
+    {
+        using TMapped = decltype(std::declval<TSelf>().zeroValue()->getMapped());
+        static constexpr bool with_key = std::is_invocable_v<Func, const StringRef &, TMapped>;
+        auto func_wrapper = getFuncWrapper<with_key>(std::forward<Func>(func));
+
+        if (pos == self.startPos())
+        {
+            if (self.hasZero() && func_wrapper(StringRef(), self.zeroValue()->getMapped()))
+            {
+                pos = self.zeroValue(); // next pos
+                return true;
+            }
+        }
+        pos = self.zeroValue(); // end pos
+        return false;
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, const Mapped &); or (2)  void(const Mapped &).
+    template <typename Func>
+    auto forEachCell(Func && func) const
+    {
+        ConstPosition pos = startPos();
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, Mapped &); or (2)  void(Mapped &).
+    template <typename Func>
+    auto forEachCell(Func && func)
+    {
+        Position pos = nullptr;
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, ConstPosition & pos) const
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    auto forEachCell(Func && func, Position & pos)
+    {
+        return forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
     void write(DB::WriteBuffer & wb) const { zeroValue()->write(wb); }
     void writeText(DB::WriteBuffer & wb) const { zeroValue()->writeText(wb); }
     void read(DB::ReadBuffer & rb) { zeroValue()->read(rb); }
@@ -323,7 +381,8 @@ public:
         template <typename Submap, typename SubmapKey>
         auto ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
         {
-            return &map.find(key, hash)->getMapped();
+            auto it = map.find(key, hash);
+            return it ? &it->getMapped() : nullptr;
         }
     };
 
@@ -342,6 +401,82 @@ public:
         return dispatch(*this, x, FindCallable{}) != nullptr;
     }
 
+    using Position
+        = std::variant<typename T0::Position, typename T1::Position, typename T2::Position, typename T3::Position, typename Ts::Position>;
+
+    using ConstPosition = std::variant<
+        typename T0::ConstPosition,
+        typename T1::ConstPosition,
+        typename T2::ConstPosition,
+        typename T3::ConstPosition,
+        typename Ts::ConstPosition>;
+
+    Position startPos() { return Position{std::in_place_index<0>, m0.startPos()}; }
+    ConstPosition startPos() const { return ConstPosition{std::in_place_index<0>, m0.startPos()}; }
+
+    template <typename TSelf, typename Func, typename TPosition>
+    static bool forEachCell(TSelf & self, Func && func, TPosition & pos)
+    {
+        switch (pos.index())
+        {
+            case 0:
+                if (self.m0.forEachCell(self.m0, func, std::get<0>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<1>, self.m1.startPos()};
+                [[fallthrough]];
+            case 1:
+                if (self.m1.forEachCell(self.m1, func, std::get<1>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<2>, self.m2.startPos()};
+                [[fallthrough]];
+            case 2:
+                if (self.m2.forEachCell(self.m2, func, std::get<2>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<3>, self.m3.startPos()};
+                [[fallthrough]];
+            case 3:
+                if (self.m3.forEachCell(self.m3, func, std::get<3>(pos)))
+                    return true;
+                pos = TPosition{std::in_place_index<4>, self.ms.startPos()};
+                [[fallthrough]];
+            case 4:
+                if (self.ms.forEachCell(self.ms, func, std::get<4>(pos)))
+                    return true;
+        }
+        return false;
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, const Mapped &); or (2)  void(const Mapped &).
+    template <typename Func>
+    void forEachCell(Func && func) const
+    {
+        ConstPosition pos = startPos();
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Iterate over every cell and pass non-zero cells to func.
+    ///  Func should have signature (1) void(const Key &, Mapped &); or (2)  void(Mapped &).
+    template <typename Func>
+    void forEachCell(Func && func)
+    {
+        Position pos = startPos();
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    void forEachCell(Func && func, ConstPosition & pos) const
+    {
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
+
+    /// Same as the above functions but with additional position variable to resume last iteration.
+    template <typename Func>
+    void forEachCell(Func && func, Position & pos)
+    {
+        forEachCell(*this, std::forward<Func>(func), pos);
+    }
     void write(DB::WriteBuffer & wb) const
     {
         m0.write(wb);
