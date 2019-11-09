@@ -464,6 +464,10 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_DICTIONARY_QUERY = 487;
     extern const int UNKNOWN_DICTIONARY = 488;
     extern const int INCORRECT_DICTIONARY_DEFINITION = 489;
+    extern const int ACCESS_ENTITY_NOT_FOUND = 490;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS = 491;
+    extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 492;
+    extern const int ACCESS_ENTITY_STORAGE_READONLY = 493;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
