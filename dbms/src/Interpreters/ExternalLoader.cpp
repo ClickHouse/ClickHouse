@@ -2,13 +2,13 @@
 
 #include <mutex>
 #include <pcg_random.hpp>
-#include <common/DateLUT.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
 
 
@@ -874,8 +874,7 @@ private:
             {
                 if (next_update_time == TimePoint::max())
                     return String();
-                return ", next update is scheduled at "
-                    + DateLUT::instance().timeToString(std::chrono::system_clock::to_time_t(next_update_time));
+                return ", next update is scheduled at " + ext::to_string(next_update_time);
             };
             if (previous_version)
                 tryLogException(new_exception, log, "Could not update " + type_name + " '" + name + "'"
