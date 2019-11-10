@@ -262,6 +262,7 @@ public:
     bool writeUUID(const UUID & /* value */) { return false; }
     bool writeDate(DayNum /* date */) { return false; }
     bool writeDateTime(time_t /* tm */) { return false; }
+    bool writeDateTime64(DateTime64 /*tm*/, UInt32 /*scale*/) { return false; }
     bool writeDecimal(Decimal32 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(Decimal64 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(const Decimal128 & /* decimal */, UInt32 /* scale */) { return false; }
