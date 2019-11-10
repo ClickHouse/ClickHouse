@@ -229,6 +229,7 @@ public:
     bool readUUID(UUID &) { return false; }
     bool readDate(DayNum &) { return false; }
     bool readDateTime(time_t &) { return false; }
+    bool readDateTime64(DateTime64 & /*tm*/, UInt32 /*scale*/) { return false; }
     bool readDecimal(Decimal32 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal64 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal128 &, UInt32, UInt32) { return false; }

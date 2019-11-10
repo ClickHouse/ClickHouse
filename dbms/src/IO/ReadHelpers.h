@@ -633,8 +633,9 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
-    DB::DecimalComponents<DateTime64::NativeType> c;
-    readDateTimeTextImpl<void>(c.whole, buf, date_lut);
+    time_t whole;
+    readDateTimeTextImpl<void>(whole, buf, date_lut);
+    DB::DecimalComponents<DateTime64::NativeType> c{static_cast<DateTime64::NativeType>(whole), 0};
 
     char separator;
     if (buf.read(separator))
