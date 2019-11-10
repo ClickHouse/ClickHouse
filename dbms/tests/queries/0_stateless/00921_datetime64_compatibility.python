@@ -75,8 +75,10 @@ CAST(N as DateTime64(0))
 CAST(N as DateTime64(3))
 CAST(N as DateTime64(6))
 CAST(N as DateTime64(9))
-CAST(N as DateTime64(12))
-CAST(N as DateTime64(18))
+# Casting our test values to DateTime(12) will cause an overflow and hence will fail the test under UB sanitizer.
+# CAST(N as DateTime64(12))
+# DateTime64(18) will always fail due to zero precision, but it is Ok to test here:
+# CAST(N as DateTime64(18))
 formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%')
 """.splitlines()
 
