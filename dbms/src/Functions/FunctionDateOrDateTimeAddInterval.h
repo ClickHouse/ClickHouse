@@ -424,8 +424,10 @@ public:
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
             return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
-
-        assert(false && "Failed to resolve return type.");
+        else
+        {
+            static_assert("Failed to resolve return type.");
+        }
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
