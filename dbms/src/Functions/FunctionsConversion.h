@@ -561,10 +561,7 @@ struct ConvertThroughParsing
                 local_time_zone = &dt_col->getTimeZone();
             else
             {
-                throw Exception("Can't get timezone info from result type, expected "
-                    + std::string(ToDataType::family_name)
-                    + " got " + block.getByPosition(result).type->getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                local_time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
             }
 
             if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
