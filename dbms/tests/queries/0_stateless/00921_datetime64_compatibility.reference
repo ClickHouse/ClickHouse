@@ -345,20 +345,6 @@ SELECT CAST(N as DateTime64(9))
 "DateTime64(9)","2019-09-16 19:20:11.000000000"
 "DateTime64(9)","2019-09-16 19:20:11.234000000"
 ------------------------------------------
-SELECT CAST(N as DateTime64(12))
-"DateTime64(12)","1970-01-08 03:52:33.734688112640"
-"DateTime64(12)","1970-01-08 23:12:44.734688112640"
-
-Code: 407: DateTime64 convert overflow.
-------------------------------------------
-SELECT CAST(N as DateTime64(18))
-
-Code: 69: Precision 0 is out of bounds.
-
-Code: 69: Precision 0 is out of bounds.
-
-Code: 69: Precision 0 is out of bounds.
-------------------------------------------
 SELECT formatDateTime(N, \'%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%\')
 "String","20 16 09/16/19 16 2019-09-16 00 12 259 09 00 AM 00:00 00 00:00:00 1 38 1 19 2019 %"
 "String","20 16 09/16/19 16 2019-09-16 19 07 259 09 20 PM 19:20 11 19:20:11 1 38 1 19 2019 %"
