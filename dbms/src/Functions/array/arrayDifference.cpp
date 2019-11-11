@@ -1,5 +1,7 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 
@@ -37,6 +39,9 @@ struct ArrayDifferenceImpl
         if (which.isFloat32() || which.isFloat64())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
+        if (which.isDecimal())
+            return std::make_shared<DataTypeArray>(expression_return);
+
         throw Exception("arrayDifference cannot process values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
@@ -44,16 +49,24 @@ struct ArrayDifferenceImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
+
+        const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
         if (!column)
             return false;
 
         const IColumn::Offsets & offsets = array.getOffsets();
-        const typename ColumnVector<Element>::Container & data = column->getData();
+        const typename ColVecType::Container & data = column->getData();
 
-        auto res_nested = ColumnVector<Result>::create();
-        typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+        typename ColVecResult::MutablePtr res_nested;
+        if constexpr (IsDecimalNumber<Element>)
+            res_nested = ColVecResult::create(0, data.getScale());
+        else
+            res_nested = ColVecResult::create();
+
+        typename ColVecResult::Container & res_values = res_nested->getData();
         res_values.resize(data.size());
 
         size_t pos = 0;
@@ -87,7 +100,10 @@ struct ArrayDifferenceImpl
             executeType<  Int32,  Int64>(mapped, array, res) ||
             executeType<  Int64,  Int64>(mapped, array, res) ||
             executeType<Float32,Float64>(mapped, array, res) ||
-            executeType<Float64,Float64>(mapped, array, res))
+            executeType<Float64,Float64>(mapped, array, res) ||
+            executeType<Decimal32, Decimal32>(mapped, array, res) ||
+            executeType<Decimal64, Decimal64>(mapped, array, res) ||
+            executeType<Decimal128, Decimal128>(mapped, array, res))
             return res;
         else
             throw Exception("Unexpected column for arrayDifference: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
