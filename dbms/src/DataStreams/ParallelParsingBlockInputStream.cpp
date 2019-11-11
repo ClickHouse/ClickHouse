@@ -103,7 +103,6 @@ void ParallelParsingBlockInputStream::parserThreadFunction(size_t current_unit_n
             unit.status = READY_TO_READ;
             reader_condvar.notify_all();
         }
-
     }
     catch (...)
     {
