@@ -914,6 +914,14 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
 /** Returns buffer eof() result.
   * And saves data if there is no pending data in buffer or it was explicitly asked.
+  * Why we have to use this strange function? Consider we have begin_pos in the middle of our buffer
+  * and the cursor in the end of the buffer. When we call eof() it calls next().
+  * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
+  * @param buf - original buffer to read from.
+  *        memory - where to put data from buf
+  *        used_size - special parameter not to do useless reallocations
+  *        begin_pos - defines from which position we will copy the data.
+  *        forse_saving_buffer_state - allows to explicitly copy all the data from begin_pos to current_position.
   */
 bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, size_t & used_size, char * & begin_pos, bool force_saving_buffer_state = false);
 

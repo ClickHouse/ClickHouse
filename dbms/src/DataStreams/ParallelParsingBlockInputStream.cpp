@@ -15,7 +15,7 @@ void ParallelParsingBlockInputStream::segmentatorThreadFunction()
 
             {
                 std::unique_lock lock(mutex);
-                segmentator_condvar.wait(lock, [&]{ return status[current_unit_number] == READY_TO_INSERT || is_exception_occured || is_cancelled || executed; });
+                segmentator_condvar.wait(lock, [&]{ return status[current_unit_number] == READY_TO_INSERT || is_exception_occured || executed; });
             }
 
             if (is_exception_occured)
@@ -119,7 +119,7 @@ Block ParallelParsingBlockInputStream::readImpl()
 
     std::unique_lock lock(mutex);
     const auto current_number = reader_ticket_number % max_threads_to_use;
-    reader_condvar.wait(lock, [&](){ return status[current_number] == READY_TO_READ || is_exception_occured || is_cancelled || executed; });
+    reader_condvar.wait(lock, [&](){ return status[current_number] == READY_TO_READ || is_exception_occured || executed; });
 
     /// Check for an exception and rethrow it
     if (is_exception_occured)

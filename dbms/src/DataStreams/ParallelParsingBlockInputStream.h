@@ -100,6 +100,8 @@ public:
         if (!is_cancelled.compare_exchange_strong(old_val, true))
             return;
 
+        executed = true;
+
         for (auto& reader: readers)
             if (!reader->isCancelled())
                 reader->cancel(kill);
