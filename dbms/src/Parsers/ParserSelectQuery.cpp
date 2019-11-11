@@ -187,8 +187,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    bool limit_with_ties_occured = false;
-
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
     {
@@ -207,10 +205,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             if (s_with_ties.ignore(pos, expected))
-            {
-                limit_with_ties_occured = true;
                 select_query->limit_with_ties = true;
-            }
         }
         else if (s_offset.ignore(pos, expected))
         {
@@ -218,17 +213,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
         else if (s_with_ties.ignore(pos, expected))
-        {
-            limit_with_ties_occured = true;
             select_query->limit_with_ties = true;
-        }
 
         if (s_by.ignore(pos, expected))
         {
             /// WITH TIES was used alongside LIMIT BY
             /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
             /// So we have to ignore WITH TIES exactly in LIMIT BY state.
-            if (limit_with_ties_occured)
+            if (select_query->limit_with_ties)
                 throw Exception("Can not use WITH TIES alongside LIMIT BY", ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED);
 
             limit_by_length = limit_length;
