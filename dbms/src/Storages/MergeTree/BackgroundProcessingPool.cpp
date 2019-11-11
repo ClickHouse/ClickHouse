@@ -23,17 +23,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-static constexpr double thread_sleep_seconds = 10;
-static constexpr double thread_sleep_seconds_random_part = 1.0;
-static constexpr double thread_sleep_seconds_if_nothing_to_do = 0.1;
-
-/// For exponential backoff.
-static constexpr double task_sleep_seconds_when_no_work_min = 10;
-static constexpr double task_sleep_seconds_when_no_work_max = 600;
-static constexpr double task_sleep_seconds_when_no_work_multiplier = 1.1;
-static constexpr double task_sleep_seconds_when_no_work_random_part = 1.0;
-
-
 void BackgroundProcessingPoolTaskInfo::wake()
 {
     Poco::Timestamp current_time;
@@ -61,12 +50,23 @@ void BackgroundProcessingPoolTaskInfo::wake()
 }
 
 
-BackgroundProcessingPool::BackgroundProcessingPool(int size_, const char * log_name, const char * thread_name_)
+BackgroundProcessingPool::BackgroundProcessingPool(int size_,
+        const Poco::Util::AbstractConfiguration & config,
+        const char * log_name,
+        const char * thread_name_)
     : size(size_)
     , thread_name(thread_name_)
 {
     logger = &Logger::get(log_name);
     LOG_INFO(logger, "Create " << log_name << " with " << size << " threads");
+
+    thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
+    thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
+    thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+    task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+    task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+    task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+    task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
 
     threads.resize(size);
     for (auto & thread : threads)
