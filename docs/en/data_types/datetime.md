@@ -26,20 +26,16 @@ When inserting data into ClickHouse, you can use different formats of date and t
 
 ## Examples
 
-Creating a table with a `DateTime`-type column:
+**1.** Creating a table with a `DateTime`-type column:
 
 ```sql
-CREATE TABLE dt(
-    timestamp DateTime('Europe/Moscow')
-)
+CREATE TABLE dt( timestamp DateTime('Europe/Moscow') ) ENGINE TinyLog
 ```
 
-Getting a time zone for a `DateTime`-type value:
+**2.** Getting a time zone for a `DateTime`-type value:
 
 ```sql
-SELECT
-    toDateTime(now(), 'Europe/Moscow') AS column,
-    toTypeName(column) AS x
+SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 ```
 ```text
 ┌──────────────column─┬─x─────────────────────────┐
